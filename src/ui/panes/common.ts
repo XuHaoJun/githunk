@@ -1,11 +1,11 @@
-import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
+import { BoxRenderable, TextRenderable, type CliRenderer, type StyledText } from "@opentui/core"
 import type { FocusId } from "../focus"
 
 export type PaneHandle = {
   readonly id: FocusId
   readonly box: BoxRenderable
   readonly text: TextRenderable
-  update(content: string): void
+  update(content: string | StyledText): void
   setFocused(focused: boolean): void
 }
 
@@ -40,7 +40,7 @@ export function createPane(
     id,
     box,
     text,
-    update(nextContent: string) {
+    update(nextContent: string | StyledText) {
       text.content = nextContent
     },
     setFocused(focused: boolean) {

@@ -16,11 +16,14 @@ import { createBranchesPane, updateBranchesPane } from "./panes/branches-pane"
 import { createCommitsPane, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, updateFilesPane } from "./panes/files-pane"
-import { createMainPane, updateMainPane } from "./panes/main-pane"
+import { createMainPane, getMainDocument, updateMainPane } from "./panes/main-pane"
 import { createStashPane, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
-
+import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
+import type { CopyMode } from "../domain/diff/document"
+import { ClipboardService, type ClipboardPort } from "./clipboard"
+import { COPY_MENU_ITEMS } from "./copy-menu"
 export type RootViewOptions = {
   readonly leftWidth?: number
   readonly logHeight?: number
@@ -44,11 +47,18 @@ export class RootView {
   private readonly commandLog: CommandLogPaneHandle
   private readonly verticalSplitter: BoxRenderable
   private readonly horizontalSplitter: BoxRenderable
+  private readonly clipboard: ClipboardService
+  private copyMenuOpen = false
   private readonly handleResize: () => void
   private readonly handleKey: (key: KeyEvent) => void
   private destroyed = false
 
   constructor(renderer: CliRenderer, model: AppModel, options: RootViewOptions = {}) {
+    const clipboardPort: ClipboardPort = {
+      isOsc52Supported: () => renderer.isOsc52Supported(),
+      copyToClipboardOSC52: (text) => renderer.copyToClipboardOSC52(text),
+    }
+    this.clipboard = new ClipboardService(clipboardPort)
     this.renderer = renderer
     this.model = model
     this.geometry = computeLayout(
@@ -120,6 +130,11 @@ export class RootView {
       this.applyLayout()
     }
     this.handleKey = (key: KeyEvent) => {
+      if (this.handleCopyKey(key)) {
+        key.preventDefault()
+        key.stopPropagation()
+        return
+      }
       if (this.focusManager.handleKey(key.name)) {
         key.preventDefault()
         key.stopPropagation()
@@ -136,11 +151,59 @@ export class RootView {
     this.model = model
     updateStatusPane(this.panes.status, model)
     updateFilesPane(this.panes.files, model)
-    updateBranchesPane(this.panes.branches, model)
+
     updateCommitsPane(this.panes.commits, model)
     updateStashPane(this.panes.stash, model)
     updateMainPane(this.panes.main, model, this.geometry.tooSmall)
     this.commandLog.update(model.commandLog)
+    this.root.requestRender()
+  }
+  private handleCopyKey(key: KeyEvent): boolean {
+    if (this.focusManager.active !== "main") return false
+    if (this.copyMenuOpen) {
+      if (key.name === "escape") {
+        this.copyMenuOpen = false
+        this.panes.main.box.bottomTitle = undefined
+        this.root.requestRender()
+        return true
+      }
+      const index = Number(key.name) - 1
+      if (Number.isInteger(index) && index >= 0 && index < COPY_MENU_ITEMS.length) {
+        this.copyMenuOpen = false
+        this.copyMainMode(COPY_MENU_ITEMS[index]!.mode)
+        return true
+      }
+    }
+    if (key.ctrl && key.name === "o") {
+      this.copyMainMode("text")
+      return true
+    }
+    if (!key.ctrl && !key.meta && key.name === "y") {
+      this.copyMenuOpen = true
+      this.panes.main.box.bottomTitle = `Copy: ${COPY_MENU_ITEMS.map((item, index) => `${index + 1} ${item.label}`).join(" | ")}`
+      this.root.requestRender()
+      return true
+    }
+    return false
+  }
+
+  private copyMainMode(mode: CopyMode): void {
+    const pane = this.panes.main
+    const document = getMainDocument(pane)
+    if (!document) {
+      pane.box.bottomTitle = "No text selected"
+      this.root.requestRender()
+      return
+    }
+    const nativeRange = pane.text.getSelection()
+    const selection = nativeRange ? selectionFromRenderable(document, nativeRange, pane.text.getSelectedText()) : undefined
+    const text = copySelection(document, selection, mode)
+    if (selection && !selection.valid) {
+      pane.box.bottomTitle = `Selection rejected: ${selection.reason ?? "native/display mismatch"}`
+      this.root.requestRender()
+      return
+    }
+    pane.box.bottomTitle = this.clipboard.copy(text).message
     this.root.requestRender()
   }
 
