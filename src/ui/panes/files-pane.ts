@@ -12,13 +12,20 @@ export function updateFilesPane(pane: PaneHandle, model: AppModel): void {
   const content = model.files.length === 0
     ? "No changed files"
     : model.files.map((file) => {
-      const marker = file.conflicted ? "!" : file.untracked ? "?" : file.worktreeStatus || file.indexStatus || " "
+      const gitMarker = file.conflicted ? "!" : file.untracked ? "?" : file.worktreeStatus || file.indexStatus || " "
+      const reviewMarker = model.reviewStatuses?.[file.path] === "reviewed"
+        ? "●"
+        : model.reviewStatuses?.[file.path] === "reviewing"
+          ? "◐"
+          : model.reviewStatuses?.[file.path] === "changed-after-review"
+            ? "!"
+            : "○"
       const reason = file.conflicted
         ? " — line actions disabled: conflicted file"
         : !file.untracked && file.additions === 0 && file.deletions === 0
           ? " — line actions disabled: binary file"
           : ""
-      return `${marker} ${file.path}${reason}`
+      return `${gitMarker} ${reviewMarker} ${file.path}${reason}`
     }).join("\n")
   pane.update(content)
 }

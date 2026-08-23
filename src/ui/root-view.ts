@@ -36,6 +36,9 @@ export type RootViewOptions = {
   readonly onScopeChange?: (scope: "staged" | "unstaged") => Promise<void>
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
+  readonly onSelectFile?: (path: string) => void
+  readonly onMarkFocusedFileReviewed?: (path: string) => Promise<void>
+  readonly onRefresh?: () => Promise<void>
 }
 
 function stackedHeights(total: number, count: number): number[] {
@@ -63,6 +66,9 @@ export class RootView {
   private readonly onScopeChange: ((scope: "staged" | "unstaged") => Promise<void>) | undefined
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
+  private readonly onSelectFile: ((path: string) => void) | undefined
+  private readonly onMarkFocusedFileReviewed: ((path: string) => Promise<void>) | undefined
+  private readonly onRefresh: (() => Promise<void>) | undefined
   private fileCursorIndex = 0
   private copyMenuOpen = false
   private discardPending = false
@@ -85,6 +91,9 @@ export class RootView {
     this.onScopeChange = options.onScopeChange
     this.onApplySelection = options.onApplySelection
     this.onDiscardSelection = options.onDiscardSelection
+    this.onSelectFile = options.onSelectFile
+    this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
+    this.onRefresh = options.onRefresh
     this.renderer = renderer
     this.model = model
     this.geometry = computeLayout(
@@ -226,6 +235,10 @@ export class RootView {
     return false
   }
   private handleMutationKey(key: KeyEvent): boolean {
+    if ((key.name === "R" || (key.name === "r" && key.shift)) && this.onRefresh !== undefined) {
+      this.runUiMutation(this.onRefresh())
+      return true
+    }
     if (this.mutationInFlight && ["space", "d", "tab", "a"].includes(key.name)) {
       this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
       return true
@@ -235,14 +248,22 @@ export class RootView {
         this.pendingFileDiscard = undefined
         this.discardPending = false
         this.fileCursorIndex = Math.max(0, Math.min(this.model.files.length - 1, this.fileCursorIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
-        this.panes.files.box.bottomTitle = this.model.files[this.fileCursorIndex]?.path ?? "No files"
+        const selected = this.model.files[this.fileCursorIndex]
+        this.panes.files.box.bottomTitle = selected?.path ?? "No files"
+        if (selected !== undefined) this.onSelectFile?.(selected.path)
         return true
       }
       if (key.name === "enter") {
+        const selected = this.model.files[this.fileCursorIndex]
+        if (selected !== undefined) this.onSelectFile?.(selected.path)
         this.focusManager.focus("main")
         return true
       }
       const file = this.model.files[this.fileCursorIndex]
+      if (file !== undefined && key.name === "r" && this.onMarkFocusedFileReviewed !== undefined) {
+        this.runUiMutation(this.onMarkFocusedFileReviewed(file.path))
+        return true
+      }
       if (key.name === "a" && this.onToggleAllFiles !== undefined) {
         this.runUiMutation(this.onToggleAllFiles())
         return true

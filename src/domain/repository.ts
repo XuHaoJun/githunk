@@ -1,5 +1,6 @@
 import type { CommandRecord } from "./command"
 import type { ChangedFile, ReviewTarget, WorkingTreeScope } from "./review-target"
+import type { ReviewFileState } from "./review-progress"
 
 export type PatchSection = {
   readonly label: "STAGED" | "UNSTAGED"
@@ -23,6 +24,15 @@ export type AppModel = {
   readonly files: readonly ChangedFile[]
   readonly patches: readonly PatchSection[]
   readonly rawPatchSections: readonly PatchSection[]
+  readonly reviewStatuses?: Readonly<Record<string, ReviewFileState>>
+  readonly reviewSummary?: {
+    readonly reviewed: number
+    readonly invalidated: number
+    readonly commits: number
+    readonly files: number
+    readonly additions: number
+    readonly deletions: number
+  }
   readonly selectionId?: string
   readonly focusId?: string
   readonly loading: boolean

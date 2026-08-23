@@ -1,9 +1,13 @@
 import { GitRunner, GitCommandError } from "../git/runner"
 import { loadWorkingTree } from "../git/diff"
+import { parseDiff } from "../domain/diff/parse"
 import type { DiffDocument } from "../domain/diff/document"
-import type { AppModel } from "../domain/repository"
-import type { ReviewTarget, WorkingTreeScope } from "../domain/review-target"
+import type { AppModel, PatchSection } from "../domain/repository"
+import type { ReviewTarget, WorkingTreeScope, ChangedFile } from "../domain/review-target"
 import type { WorkingTreeSnapshot } from "../domain/repository"
+import { reviewStateFor, type ReviewDatabase, type ReviewFileState } from "../domain/review-progress"
+import { fingerprintFile, targetKey } from "../review/fingerprint"
+import { emptyReviewDatabase, ReviewStore } from "../review/store"
 import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
 import { MutationQueue } from "./mutation-queue"
 
@@ -15,6 +19,7 @@ export type AppControllerOptions = {
   readonly load?: WorkingTreeLoader
   readonly loader?: WorkingTreeLoader
   readonly mutations?: GitMutations
+  readonly reviewStore?: ReviewStore
 }
 
 function titleFor(target: ReviewTarget): string {
@@ -25,19 +30,36 @@ function titleFor(target: ReviewTarget): string {
   if (target.kind === "commit") return `Commit — ${target.oid}`
   return `Stash — ${target.ref}`
 }
+function rawPatchForFile(file: ChangedFile, patches: readonly PatchSection[]): string {
+  let result = ""
+  for (const section of patches) {
+    const document = parseDiff(section.text)
+    for (const parsed of document.files) {
+      if (parsed.newPath !== file.path && parsed.oldPath !== file.path && parsed.newPath !== file.previousPath && parsed.oldPath !== file.previousPath) continue
+      result += section.text.slice(parsed.startUtf16, parsed.endUtf16)
+    }
+  }
+  return result
+}
 
 export class AppController {
   readonly runner: GitRunner | undefined
   readonly mutations: GitMutations | undefined
+  readonly reviewStore: ReviewStore | undefined
   readonly mutationQueue = new MutationQueue()
   private readonly loadSnapshot: WorkingTreeLoader
   private generation = 0
   private currentState: AppModel
+  private reviewDatabase: ReviewDatabase = emptyReviewDatabase()
 
   constructor(options: AppControllerOptions | GitRunner, loader?: WorkingTreeLoader) {
     const runner = options instanceof GitRunner ? options : options.runner
     const load = options instanceof GitRunner ? loader : options.load ?? options.loader
     const repositoryRoot = options instanceof GitRunner ? options.cwd : options.repositoryRoot ?? runner?.cwd
+    const shouldUseDefaultReviewStore = load === undefined
+    this.reviewStore = options instanceof GitRunner
+      ? shouldUseDefaultReviewStore ? new ReviewStore({ repositoryRoot, runner }) : undefined
+      : options.reviewStore ?? (!shouldUseDefaultReviewStore || runner === undefined || repositoryRoot === undefined ? undefined : new ReviewStore({ repositoryRoot, runner }))
     this.runner = runner
     this.mutations = runner === undefined
       ? undefined
@@ -56,6 +78,8 @@ export class AppController {
       files: [],
       patches: [],
       rawPatchSections: [],
+      reviewStatuses: {},
+      reviewSummary: { reviewed: 0, invalidated: 0, commits: 0, files: 0, additions: 0, deletions: 0 },
       loading: false,
       commandLog: runner?.log.records() ?? [],
       title: titleFor(target),
@@ -73,6 +97,55 @@ export class AppController {
 
   async setWorkingTreeScope(scope: WorkingTreeScope): Promise<void> {
     await this.refreshTarget({ kind: "working-tree", scope })
+  }
+
+  selectFile(path: string): void {
+    const status = this.currentState.reviewStatuses?.[path]
+    if (status === undefined || status === "not-reviewed" || status === "reviewing") {
+      this.currentState = {
+        ...this.currentState,
+        selectionId: path,
+        focusId: path,
+        reviewStatuses: { ...(this.currentState.reviewStatuses ?? {}), [path]: "reviewing" },
+      }
+    } else {
+      this.currentState = { ...this.currentState, selectionId: path, focusId: path }
+    }
+  }
+
+  async markFocusedFileReviewed(path = this.currentState.focusId ?? this.currentState.selectionId): Promise<void> {
+    if (path === undefined) return
+    await this.markFileReviewed(path)
+  }
+
+  async markFileReviewed(path: string): Promise<void> {
+    const file = this.currentState.files.find((candidate) => candidate.path === path)
+    if (file === undefined) return
+    const fingerprint = fingerprintFile(this.currentState.reviewTarget, {
+      currentPath: file.path,
+      previousPath: file.previousPath,
+      rawPatch: rawPatchForFile(file, this.currentState.rawPatchSections),
+    })
+    const key = targetKey(this.currentState.reviewTarget)
+    const targetRecord = this.reviewDatabase.targets[key] ?? { files: {} }
+    const database: ReviewDatabase = {
+      ...this.reviewDatabase,
+      targets: {
+        ...this.reviewDatabase.targets,
+        [key]: {
+          files: {
+            ...targetRecord.files,
+            [file.path]: { reviewedFingerprint: fingerprint, reviewedAt: new Date().toISOString() },
+          },
+        },
+      },
+    }
+    this.reviewDatabase = database
+    await this.reviewStore?.save(database)
+    this.currentState = {
+      ...this.currentState,
+      reviewStatuses: { ...(this.currentState.reviewStatuses ?? {}), [path]: "reviewed" },
+    }
   }
 
   async stageFile(path: string): Promise<void> {
@@ -140,22 +213,66 @@ export class AppController {
     })
   }
 
+  private async reviewForSnapshot(target: ReviewTarget, files: readonly ChangedFile[], patches: readonly PatchSection[]): Promise<{
+    readonly statuses: Readonly<Record<string, ReviewFileState>>
+    readonly summary: { readonly reviewed: number; readonly invalidated: number; readonly commits: number; readonly files: number; readonly additions: number; readonly deletions: number }
+    readonly warning?: string
+  }> {
+    let warning: string | undefined
+    if (this.reviewStore !== undefined) {
+      try {
+        this.reviewDatabase = await this.reviewStore.load()
+        warning = this.reviewStore.warning
+      } catch (error) {
+        warning = error instanceof Error ? error.message : String(error)
+      }
+    }
+    const record = this.reviewDatabase.targets[targetKey(target)]
+    const statuses: Record<string, ReviewFileState> = {}
+    for (const file of files) {
+      const fingerprint = fingerprintFile(target, {
+        currentPath: file.path,
+        previousPath: file.previousPath,
+        rawPatch: rawPatchForFile(file, patches),
+      })
+      statuses[file.path] = reviewStateFor(record?.files[file.path], fingerprint)
+    }
+    const reviewed = Object.values(statuses).filter((status) => status === "reviewed").length
+    const invalidated = Object.values(statuses).filter((status) => status === "changed-after-review").length
+    return {
+      statuses,
+      summary: {
+        reviewed,
+        invalidated,
+        commits: 0,
+        files: files.length,
+        additions: files.reduce((total, file) => total + file.additions, 0),
+        deletions: files.reduce((total, file) => total + file.deletions, 0),
+      },
+      ...(warning === undefined ? {} : { warning }),
+    }
+  }
   private async refreshTarget(target: Extract<ReviewTarget, { readonly kind: "working-tree" }>): Promise<void> {
     const generation = ++this.generation
     this.publishIfCurrent(generation, { loading: true })
     try {
       const snapshot = await this.loadSnapshot(target)
       if (generation !== this.generation) return
+      const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
+      if (generation !== this.generation) return
       const { upstream: _previousUpstream, banner: _previousBanner, ...previousState } = this.currentState
       this.currentState = {
         ...previousState,
         ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
+        ...(review.warning === undefined ? {} : { banner: review.warning }),
         repositoryRoot: snapshot.repositoryRoot,
         branch: snapshot.branch,
         reviewTarget: snapshot.reviewTarget,
         files: snapshot.files,
         patches: snapshot.patches,
         rawPatchSections: snapshot.patches,
+        reviewStatuses: review.statuses,
+        reviewSummary: review.summary,
         loading: false,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
         title: titleFor(snapshot.reviewTarget),

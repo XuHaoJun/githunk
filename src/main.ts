@@ -45,6 +45,16 @@ export async function startApp(): Promise<number> {
     onDiscardSelection: async (document, indexes) => {
       try { await controller.discardSelection(document, indexes, { wholeFile: false }) } finally { view.update(controller.state) }
     },
+    onSelectFile: (path) => {
+      controller.selectFile(path)
+      view.update(controller.state)
+    },
+    onMarkFocusedFileReviewed: async (path) => {
+      try { await controller.markFileReviewed(path) } finally { view.update(controller.state) }
+    },
+    onRefresh: async () => {
+      try { await controller.refresh() } finally { view.update(controller.state) }
+    },
   })
   renderer.once("destroy", () => view.destroy())
 
