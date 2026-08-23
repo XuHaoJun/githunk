@@ -1,8 +1,11 @@
 import { GitRunner, GitCommandError } from "../git/runner"
 import { loadWorkingTree } from "../git/diff"
+import type { DiffDocument } from "../domain/diff/document"
 import type { AppModel } from "../domain/repository"
 import type { ReviewTarget, WorkingTreeScope } from "../domain/review-target"
 import type { WorkingTreeSnapshot } from "../domain/repository"
+import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
+import { MutationQueue } from "./mutation-queue"
 
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
 
@@ -11,6 +14,7 @@ export type AppControllerOptions = {
   readonly runner?: GitRunner
   readonly load?: WorkingTreeLoader
   readonly loader?: WorkingTreeLoader
+  readonly mutations?: GitMutations
 }
 
 function titleFor(target: ReviewTarget): string {
@@ -24,6 +28,8 @@ function titleFor(target: ReviewTarget): string {
 
 export class AppController {
   readonly runner: GitRunner | undefined
+  readonly mutations: GitMutations | undefined
+  readonly mutationQueue = new MutationQueue()
   private readonly loadSnapshot: WorkingTreeLoader
   private generation = 0
   private currentState: AppModel
@@ -33,6 +39,11 @@ export class AppController {
     const load = options instanceof GitRunner ? loader : options.load ?? options.loader
     const repositoryRoot = options instanceof GitRunner ? options.cwd : options.repositoryRoot ?? runner?.cwd
     this.runner = runner
+    this.mutations = runner === undefined
+      ? undefined
+      : options instanceof GitRunner
+        ? new GitMutations(runner)
+        : options.mutations ?? new GitMutations(runner)
     this.loadSnapshot = load ?? ((target) => {
       if (runner === undefined) throw new Error("AppController requires a GitRunner or loader")
       return loadWorkingTree(runner, target.scope)
@@ -62,6 +73,70 @@ export class AppController {
 
   async setWorkingTreeScope(scope: WorkingTreeScope): Promise<void> {
     await this.refreshTarget({ kind: "working-tree", scope })
+  }
+
+  async stageFile(path: string): Promise<void> {
+    await this.runMutation(() => this.mutations?.stageFile(path))
+  }
+
+  async unstageFile(path: string): Promise<void> {
+    await this.runMutation(() => this.mutations?.unstageFile(path))
+  }
+
+  async applySelection(document: DiffDocument, includedLineIndexes: readonly number[], options: SelectionMutationOptions): Promise<void> {
+    await this.runMutation(() => this.mutations?.applySelection(document, includedLineIndexes, options))
+  }
+
+  async discardSelection(document: DiffDocument, includedLineIndexes: readonly number[], options?: Omit<SelectionMutationOptions, "reverse"> & { readonly reverse?: false }): Promise<void> {
+    await this.runMutation(() => this.mutations?.discardSelection(document, includedLineIndexes, options))
+  }
+
+  async discardFile(path: string, untracked = false): Promise<void> {
+    await this.runMutation(() => this.mutations?.discardFile(path, untracked))
+  }
+
+  async toggleAllFiles(): Promise<void> {
+    await this.mutationQueue.run(async () => {
+      const files = this.currentState.files
+      const shouldStage = files.some((file) => file.untracked || file.worktreeStatus !== ".")
+      try {
+        for (const file of files) {
+          if (shouldStage) await this.mutations?.stageFile(file.path)
+          else await this.mutations?.unstageFile(file.path)
+        }
+        await this.refresh()
+      } catch (error) {
+        const banner = error instanceof GitCommandError
+          ? (error.record.stderr || error.message)
+          : error instanceof Error ? error.message : String(error)
+        this.currentState = {
+          ...this.currentState,
+          banner,
+          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        }
+        throw error
+      }
+    })
+  }
+
+  private async runMutation(operation: () => Promise<void> | undefined): Promise<void> {
+    if (operation === undefined) throw new Error("Mutations require a GitRunner")
+    await this.mutationQueue.run(async () => {
+      try {
+        await operation()
+        await this.refresh()
+      } catch (error) {
+        const banner = error instanceof GitCommandError
+          ? (error.record.stderr || error.message)
+          : error instanceof Error ? error.message : String(error)
+        this.currentState = {
+          ...this.currentState,
+          banner,
+          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        }
+        throw error
+      }
+    })
   }
 
   private async refreshTarget(target: Extract<ReviewTarget, { readonly kind: "working-tree" }>): Promise<void> {

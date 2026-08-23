@@ -13,7 +13,18 @@ export function updateFilesPane(pane: PaneHandle, model: AppModel): void {
     ? "No changed files"
     : model.files.map((file) => {
       const marker = file.conflicted ? "!" : file.untracked ? "?" : file.worktreeStatus || file.indexStatus || " "
-      return `${marker} ${file.path}`
+      const reason = file.conflicted
+        ? " — line actions disabled: conflicted file"
+        : !file.untracked && file.additions === 0 && file.deletions === 0
+          ? " — line actions disabled: binary file"
+          : ""
+      return `${marker} ${file.path}${reason}`
     }).join("\n")
   pane.update(content)
+}
+
+export function fileLineActionReason(file: AppModel["files"][number]): string | undefined {
+  if (file.conflicted) return "line actions disabled: conflicted file"
+  if (!file.untracked && file.additions === 0 && file.deletions === 0) return "line actions disabled: binary file"
+  return undefined
 }

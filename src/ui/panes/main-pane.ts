@@ -39,6 +39,26 @@ export function moveMainCursor(document: DiffDocument, current: MainCursorTarget
   return targets[nextIndex]
 }
 
+export type MainActionAvailability = {
+  readonly canStageLines: boolean
+  readonly canDiscardLines: boolean
+  readonly reason?: string
+}
+
+export function mainActionAvailability(document: DiffDocument, target: MainCursorTarget | undefined): MainActionAvailability {
+  const file = target === undefined ? undefined : document.files[target.fileIndex]
+  if (!file) return { canStageLines: false, canDiscardLines: false, reason: "No diff selected" }
+  if (file.hunks.length === 0) return { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: binary or conflicted file" }
+  return { canStageLines: true, canDiscardLines: true }
+}
+
+export function changeLineIndexes(document: DiffDocument, startUtf16: number, endUtf16: number): readonly number[] {
+  return document.lines.flatMap((line, index) => {
+    if (line.kind !== "addition" && line.kind !== "deletion") return []
+    return line.endUtf16 > startUtf16 && line.startUtf16 < endUtf16 ? [index] : []
+  })
+}
+
 export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: boolean): void {
   if (tooSmall) {
     pane.update("Terminal too small")

@@ -22,7 +22,21 @@ export async function startApp(): Promise<number> {
     targetFps: 30,
   })
   const controller = new AppController({ repositoryRoot, runner })
-  const view = new RootView(renderer, controller.state)
+  let view: RootView
+  view = new RootView(renderer, controller.state, {
+    onStageFile: async (path) => { await controller.stageFile(path); view.update(controller.state) },
+    onUnstageFile: async (path) => { await controller.unstageFile(path); view.update(controller.state) },
+    onToggleAllFiles: async () => { await controller.toggleAllFiles(); view.update(controller.state) },
+    onScopeChange: async (scope) => { await controller.setWorkingTreeScope(scope); view.update(controller.state) },
+    onApplySelection: async (document, indexes, reverse) => {
+      await controller.applySelection(document, indexes, { reverse, wholeFile: false })
+      view.update(controller.state)
+    },
+    onDiscardSelection: async (document, indexes) => {
+      await controller.discardSelection(document, indexes, { wholeFile: false })
+      view.update(controller.state)
+    },
+  })
   renderer.once("destroy", () => view.destroy())
 
   try {

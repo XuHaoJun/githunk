@@ -16,18 +16,25 @@ import { createBranchesPane, updateBranchesPane } from "./panes/branches-pane"
 import { createCommitsPane, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, updateFilesPane } from "./panes/files-pane"
-import { createMainPane, getMainCursorTarget, getMainDocument, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
 import { createStashPane, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
 import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
-import type { CopyMode } from "../domain/diff/document"
+import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
+import { discardConfirmation } from "./confirm-dialog"
 import { COPY_MENU_ITEMS } from "./copy-menu"
 export type RootViewOptions = {
   readonly leftWidth?: number
   readonly logHeight?: number
   readonly logVisible?: boolean
+  readonly onStageFile?: (path: string) => Promise<void>
+  readonly onUnstageFile?: (path: string) => Promise<void>
+  readonly onToggleAllFiles?: () => Promise<void>
+  readonly onScopeChange?: (scope: "staged" | "unstaged") => Promise<void>
+  readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
+  readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
 }
 
 function stackedHeights(total: number, count: number): number[] {
@@ -45,10 +52,17 @@ export class RootView {
   private model: AppModel
   private readonly panes: Record<Exclude<FocusId, "command-log">, PaneHandle>
   private readonly commandLog: CommandLogPaneHandle
+  private readonly clipboard: ClipboardService
   private readonly verticalSplitter: BoxRenderable
   private readonly horizontalSplitter: BoxRenderable
-  private readonly clipboard: ClipboardService
+  private readonly onStageFile: ((path: string) => Promise<void>) | undefined
+  private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
+  private readonly onToggleAllFiles: (() => Promise<void>) | undefined
+  private readonly onScopeChange: ((scope: "staged" | "unstaged") => Promise<void>) | undefined
   private copyMenuOpen = false
+  private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
+  private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
+  private discardPending = false
   private readonly handleResize: () => void
   private readonly handleKey: (key: KeyEvent) => void
   private destroyed = false
@@ -59,6 +73,12 @@ export class RootView {
       copyToClipboardOSC52: (text) => renderer.copyToClipboardOSC52(text),
     }
     this.clipboard = new ClipboardService(clipboardPort)
+    this.onStageFile = options.onStageFile
+    this.onUnstageFile = options.onUnstageFile
+    this.onToggleAllFiles = options.onToggleAllFiles
+    this.onScopeChange = options.onScopeChange
+    this.onApplySelection = options.onApplySelection
+    this.onDiscardSelection = options.onDiscardSelection
     this.renderer = renderer
     this.model = model
     this.geometry = computeLayout(
@@ -130,6 +150,11 @@ export class RootView {
       this.applyLayout()
     }
     this.handleKey = (key: KeyEvent) => {
+      if (this.handleMutationKey(key)) {
+        key.preventDefault()
+        key.stopPropagation()
+        return
+      }
       if (this.handleCopyKey(key)) {
         key.preventDefault()
         key.stopPropagation()
@@ -190,6 +215,100 @@ export class RootView {
       return true
     }
     return false
+  }
+
+  private handleMutationKey(key: KeyEvent): boolean {
+    if (this.focusManager.active === "files") {
+      if (key.name === "enter") {
+        this.focusManager.focus("main")
+        return true
+      }
+      if (key.name === "a" && this.onToggleAllFiles !== undefined) {
+        this.runUiMutation(this.onToggleAllFiles())
+        return true
+      }
+      if (key.name === "space" && this.model.files[0] !== undefined) {
+        const file = this.model.files[0]
+        const staged = !file.untracked && file.worktreeStatus === "." && file.indexStatus !== "."
+        const operation = staged ? this.onUnstageFile : this.onStageFile
+        if (operation !== undefined) this.runUiMutation(operation(file.path))
+        return operation !== undefined
+      }
+      return false
+    }
+    if (this.focusManager.active !== "main") return false
+    if (key.name === "tab" && this.onScopeChange !== undefined) {
+      const scope = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged" ? "unstaged" : "staged"
+      this.runUiMutation(this.onScopeChange(scope))
+      return true
+    }
+    if (key.name === "space" && this.onApplySelection !== undefined) {
+      const selected = this.mainChangeSelection()
+      if (selected === undefined || selected.indexes.length === 0) {
+        this.panes.main.box.bottomTitle = "No changed lines selected"
+      } else {
+        const reverse = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged"
+        this.runUiMutation(this.onApplySelection(selected.document, selected.indexes, reverse))
+      }
+      return true
+    }
+    if (key.name === "d" && this.onDiscardSelection !== undefined) {
+      if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged") {
+        this.panes.main.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
+        return true
+      }
+      const selected = this.mainChangeSelection()
+      const target = getMainCursorTarget(this.panes.main)
+      const path = target === undefined ? "selected changes" : this.model.files[target.fileIndex]?.path ?? "selected changes"
+      if (selected === undefined || selected.indexes.length === 0) {
+        this.panes.main.box.bottomTitle = "No changed lines selected"
+      } else if (!this.discardPending) {
+        this.discardPending = true
+        this.panes.main.box.bottomTitle = `${discardConfirmation(path).message} Press d again to confirm or Escape to cancel.`
+      } else {
+        this.discardPending = false
+        this.runUiMutation(this.onDiscardSelection(selected.document, selected.indexes))
+      }
+      return true
+    }
+    if (key.name === "escape" && this.discardPending) {
+      this.discardPending = false
+      this.panes.main.box.bottomTitle = undefined
+      return true
+    }
+    return false
+  }
+
+  private mainChangeSelection(): { readonly document: DiffDocument; readonly indexes: readonly number[] } | undefined {
+    const document = getMainDocument(this.panes.main)
+    if (!document) return undefined
+    const nativeRange = this.panes.main.text.getSelection()
+    if (nativeRange) {
+      const selection = selectionFromRenderable(document, nativeRange, this.panes.main.text.getSelectedText())
+      if (selection.valid && selection.endUtf16 > selection.startUtf16) {
+        return { document, indexes: changeLineIndexes(document, selection.startUtf16, selection.endUtf16) }
+      }
+    }
+    const target = getMainCursorTarget(this.panes.main)
+    if (!target) return undefined
+    const file = document.files[target.fileIndex]
+    if (!file) return undefined
+    const hunk = target.hunkIndex === undefined ? undefined : file.hunks[target.hunkIndex]
+    const lines = hunk?.lines ?? file.lines
+    return {
+      document,
+      indexes: lines.flatMap((line) => {
+        const index = document.lines.indexOf(line)
+        return index >= 0 && (line.kind === "addition" || line.kind === "deletion") ? [index] : []
+      }),
+    }
+  }
+
+  private runUiMutation(operation: Promise<void>): void {
+    void operation.catch((error: unknown) => {
+      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+      this.root.requestRender()
+    })
   }
 
   private moveMainCursor(direction: "next" | "previous"): void {
