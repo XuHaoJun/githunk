@@ -1,5 +1,7 @@
-import { createCliRenderer, TextRenderable } from "@opentui/core"
+import { createCliRenderer } from "@opentui/core"
+import { AppController } from "./app/controller"
 import { GitCommandError, GitRunner } from "./git/runner"
+import { RootView } from "./ui/root-view"
 
 export async function startApp(): Promise<number> {
   const runner = new GitRunner()
@@ -19,15 +21,17 @@ export async function startApp(): Promise<number> {
     enableMouseMovement: true,
     targetFps: 30,
   })
+  const controller = new AppController({ repositoryRoot, runner })
+  const view = new RootView(renderer, controller.state)
+  renderer.once("destroy", () => view.destroy())
 
   try {
-    renderer.root.add(
-      new TextRenderable(renderer, {
-        content: `githunk\nRepository: ${repositoryRoot}\n`,
-      }),
-    )
-  } finally {
+    await controller.refresh()
+    view.update(controller.state)
+  } catch (error) {
+    view.destroy()
     renderer.destroy()
+    throw error
   }
 
   return 0
