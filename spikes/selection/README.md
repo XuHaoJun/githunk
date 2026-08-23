@@ -50,3 +50,26 @@ Run each case twice: once at 120+ columns and once with PATCH narrowed until the
 ### Manual evidence
 
 For each run, record the case ID, terminal name and version, terminal dimensions, and exact selected/pasted text. Compare the observation with the expected outcome above. Capture every mismatch with the same details; do not mark a case as matching unless it was manually exercised.
+
+## Remote matrix
+
+Capture environment:
+
+```bash
+GITHUNK_SPIKE_ENV=1 bun run spike:selection 2> /tmp/githunk-spike-env.json
+cat /tmp/githunk-spike-env.json
+```
+
+Run these four environments where available:
+
+1. local terminal
+2. SSH, no multiplexer
+3. SSH inside tmux
+4. SSH inside zellij
+
+For each environment:
+
+- select `GITHUNK_PATCH_ONLY_ALPHA`;
+- paste on the client machine;
+- repeat with a multiline selection containing CJK + emoji;
+- record PASS/FAIL and any terminal setting required for OSC52.
