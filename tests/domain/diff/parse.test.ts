@@ -48,6 +48,15 @@ describe("parseDiff hostile unified diff", () => {
     expect(addition).toMatchObject({ kind: "addition", newLine: 2 })
     expect(document.files[0]?.oldPath).toBe("space name.ts")
   })
+  test("treats marker-looking hunk content as changes, not file headers", () => {
+    const document = parseDiff("diff --git a/markers b/markers\n--- a/markers\n+++ b/markers\n@@ -1,2 +1,2 @@\n--- deleted marker\n+++ added marker\n")
+    const deletion = document.lines.find((line) => line.raw === "--- deleted marker\n")
+    const addition = document.lines.find((line) => line.raw === "+++ added marker\n")
+    expect(deletion).toMatchObject({ kind: "deletion", oldLine: 1 })
+    expect(addition).toMatchObject({ kind: "addition", newLine: 1 })
+    expect(document.files[0]?.oldPath).toBe("markers")
+    expect(document.files[0]?.newPath).toBe("markers")
+  })
 
   test("render keeps source text selectable while exposing explicit display map", () => {
     const document = parseDiff(fixture)

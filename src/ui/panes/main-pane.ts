@@ -25,7 +25,7 @@ export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: bool
   }
 
   const sections = model.rawPatchSections.length > 0 ? model.rawPatchSections : model.patches
-  const raw = sections.map((patch) => patch.text).filter(Boolean).join("\n\n")
+  const raw = sections.map((patch) => patch.text).filter(Boolean).join("")
   if (raw.length === 0) {
     pane.update(model.loading ? "Loading…" : model.banner ? `! ${model.banner}` : "No patch loaded")
     documents.delete(pane)

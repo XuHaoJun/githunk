@@ -74,11 +74,7 @@ export function parseDiff(text: string): DiffDocument {
     let lineNew: number | undefined
     const hunk = hunkNumbers(value)
 
-    if (startsFile || value.startsWith("--- ") || value.startsWith("+++ ")) {
-      kind = "file-header"
-      if (value.startsWith("--- ")) file.oldPath = pathFromHeader(value.slice(4))
-      if (value.startsWith("+++ ")) file.newPath = pathFromHeader(value.slice(4))
-    } else if (hunk) {
+    if (hunk) {
       closeHunk(cursor)
       hunkIndex = file.hunks.length
       const header: DiffLine = { kind: "hunk-header", raw, startUtf16: cursor, endUtf16, fileIndex: file.fileIndex, hunkIndex }
@@ -101,10 +97,8 @@ export function parseDiff(text: string): DiffDocument {
       newLine = hunk.newStart
       cursor = endUtf16
       continue
-    } else if (value.startsWith("\\ No newline at end of file")) {
-      kind = "no-newline"
-      hunkIndex = currentHunk?.hunkIndex
-    } else if (currentHunk && value.startsWith("+")) {
+    }
+    if (currentHunk && value.startsWith("+")) {
       kind = "addition"
       hunkIndex = currentHunk.hunkIndex
       lineNew = newLine++
@@ -117,6 +111,13 @@ export function parseDiff(text: string): DiffDocument {
       hunkIndex = currentHunk.hunkIndex
       lineOld = oldLine++
       lineNew = newLine++
+    } else if (startsFile || value.startsWith("--- ") || value.startsWith("+++ ")) {
+      kind = "file-header"
+      if (value.startsWith("--- ")) file.oldPath = pathFromHeader(value.slice(4))
+      if (value.startsWith("+++ ")) file.newPath = pathFromHeader(value.slice(4))
+    } else if (value.startsWith("\\ No newline at end of file")) {
+      kind = "no-newline"
+      hunkIndex = currentHunk?.hunkIndex
     }
 
     const line: DiffLine = {

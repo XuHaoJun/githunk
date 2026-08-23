@@ -105,16 +105,16 @@ export function selectionFromRenderable(document: DiffDocument, nativeRange: Nat
 }
 
 function selectedRange(selection: DocumentSelection | undefined, document: DiffDocument, mode: CopyMode): [number, number] | undefined {
-  if (!selection?.valid && mode !== "hunk" && mode !== "file") return undefined
+  if (!selection?.valid) return undefined
   if (mode === "hunk" || mode === "file") {
-    const file = document.files[selection?.fileIndex ?? 0]
+    const file = document.files[selection.fileIndex ?? -1]
     if (!file) return undefined
     if (mode === "file") return [file.startUtf16, file.endUtf16]
-    const hunk = file.hunks[selection?.hunkIndex ?? 0]
+    const hunk = file.hunks[selection.hunkIndex ?? -1]
     return hunk ? [hunk.startUtf16, hunk.endUtf16] : undefined
   }
-  if (selection?.active === false) return undefined
-  return selection ? [selection.startUtf16, selection.endUtf16] : undefined
+  if (selection.active === false) return undefined
+  return [selection.startUtf16, selection.endUtf16]
 }
 
 function selectedLineText(line: DiffLine, selectionStart: number, selectionEnd: number): string {

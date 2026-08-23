@@ -151,6 +151,7 @@ export class RootView {
     this.model = model
     updateStatusPane(this.panes.status, model)
     updateFilesPane(this.panes.files, model)
+    updateBranchesPane(this.panes.branches, model)
 
     updateCommitsPane(this.panes.commits, model)
     updateStashPane(this.panes.stash, model)

@@ -36,8 +36,8 @@ describe("precise diff selection and copy", () => {
     const value = doc()
     const addition = value.lines.find((line) => line.kind === "addition")!
     const selection = { valid: true as const, startUtf16: addition.startUtf16, endUtf16: addition.endUtf16, fileIndex: 0, hunkIndex: 0 }
-    expect(copySelection(value, undefined, "hunk")).toBe(fixture.slice(fixture.indexOf("@@")))
-    expect(copySelection(value, undefined, "file")).toBe(fixture)
+    expect(copySelection(value, undefined, "hunk")).toBe("")
+    expect(copySelection(value, undefined, "file")).toBe("")
     expect(copySelection(value, selection, "added")).toBe("  new\n")
     expect(copySelection(value, selection, "removed")).toBe("")
   })
@@ -47,6 +47,14 @@ describe("precise diff selection and copy", () => {
     const cursor = { valid: true as const, startUtf16: 0, endUtf16: 0, fileIndex: 0, hunkIndex: 0, active: false }
     expect(copySelection(value, cursor, "hunk")).toBe(fixture.slice(fixture.indexOf("@@")))
     expect(copySelection(value, cursor, "file")).toBe(fixture)
+  })
+  test("whole hunk/file require explicit non-first cursor context", () => {
+    const second = "diff --git a/b.txt b/b.txt\n--- a/b.txt\n+++ b/b.txt\n@@ -1 +1 @@\n-old b\n+new b\n"
+    const value = parseDiff(`${fixture}${second}`)
+    expect(value.text).toBe(`${fixture}${second}`)
+    const cursor = { valid: true as const, startUtf16: fixture.length, endUtf16: fixture.length, fileIndex: 1, hunkIndex: 0, active: false }
+    expect(copySelection(value, cursor, "hunk")).toBe(second.slice(second.indexOf("@@")))
+    expect(copySelection(value, cursor, "file")).toBe(second)
   })
 
   test("Unicode selections preserve exact JS text and UTF-8 bytes", () => {
