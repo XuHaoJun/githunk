@@ -62,8 +62,30 @@ describe("precise diff selection and copy", () => {
     const value = parseDiff(`${fixture}${second}`)
     const target = moveMainCursor(value, { fileIndex: 0, hunkIndex: 0 }, "next")
     expect(target).toEqual({ fileIndex: 1, hunkIndex: 0 })
-    const cursor = { valid: true as const, startUtf16: 0, endUtf16: 0, fileIndex: target!.fileIndex, hunkIndex: target!.hunkIndex, active: false }
+    const cursor = {
+      valid: true as const,
+      startUtf16: 0,
+      endUtf16: 0,
+      fileIndex: target!.fileIndex,
+      ...(target!.hunkIndex === undefined ? {} : { hunkIndex: target!.hunkIndex }),
+      active: false,
+    }
     expect(copySelection(value, cursor, "file")).toBe(second)
+  })
+  test("production Main cursor movement reaches a later hunkless file", () => {
+    const binary = "diff --git a/dir b/old.bin b/dir b/new.bin\nBinary files a/dir b/old.bin and b/dir b/new.bin differ\n"
+    const value = parseDiff(`${fixture}${binary}`)
+    const target = moveMainCursor(value, { fileIndex: 0, hunkIndex: 0 }, "next")
+    expect(target).toEqual({ fileIndex: 1 })
+    const cursor = {
+      valid: true as const,
+      startUtf16: 0,
+      endUtf16: 0,
+      fileIndex: target!.fileIndex,
+      ...(target!.hunkIndex === undefined ? {} : { hunkIndex: target!.hunkIndex }),
+      active: false,
+    }
+    expect(copySelection(value, cursor, "file")).toBe(binary)
   })
 
   test("Unicode selections preserve exact JS text and UTF-8 bytes", () => {

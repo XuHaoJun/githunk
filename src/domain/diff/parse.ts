@@ -5,8 +5,8 @@ function withoutLineEnding(raw: string): string {
 }
 
 function pathFromHeader(value: string): string | undefined {
-  const path = value.replace(/^(?:a|b)\//, "").replace(/^\/dev\/null$/, "/dev/null")
-  return path.split(/[\t ](?=\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2})/, 1)[0]
+  const path = value.replace(/^(?:a|b)\//, "").replace(/^\/dev\/null$/, "/dev/null").split(/[\t ](?=\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2})/, 1)[0]!
+  return stripGitPrefix(path)
 }
 
 function decodeGitQuoted(value: string): string {
@@ -14,24 +14,59 @@ function decodeGitQuoted(value: string): string {
 }
 
 function stripGitPrefix(value: string): string {
-  return decodeGitQuoted(value).replace(/^(?:a|b)\//, "")
+  const token = value.trim()
+  const unquoted = token.startsWith("\"") && token.endsWith("\"") ? token.slice(1, -1) : token
+  return decodeGitQuoted(unquoted).replace(/^(?:a|b)\//, "")
+}
+
+function quotedTokenEnd(value: string): number | undefined {
+  if (!value.startsWith("\"")) return undefined
+  let escaped = false
+  for (let index = 1; index < value.length; index++) {
+    const character = value[index]!
+    if (escaped) {
+      escaped = false
+    } else if (character === "\\") {
+      escaped = true
+    } else if (character === "\"") {
+      return index
+    }
+  }
+  return undefined
 }
 
 function splitGitPaths(value: string): [string | undefined, string | undefined] {
   const body = value.slice("diff --git ".length)
-  if (body.startsWith("\"")) {
-    const firstEnd = body.indexOf("\" ", 1)
-    if (firstEnd >= 0) {
-      const first = body.slice(1, firstEnd)
-      const second = body.slice(firstEnd + 2).trim()
-      return [stripGitPrefix(first), stripGitPrefix(second.replace(/^"|"$/g, ""))]
-    }
+  const firstEnd = quotedTokenEnd(body)
+  if (firstEnd !== undefined && body[firstEnd + 1] === " ") {
+    const second = body.slice(firstEnd + 2).trim()
+    const secondEnd = quotedTokenEnd(second)
+    return [
+      stripGitPrefix(body.slice(1, firstEnd)),
+      stripGitPrefix(secondEnd === undefined ? second : second.slice(1, secondEnd)),
+    ]
   }
   const candidates = [...body.matchAll(/ b\//g)].map((match) => match.index ?? -1).filter((index) => index >= 0)
   // Git quotes ambiguous old paths; for unquoted records the first ` b/` is the separator.
   const splitAt = candidates[0] ?? -1
   if (splitAt < 0) return [undefined, undefined]
   return [stripGitPrefix(body.slice(0, splitAt)), stripGitPrefix(body.slice(splitAt + 1))]
+}
+
+function splitBinaryPaths(value: string, expectedNewPath: string | undefined): [string | undefined, string | undefined] | undefined {
+  if (!value.startsWith("Binary files ") || !value.endsWith(" differ")) return undefined
+  const body = value.slice("Binary files ".length, -" differ".length)
+  const candidates = [...body.matchAll(/ and (?=(?:"?b\/|\/dev\/null))/g)].map((match) => match.index ?? -1).filter((index) => index >= 0)
+  const pairs = candidates.map((splitAt) => [
+    stripGitPrefix(body.slice(0, splitAt)),
+    stripGitPrefix(body.slice(splitAt + " and ".length)),
+  ] as [string | undefined, string | undefined])
+  if (pairs.length === 0) return undefined
+  if (expectedNewPath !== undefined) {
+    const matching = pairs.find((pair) => pair[1] === expectedNewPath)
+    if (matching) return matching
+  }
+  return pairs.length === 1 ? pairs[0] : undefined
 }
 
 function hunkNumbers(value: string): { oldStart: number; oldCount: number; newStart: number; newCount: number } | undefined {
@@ -131,6 +166,19 @@ export function parseDiff(text: string): DiffDocument {
       hunkIndex = currentHunk.hunkIndex
       lineOld = oldLine++
       lineNew = newLine++
+    } else if (value.startsWith("Binary files ")) {
+      const pair = splitBinaryPaths(value, file.newPath)
+      if (pair) {
+        file.oldPath = pair[0]
+        file.newPath = pair[1]
+      } else {
+        file.oldPath = undefined
+        file.newPath = undefined
+      }
+    } else if (value.startsWith("rename from ")) {
+      file.oldPath = pathFromHeader(value.slice("rename from ".length))
+    } else if (value.startsWith("rename to ")) {
+      file.newPath = pathFromHeader(value.slice("rename to ".length))
     } else if (startsFile || value.startsWith("--- ") || value.startsWith("+++ ")) {
       kind = "file-header"
       if (value.startsWith("--- ")) file.oldPath = pathFromHeader(value.slice(4))

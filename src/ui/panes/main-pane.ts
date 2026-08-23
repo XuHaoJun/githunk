@@ -6,7 +6,7 @@ import { renderDiff } from "../../domain/diff/render"
 import { createPane, type PaneHandle } from "./common"
 
 const documents = new WeakMap<PaneHandle, DiffDocument>()
-export type MainCursorTarget = { readonly fileIndex: number; readonly hunkIndex: number }
+export type MainCursorTarget = { readonly fileIndex: number; readonly hunkIndex?: number }
 const cursorTargets = new WeakMap<PaneHandle, MainCursorTarget>()
 
 export function createMainPane(renderer: CliRenderer, model: AppModel): PaneHandle {
@@ -24,11 +24,15 @@ export function getMainCursorTarget(pane: PaneHandle): MainCursorTarget | undefi
 
 export function setMainCursorTarget(pane: PaneHandle, target: MainCursorTarget): void {
   const document = documents.get(pane)
-  if (!document?.files[target.fileIndex]?.hunks[target.hunkIndex]) return
+  const file = document?.files[target.fileIndex]
+  if (!file) return
+  if (target.hunkIndex === undefined ? file.hunks.length > 0 : file.hunks[target.hunkIndex] === undefined) return
   cursorTargets.set(pane, target)
 }
 export function moveMainCursor(document: DiffDocument, current: MainCursorTarget | undefined, direction: "next" | "previous"): MainCursorTarget | undefined {
-  const targets = document.files.flatMap((file) => file.hunks.map((_, hunkIndex) => ({ fileIndex: file.fileIndex, hunkIndex })))
+  const targets: MainCursorTarget[] = document.files.flatMap((file) => file.hunks.length > 0
+    ? file.hunks.map((_, hunkIndex) => ({ fileIndex: file.fileIndex, hunkIndex }))
+    : [{ fileIndex: file.fileIndex }])
   if (targets.length === 0) return undefined
   const currentIndex = current ? targets.findIndex((target) => target.fileIndex === current.fileIndex && target.hunkIndex === current.hunkIndex) : -1
   const nextIndex = Math.max(0, Math.min(targets.length - 1, currentIndex + (direction === "next" ? 1 : -1)))
@@ -54,8 +58,13 @@ export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: bool
 
   const document = parseDiff(raw)
   const previousTarget = cursorTargets.get(pane)
-  const hasPreviousTarget = previousTarget !== undefined && document.files[previousTarget.fileIndex]?.hunks[previousTarget.hunkIndex] !== undefined
+  const previousHunkIndex = previousTarget?.hunkIndex
+  const previousFile = previousTarget ? document.files[previousTarget.fileIndex] : undefined
+  const hasPreviousTarget = previousFile !== undefined
+    && (previousHunkIndex === undefined ? previousFile.hunks.length === 0 : previousFile.hunks[previousHunkIndex] !== undefined)
+  const initialTarget = hasPreviousTarget ? previousTarget : moveMainCursor(document, undefined, "next")
   documents.set(pane, document)
-  cursorTargets.set(pane, hasPreviousTarget ? previousTarget : { fileIndex: 0, hunkIndex: 0 })
+  if (initialTarget) cursorTargets.set(pane, initialTarget)
+  else cursorTargets.delete(pane)
   pane.update(renderDiff(document).styledText)
 }

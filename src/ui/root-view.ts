@@ -202,12 +202,13 @@ export class RootView {
     }
     const target = moveMainCursor(document, getMainCursorTarget(pane), direction)
     if (!target) {
-      pane.box.bottomTitle = "No hunk target"
+      pane.box.bottomTitle = "No file target"
       this.root.requestRender()
       return
     }
     setMainCursorTarget(pane, target)
-    pane.box.bottomTitle = `Cursor file ${target.fileIndex + 1}, hunk ${target.hunkIndex + 1}`
+    const location = target.hunkIndex === undefined ? "file" : `hunk ${target.hunkIndex + 1}`
+    pane.box.bottomTitle = `Cursor file ${target.fileIndex + 1}, ${location}`
     this.root.requestRender()
   }
   private copyMainMode(mode: CopyMode): void {
@@ -222,7 +223,16 @@ export class RootView {
     let selection = nativeRange ? selectionFromRenderable(document, nativeRange, pane.text.getSelectedText()) : undefined
     if (!selection && (mode === "hunk" || mode === "file")) {
       const target = getMainCursorTarget(pane)
-      if (target) selection = { valid: true, startUtf16: 0, endUtf16: 0, fileIndex: target.fileIndex, hunkIndex: target.hunkIndex, active: false }
+      if (target) {
+        selection = {
+          valid: true,
+          startUtf16: 0,
+          endUtf16: 0,
+          fileIndex: target.fileIndex,
+          ...(target.hunkIndex === undefined ? {} : { hunkIndex: target.hunkIndex }),
+          active: false,
+        }
+      }
     }
     const text = copySelection(document, selection, mode)
     if (selection && !selection.valid) {

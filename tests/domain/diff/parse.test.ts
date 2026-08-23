@@ -66,6 +66,15 @@ describe("parseDiff hostile unified diff", () => {
     expect(unquoted.files[0]?.newPath).toBe("dir b/new.bin")
     expect(unquoted.files[0]?.hunks).toHaveLength(0)
   })
+  test("uses binary metadata to disambiguate an old path containing b/", () => {
+    const document = parseDiff("diff --git a/dir b/old.bin b/dir b/new.bin\nBinary files a/dir b/old.bin and b/dir b/new.bin differ\n")
+    expect(document.files[0]?.oldPath).toBe("dir b/old.bin")
+    expect(document.files[0]?.newPath).toBe("dir b/new.bin")
+    expect(document.files[0]?.hunks).toHaveLength(0)
+    const quoted = parseDiff("diff --git \"a/dir b/old.bin\" \"b/dir b/new.bin\"\nBinary files \"a/dir b/old.bin\" and \"b/dir b/new.bin\" differ\n")
+    expect(quoted.files[0]?.oldPath).toBe("dir b/old.bin")
+    expect(quoted.files[0]?.newPath).toBe("dir b/new.bin")
+  })
 
   test("render keeps source text selectable while exposing explicit display map", () => {
     const document = parseDiff(fixture)
