@@ -57,6 +57,12 @@ describe("parseDiff hostile unified diff", () => {
     expect(document.files[0]?.oldPath).toBe("markers")
     expect(document.files[0]?.newPath).toBe("markers")
   })
+  test("parses unquoted paths containing spaces followed by b/ in binary-only headers", () => {
+    const document = parseDiff("diff --git a/dir b/name.txt b/dir b/name.txt\nnew file mode 100644\nBinary files /dev/null and b/dir b/name.txt differ\n")
+    expect(document.files[0]?.oldPath).toBe("dir b/name.txt")
+    expect(document.files[0]?.newPath).toBe("dir b/name.txt")
+    expect(document.files[0]?.hunks).toHaveLength(0)
+  })
 
   test("render keeps source text selectable while exposing explicit display map", () => {
     const document = parseDiff(fixture)

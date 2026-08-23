@@ -16,7 +16,7 @@ import { createBranchesPane, updateBranchesPane } from "./panes/branches-pane"
 import { createCommitsPane, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, updateFilesPane } from "./panes/files-pane"
-import { createMainPane, getMainDocument, updateMainPane } from "./panes/main-pane"
+import { createMainPane, getMainCursorTarget, getMainDocument, updateMainPane } from "./panes/main-pane"
 import { createStashPane, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
@@ -197,7 +197,11 @@ export class RootView {
       return
     }
     const nativeRange = pane.text.getSelection()
-    const selection = nativeRange ? selectionFromRenderable(document, nativeRange, pane.text.getSelectedText()) : undefined
+    let selection = nativeRange ? selectionFromRenderable(document, nativeRange, pane.text.getSelectedText()) : undefined
+    if (!selection && (mode === "hunk" || mode === "file")) {
+      const target = getMainCursorTarget(pane)
+      if (target) selection = { valid: true, startUtf16: 0, endUtf16: 0, fileIndex: target.fileIndex, hunkIndex: target.hunkIndex, active: false }
+    }
     const text = copySelection(document, selection, mode)
     if (selection && !selection.valid) {
       pane.box.bottomTitle = `Selection rejected: ${selection.reason ?? "native/display mismatch"}`

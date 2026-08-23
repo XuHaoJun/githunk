@@ -9,9 +9,33 @@ function pathFromHeader(value: string): string | undefined {
   return path.split(/[\t ](?=\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2})/, 1)[0]
 }
 
+function decodeGitQuoted(value: string): string {
+  return value.replace(/\\([\\"])/g, "$1").replace(/\\t/g, "\t").replace(/\\n/g, "\n")
+}
+
+function stripGitPrefix(value: string): string {
+  return decodeGitQuoted(value).replace(/^(?:a|b)\//, "")
+}
+
 function splitGitPaths(value: string): [string | undefined, string | undefined] {
-  const match = value.match(/^diff --git a\/(.*) b\/(.*)$/)
-  return match ? [match[1], match[2]] : [undefined, undefined]
+  const body = value.slice("diff --git ".length)
+  if (body.startsWith("\"")) {
+    const firstEnd = body.indexOf("\" ", 1)
+    if (firstEnd >= 0) {
+      const first = body.slice(1, firstEnd)
+      const second = body.slice(firstEnd + 2).trim()
+      return [stripGitPrefix(first), stripGitPrefix(second.replace(/^"|"$/g, ""))]
+    }
+  }
+  const candidates = [...body.matchAll(/ b\//g)].map((match) => match.index ?? -1).filter((index) => index >= 0)
+  for (const index of candidates) {
+    const oldPath = body.slice(0, index)
+    const newPath = body.slice(index + 1)
+    if (oldPath.startsWith("a/") && newPath.startsWith("b/") && oldPath.slice(2) === newPath.slice(2)) return [oldPath.slice(2), newPath.slice(2)]
+  }
+  const splitAt = candidates.at(-1) ?? -1
+  if (splitAt < 0) return [undefined, undefined]
+  return [stripGitPrefix(body.slice(0, splitAt)), stripGitPrefix(body.slice(splitAt + 1))]
 }
 
 function hunkNumbers(value: string): { oldStart: number; oldCount: number; newStart: number; newCount: number } | undefined {
