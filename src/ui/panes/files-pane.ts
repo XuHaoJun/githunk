@@ -13,11 +13,14 @@ export function updateFilesPane(pane: PaneHandle, model: AppModel): void {
     ? "No changed files"
     : model.files.map((file) => {
       const gitMarker = file.conflicted ? "!" : file.untracked ? "?" : file.worktreeStatus || file.indexStatus || " "
-      const reviewMarker = model.reviewStatuses?.[file.path] === "reviewed"
+      const reviewStatus = model.reviewStatuses !== undefined && Object.prototype.hasOwnProperty.call(model.reviewStatuses, file.path)
+        ? model.reviewStatuses[file.path]
+        : undefined
+      const reviewMarker = reviewStatus === "reviewed"
         ? "●"
-        : model.reviewStatuses?.[file.path] === "reviewing"
+        : reviewStatus === "reviewing"
           ? "◐"
-          : model.reviewStatuses?.[file.path] === "changed-after-review"
+          : reviewStatus === "changed-after-review"
             ? "!"
             : "○"
       const reason = file.conflicted

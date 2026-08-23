@@ -93,6 +93,18 @@ async function untrackedPatches(runner: GitRunner, files: readonly ChangedFile[]
   }
   return text
 }
+async function untrackedNumstats(runner: GitRunner, files: readonly ChangedFile[]): Promise<readonly NumstatEntry[]> {
+  const stats: NumstatEntry[] = []
+  for (const file of files) {
+    const result = await runner.run(
+      ["diff", "--no-index", "--no-ext-diff", "--no-color", "--numstat", "--", "/dev/null", file.path],
+      { readOnly: true, acceptedExitCodes: [0, 1] },
+    )
+    const entry = parseNumstat(result.stdout)[0]
+    if (entry !== undefined) stats.push({ ...entry, path: file.path })
+  }
+  return stats
+}
 
 /** Load a stable working-tree status, statistics, and raw patches. */
 export async function loadWorkingTree(runner: GitRunner, scope: WorkingTreeScope): Promise<WorkingTreeSnapshot> {
@@ -102,15 +114,14 @@ export async function loadWorkingTree(runner: GitRunner, scope: WorkingTreeScope
   const unstagedStats = includeUnstaged ? parseNumstat((await runner.run(unstagedNumstatArgs, { readOnly: true })).stdout) : []
   const stagedStats = includeStaged ? parseNumstat((await runner.run(stagedNumstatArgs, { readOnly: true })).stdout) : []
   const files = scopeFiles(status.files, scope)
-  const stats = [...(includeUnstaged ? unstagedStats : []), ...(includeStaged ? stagedStats : [])]
+  const untracked = includeUnstaged ? files.filter((file) => file.untracked) : []
+  const untrackedStats = untracked.length > 0 ? await untrackedNumstats(runner, untracked) : []
+  const stats = [...(includeUnstaged ? unstagedStats : []), ...(includeStaged ? stagedStats : []), ...untrackedStats]
   let unstagedText = ""
   let stagedText = ""
   if (includeUnstaged) unstagedText = await runPatch(runner, unstagedPatchArgs)
   if (includeStaged) stagedText = await runPatch(runner, stagedPatchArgs)
-  if (includeUnstaged) {
-    const untracked = files.filter((file) => file.untracked)
-    if (untracked.length > 0) unstagedText += await untrackedPatches(runner, untracked)
-  }
+  if (untracked.length > 0) unstagedText += await untrackedPatches(runner, untracked)
   const patches: PatchSection[] = []
   if (includeStaged) patches.push({ label: "STAGED", text: stagedText })
   if (includeUnstaged) patches.push({ label: "UNSTAGED", text: unstagedText })

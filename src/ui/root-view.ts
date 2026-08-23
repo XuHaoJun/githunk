@@ -37,7 +37,7 @@ export type RootViewOptions = {
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
-  readonly onMarkFocusedFileReviewed?: (path: string) => Promise<void>
+  readonly onMarkFocusedFileReviewed?: (path?: string) => Promise<void>
   readonly onRefresh?: () => Promise<void>
 }
 
@@ -67,7 +67,7 @@ export class RootView {
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
   private readonly onSelectFile: ((path: string) => void) | undefined
-  private readonly onMarkFocusedFileReviewed: ((path: string) => Promise<void>) | undefined
+  private readonly onMarkFocusedFileReviewed: ((path?: string) => Promise<void>) | undefined
   private readonly onRefresh: (() => Promise<void>) | undefined
   private fileCursorIndex = 0
   private copyMenuOpen = false
@@ -194,8 +194,10 @@ export class RootView {
     updateStatusPane(this.panes.status, model)
     updateFilesPane(this.panes.files, model)
     updateBranchesPane(this.panes.branches, model)
-    this.fileCursorIndex = this.model.files.length === 0 ? 0 : Math.min(this.fileCursorIndex, this.model.files.length - 1)
-
+    const focusedIndex = model.focusId === undefined ? -1 : model.files.findIndex((file) => file.path === model.focusId)
+    this.fileCursorIndex = focusedIndex >= 0
+      ? focusedIndex
+      : model.files.length === 0 ? 0 : Math.min(this.fileCursorIndex, model.files.length - 1)
     updateCommitsPane(this.panes.commits, model)
     updateStashPane(this.panes.stash, model)
     updateMainPane(this.panes.main, model, this.geometry.tooSmall)
@@ -260,8 +262,8 @@ export class RootView {
         return true
       }
       const file = this.model.files[this.fileCursorIndex]
-      if (file !== undefined && key.name === "r" && this.onMarkFocusedFileReviewed !== undefined) {
-        this.runUiMutation(this.onMarkFocusedFileReviewed(file.path))
+      if (key.name === "r" && this.onMarkFocusedFileReviewed !== undefined) {
+        this.runUiMutation(this.onMarkFocusedFileReviewed(this.model.focusId ?? this.model.selectionId))
         return true
       }
       if (key.name === "a" && this.onToggleAllFiles !== undefined) {

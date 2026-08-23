@@ -50,7 +50,7 @@ export async function startApp(): Promise<number> {
       view.update(controller.state)
     },
     onMarkFocusedFileReviewed: async (path) => {
-      try { await controller.markFileReviewed(path) } finally { view.update(controller.state) }
+      try { await controller.markFocusedFileReviewed(path) } finally { view.update(controller.state) }
     },
     onRefresh: async () => {
       try { await controller.refresh() } finally { view.update(controller.state) }

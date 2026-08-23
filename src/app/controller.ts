@@ -41,6 +41,9 @@ function rawPatchForFile(file: ChangedFile, patches: readonly PatchSection[]): s
   }
   return result
 }
+function ownValue<T>(record: Record<string, T> | undefined, key: string): T | undefined {
+  return record !== undefined && Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined
+}
 
 export class AppController {
   readonly runner: GitRunner | undefined
@@ -78,7 +81,7 @@ export class AppController {
       files: [],
       patches: [],
       rawPatchSections: [],
-      reviewStatuses: {},
+      reviewStatuses: Object.create(null) as Record<string, ReviewFileState>,
       reviewSummary: { reviewed: 0, invalidated: 0, commits: 0, files: 0, additions: 0, deletions: 0 },
       loading: false,
       commandLog: runner?.log.records() ?? [],
@@ -100,7 +103,7 @@ export class AppController {
   }
 
   selectFile(path: string): void {
-    const status = this.currentState.reviewStatuses?.[path]
+    const status = ownValue(this.currentState.reviewStatuses, path)
     if (status === undefined || status === "not-reviewed" || status === "reviewing") {
       this.currentState = {
         ...this.currentState,
@@ -127,7 +130,7 @@ export class AppController {
       rawPatch: rawPatchForFile(file, this.currentState.rawPatchSections),
     })
     const key = targetKey(this.currentState.reviewTarget)
-    const targetRecord = this.reviewDatabase.targets[key] ?? { files: {} }
+    const targetRecord = ownValue(this.reviewDatabase.targets, key) ?? { files: {} }
     const database: ReviewDatabase = {
       ...this.reviewDatabase,
       targets: {
@@ -142,9 +145,11 @@ export class AppController {
     }
     this.reviewDatabase = database
     await this.reviewStore?.save(database)
+    const reviewStatuses = { ...(this.currentState.reviewStatuses ?? {}), [path]: "reviewed" as const }
     this.currentState = {
       ...this.currentState,
-      reviewStatuses: { ...(this.currentState.reviewStatuses ?? {}), [path]: "reviewed" },
+      reviewStatuses,
+      reviewSummary: this.reviewSummaryFor(reviewStatuses, this.currentState.files),
     }
   }
 
@@ -213,6 +218,24 @@ export class AppController {
     })
   }
 
+  private reviewSummaryFor(statuses: Readonly<Record<string, ReviewFileState>>, files: readonly ChangedFile[]): {
+    readonly reviewed: number
+    readonly invalidated: number
+    readonly commits: number
+    readonly files: number
+    readonly additions: number
+    readonly deletions: number
+  } {
+    return {
+      reviewed: Object.values(statuses).filter((status) => status === "reviewed").length,
+      invalidated: Object.values(statuses).filter((status) => status === "changed-after-review").length,
+      commits: 0,
+      files: files.length,
+      additions: files.reduce((total, file) => total + file.additions, 0),
+      deletions: files.reduce((total, file) => total + file.deletions, 0),
+    }
+  }
+
   private async reviewForSnapshot(target: ReviewTarget, files: readonly ChangedFile[], patches: readonly PatchSection[]): Promise<{
     readonly statuses: Readonly<Record<string, ReviewFileState>>
     readonly summary: { readonly reviewed: number; readonly invalidated: number; readonly commits: number; readonly files: number; readonly additions: number; readonly deletions: number }
@@ -227,28 +250,19 @@ export class AppController {
         warning = error instanceof Error ? error.message : String(error)
       }
     }
-    const record = this.reviewDatabase.targets[targetKey(target)]
-    const statuses: Record<string, ReviewFileState> = {}
+    const record = ownValue(this.reviewDatabase.targets, targetKey(target))
+    const statuses: Record<string, ReviewFileState> = Object.create(null) as Record<string, ReviewFileState>
     for (const file of files) {
       const fingerprint = fingerprintFile(target, {
         currentPath: file.path,
         previousPath: file.previousPath,
         rawPatch: rawPatchForFile(file, patches),
       })
-      statuses[file.path] = reviewStateFor(record?.files[file.path], fingerprint)
+      statuses[file.path] = reviewStateFor(ownValue(record?.files, file.path), fingerprint)
     }
-    const reviewed = Object.values(statuses).filter((status) => status === "reviewed").length
-    const invalidated = Object.values(statuses).filter((status) => status === "changed-after-review").length
     return {
       statuses,
-      summary: {
-        reviewed,
-        invalidated,
-        commits: 0,
-        files: files.length,
-        additions: files.reduce((total, file) => total + file.additions, 0),
-        deletions: files.reduce((total, file) => total + file.deletions, 0),
-      },
+      summary: this.reviewSummaryFor(statuses, files),
       ...(warning === undefined ? {} : { warning }),
     }
   }

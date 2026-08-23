@@ -1,5 +1,5 @@
-import { mkdir, open, rename, stat, unlink } from "node:fs/promises"
-import { dirname, isAbsolute, join } from "node:path"
+import { mkdir, open, rename, stat, unlink, lstat } from "node:fs/promises"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 import { randomUUID } from "node:crypto"
 import { GitRunner } from "../git/runner"
 import type { ReviewDatabase } from "../domain/review-progress"
@@ -11,13 +11,16 @@ export function emptyReviewDatabase(): ReviewDatabase {
 }
 
 function isDatabase(value: unknown): value is ReviewDatabase {
-  if (value === null || typeof value !== "object") return false
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false
   const candidate = value as Partial<ReviewDatabase>
-  if (candidate.version !== 1 || candidate.baseByBranch === null || typeof candidate.baseByBranch !== "object" || candidate.targets === null || typeof candidate.targets !== "object") return false
+  if (candidate.version !== 1 || candidate.baseByBranch === null || typeof candidate.baseByBranch !== "object" || Array.isArray(candidate.baseByBranch) || candidate.targets === null || typeof candidate.targets !== "object" || Array.isArray(candidate.targets)) return false
+  for (const base of Object.values(candidate.baseByBranch)) {
+    if (base === null || typeof base !== "object" || typeof base.ref !== "string") return false
+  }
   for (const target of Object.values(candidate.targets)) {
-    if (target === null || typeof target !== "object" || target.files === null || typeof target.files !== "object") return false
+    if (target === null || typeof target !== "object" || Array.isArray(target) || target.files === null || typeof target.files !== "object" || Array.isArray(target.files)) return false
     for (const file of Object.values(target.files)) {
-      if (file === null || typeof file !== "object" || typeof file.reviewedFingerprint !== "string" || typeof file.reviewedAt !== "string") return false
+      if (file === null || typeof file !== "object" || Array.isArray(file) || typeof file.reviewedFingerprint !== "string" || typeof file.reviewedAt !== "string") return false
     }
   }
   return true
@@ -29,6 +32,20 @@ export type ReviewStoreOptions = {
   readonly onWarning?: ((warning: string) => void) | undefined
 }
 
+async function assertNoSymlinkInPath(path: string): Promise<void> {
+  const absolute = resolve(path)
+  const segments = absolute.split("/").filter(Boolean)
+  let current = absolute.startsWith("/") ? "/" : ""
+  for (const segment of segments) {
+    current = current === "/" ? `/${segment}` : `${current}/${segment}`
+    try {
+      if ((await lstat(current)).isSymbolicLink()) throw new Error(`refusing symlinked review-state path component: ${current}`)
+    } catch (error) {
+      if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") break
+      throw error
+    }
+  }
+}
 export class ReviewStore {
   private readonly runner: GitRunner
   private readonly onWarning: ((warning: string) => void) | undefined
@@ -51,6 +68,7 @@ export class ReviewStore {
     this.warning = undefined
     const path = await this.resolvePath()
     let text: string
+    await assertNoSymlinkInPath(path)
     try {
       text = await Bun.file(path).text()
     } catch (error) {
@@ -72,8 +90,10 @@ export class ReviewStore {
 
   async save(database: ReviewDatabase): Promise<void> {
     const path = await this.resolvePath()
+    await assertNoSymlinkInPath(path)
     await mkdir(dirname(path), { recursive: true, mode: 0o700 })
     const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`
+    await assertNoSymlinkInPath(temporary)
     const handle = await open(temporary, "wx", 0o600)
     try {
       await handle.writeFile(`${JSON.stringify(database)}\n`, "utf8")

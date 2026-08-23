@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { access, readdir, readFile, stat } from "node:fs/promises"
+import { access, mkdir, readdir, readFile, stat, symlink } from "node:fs/promises"
 import { join } from "node:path"
 import { ReviewStore, emptyReviewDatabase } from "../../src/review/store"
 import { createTempRepository } from "../helpers/temp-repository"
@@ -33,6 +33,19 @@ describe("review store", () => {
       expect(loaded).toEqual(emptyReviewDatabase())
       expect(store.warning).toContain("corrupt")
       expect((await readdir(join(repository.path, ".git", "githunk"))).some((name) => name.startsWith("review-state-v1.json.corrupt-") || name.startsWith("review-state-v1.corrupt-"))).toBe(true)
+    } finally {
+      await repository.cleanup()
+    }
+  })
+  test("rejects symlinked metadata directories before writing", async () => {
+    const repository = await createTempRepository()
+    try {
+      const outside = join(repository.path, "outside-state")
+      await mkdir(outside)
+      await symlink(outside, join(repository.path, ".git", "githunk"), "dir")
+      const store = new ReviewStore(repository.path)
+      await expect(store.save(emptyReviewDatabase())).rejects.toThrow("symlinked review-state path component")
+      await expect(access(join(outside, "review-state-v1.json"))).rejects.toThrow()
     } finally {
       await repository.cleanup()
     }

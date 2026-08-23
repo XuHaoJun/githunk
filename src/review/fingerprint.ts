@@ -30,7 +30,7 @@ export function targetFingerprintParts(target: ReviewTarget): readonly string[] 
     case "working-tree":
       return [target.kind, target.scope, "", ""]
     case "branch":
-      return [target.kind, "", target.baseOid, target.headOid, target.baseRef]
+      return [target.kind, "", target.baseOid, target.headOid]
     case "commit":
       return [target.kind, "", target.oid, "", ""]
     case "stash":
