@@ -133,6 +133,8 @@ export class RootView {
     renderer.root.add(this.root)
 
     this.focusManager.onChange = (focus, logVisible) => {
+      this.discardPending = false
+      this.pendingFileDiscard = undefined
       this.applyFocus(focus)
       this.geometry = computeLayout(
         { width: renderer.terminalWidth, height: renderer.terminalHeight },
