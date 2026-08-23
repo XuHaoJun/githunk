@@ -16,7 +16,7 @@ import { createBranchesPane, updateBranchesPane } from "./panes/branches-pane"
 import { createCommitsPane, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, updateFilesPane } from "./panes/files-pane"
-import { createMainPane, getMainCursorTarget, getMainDocument, updateMainPane } from "./panes/main-pane"
+import { createMainPane, getMainCursorTarget, getMainDocument, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
 import { createStashPane, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
@@ -185,9 +185,31 @@ export class RootView {
       this.root.requestRender()
       return true
     }
+    if (!key.ctrl && !key.meta && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
+      this.moveMainCursor(key.name === "j" || key.name === "down" ? "next" : "previous")
+      return true
+    }
     return false
   }
 
+  private moveMainCursor(direction: "next" | "previous"): void {
+    const pane = this.panes.main
+    const document = getMainDocument(pane)
+    if (!document) {
+      pane.box.bottomTitle = "No patch loaded"
+      this.root.requestRender()
+      return
+    }
+    const target = moveMainCursor(document, getMainCursorTarget(pane), direction)
+    if (!target) {
+      pane.box.bottomTitle = "No hunk target"
+      this.root.requestRender()
+      return
+    }
+    setMainCursorTarget(pane, target)
+    pane.box.bottomTitle = `Cursor file ${target.fileIndex + 1}, hunk ${target.hunkIndex + 1}`
+    this.root.requestRender()
+  }
   private copyMainMode(mode: CopyMode): void {
     const pane = this.panes.main
     const document = getMainDocument(pane)

@@ -57,11 +57,14 @@ describe("parseDiff hostile unified diff", () => {
     expect(document.files[0]?.oldPath).toBe("markers")
     expect(document.files[0]?.newPath).toBe("markers")
   })
-  test("parses unquoted paths containing spaces followed by b/ in binary-only headers", () => {
-    const document = parseDiff("diff --git a/dir b/name.txt b/dir b/name.txt\nnew file mode 100644\nBinary files /dev/null and b/dir b/name.txt differ\n")
-    expect(document.files[0]?.oldPath).toBe("dir b/name.txt")
-    expect(document.files[0]?.newPath).toBe("dir b/name.txt")
-    expect(document.files[0]?.hunks).toHaveLength(0)
+  test("parses quoted ambiguous old paths and unquoted new paths containing b/", () => {
+    const quoted = parseDiff("diff --git \"a/dir b/old.bin\" \"b/dir b/old.bin\"\nBinary files a/dir b/old.bin and b/dir b/old.bin differ\n")
+    expect(quoted.files[0]?.oldPath).toBe("dir b/old.bin")
+    expect(quoted.files[0]?.newPath).toBe("dir b/old.bin")
+    const unquoted = parseDiff("diff --git a/old.bin b/dir b/new.bin\nBinary files a/old.bin and b/dir b/new.bin differ\n")
+    expect(unquoted.files[0]?.oldPath).toBe("old.bin")
+    expect(unquoted.files[0]?.newPath).toBe("dir b/new.bin")
+    expect(unquoted.files[0]?.hunks).toHaveLength(0)
   })
 
   test("render keeps source text selectable while exposing explicit display map", () => {

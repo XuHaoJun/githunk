@@ -3,6 +3,7 @@ import { parseDiff } from "../../../src/domain/diff/parse"
 import type { DiffDocument } from "../../../src/domain/diff/document"
 import { renderDiff } from "../../../src/domain/diff/render"
 import { copySelection, selectionFromRenderable } from "../../../src/domain/diff/selection"
+import { moveMainCursor } from "../../../src/ui/panes/main-pane"
 
 type Fixture = DiffDocument
 const fixture = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n context\n-old\n+  new\n"
@@ -54,6 +55,14 @@ describe("precise diff selection and copy", () => {
     expect(value.text).toBe(`${fixture}${second}`)
     const cursor = { valid: true as const, startUtf16: fixture.length, endUtf16: fixture.length, fileIndex: 1, hunkIndex: 0, active: false }
     expect(copySelection(value, cursor, "hunk")).toBe(second.slice(second.indexOf("@@")))
+    expect(copySelection(value, cursor, "file")).toBe(second)
+  })
+  test("production Main cursor movement reaches later files before keyboard copy", () => {
+    const second = "diff --git a/b.txt b/b.txt\n--- a/b.txt\n+++ b/b.txt\n@@ -1 +1 @@\n-old b\n+new b\n"
+    const value = parseDiff(`${fixture}${second}`)
+    const target = moveMainCursor(value, { fileIndex: 0, hunkIndex: 0 }, "next")
+    expect(target).toEqual({ fileIndex: 1, hunkIndex: 0 })
+    const cursor = { valid: true as const, startUtf16: 0, endUtf16: 0, fileIndex: target!.fileIndex, hunkIndex: target!.hunkIndex, active: false }
     expect(copySelection(value, cursor, "file")).toBe(second)
   })
 

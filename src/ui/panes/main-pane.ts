@@ -27,6 +27,13 @@ export function setMainCursorTarget(pane: PaneHandle, target: MainCursorTarget):
   if (!document?.files[target.fileIndex]?.hunks[target.hunkIndex]) return
   cursorTargets.set(pane, target)
 }
+export function moveMainCursor(document: DiffDocument, current: MainCursorTarget | undefined, direction: "next" | "previous"): MainCursorTarget | undefined {
+  const targets = document.files.flatMap((file) => file.hunks.map((_, hunkIndex) => ({ fileIndex: file.fileIndex, hunkIndex })))
+  if (targets.length === 0) return undefined
+  const currentIndex = current ? targets.findIndex((target) => target.fileIndex === current.fileIndex && target.hunkIndex === current.hunkIndex) : -1
+  const nextIndex = Math.max(0, Math.min(targets.length - 1, currentIndex + (direction === "next" ? 1 : -1)))
+  return targets[nextIndex]
+}
 
 export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: boolean): void {
   if (tooSmall) {

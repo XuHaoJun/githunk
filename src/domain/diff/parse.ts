@@ -28,12 +28,8 @@ function splitGitPaths(value: string): [string | undefined, string | undefined] 
     }
   }
   const candidates = [...body.matchAll(/ b\//g)].map((match) => match.index ?? -1).filter((index) => index >= 0)
-  for (const index of candidates) {
-    const oldPath = body.slice(0, index)
-    const newPath = body.slice(index + 1)
-    if (oldPath.startsWith("a/") && newPath.startsWith("b/") && oldPath.slice(2) === newPath.slice(2)) return [oldPath.slice(2), newPath.slice(2)]
-  }
-  const splitAt = candidates.at(-1) ?? -1
+  // Git quotes ambiguous old paths; for unquoted records the first ` b/` is the separator.
+  const splitAt = candidates[0] ?? -1
   if (splitAt < 0) return [undefined, undefined]
   return [stripGitPrefix(body.slice(0, splitAt)), stripGitPrefix(body.slice(splitAt + 1))]
 }
