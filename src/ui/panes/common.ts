@@ -22,6 +22,7 @@ export function createPane(
     borderColor: "#555555",
     focusedBorderColor: "#ffffff",
     title,
+    position: "absolute",
     width: "100%",
     height: "100%",
     overflow: "hidden",

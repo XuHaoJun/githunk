@@ -79,8 +79,11 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
     : clamp(requestedLog, logMinimum, logMaximum)
   const mainHeight = terminalHeight - horizontalSplitterHeight - logHeight
   const logY = mainHeight + horizontalSplitterHeight
-
-  const tooSmall = mainWidth < MIN_MAIN_WIDTH || mainHeight < MIN_MAIN_HEIGHT
+  const widthTooSmall = terminalWidth < MIN_LEFT_WIDTH + VERTICAL_SPLITTER_WIDTH + MIN_MAIN_WIDTH
+  const heightTooSmall = logVisible
+    ? terminalHeight < MIN_MAIN_HEIGHT + HORIZONTAL_SPLITTER_HEIGHT + MIN_LOG_HEIGHT
+    : terminalHeight < MIN_MAIN_HEIGHT
+  const tooSmall = widthTooSmall || heightTooSmall || mainWidth < MIN_MAIN_WIDTH || mainHeight < MIN_MAIN_HEIGHT
   return {
     terminalWidth,
     terminalHeight,

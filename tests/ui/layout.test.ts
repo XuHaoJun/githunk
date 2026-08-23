@@ -36,6 +36,16 @@ describe("computeLayout", () => {
     expect(layout.horizontalSplitterHeight).toBe(0)
     expect(layout.mainHeight).toBe(40)
   })
+  test("marks infeasible preferred regions as too small", () => {
+    const narrow = computeLayout({ width: 58, height: 40 }, { logVisible: false })
+    const short = computeLayout({ width: 120, height: 11 }, { logVisible: true })
+
+    expect(narrow.tooSmall).toBe(true)
+    expect(short.tooSmall).toBe(true)
+    expect(narrow.mainWidth).toBeGreaterThanOrEqual(1)
+    expect(short.mainHeight).toBeGreaterThanOrEqual(1)
+  })
+
 
   test("does not produce negative dimensions at tiny terminal sizes", () => {
     for (const width of [1, 2, 10, 20]) {

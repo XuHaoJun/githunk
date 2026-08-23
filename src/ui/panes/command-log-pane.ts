@@ -32,6 +32,7 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
     borderColor: "#555555",
     focusedBorderColor: "#ffffff",
     title: "Command Log",
+    position: "absolute",
     width: "100%",
     height: "100%",
     overflow: "hidden",

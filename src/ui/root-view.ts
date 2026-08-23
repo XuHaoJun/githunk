@@ -90,7 +90,10 @@ export class RootView {
       height: 1,
       backgroundColor: "#333333",
     })
-    this.horizontalSplitter.selectable = false
+    for (const id of FOCUS_IDS) this.root.add(this.panes[id].box)
+    this.root.add(this.commandLog.box)
+    this.root.add(this.verticalSplitter)
+    this.root.add(this.horizontalSplitter)
     renderer.root.add(this.root)
 
     this.focusManager.onChange = (focus, logVisible) => {
