@@ -65,4 +65,21 @@ describe("review invalidation", () => {
       await repository.cleanup()
     }
   })
+  test("marks the first file when Files starts focused without a prior path", async () => {
+    const repository = await createTempRepository()
+    try {
+      const patch = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-a\n+a\n"
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        reviewStore: new ReviewStore(repository.path),
+        load: async () => snapshot(repository.path, patch),
+      })
+      await controller.refresh()
+      await controller.markFocusedFileReviewed()
+      expect(controller.state.reviewStatuses?.["a.ts"]).toBe("reviewed")
+      expect(controller.state.reviewSummary?.reviewed).toBe(1)
+    } finally {
+      await repository.cleanup()
+    }
+  })
 })

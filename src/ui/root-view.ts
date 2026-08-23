@@ -263,7 +263,11 @@ export class RootView {
       }
       const file = this.model.files[this.fileCursorIndex]
       if (key.name === "r" && this.onMarkFocusedFileReviewed !== undefined) {
-        this.runUiMutation(this.onMarkFocusedFileReviewed(this.model.focusId ?? this.model.selectionId))
+        const focusedPath = this.model.focusId ?? this.model.selectionId
+        const reviewPath = focusedPath !== undefined && this.model.files.some((candidate) => candidate.path === focusedPath)
+          ? focusedPath
+          : file?.path
+        this.runUiMutation(this.onMarkFocusedFileReviewed(reviewPath))
         return true
       }
       if (key.name === "a" && this.onToggleAllFiles !== undefined) {

@@ -116,9 +116,13 @@ export class AppController {
     }
   }
 
-  async markFocusedFileReviewed(path = this.currentState.focusId ?? this.currentState.selectionId): Promise<void> {
-    if (path === undefined) return
-    await this.markFileReviewed(path)
+  async markFocusedFileReviewed(path?: string): Promise<void> {
+    const requestedPath = path ?? this.currentState.focusId ?? this.currentState.selectionId
+    const resolvedPath = requestedPath !== undefined && this.currentState.files.some((file) => file.path === requestedPath)
+      ? requestedPath
+      : this.currentState.files[0]?.path
+    if (resolvedPath === undefined) return
+    await this.markFileReviewed(resolvedPath)
   }
 
   async markFileReviewed(path: string): Promise<void> {
