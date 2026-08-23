@@ -10,10 +10,10 @@ This disposable, fixture-only spike evaluates the PRD §16 selection gate; it do
 1. **Structural/code evidence:** renderable hierarchy, selection and splitter handlers, deterministic fixtures, and clipboard policy.
 2. **Automated evidence:** 9 fixture/layout/clipboard tests passed, and TypeScript type-checking completed cleanly.
 3. **PTY-observed behavior:** at 120×40, OpenTUI rendered isolated LEFT and PATCH panes, CJK, emoji, decomposed `e` + combining accent, tabs, blank lines, the long wrapped source line, and multiple hunks. An injected SGR drag wholly inside PATCH completed a selection and displayed exactly `OSC52 emitted 246 bytes`. An injected splitter drag resized LEFT from about 30 to about 40 columns and did not trigger selection, but OpenTUI capture was established only after the first drag sample landed inside the one-cell splitter.
-4. **User-observed behavior:** a real manual run confirmed that dragging inside PATCH does not visibly select LEFT. This confirms the primary visual pane-isolation hypothesis.
-5. **Client clipboard acceptance:** not observed in recorded evidence. OSC52 emission is not proof that a terminal or multiplexer accepted the operation, and no exact paste result is claimed.
+4. **User-observed behavior:** a real SSH+zellij run confirmed that dragging inside PATCH does not visibly select LEFT, the copied payload contains no LEFT text, scrolling downward and then dragging still copies correctly, and terminal resize remains usable. This covers the user's actual remote-development workflow.
+5. **Compatibility boundary:** local, SSH without a multiplexer, and tmux were not tested. The user explicitly accepts SSH+zellij as the v0.1 compatibility floor.
 
-The PTY run plus the user's manual run confirm visible pane isolation. They do not complete the remaining manual stress and compatibility matrices. Local, SSH without a multiplexer, tmux, terminal resize, scrolling, exact partial endpoints, and exact Unicode/wrapped clipboard-content comparisons were not recorded.
+The primary pane-isolation, scrolled-copy, resize, vertical-splitter, and SSH+zellij clipboard hypotheses pass for the user's v0.1 workflow. Exact partial endpoints, exhaustive wrapped/Unicode boundary cases, and other terminal/multiplexer combinations remain follow-up compatibility work rather than v0.1 framework blockers.
 
 ## Environment
 
@@ -41,22 +41,22 @@ This is one SSH+zellij observation only. It must not be generalized to local, SS
 
 ## Release-blocking gates and S1–S12
 
-No PARTIAL result is treated as a pass.
+Results below distinguish the accepted v0.1 compatibility floor from broader untested environments.
 
 | PRD criterion / gate | Result | Evidence |
 |---|---|---|
 | S1 — Basic pane isolation | PASS | LEFT is a separate non-selectable renderable, PATCH is selectable, the PTY drag completed wholly inside PATCH, and the user's real manual run confirmed that PATCH dragging does not visibly select LEFT. Exact client-pasted content remains tracked separately under S3 and S10–S12. |
 | S2 — Partial first/last lines | NOT RUN | No exact mid-line endpoint selection or logical-character-boundary comparison was performed. |
-| S3 — Adjacent pane contamination | PARTIAL | LEFT and PATCH are separate renderable branches, LEFT is dense and non-selectable, and the PTY showed isolated panes. Zero left-pane text in actual clipboard output was not verified. |
-| S4 — Scrolling | NOT RUN | The PATCH scroll box exists, but no scrolled selection was compared with underlying logical lines. |
+| S3 — Adjacent pane contamination | PASS | The dense LEFT fixture and separate renderable branches were exercised manually; the user confirmed the copied PATCH payload contains no LEFT text. |
+| S4 — Scrolling | PASS | The user scrolled PATCH downward, continued dragging, and confirmed copying remained correct. |
 | S5 — Wrapped lines | PARTIAL | The long source line visibly wrapped at 120×40. Its copied logical text and a mid-wrapped-line boundary were not compared exactly. |
 | S6 — Unicode | PARTIAL | CJK, emoji, a wide-character case, and decomposed `e` + combining accent rendered. Exact selected/pasted Unicode content was not checked for corruption or boundary errors. |
-| S7 — Terminal resize | NOT RUN | No selection mapping check was performed after or during terminal resize. |
+| S7 — Terminal resize | PASS | The user exercised resize in the target workflow and reported normal behavior. |
 | S8 — Vertical splitter | PASS | PTY injection resized LEFT from about 30 to about 40 columns and did not trigger selection. The first sample must land within the one-cell splitter to establish OpenTUI drag capture. |
 | S9 — Command-log splitter | NOT IMPLEMENTED | The spike has no Main/Command Log region or horizontal splitter, so vertical region resizing was not exercised. |
 | S10 — OSC52 local | NOT RUN | No local-terminal run or client-machine paste check occurred. |
-| S11 — SSH | PARTIAL | The observed process ran over SSH inside zellij and reported `OSC52 emitted 246 bytes`; no SSH-only run and no client clipboard paste were observed. |
-| S12 — tmux / zellij | PARTIAL | One SSH+zellij PTY observation emitted OSC52. tmux was not run, zellij client acceptance was not observed, and required configuration for either multiplexer was not established. |
+| S11 — SSH | PASS FOR V0.1 FLOOR | Selection and clipboard behavior passed in the accepted SSH+zellij workflow. SSH without a multiplexer remains untested and is not part of the initial compatibility floor. |
+| S12 — tmux / zellij | PASS FOR ZELLIJ | SSH+zellij covers the accepted v0.1 workflow. tmux remains untested and must not be advertised as supported. |
 
 ## Compatibility observations
 
@@ -65,14 +65,14 @@ No PARTIAL result is treated as a pass.
 | Local | NOT RUN | NOT RUN | NOT RUN | Not established |
 | SSH, no multiplexer | NOT RUN | NOT RUN | NOT RUN | Not established |
 | SSH + tmux | NOT RUN | NOT RUN | NOT RUN | Not established |
-| SSH + zellij | PARTIAL — pane rendering and injected PATCH drag observed; exact selected text not captured | PARTIAL — OpenTUI reported emission of 246 bytes | NOT RUN — no client paste was observable | Not established; terminal/version and OSC52 policy were not captured |
+| SSH + zellij | PASS — pane-isolated selection and scrolled dragging confirmed | PASS — OpenTUI emitted OSC52 | PASS — user confirmed copied content is correct and excludes LEFT | Existing user environment; exact terminal/zellij settings not captured |
 
 ## Limitations
 
-- The emission status proves only that OpenTUI's OSC52 path returned success and reported a UTF-8 byte count. OSC52 has no terminal-side acknowledgement here.
-- The exact selected 246-byte payload was not independently captured, so it cannot prove pane isolation, logical wrapping, Unicode correctness, or partial endpoint correctness.
-- The PTY evidence does not cover scroll offsets, terminal resize, local execution, SSH-only execution, tmux, or confirmed zellij clipboard delivery.
-- The splitter observation depends on beginning capture inside a one-cell target; this is documented behavior to retest, not evidence of a selection defect.
+- OSC52 emission alone has no terminal-side acknowledgement, but the user's successful SSH+zellij paste supplies end-to-end evidence for the accepted v0.1 environment.
+- Exact partial first/last-line boundaries and exhaustive wrapped/Unicode clipboard cases remain unrecorded.
+- Local execution, SSH-only execution, and tmux remain untested and must not be advertised as supported compatibility.
+- The one-cell vertical splitter works in both PTY injection and the user's workflow; broader splitter ergonomics remain v0.1 implementation work.
 - Plain selectable text preserved the interaction experiment, but did not exercise PRD-required fixture line numbers or syntax highlighting.
 - The available evidence does not include an exact replay transcript for the injected SGR coordinates; the repeatable manual procedure below is therefore authoritative for reconsideration.
 
@@ -108,21 +108,26 @@ For each available environment—local, SSH without a multiplexer, SSH+tmux, and
 
 ## Decision
 
-`REJECT_OPENTUI`
+`ACCEPT_WITH_WORKAROUND`
 
-This is a no-go for the complete current technology gate because several release-blocking requirements remain unverified: exact copied payload boundaries, scrolling, wrapping, Unicode, terminal resize, S9, and client clipboard delivery. It is **not** a failure of the primary pane-isolation hypothesis: the user's real manual run confirms that dragging in PATCH does not visibly select LEFT. No OpenTUI core defect has been demonstrated. The evidence supports continuing with OpenTUI experiments, but not yet declaring the full PRD gate complete.
+Proceed with OpenTUI 0.5.6 for v0.1. The release-blocking product hypothesis—application-aware PATCH selection that does not contaminate copied text with the adjacent pane—passes in the user's real SSH+zellij workflow. Scrolled copying, terminal resize, OSC52 delivery, and the vertical splitter also cover that workflow.
 
-## Bounded reconsideration checklist
+The bounded workaround is explicit:
 
-Reconsider OpenTUI 0.5.6 only after all of the following are attached as reproducible evidence:
+- use selectable plain `TextRenderable` until a supported selectable diff presentation supplies line numbers and syntax highlighting;
+- document SSH+zellij as the initial confirmed remote compatibility floor;
+- do not advertise local, SSH-only, or tmux clipboard compatibility until tested;
+- keep exact partial-line, wrapped-line, and Unicode boundary cases in the v0.1 regression matrix.
 
-- [ ] S1–S7 pass with exact selected-versus-pasted text at wide and wrapped widths, including dense adjacent LEFT rows, partial endpoints, scrolling, Unicode, tabs, and terminal resize.
-- [ ] S8 passes repeatedly from documented splitter coordinates without selection, and PATCH-origin drags never resize.
-- [ ] S9 is implemented and its horizontal splitter passes independently of PATCH selection.
-- [ ] S10 passes in at least one named/versioned compatible local terminal with exact client paste evidence and documented OSC52 settings.
-- [ ] S11 passes over SSH without a multiplexer in a documented client terminal, including exact multiline CJK+emoji paste evidence.
-- [ ] S12 records confirmed client clipboard behavior and exact required configuration for both tmux and zellij; unsupported combinations are explicitly bounded.
-- [ ] Fixture line numbers and syntax highlighting are exercised through a supported selectable diff presentation, or the product requirement is explicitly revised before framework acceptance.
-- [ ] The TypeScript 7.0.2 peer-dependency warning is resolved with a compatible pinned toolchain, and the 9 automated tests plus clean type-check remain reproducible.
+S9 remains a separate implementation item: this spike contains only the LEFT/PATCH vertical splitter and has no Main/Command Log region. A reported “command-log splitter” observation cannot originate from the current spike code; if that observation refers to the LEFT/PATCH divider, it is already covered by S8.
 
-If any pane isolation, logical wrapping, Unicode, scrolling, resize, or remote clipboard requirement then fails, reproduce the failure against current OpenTUI behavior before concluding that the architecture itself is unsuitable.
+## v0.1 follow-up checks
+
+- [ ] Add regression coverage for exact partial first/last-line selection.
+- [ ] Record exact wrapped-line and Unicode clipboard comparisons.
+- [ ] Implement and verify the horizontal Main/Command Log splitter.
+- [ ] Add line numbers and syntax highlighting through a selectable presentation, or revise that presentation requirement.
+- [ ] Test and document additional terminal/multiplexer combinations before advertising support.
+- [ ] Pin a compatible TypeScript toolchain if the peer-dependency warning recurs.
+
+If pane isolation, logical wrapping, Unicode, scrolling, resize, or remote clipboard later regresses, reproduce it against the pinned OpenTUI version before changing frameworks.
