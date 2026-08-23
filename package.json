@@ -1,0 +1,16 @@
+{
+  "name": "githunk",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "spike:selection": "bun run spikes/selection/src/main.ts"
+  },
+  "dependencies": {
+    "@opentui/core": "0.5.6"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "latest"
+  }
+}
