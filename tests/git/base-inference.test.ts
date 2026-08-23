@@ -34,7 +34,7 @@ describe("inferReviewBase", () => {
       if (merged.exitCode !== 0) throw new Error(merged.stderr)
 
       const result = await inferReviewBase(new GitRunner(repository.path))
-      expect(result).toEqual({ kind: "confident", ref: "origin/main", oid: baseOid, reason: expect.any(String) })
+      expect(result).toEqual({ kind: "confident", ref: "refs/remotes/origin/main", oid: baseOid, reason: expect.any(String) })
     } finally {
       await repository.cleanup()
     }
@@ -50,7 +50,7 @@ describe("inferReviewBase", () => {
       const result = await inferReviewBase(new GitRunner(repository.path))
       expect(result.kind).toBe("confident")
       if (result.kind === "confident") {
-        expect(result.ref).toBe("origin/main")
+        expect(result.ref).toBe("refs/remotes/origin/main")
         expect(result.oid).toBe(baseOid)
       }
     } finally {

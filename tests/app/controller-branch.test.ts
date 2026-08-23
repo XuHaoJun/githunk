@@ -49,4 +49,80 @@ describe("AppController branch mode", () => {
     await controller.switchMode("branch")
     expect(controller.state.focusId).toBe("branch.txt")
   })
+  test("clears Working Tree focus on first Branch switch", async () => {
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async (target) => workingSnapshot(target.scope),
+      loadBranch: async (baseRef) => branchSnapshot(baseRef),
+      inferBase: async () => ({ kind: "confident", ref: "origin/main", oid: "base-oid", reason: "test" }),
+    })
+    await controller.refresh()
+    controller.selectFile("working.txt")
+    await controller.switchMode("branch")
+    expect(controller.state.focusId).toBeUndefined()
+    expect(controller.state.selectionId).toBeUndefined()
+  })
+
+  test("keeps aggregate commit count when marking a Branch file reviewed", async () => {
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async (target) => workingSnapshot(target.scope),
+      loadBranch: async (baseRef) => branchSnapshot(baseRef),
+      inferBase: async () => ({ kind: "confident", ref: "origin/main", oid: "base-oid", reason: "test" }),
+    })
+    await controller.switchMode("branch")
+    await controller.markFileReviewed("branch.txt")
+    expect(controller.state.reviewSummary?.commits).toBe(3)
+  })
+
+  test("does not invoke mutations in Branch Review", async () => {
+    let stages = 0
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async (target) => workingSnapshot(target.scope),
+      loadBranch: async (baseRef) => branchSnapshot(baseRef),
+      inferBase: async () => ({ kind: "confident", ref: "origin/main", oid: "base-oid", reason: "test" }),
+      mutations: { stageFile: async () => { stages += 1 } } as never,
+    })
+    await controller.switchMode("branch")
+    await controller.stageFile("branch.txt")
+    expect(stages).toBe(0)
+    expect(controller.state.banner).toBe("Branch Review is read-only")
+  })
+
+  test("does not persist an inferred base when Branch loading fails", async () => {
+    let saves = 0
+    const reviewStore = {
+      async load() { return { version: 1 as const, baseByBranch: {}, targets: {} } },
+      async save() { saves += 1 },
+    }
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      reviewStore: reviewStore as never,
+      load: async (target) => workingSnapshot(target.scope),
+      loadBranch: async () => { throw new Error("merge-base failed") },
+      inferBase: async () => ({ kind: "confident", ref: "origin/main", oid: "base-oid", reason: "test" }),
+    })
+    await controller.refresh()
+    await controller.switchMode("branch")
+    expect(saves).toBe(0)
+    expect(controller.state.banner).toBe("merge-base failed")
+  })
+
+  test("revalidates the base when the open Branch Review is refreshed", async () => {
+    let inference = 0
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async (target) => workingSnapshot(target.scope),
+      loadBranch: async (baseRef) => branchSnapshot(baseRef),
+      inferBase: async () => {
+        inference += 1
+        return { kind: "confident" as const, ref: inference === 1 ? "origin/main" : "origin/release", oid: "base-oid", reason: "test" }
+      },
+    })
+    await controller.switchMode("branch")
+    expect(controller.state.reviewTarget.kind === "branch" ? controller.state.reviewTarget.baseRef : "").toBe("origin/main")
+    await controller.refresh()
+    expect(controller.state.reviewTarget.kind === "branch" ? controller.state.reviewTarget.baseRef : "").toBe("origin/release")
+  })
 })

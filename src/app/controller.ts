@@ -115,7 +115,7 @@ export class AppController {
     if (target.kind === "working-tree") {
       await this.refreshTarget(target)
     } else if (target.kind === "branch") {
-      await this.refreshBranchTarget(target.baseRef)
+      await this.openBranchReview()
     }
   }
 
@@ -133,8 +133,8 @@ export class AppController {
   }
 
   async setBranchBase(baseRef: string): Promise<void> {
-    await this.rememberBase(baseRef)
-    await this.refreshBranchTarget(baseRef)
+    const loaded = await this.refreshBranchTarget(baseRef)
+    if (loaded) await this.rememberBase(baseRef)
   }
 
   async chooseBase(baseRef: string): Promise<void> {
@@ -144,16 +144,19 @@ export class AppController {
   private async openBranchReview(): Promise<void> {
     let baseRef: string | undefined
     let stalePersistedBase = false
+    let storeWarning: string | undefined
     const branchKey = this.runner === undefined ? this.currentState.branch : await currentBranchRef(this.runner)
     if (branchKey !== undefined && this.reviewStore !== undefined) {
       try {
         this.reviewDatabase = await this.reviewStore.load()
+        storeWarning = this.reviewStore.warning
         const persisted = ownValue(this.reviewDatabase.baseByBranch, branchKey)?.ref
         if (persisted !== undefined) {
           if (this.runner !== undefined && await resolveRefOid(this.runner, persisted) !== undefined) baseRef = persisted
           else stalePersistedBase = true
         }
-      } catch {
+      } catch (error) {
+        storeWarning = error instanceof Error ? error.message : String(error)
         baseRef = undefined
       }
     }
@@ -167,13 +170,19 @@ export class AppController {
               candidates: this.runner === undefined ? [] : await reviewBaseCandidates(this.runner),
               reason: "persisted base ref no longer resolves",
             }
-        this.currentState = { ...this.currentState, basePicker: picker, loading: false }
+        this.currentState = {
+          ...this.currentState,
+          basePicker: picker,
+          loading: false,
+          ...(storeWarning === undefined ? {} : { banner: storeWarning }),
+          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        }
         return
       }
       baseRef = inferred.ref
-      await this.rememberBase(baseRef, branchKey)
     }
-    await this.refreshBranchTarget(baseRef)
+    const loaded = await this.refreshBranchTarget(baseRef)
+    if (loaded) await this.rememberBase(baseRef, branchKey)
   }
 
   private async rememberBase(baseRef: string, branchKey?: string): Promise<void> {
@@ -247,31 +256,37 @@ export class AppController {
     this.currentState = {
       ...this.currentState,
       reviewStatuses,
-      reviewSummary: this.reviewSummaryFor(reviewStatuses, this.currentState.files),
+      reviewSummary: this.reviewSummaryFor(reviewStatuses, this.currentState.files, this.currentState.reviewSummary?.commits ?? 0),
     }
   }
-
   async stageFile(path: string): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.mutations?.stageFile(path))
   }
 
   async unstageFile(path: string): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.mutations?.unstageFile(path))
   }
 
   async applySelection(document: DiffDocument, includedLineIndexes: readonly number[], options: SelectionMutationOptions): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.mutations?.applySelection(document, includedLineIndexes, options))
   }
 
   async discardSelection(document: DiffDocument, includedLineIndexes: readonly number[], options?: Omit<SelectionMutationOptions, "reverse"> & { readonly reverse?: false }): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.mutations?.discardSelection(document, includedLineIndexes, options))
   }
 
   async discardFile(path: string, untracked = false): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.mutations?.discardFile(path, untracked))
   }
 
+
   async toggleAllFiles(): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.mutationQueue.run(async () => {
       const files = this.currentState.files
       const shouldStage = files.some((file) => file.untracked || file.worktreeStatus !== ".")
@@ -294,6 +309,11 @@ export class AppController {
         throw error
       }
     })
+  }
+  private ensureWorkingTreeMutation(): boolean {
+    if (this.currentState.reviewTarget.kind === "working-tree") return true
+    this.currentState = { ...this.currentState, banner: "Branch Review is read-only" }
+    return false
   }
 
   private async runMutation(operation: () => Promise<void> | undefined): Promise<void> {
@@ -372,8 +392,10 @@ export class AppController {
       if (generation !== this.generation) return
       const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
       if (generation !== this.generation) return
-      const cursor = this.workingTreeCursor
-      const { upstream: _previousUpstream, banner: _previousBanner, basePicker: _previousPicker, ...previousState } = this.currentState
+      const cursor = this.currentState.reviewTarget.kind === "working-tree"
+        ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
+        : this.workingTreeCursor
+      const { upstream: _previousUpstream, banner: _previousBanner, basePicker: _previousPicker, selectionId: _previousSelectionId, focusId: _previousFocusId, ...previousState } = this.currentState
       this.currentState = {
         ...previousState,
         ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
@@ -406,18 +428,21 @@ export class AppController {
     }
   }
 
-  private async refreshBranchTarget(baseRef: string): Promise<void> {
+  private async refreshBranchTarget(baseRef: string): Promise<boolean> {
     const generation = ++this.generation
     this.publishIfCurrent(generation, { loading: true })
     try {
       const snapshot = await this.loadBranchSnapshot(baseRef)
-      if (generation !== this.generation) return
+      if (generation !== this.generation) return false
       const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
-      if (generation !== this.generation) return
-      const cursor = this.branchCursor
-      const { upstream: _previousUpstream, banner: _previousBanner, basePicker: _previousPicker, ...previousState } = this.currentState
+      if (generation !== this.generation) return false
+      const cursor = this.currentState.reviewTarget.kind === "branch"
+        ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
+        : this.branchCursor
+      const { upstream: _previousUpstream, banner: _previousBanner, basePicker: _previousPicker, selectionId: _previousSelectionId, focusId: _previousFocusId, ...previousState } = this.currentState
       this.currentState = {
         ...previousState,
+        ...(review.warning === undefined ? {} : { banner: review.warning }),
         branch: snapshot.branch,
         reviewTarget: snapshot.reviewTarget,
         files: snapshot.files,
@@ -431,8 +456,9 @@ export class AppController {
         ...(cursor.selectionId === undefined ? {} : { selectionId: cursor.selectionId }),
         ...(cursor.focusId === undefined ? {} : { focusId: cursor.focusId }),
       }
+      return true
     } catch (error) {
-      if (generation !== this.generation) return
+      if (generation !== this.generation) return false
       const banner = error instanceof GitCommandError
         ? (error.record.stderr || error.message)
         : error instanceof Error ? error.message : String(error)
@@ -442,6 +468,7 @@ export class AppController {
         banner,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
       }
+      return false
     }
   }
 

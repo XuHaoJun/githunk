@@ -70,6 +70,7 @@ export class RootView {
   private readonly onChooseBase: ((baseRef: string) => Promise<void>) | undefined
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
+  private basePickerIndex = 0
   private readonly onSelectFile: ((path: string) => void) | undefined
   private readonly onMarkFocusedFileReviewed: ((path?: string) => Promise<void>) | undefined
   private readonly onRefresh: (() => Promise<void>) | undefined
@@ -197,9 +198,10 @@ export class RootView {
 
   update(model: AppModel): void {
     this.model = model
+    const pickerCount = model.basePicker?.candidates.length ?? 0
+    this.basePickerIndex = pickerCount === 0 ? 0 : Math.min(this.basePickerIndex, pickerCount - 1)
+    if (model.basePicker === undefined) this.basePickerIndex = 0
     updateStatusPane(this.panes.status, model)
-    updateFilesPane(this.panes.files, model)
-    updateBranchesPane(this.panes.branches, model)
     const focusedIndex = model.focusId === undefined ? -1 : model.files.findIndex((file) => file.path === model.focusId)
     this.fileCursorIndex = focusedIndex >= 0
       ? focusedIndex
@@ -248,22 +250,39 @@ export class RootView {
       return true
     }
     if (this.model.basePicker !== undefined && this.onChooseBase !== undefined) {
-      const index = Number(key.name) - 1
-      if (Number.isInteger(index) && index >= 0 && index < this.model.basePicker.candidates.length) {
-        this.runUiMutation(this.onChooseBase(this.model.basePicker.candidates[index]!))
+      if (this.mutationInFlight) return true
+      const count = this.model.basePicker.candidates.length
+      const numericIndex = Number(key.name) - 1
+      if (Number.isInteger(numericIndex) && numericIndex >= 0 && numericIndex < count) {
+        this.runUiMutation(this.onChooseBase(this.model.basePicker.candidates[numericIndex]!))
+        return true
+      }
+      if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
+        this.basePickerIndex = Math.max(0, Math.min(count - 1, this.basePickerIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
+        this.panes.status.box.bottomTitle = `${this.basePickerIndex + 1}/${count}: ${this.model.basePicker.candidates[this.basePickerIndex]} — Enter to choose`
+        return true
+      }
+      if (count > 0 && key.name === "enter") {
+        this.runUiMutation(this.onChooseBase(this.model.basePicker.candidates[this.basePickerIndex]!))
         return true
       }
     }
     if (!key.ctrl && !key.meta && key.name === "b" && this.onModeChange !== undefined) {
+      if (this.mutationInFlight) return true
       this.runUiMutation(this.onModeChange("branch"))
       return true
     }
     if (!key.ctrl && !key.meta && key.name === "w" && this.onModeChange !== undefined) {
+      if (this.mutationInFlight) return true
       this.runUiMutation(this.onModeChange("working-tree"))
       return true
     }
     if (this.mutationInFlight && ["space", "d", "tab", "a"].includes(key.name)) {
       this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
+      return true
+    }
+    if (this.model.reviewTarget.kind === "branch" && ["space", "d", "a"].includes(key.name)) {
+      this.panes.main.box.bottomTitle = "Branch Review is read-only"
       return true
     }
     if (this.focusManager.active === "files") {

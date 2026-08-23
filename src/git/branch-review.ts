@@ -36,7 +36,7 @@ export async function loadBranchReview(runner: CommandRunner, baseRef: string): 
     path: stat.path,
     ...(stat.previousPath === undefined ? {} : { previousPath: stat.previousPath }),
     indexStatus: ".",
-    worktreeStatus: "M",
+    worktreeStatus: ".",
     untracked: false,
     conflicted: false,
     additions: stat.additions,
