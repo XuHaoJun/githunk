@@ -3,14 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "bun run src/main.ts",
+    "dev": "bun --watch src/main.ts",
+    "spike:selection": "bun run spikes/selection/src/main.ts",
     "test": "bun test",
-    "spike:selection": "bun run spikes/selection/src/main.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@opentui/core": "0.5.6"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "latest"
+    "@types/bun": "1.4.0",
+    "typescript": "5.9.2"
   }
 }

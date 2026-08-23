@@ -9,5 +9,5 @@
     "types": ["bun-types"],
     "skipLibCheck": true
   },
-  "include": ["spikes/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "spikes/**/*.ts"]
 }
