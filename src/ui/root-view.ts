@@ -22,7 +22,7 @@ import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
 import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
 import type { CopyMode } from "../domain/diff/document"
-import { ClipboardService, type ClipboardPort } from "./clipboard"
+import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
 import { COPY_MENU_ITEMS } from "./copy-menu"
 export type RootViewOptions = {
   readonly leftWidth?: number
@@ -203,7 +203,7 @@ export class RootView {
       this.root.requestRender()
       return
     }
-    pane.box.bottomTitle = this.clipboard.copy(text).message
+    pane.box.bottomTitle = formatCopyResult(this.clipboard.copy(text))
     this.root.requestRender()
   }
 
