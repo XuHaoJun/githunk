@@ -7,7 +7,7 @@ import {
 
 describe("selection spike fixtures", () => {
   test("left fixture is dense enough to expose row contamination", () => {
-    expect(LEFT_FIXTURE.length).toBeGreaterThanOrEqual(20)
+    expect(LEFT_FIXTURE.length).toBeGreaterThanOrEqual(40)
     expect(LEFT_FIXTURE.some((line) => line.includes("中文"))).toBe(true)
     expect(LEFT_FIXTURE.some((line) => line.includes("🚀"))).toBe(true)
   })
