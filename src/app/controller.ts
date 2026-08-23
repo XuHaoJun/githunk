@@ -104,8 +104,8 @@ export class AppController {
           if (shouldStage) await this.mutations?.stageFile(file.path)
           else await this.mutations?.unstageFile(file.path)
           await this.refresh()
+          if (this.currentState.banner !== undefined) throw new Error(this.currentState.banner)
         }
-        await this.refresh()
       } catch (error) {
         const banner = error instanceof GitCommandError
           ? (error.record.stderr || error.message)

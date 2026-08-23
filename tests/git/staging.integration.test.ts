@@ -4,10 +4,13 @@ import { GitMutations } from "../../src/git/mutations"
 import { GitRunner } from "../../src/git/runner"
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
 
+function withoutIndex(raw: string): string {
+  return raw.split("\n").filter((line) => !line.startsWith("index ")).join("\n")
+}
+
 describe("GitMutations", () => {
   let repo: TempRepository
   let runner: GitRunner
-
   beforeEach(async () => {
     repo = await createTempRepository()
     runner = new GitRunner({ cwd: repo.path })
@@ -26,13 +29,29 @@ describe("GitMutations", () => {
     const document = parseDiff(patch)
     const selected = document.lines.flatMap((line, index) => line.raw === "+first\n" ? [index] : [])
     await new GitMutations(runner).applySelection(document, selected, { reverse: false, wholeFile: false })
-
-    const staged = (await repo.git(["diff", "--cached", "--", "file.txt"])).stdout
-    const unstaged = (await repo.git(["diff", "--", "file.txt"])).stdout
-    expect(staged).toContain("+first\n")
-    expect(staged).not.toContain("+second\n")
-    expect(unstaged).toContain("+second\n")
-    expect(unstaged).not.toContain("+first\n")
+    const staged = (await repo.git(["diff", "--cached", "--no-color", "--binary", "--", "file.txt"])).stdout
+    const unstaged = (await repo.git(["diff", "--no-color", "--binary", "--", "file.txt"])).stdout
+    expect(withoutIndex(staged)).toBe([
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1,2 +1,3 @@",
+      " base",
+      "+first",
+      " keep",
+      "",
+    ].join("\n"))
+    expect(withoutIndex(unstaged)).toBe([
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1,3 +1,4 @@",
+      " base",
+      " first",
+      " keep",
+      "+second",
+      "",
+    ].join("\n"))
   })
 
   test("serially stages a file and then unstages it without losing the change", async () => {
@@ -61,11 +80,25 @@ describe("GitMutations", () => {
     const selected = document.lines.flatMap((line, index) => line.raw === "-base\n" ? [index] : [])
     await new GitMutations(runner).applySelection(document, selected, { reverse: false, wholeFile: false })
 
-    const staged = (await repo.git(["diff", "--cached", "--", "file.txt"])).stdout
-    const unstaged = (await repo.git(["diff", "--", "file.txt"])).stdout
-    expect(staged).toContain("-base\n")
-    expect(staged).not.toContain("-keep\n")
-    expect(unstaged).toContain("-keep\n")
+    const staged = (await repo.git(["diff", "--cached", "--no-color", "--binary", "--", "file.txt"])).stdout
+    const unstaged = (await repo.git(["diff", "--no-color", "--binary", "--", "file.txt"])).stdout
+    expect(withoutIndex(staged)).toBe([
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1,2 +1 @@",
+      "-base",
+      " keep",
+      "",
+    ].join("\n"))
+    expect(withoutIndex(unstaged)).toBe([
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1 +0,0 @@",
+      "-keep",
+      "",
+    ].join("\n"))
   })
 
   test("stages a selected change in a quoted Unicode path", async () => {
@@ -77,7 +110,16 @@ describe("GitMutations", () => {
     const document = parseDiff(patch)
     const selected = document.lines.flatMap((line, index) => line.raw === "+changed\n" ? [index] : [])
     await new GitMutations(runner).applySelection(document, selected, { reverse: false, wholeFile: false })
-    expect((await repo.git(["diff", "--cached", "--", "é.txt"])).stdout).toContain("+changed\n")
+    const actual = (await repo.git(["diff", "--cached", "--no-color", "--binary", "--", "é.txt"])).stdout
+    expect(withoutIndex(actual)).toBe([
+      "diff --git \"a/\\303\\251.txt\" \"b/\\303\\251.txt\"",
+      "--- \"a/\\303\\251.txt\"",
+      "+++ \"b/\\303\\251.txt\"",
+      "@@ -1 +1,2 @@",
+      " base",
+      "+changed",
+      "",
+    ].join("\n"))
   })
 
   test("discards an untracked file only through clean", async () => {

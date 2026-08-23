@@ -230,8 +230,9 @@ export class RootView {
     }
     if (this.focusManager.active === "files") {
       if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
-        const delta = key.name === "j" || key.name === "down" ? 1 : -1
-        this.fileCursorIndex = Math.max(0, Math.min(this.model.files.length - 1, this.fileCursorIndex + delta))
+        this.pendingFileDiscard = undefined
+        this.discardPending = false
+        this.fileCursorIndex = Math.max(0, Math.min(this.model.files.length - 1, this.fileCursorIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
         this.panes.files.box.bottomTitle = this.model.files[this.fileCursorIndex]?.path ?? "No files"
         return true
       }
@@ -325,6 +326,15 @@ export class RootView {
         }
         return true
       }
+      const availability = modelFile?.conflicted
+        ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: conflicted file" }
+        : modelFile !== undefined && !modelFile.untracked && modelFile.additions === 0 && modelFile.deletions === 0
+          ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: binary file" }
+          : mainActionAvailability(document, target)
+      if (!availability.canDiscardLines) {
+        this.panes.main.box.bottomTitle = availability.reason
+        return true
+      }
       
       if (selected === undefined || selected.indexes.length === 0) {
         this.panes.main.box.bottomTitle = "No changed lines selected"
@@ -379,6 +389,8 @@ export class RootView {
       this.root.requestRender()
     }).finally(() => {
       this.mutationInFlight = false
+      this.discardPending = false
+      this.pendingFileDiscard = undefined
     })
   }
 
@@ -397,6 +409,8 @@ export class RootView {
       return
     }
     setMainCursorTarget(pane, target)
+    this.discardPending = false
+    this.pendingFileDiscard = undefined
     const location = target.hunkIndex === undefined ? "file" : `hunk ${target.hunkIndex + 1}`
     pane.box.bottomTitle = `Cursor file ${target.fileIndex + 1}, ${location}`
     this.root.requestRender()
