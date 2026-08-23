@@ -3,7 +3,7 @@ import type { ChangedFile, ReviewTarget, WorkingTreeScope } from "./review-targe
 import type { ReviewFileState } from "./review-progress"
 
 export type PatchSection = {
-  readonly label: "STAGED" | "UNSTAGED"
+  readonly label: "STAGED" | "UNSTAGED" | "BRANCH"
   readonly text: string
 }
 
@@ -36,6 +36,10 @@ export type AppModel = {
   readonly selectionId?: string
   readonly focusId?: string
   readonly loading: boolean
+  readonly basePicker?: {
+    readonly candidates: readonly string[]
+    readonly reason: string
+  }
   readonly banner?: string
   readonly commandLog: readonly CommandRecord[]
   readonly title: string

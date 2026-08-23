@@ -1,5 +1,7 @@
 import { GitRunner, GitCommandError } from "../git/runner"
 import { loadWorkingTree } from "../git/diff"
+import { loadBranchReview, type BranchReviewSnapshot } from "../git/branch-review"
+import { inferReviewBase, currentBranchRef, resolveRefOid, reviewBaseCandidates, type BaseInference } from "../git/base-inference"
 import { parseDiff } from "../domain/diff/parse"
 import type { DiffDocument } from "../domain/diff/document"
 import type { AppModel, PatchSection } from "../domain/repository"
@@ -12,21 +14,26 @@ import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
 import { MutationQueue } from "./mutation-queue"
 
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
+export type BranchReviewLoader = (baseRef: string) => Promise<BranchReviewSnapshot>
+export type BaseInferenceLoader = () => Promise<BaseInference>
 
 export type AppControllerOptions = {
   readonly repositoryRoot?: string
   readonly runner?: GitRunner
   readonly load?: WorkingTreeLoader
   readonly loader?: WorkingTreeLoader
+  readonly loadBranch?: BranchReviewLoader
+  readonly branchLoader?: BranchReviewLoader
+  readonly inferBase?: BaseInferenceLoader
   readonly mutations?: GitMutations
   readonly reviewStore?: ReviewStore
 }
 
-function titleFor(target: ReviewTarget): string {
+function titleFor(target: ReviewTarget, branch = ""): string {
   if (target.kind === "working-tree") {
     return `Working Tree — ${target.scope[0]?.toUpperCase() ?? "A"}${target.scope.slice(1)}`
   }
-  if (target.kind === "branch") return `Branch — ${target.baseRef}`
+  if (target.kind === "branch") return `${branch || "Branch"} vs ${target.baseRef}`
   if (target.kind === "commit") return `Commit — ${target.oid}`
   return `Stash — ${target.ref}`
 }
@@ -51,9 +58,13 @@ export class AppController {
   readonly reviewStore: ReviewStore | undefined
   readonly mutationQueue = new MutationQueue()
   private readonly loadSnapshot: WorkingTreeLoader
+  private readonly loadBranchSnapshot: BranchReviewLoader
+  private readonly inferBase: BaseInferenceLoader
   private generation = 0
   private currentState: AppModel
   private reviewDatabase: ReviewDatabase = emptyReviewDatabase()
+  private workingTreeCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
+  private branchCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
 
   constructor(options: AppControllerOptions | GitRunner, loader?: WorkingTreeLoader) {
     const runner = options instanceof GitRunner ? options : options.runner
@@ -73,6 +84,12 @@ export class AppController {
       if (runner === undefined) throw new Error("AppController requires a GitRunner or loader")
       return loadWorkingTree(runner, target.scope)
     })
+    this.loadBranchSnapshot = options instanceof GitRunner
+      ? (baseRef) => loadBranchReview(options, baseRef)
+      : options.loadBranch ?? options.branchLoader ?? (runner === undefined ? async () => { throw new Error("Branch review requires a GitRunner") } : (baseRef) => loadBranchReview(runner, baseRef))
+    this.inferBase = options instanceof GitRunner
+      ? () => inferReviewBase(options)
+      : options.inferBase ?? (runner === undefined ? async () => ({ kind: "choose" as const, candidates: [], reason: "no Git runner" }) : () => inferReviewBase(runner))
     const target: ReviewTarget = { kind: "working-tree", scope: "all" }
     this.currentState = {
       repositoryRoot: repositoryRoot ?? "",
@@ -95,11 +112,88 @@ export class AppController {
 
   async refresh(): Promise<void> {
     const target = this.currentState.reviewTarget
-    await this.refreshTarget(target.kind === "working-tree" ? target : { kind: "working-tree", scope: "all" })
+    if (target.kind === "working-tree") {
+      await this.refreshTarget(target)
+    } else if (target.kind === "branch") {
+      await this.refreshBranchTarget(target.baseRef)
+    }
   }
 
   async setWorkingTreeScope(scope: WorkingTreeScope): Promise<void> {
-    await this.refreshTarget({ kind: "working-tree", scope })
+    await this.switchMode("working-tree", scope)
+  }
+
+  async switchMode(mode: "working-tree" | "branch", scope: WorkingTreeScope = "all"): Promise<void> {
+    this.rememberCursor()
+    if (mode === "working-tree") {
+      await this.refreshTarget({ kind: "working-tree", scope })
+      return
+    }
+    await this.openBranchReview()
+  }
+
+  async setBranchBase(baseRef: string): Promise<void> {
+    await this.rememberBase(baseRef)
+    await this.refreshBranchTarget(baseRef)
+  }
+
+  async chooseBase(baseRef: string): Promise<void> {
+    await this.setBranchBase(baseRef)
+  }
+
+  private async openBranchReview(): Promise<void> {
+    let baseRef: string | undefined
+    let stalePersistedBase = false
+    const branchKey = this.runner === undefined ? this.currentState.branch : await currentBranchRef(this.runner)
+    if (branchKey !== undefined && this.reviewStore !== undefined) {
+      try {
+        this.reviewDatabase = await this.reviewStore.load()
+        const persisted = ownValue(this.reviewDatabase.baseByBranch, branchKey)?.ref
+        if (persisted !== undefined) {
+          if (this.runner !== undefined && await resolveRefOid(this.runner, persisted) !== undefined) baseRef = persisted
+          else stalePersistedBase = true
+        }
+      } catch {
+        baseRef = undefined
+      }
+    }
+    if (baseRef === undefined) {
+      const inferred = await this.inferBase()
+      if (inferred.kind === "choose" || stalePersistedBase) {
+        const picker = inferred.kind === "choose"
+          ? inferred
+          : {
+              kind: "choose" as const,
+              candidates: this.runner === undefined ? [] : await reviewBaseCandidates(this.runner),
+              reason: "persisted base ref no longer resolves",
+            }
+        this.currentState = { ...this.currentState, basePicker: picker, loading: false }
+        return
+      }
+      baseRef = inferred.ref
+      await this.rememberBase(baseRef, branchKey)
+    }
+    await this.refreshBranchTarget(baseRef)
+  }
+
+  private async rememberBase(baseRef: string, branchKey?: string): Promise<void> {
+    if (this.reviewStore === undefined) return
+    const key = branchKey ?? (this.runner === undefined ? this.currentState.branch : await currentBranchRef(this.runner))
+    if (key === undefined) return
+    this.reviewDatabase = {
+      ...this.reviewDatabase,
+      baseByBranch: { ...this.reviewDatabase.baseByBranch, [key]: { ref: baseRef } },
+    }
+    await this.reviewStore.save(this.reviewDatabase)
+  }
+
+  private rememberCursor(): void {
+    const cursor = {
+      ...(this.currentState.selectionId === undefined ? {} : { selectionId: this.currentState.selectionId }),
+      ...(this.currentState.focusId === undefined ? {} : { focusId: this.currentState.focusId }),
+    }
+    if (this.currentState.reviewTarget.kind === "branch") this.branchCursor = cursor
+    else this.workingTreeCursor = cursor
   }
 
   selectFile(path: string): void {
@@ -222,7 +316,7 @@ export class AppController {
     })
   }
 
-  private reviewSummaryFor(statuses: Readonly<Record<string, ReviewFileState>>, files: readonly ChangedFile[]): {
+  private reviewSummaryFor(statuses: Readonly<Record<string, ReviewFileState>>, files: readonly ChangedFile[], commits = 0): {
     readonly reviewed: number
     readonly invalidated: number
     readonly commits: number
@@ -233,7 +327,7 @@ export class AppController {
     return {
       reviewed: Object.values(statuses).filter((status) => status === "reviewed").length,
       invalidated: Object.values(statuses).filter((status) => status === "changed-after-review").length,
-      commits: 0,
+      commits,
       files: files.length,
       additions: files.reduce((total, file) => total + file.additions, 0),
       deletions: files.reduce((total, file) => total + file.deletions, 0),
@@ -278,11 +372,14 @@ export class AppController {
       if (generation !== this.generation) return
       const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
       if (generation !== this.generation) return
-      const { upstream: _previousUpstream, banner: _previousBanner, ...previousState } = this.currentState
+      const cursor = this.workingTreeCursor
+      const { upstream: _previousUpstream, banner: _previousBanner, basePicker: _previousPicker, ...previousState } = this.currentState
       this.currentState = {
         ...previousState,
         ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
         ...(review.warning === undefined ? {} : { banner: review.warning }),
+        ...(cursor.selectionId === undefined ? {} : { selectionId: cursor.selectionId }),
+        ...(cursor.focusId === undefined ? {} : { focusId: cursor.focusId }),
         repositoryRoot: snapshot.repositoryRoot,
         branch: snapshot.branch,
         reviewTarget: snapshot.reviewTarget,
@@ -293,7 +390,46 @@ export class AppController {
         reviewSummary: review.summary,
         loading: false,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
-        title: titleFor(snapshot.reviewTarget),
+        title: titleFor(snapshot.reviewTarget, snapshot.branch),
+      }
+    } catch (error) {
+      if (generation !== this.generation) return
+      const banner = error instanceof GitCommandError
+        ? (error.record.stderr || error.message)
+        : error instanceof Error ? error.message : String(error)
+      this.currentState = {
+        ...this.currentState,
+        loading: false,
+        banner,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    }
+  }
+
+  private async refreshBranchTarget(baseRef: string): Promise<void> {
+    const generation = ++this.generation
+    this.publishIfCurrent(generation, { loading: true })
+    try {
+      const snapshot = await this.loadBranchSnapshot(baseRef)
+      if (generation !== this.generation) return
+      const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
+      if (generation !== this.generation) return
+      const cursor = this.branchCursor
+      const { upstream: _previousUpstream, banner: _previousBanner, basePicker: _previousPicker, ...previousState } = this.currentState
+      this.currentState = {
+        ...previousState,
+        branch: snapshot.branch,
+        reviewTarget: snapshot.reviewTarget,
+        files: snapshot.files,
+        patches: snapshot.patches,
+        rawPatchSections: snapshot.patches,
+        reviewStatuses: review.statuses,
+        reviewSummary: this.reviewSummaryFor(review.statuses, snapshot.files, snapshot.commitCount),
+        loading: false,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        title: titleFor(snapshot.reviewTarget, snapshot.branch),
+        ...(cursor.selectionId === undefined ? {} : { selectionId: cursor.selectionId }),
+        ...(cursor.focusId === undefined ? {} : { focusId: cursor.focusId }),
       }
     } catch (error) {
       if (generation !== this.generation) return

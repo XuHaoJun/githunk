@@ -34,6 +34,8 @@ export type RootViewOptions = {
   readonly onDiscardFile?: (path: string, untracked: boolean) => Promise<void>
   readonly onToggleAllFiles?: () => Promise<void>
   readonly onScopeChange?: (scope: "staged" | "unstaged") => Promise<void>
+  readonly onModeChange?: (mode: "working-tree" | "branch") => Promise<void>
+  readonly onChooseBase?: (baseRef: string) => Promise<void>
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
@@ -64,6 +66,8 @@ export class RootView {
   private readonly onDiscardFile: ((path: string, untracked: boolean) => Promise<void>) | undefined
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
   private readonly onScopeChange: ((scope: "staged" | "unstaged") => Promise<void>) | undefined
+  private readonly onModeChange: ((mode: "working-tree" | "branch") => Promise<void>) | undefined
+  private readonly onChooseBase: ((baseRef: string) => Promise<void>) | undefined
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
   private readonly onSelectFile: ((path: string) => void) | undefined
@@ -84,6 +88,8 @@ export class RootView {
       copyToClipboardOSC52: (text) => renderer.copyToClipboardOSC52(text),
     }
     this.clipboard = new ClipboardService(clipboardPort)
+    this.onModeChange = options.onModeChange
+    this.onChooseBase = options.onChooseBase
     this.onStageFile = options.onStageFile
     this.onUnstageFile = options.onUnstageFile
     this.onDiscardFile = options.onDiscardFile
@@ -239,6 +245,21 @@ export class RootView {
   private handleMutationKey(key: KeyEvent): boolean {
     if ((key.name === "R" || (key.name === "r" && key.shift)) && this.onRefresh !== undefined) {
       this.runUiMutation(this.onRefresh())
+      return true
+    }
+    if (this.model.basePicker !== undefined && this.onChooseBase !== undefined) {
+      const index = Number(key.name) - 1
+      if (Number.isInteger(index) && index >= 0 && index < this.model.basePicker.candidates.length) {
+        this.runUiMutation(this.onChooseBase(this.model.basePicker.candidates[index]!))
+        return true
+      }
+    }
+    if (!key.ctrl && !key.meta && key.name === "b" && this.onModeChange !== undefined) {
+      this.runUiMutation(this.onModeChange("branch"))
+      return true
+    }
+    if (!key.ctrl && !key.meta && key.name === "w" && this.onModeChange !== undefined) {
+      this.runUiMutation(this.onModeChange("working-tree"))
       return true
     }
     if (this.mutationInFlight && ["space", "d", "tab", "a"].includes(key.name)) {

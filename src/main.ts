@@ -39,6 +39,12 @@ export async function startApp(): Promise<number> {
     onScopeChange: async (scope) => {
       try { await controller.setWorkingTreeScope(scope) } finally { view.update(controller.state) }
     },
+    onModeChange: async (mode) => {
+      try { await controller.switchMode(mode) } finally { view.update(controller.state) }
+    },
+    onChooseBase: async (baseRef) => {
+      try { await controller.chooseBase(baseRef) } finally { view.update(controller.state) }
+    },
     onApplySelection: async (document, indexes, reverse) => {
       try { await controller.applySelection(document, indexes, { reverse, wholeFile: false }) } finally { view.update(controller.state) }
     },
