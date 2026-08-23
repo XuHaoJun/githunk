@@ -103,6 +103,7 @@ export class AppController {
         for (const file of files) {
           if (shouldStage) await this.mutations?.stageFile(file.path)
           else await this.mutations?.unstageFile(file.path)
+          await this.refresh()
         }
         await this.refresh()
       } catch (error) {

@@ -10,7 +10,36 @@ function pathFromHeader(value: string): string | undefined {
 }
 
 function decodeGitQuoted(value: string): string {
-  return value.replace(/\\([\\"])/g, "$1").replace(/\\t/g, "\t").replace(/\\n/g, "\n")
+  let result = ""
+  let bytes: number[] = []
+  const flush = () => {
+    if (bytes.length > 0) {
+      result += new TextDecoder().decode(new Uint8Array(bytes))
+      bytes = []
+    }
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === "\\" && /^[0-7]{3}$/.test(value.slice(index + 1, index + 4))) {
+      bytes.push(Number.parseInt(value.slice(index + 1, index + 4), 8))
+      index += 3
+      continue
+    }
+    flush()
+    if (value[index] === "\\" && (value[index + 1] === "\\" || value[index + 1] === "\"")) {
+      result += value[index + 1]
+      index += 1
+    } else if (value[index] === "\\" && value[index + 1] === "t") {
+      result += "\t"
+      index += 1
+    } else if (value[index] === "\\" && value[index + 1] === "n") {
+      result += "\n"
+      index += 1
+    } else {
+      result += value[index]
+    }
+  }
+  flush()
+  return result
 }
 
 function stripGitPrefix(value: string): string {

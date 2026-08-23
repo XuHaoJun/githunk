@@ -24,28 +24,47 @@ function lineEnding(raw: string): string {
   return ""
 }
 
+function quotedToken(token: string): string {
+  if (![...token].some((character) => character < " " || character > "~" || character === "\"" || character === "\\")) return token
+  const bytes = new TextEncoder().encode(token)
+  let escaped = "\""
+  for (const byte of bytes) {
+    if (byte === 0x5c) escaped += "\\\\"
+    else if (byte === 0x22) escaped += "\\\""
+    else if (byte >= 0x20 && byte <= 0x7e) escaped += String.fromCharCode(byte)
+    else escaped += `\\${byte.toString(8).padStart(3, "0")}`
+  }
+  return `${escaped}\"`
+}
+
 function pathForHeader(path: string): string {
-  return path.startsWith("/") ? path : `a/${path}`
+  return quotedToken(path.startsWith("/") ? path : `a/${path}`)
 }
 
 function pathForNewHeader(path: string): string {
-  return path.startsWith("/") ? path : `b/${path}`
+  return quotedToken(path.startsWith("/") ? path : `b/${path}`)
 }
 
 function rewriteHeader(lines: readonly DiffLine[], file: DiffFile, options: PartialPatchOptions, partial: boolean): string {
   const path = options.pathOverride
     ?? (file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath)
-  const stripRename = partial && file.oldPath !== undefined && file.newPath !== undefined && file.oldPath !== file.newPath
+  const stripRename = partial
+    && file.oldPath !== undefined && file.newPath !== undefined
+    && file.oldPath !== "/dev/null" && file.newPath !== "/dev/null"
+    && file.oldPath !== file.newPath
+  const deletedFilePartial = partial && file.oldPath !== undefined && file.newPath === "/dev/null"
+  if (!options.pathOverride && !stripRename && !deletedFilePartial) return lines.map((line) => line.raw).join("")
   const result: string[] = []
   for (const line of lines) {
     const value = lineValue(line.raw)
-    if (value === "--- /dev/null" || value === "+++ /dev/null") {
-      result.push(line.raw)
-      continue
-    }
-    if (stripRename && (/^(?:similarity|dissimilarity) index /.test(value) || value.startsWith("rename from ") || value.startsWith("rename to "))) continue
+    if ((stripRename && (/^(?:similarity|dissimilarity) index /.test(value) || value.startsWith("rename from ") || value.startsWith("rename to ")))
+      || (deletedFilePartial && value.startsWith("deleted file mode "))) continue
     if (path !== undefined && value.startsWith("diff --git ")) {
       result.push(`diff --git ${pathForHeader(path)} ${pathForNewHeader(path)}${lineEnding(line.raw)}`)
+      continue
+    }
+    if (deletedFilePartial && value === "+++ /dev/null" && file.oldPath !== undefined) {
+      result.push(`+++ ${pathForNewHeader(file.oldPath)}${lineEnding(line.raw)}`)
       continue
     }
     if (path !== undefined && value.startsWith("--- ") && !value.startsWith("--- /dev/null")) {

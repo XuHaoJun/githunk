@@ -45,8 +45,8 @@ export type MainActionAvailability = {
   readonly reason?: string
 }
 
-export function mainActionAvailability(document: DiffDocument, target: MainCursorTarget | undefined): MainActionAvailability {
-  const file = target === undefined ? undefined : document.files[target.fileIndex]
+export function mainActionAvailability(document: DiffDocument | undefined, target: MainCursorTarget | undefined): MainActionAvailability {
+  const file = document === undefined || target === undefined ? undefined : document.files[target.fileIndex]
   if (!file) return { canStageLines: false, canDiscardLines: false, reason: "No diff selected" }
   if (file.hunks.length === 0) return { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: binary or conflicted file" }
   return { canStageLines: true, canDiscardLines: true }

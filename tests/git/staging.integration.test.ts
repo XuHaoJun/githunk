@@ -53,4 +53,37 @@ describe("GitMutations", () => {
     const content = await Bun.file(`${repo.path}/file.txt`).text()
     expect(content).toBe("base\nkeep\nsecond\n")
   })
+
+  test("stages a selected deletion from a file that is being deleted", async () => {
+    await repo.write("file.txt", "")
+    const patch = (await runner.run(["diff", "--no-ext-diff", "--no-color", "--", "file.txt"], { readOnly: true })).stdout
+    const document = parseDiff(patch)
+    const selected = document.lines.flatMap((line, index) => line.raw === "-base\n" ? [index] : [])
+    await new GitMutations(runner).applySelection(document, selected, { reverse: false, wholeFile: false })
+
+    const staged = (await repo.git(["diff", "--cached", "--", "file.txt"])).stdout
+    const unstaged = (await repo.git(["diff", "--", "file.txt"])).stdout
+    expect(staged).toContain("-base\n")
+    expect(staged).not.toContain("-keep\n")
+    expect(unstaged).toContain("-keep\n")
+  })
+
+  test("stages a selected change in a quoted Unicode path", async () => {
+    await repo.write("é.txt", "base\n")
+    await repo.git(["add", "--", "é.txt"])
+    await repo.git(["commit", "--quiet", "-m", "unicode"])
+    await repo.write("é.txt", "base\nchanged\n")
+    const patch = (await runner.run(["diff", "--no-ext-diff", "--no-color", "--", "é.txt"], { readOnly: true })).stdout
+    const document = parseDiff(patch)
+    const selected = document.lines.flatMap((line, index) => line.raw === "+changed\n" ? [index] : [])
+    await new GitMutations(runner).applySelection(document, selected, { reverse: false, wholeFile: false })
+    expect((await repo.git(["diff", "--cached", "--", "é.txt"])).stdout).toContain("+changed\n")
+  })
+
+  test("discards an untracked file only through clean", async () => {
+    await repo.write("untracked.txt", "remove me\n")
+    const mutations = new GitMutations(runner)
+    await mutations.discardFile("untracked.txt", true)
+    expect((await repo.git(["status", "--short"])).stdout).not.toContain("untracked.txt")
+  })
 })

@@ -24,17 +24,26 @@ export async function startApp(): Promise<number> {
   const controller = new AppController({ repositoryRoot, runner })
   let view: RootView
   view = new RootView(renderer, controller.state, {
-    onStageFile: async (path) => { await controller.stageFile(path); view.update(controller.state) },
-    onUnstageFile: async (path) => { await controller.unstageFile(path); view.update(controller.state) },
-    onToggleAllFiles: async () => { await controller.toggleAllFiles(); view.update(controller.state) },
-    onScopeChange: async (scope) => { await controller.setWorkingTreeScope(scope); view.update(controller.state) },
+    onStageFile: async (path) => {
+      try { await controller.stageFile(path) } finally { view.update(controller.state) }
+    },
+    onUnstageFile: async (path) => {
+      try { await controller.unstageFile(path) } finally { view.update(controller.state) }
+    },
+    onDiscardFile: async (path, untracked) => {
+      try { await controller.discardFile(path, untracked) } finally { view.update(controller.state) }
+    },
+    onToggleAllFiles: async () => {
+      try { await controller.toggleAllFiles() } finally { view.update(controller.state) }
+    },
+    onScopeChange: async (scope) => {
+      try { await controller.setWorkingTreeScope(scope) } finally { view.update(controller.state) }
+    },
     onApplySelection: async (document, indexes, reverse) => {
-      await controller.applySelection(document, indexes, { reverse, wholeFile: false })
-      view.update(controller.state)
+      try { await controller.applySelection(document, indexes, { reverse, wholeFile: false }) } finally { view.update(controller.state) }
     },
     onDiscardSelection: async (document, indexes) => {
-      await controller.discardSelection(document, indexes, { wholeFile: false })
-      view.update(controller.state)
+      try { await controller.discardSelection(document, indexes, { wholeFile: false }) } finally { view.update(controller.state) }
     },
   })
   renderer.once("destroy", () => view.destroy())

@@ -60,7 +60,7 @@ describe("buildPartialPatch", () => {
     )
     const deleted = "diff --git a/old.txt b/old.txt\ndeleted file mode 100644\n--- a/old.txt\n+++ /dev/null\n@@ -1,2 +1,0 @@\n-one\n-two\n"
     expect(transformed(deleted, ["-one\n"])).toBe(
-      "diff --git a/old.txt b/old.txt\ndeleted file mode 100644\n--- a/old.txt\n+++ /dev/null\n@@ -1,2 +1 @@\n-one\n two\n",
+      "diff --git a/old.txt b/old.txt\n--- a/old.txt\n+++ b/old.txt\n@@ -1,2 +1 @@\n-one\n two\n",
     )
   })
 })

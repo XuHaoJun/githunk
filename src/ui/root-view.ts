@@ -16,7 +16,7 @@ import { createBranchesPane, updateBranchesPane } from "./panes/branches-pane"
 import { createCommitsPane, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, updateFilesPane } from "./panes/files-pane"
-import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
 import { createStashPane, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
@@ -31,6 +31,7 @@ export type RootViewOptions = {
   readonly logVisible?: boolean
   readonly onStageFile?: (path: string) => Promise<void>
   readonly onUnstageFile?: (path: string) => Promise<void>
+  readonly onDiscardFile?: (path: string, untracked: boolean) => Promise<void>
   readonly onToggleAllFiles?: () => Promise<void>
   readonly onScopeChange?: (scope: "staged" | "unstaged") => Promise<void>
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
@@ -57,12 +58,16 @@ export class RootView {
   private readonly horizontalSplitter: BoxRenderable
   private readonly onStageFile: ((path: string) => Promise<void>) | undefined
   private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
+  private readonly onDiscardFile: ((path: string, untracked: boolean) => Promise<void>) | undefined
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
   private readonly onScopeChange: ((scope: "staged" | "unstaged") => Promise<void>) | undefined
-  private copyMenuOpen = false
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
+  private fileCursorIndex = 0
+  private copyMenuOpen = false
   private discardPending = false
+  private pendingFileDiscard: { readonly path: string; readonly untracked: boolean } | undefined
+  private mutationInFlight = false
   private readonly handleResize: () => void
   private readonly handleKey: (key: KeyEvent) => void
   private destroyed = false
@@ -75,6 +80,7 @@ export class RootView {
     this.clipboard = new ClipboardService(clipboardPort)
     this.onStageFile = options.onStageFile
     this.onUnstageFile = options.onUnstageFile
+    this.onDiscardFile = options.onDiscardFile
     this.onToggleAllFiles = options.onToggleAllFiles
     this.onScopeChange = options.onScopeChange
     this.onApplySelection = options.onApplySelection
@@ -177,6 +183,7 @@ export class RootView {
     updateStatusPane(this.panes.status, model)
     updateFilesPane(this.panes.files, model)
     updateBranchesPane(this.panes.branches, model)
+    this.fileCursorIndex = this.model.files.length === 0 ? 0 : Math.min(this.fileCursorIndex, this.model.files.length - 1)
 
     updateCommitsPane(this.panes.commits, model)
     updateStashPane(this.panes.stash, model)
@@ -216,25 +223,58 @@ export class RootView {
     }
     return false
   }
-
   private handleMutationKey(key: KeyEvent): boolean {
+    if (this.mutationInFlight && ["space", "d", "tab", "a"].includes(key.name)) {
+      this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
+      return true
+    }
     if (this.focusManager.active === "files") {
+      if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
+        const delta = key.name === "j" || key.name === "down" ? 1 : -1
+        this.fileCursorIndex = Math.max(0, Math.min(this.model.files.length - 1, this.fileCursorIndex + delta))
+        this.panes.files.box.bottomTitle = this.model.files[this.fileCursorIndex]?.path ?? "No files"
+        return true
+      }
       if (key.name === "enter") {
         this.focusManager.focus("main")
         return true
       }
+      const file = this.model.files[this.fileCursorIndex]
       if (key.name === "a" && this.onToggleAllFiles !== undefined) {
         this.runUiMutation(this.onToggleAllFiles())
         return true
       }
-      if (key.name === "space" && this.model.files[0] !== undefined) {
-        const file = this.model.files[0]
+      if (file !== undefined && key.name === "space") {
         const staged = !file.untracked && file.worktreeStatus === "." && file.indexStatus !== "."
         const operation = staged ? this.onUnstageFile : this.onStageFile
         if (operation !== undefined) this.runUiMutation(operation(file.path))
         return operation !== undefined
       }
+      if (file !== undefined && key.name === "d" && this.onDiscardFile !== undefined) {
+        if (!file.untracked && file.worktreeStatus === "." && file.indexStatus !== ".") {
+          this.panes.files.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
+          return true
+        }
+        const pending = this.pendingFileDiscard
+        if (pending?.path === file.path && pending.untracked === file.untracked) {
+          this.pendingFileDiscard = undefined
+          this.runUiMutation(this.onDiscardFile(file.path, file.untracked))
+        } else {
+          this.pendingFileDiscard = { path: file.path, untracked: file.untracked }
+          this.panes.files.box.bottomTitle = `${discardConfirmation(file.path, file.untracked).message} Press d again to confirm or Escape to cancel.`
+        }
+        return true
+      }
+      if (key.name === "escape" && this.pendingFileDiscard !== undefined) {
+        this.pendingFileDiscard = undefined
+        this.panes.files.box.bottomTitle = undefined
+        return true
+      }
       return false
+    }
+    if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "all" && (key.name === "space" || key.name === "d")) {
+      this.panes.main.box.bottomTitle = "Line actions disabled in All scope; press Tab to choose staged or unstaged"
+      return true
     }
     if (this.focusManager.active !== "main") return false
     if (key.name === "tab" && this.onScopeChange !== undefined) {
@@ -244,7 +284,18 @@ export class RootView {
     }
     if (key.name === "space" && this.onApplySelection !== undefined) {
       const selected = this.mainChangeSelection()
-      if (selected === undefined || selected.indexes.length === 0) {
+      const document = getMainDocument(this.panes.main)
+      const target = getMainCursorTarget(this.panes.main)
+      const parsedPath = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]?.newPath ?? document.files[target.fileIndex]?.oldPath
+      const modelFile = parsedPath === undefined ? undefined : this.model.files.find((file) => file.path === parsedPath)
+      const availability = modelFile?.conflicted
+        ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: conflicted file" }
+        : modelFile !== undefined && !modelFile.untracked && modelFile.additions === 0 && modelFile.deletions === 0
+          ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: binary file" }
+          : mainActionAvailability(document, target)
+      if (!availability.canStageLines) {
+        this.panes.main.box.bottomTitle = availability.reason
+      } else if (selected === undefined || selected.indexes.length === 0) {
         this.panes.main.box.bottomTitle = "No changed lines selected"
       } else {
         const reverse = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged"
@@ -259,7 +310,22 @@ export class RootView {
       }
       const selected = this.mainChangeSelection()
       const target = getMainCursorTarget(this.panes.main)
-      const path = target === undefined ? "selected changes" : this.model.files[target.fileIndex]?.path ?? "selected changes"
+      const document = getMainDocument(this.panes.main)
+      const targetFile = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]
+      const path = targetFile?.newPath ?? targetFile?.oldPath ?? "selected changes"
+      const modelFile = target === undefined ? undefined : this.model.files.find((file) => file.path === path)
+      if (modelFile?.untracked && this.onDiscardFile !== undefined) {
+        const pending = this.pendingFileDiscard
+        if (pending?.path === path && pending.untracked) {
+          this.pendingFileDiscard = undefined
+          this.runUiMutation(this.onDiscardFile(path, true))
+        } else {
+          this.pendingFileDiscard = { path, untracked: true }
+          this.panes.main.box.bottomTitle = `${discardConfirmation(path, true).message} Press d again to confirm or Escape to cancel.`
+        }
+        return true
+      }
+      
       if (selected === undefined || selected.indexes.length === 0) {
         this.panes.main.box.bottomTitle = "No changed lines selected"
       } else if (!this.discardPending) {
@@ -305,9 +371,14 @@ export class RootView {
   }
 
   private runUiMutation(operation: Promise<void>): void {
+    if (this.mutationInFlight) return
+    this.mutationInFlight = true
+    this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
     void operation.catch((error: unknown) => {
       this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
       this.root.requestRender()
+    }).finally(() => {
+      this.mutationInFlight = false
     })
   }
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { AppController } from "../../src/app/controller"
 import { GitCommandError, GitRunner } from "../../src/git/runner"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
-
+import type { GitMutations } from "../../src/git/mutations"
 function snapshot(scope: "all" | "staged" | "unstaged", marker: string): WorkingTreeSnapshot {
   return {
     repositoryRoot: "/tmp/repo",
@@ -121,6 +121,37 @@ describe("AppController", () => {
     expect(controller.state.patches[0]?.text).toBe("old patch")
     expect(controller.state.banner).toBe("scope unavailable")
     expect(controller.state.commandLog.at(-1)?.stderr).toBe("scope unavailable")
+  })
+
+  test("refreshes after each toggle-all mutation and exposes the first failure", async () => {
+    const runner = new GitRunner({ cwd: "/tmp/repo" })
+    let loads = 0
+    const files = [
+      { path: "first.txt", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 },
+      { path: "second.txt", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 },
+    ]
+    const mutations = {
+      stageFile: async (path: string) => { if (path === "second.txt") throw new Error("second failed") },
+      unstageFile: async () => undefined,
+    } as unknown as GitMutations
+    const controller = new AppController({
+      runner,
+      mutations,
+      load: async (target) => {
+        loads += 1
+        return {
+          repositoryRoot: "/tmp/repo",
+          branch: "main",
+          reviewTarget: target,
+          files,
+          patches: [],
+        }
+      },
+    })
+    await controller.refresh()
+    await expect(controller.toggleAllFiles()).rejects.toThrow("second failed")
+    expect(loads).toBe(2)
+    expect(controller.state.banner).toBe("second failed")
   })
 
 })
