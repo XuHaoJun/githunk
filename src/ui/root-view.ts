@@ -202,6 +202,8 @@ export class RootView {
     this.basePickerIndex = pickerCount === 0 ? 0 : Math.min(this.basePickerIndex, pickerCount - 1)
     if (model.basePicker === undefined) this.basePickerIndex = 0
     updateStatusPane(this.panes.status, model)
+    updateFilesPane(this.panes.files, model)
+    updateBranchesPane(this.panes.branches, model)
     const focusedIndex = model.focusId === undefined ? -1 : model.files.findIndex((file) => file.path === model.focusId)
     this.fileCursorIndex = focusedIndex >= 0
       ? focusedIndex

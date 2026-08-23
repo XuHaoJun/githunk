@@ -65,6 +65,7 @@ export class AppController {
   private reviewDatabase: ReviewDatabase = emptyReviewDatabase()
   private workingTreeCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
   private branchCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
+  private pendingBranchWarning: string | undefined
 
   constructor(options: AppControllerOptions | GitRunner, loader?: WorkingTreeLoader) {
     const runner = options instanceof GitRunner ? options : options.runner
@@ -160,6 +161,7 @@ export class AppController {
         baseRef = undefined
       }
     }
+    this.pendingBranchWarning = storeWarning
     if (baseRef === undefined) {
       const inferred = await this.inferBase()
       if (inferred.kind === "choose" || stalePersistedBase) {
@@ -439,10 +441,12 @@ export class AppController {
       const cursor = this.currentState.reviewTarget.kind === "branch"
         ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
         : this.branchCursor
+      const branchWarning = review.warning ?? this.pendingBranchWarning
+      this.pendingBranchWarning = undefined
       const { upstream: _previousUpstream, banner: _previousBanner, basePicker: _previousPicker, selectionId: _previousSelectionId, focusId: _previousFocusId, ...previousState } = this.currentState
       this.currentState = {
         ...previousState,
-        ...(review.warning === undefined ? {} : { banner: review.warning }),
+        ...(branchWarning === undefined ? {} : { banner: branchWarning }),
         branch: snapshot.branch,
         reviewTarget: snapshot.reviewTarget,
         files: snapshot.files,

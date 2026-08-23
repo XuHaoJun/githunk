@@ -125,4 +125,20 @@ describe("AppController branch mode", () => {
     await controller.refresh()
     expect(controller.state.reviewTarget.kind === "branch" ? controller.state.reviewTarget.baseRef : "").toBe("origin/release")
   })
+  test("keeps a ReviewStore corruption warning after confident Branch load", async () => {
+    const reviewStore = {
+      warning: "review state was quarantined",
+      async load() { return { version: 1 as const, baseByBranch: {}, targets: {} } },
+      async save() {},
+    }
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      reviewStore: reviewStore as never,
+      load: async (target) => workingSnapshot(target.scope),
+      loadBranch: async (baseRef) => branchSnapshot(baseRef),
+      inferBase: async () => ({ kind: "confident" as const, ref: "origin/main", oid: "base-oid", reason: "test" }),
+    })
+    await controller.switchMode("branch")
+    expect(controller.state.banner).toBe("review state was quarantined")
+  })
 })
