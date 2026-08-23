@@ -91,6 +91,53 @@ describe("working tree diff loading", () => {
   })
 
  
+  test("includes every file from an untracked directory", async () => {
+    const repository = await createTempRepository()
+    try {
+      await repository.write("tracked.txt", "tracked\n")
+      expect((await repository.git(["add", "tracked.txt"])).exitCode).toBe(0)
+      expect((await repository.git(["commit", "-qm", "initial"])).exitCode).toBe(0)
+      await repository.write("new-dir/first.txt", "first\n")
+      await repository.write("new-dir/second.txt", "second\n")
+
+      const snapshot = await loadWorkingTree(new GitRunner(repository.path), "unstaged")
+
+      expect(snapshot.files.map((file) => file.path)).toEqual(["new-dir/first.txt", "new-dir/second.txt"])
+      const patch = snapshot.patches[0]?.text ?? ""
+      expect(patch).toContain("new-dir/first.txt")
+      expect(patch).toContain("+first")
+      expect(patch).toContain("new-dir/second.txt")
+      expect(patch).toContain("+second")
+    } finally {
+      await repository.cleanup()
+    }
+  })
+
+  test("preserves binary diff patches and reports zero line counts", async () => {
+    const repository = await createTempRepository()
+    try {
+      await repository.write("image.bin", "PNG\u0000\u0001old\u0000bytes")
+      expect((await repository.git(["add", "image.bin"])).exitCode).toBe(0)
+      expect((await repository.git(["commit", "-qm", "initial"])).exitCode).toBe(0)
+      await repository.write("image.bin", "PNG\u0000\u0002new\u0000bytes")
+
+      const snapshot = await loadWorkingTree(new GitRunner(repository.path), "unstaged")
+
+      expect(snapshot.files).toEqual([{
+        path: "image.bin",
+        indexStatus: ".",
+        worktreeStatus: "M",
+        untracked: false,
+        conflicted: false,
+        additions: 0,
+        deletions: 0,
+      }])
+      expect(snapshot.patches[0]?.text).toContain("GIT binary patch")
+    } finally {
+      await repository.cleanup()
+    }
+  })
+
   test("parses NUL-separated rename numstat paths", () => {
     expect(parseNumstat("1\t0\t\0old name.txt\0new name.txt\0")).toEqual([
       { path: "new name.txt", previousPath: "old name.txt", additions: 1, deletions: 0 },

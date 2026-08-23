@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { AppController } from "../../src/app/controller"
-import { GitCommandError } from "../../src/git/runner"
+import { GitCommandError, GitRunner } from "../../src/git/runner"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
 
 function snapshot(scope: "all" | "staged" | "unstaged", marker: string): WorkingTreeSnapshot {
@@ -76,4 +76,51 @@ describe("AppController", () => {
     expect(controller.state.patches[0]?.text).toBe("last good")
     expect(controller.state.banner).toBe("repository unavailable")
   })
+  test("preserves the prior target and view when a scope refresh fails", async () => {
+    let calls = 0
+    const runner = new GitRunner({ cwd: "/tmp/repo" })
+    const error = new GitCommandError({
+      id: 12,
+      cwd: "/tmp/repo",
+      args: ["status"],
+      startedAt: "2026-01-01T00:00:00.000Z",
+      durationMs: 1,
+      exitCode: 128,
+      stdout: "",
+      stderr: "scope unavailable",
+    })
+    runner.log.append(error.record)
+    const controller = new AppController({
+      runner,
+      load: async (target) => {
+        calls += 1
+        if (calls === 1) {
+          return {
+            ...snapshot(target.scope, "old patch"),
+            files: [{
+              path: "old.ts",
+              indexStatus: "M",
+              worktreeStatus: ".",
+              untracked: false,
+              conflicted: false,
+              additions: 1,
+              deletions: 0,
+            }],
+          }
+        }
+        throw error
+      },
+    })
+
+    await controller.refresh()
+    await controller.setWorkingTreeScope("staged")
+
+    expect(controller.state.reviewTarget).toEqual({ kind: "working-tree", scope: "all" })
+    expect(controller.state.title).toBe("Working Tree — All")
+    expect(controller.state.files.map((file) => file.path)).toEqual(["old.ts"])
+    expect(controller.state.patches[0]?.text).toBe("old patch")
+    expect(controller.state.banner).toBe("scope unavailable")
+    expect(controller.state.commandLog.at(-1)?.stderr).toBe("scope unavailable")
+  })
+
 })

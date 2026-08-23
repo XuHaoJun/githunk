@@ -56,11 +56,19 @@ export class AppController {
   }
 
   async refresh(): Promise<void> {
-    const generation = ++this.generation
     const target = this.currentState.reviewTarget
+    await this.refreshTarget(target.kind === "working-tree" ? target : { kind: "working-tree", scope: "all" })
+  }
+
+  async setWorkingTreeScope(scope: WorkingTreeScope): Promise<void> {
+    await this.refreshTarget({ kind: "working-tree", scope })
+  }
+
+  private async refreshTarget(target: Extract<ReviewTarget, { readonly kind: "working-tree" }>): Promise<void> {
+    const generation = ++this.generation
     this.publishIfCurrent(generation, { loading: true })
     try {
-      const snapshot = await this.loadSnapshot(target.kind === "working-tree" ? target : { kind: "working-tree", scope: "all" })
+      const snapshot = await this.loadSnapshot(target)
       if (generation !== this.generation) return
       const { upstream: _previousUpstream, banner: _previousBanner, ...previousState } = this.currentState
       this.currentState = {
@@ -88,12 +96,6 @@ export class AppController {
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
       }
     }
-  }
-
-  async setWorkingTreeScope(scope: WorkingTreeScope): Promise<void> {
-    const target: ReviewTarget = { kind: "working-tree", scope }
-    this.currentState = { ...this.currentState, reviewTarget: target, title: titleFor(target) }
-    await this.refresh()
   }
 
   private publishIfCurrent(generation: number, update: Pick<AppModel, "loading">): void {
