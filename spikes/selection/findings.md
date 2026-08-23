@@ -10,9 +10,10 @@ This disposable, fixture-only spike evaluates the PRD §16 selection gate; it do
 1. **Structural/code evidence:** renderable hierarchy, selection and splitter handlers, deterministic fixtures, and clipboard policy.
 2. **Automated evidence:** 9 fixture/layout/clipboard tests passed, and TypeScript type-checking completed cleanly.
 3. **PTY-observed behavior:** at 120×40, OpenTUI rendered isolated LEFT and PATCH panes, CJK, emoji, decomposed `e` + combining accent, tabs, blank lines, the long wrapped source line, and multiple hunks. An injected SGR drag wholly inside PATCH completed a selection and displayed exactly `OSC52 emitted 246 bytes`. An injected splitter drag resized LEFT from about 30 to about 40 columns and did not trigger selection, but OpenTUI capture was established only after the first drag sample landed inside the one-cell splitter.
-4. **Client clipboard acceptance:** not observed. OSC52 emission is not proof that a terminal or multiplexer accepted the operation, and no paste result is claimed.
+4. **User-observed behavior:** a real manual run confirmed that dragging inside PATCH does not visibly select LEFT. This confirms the primary visual pane-isolation hypothesis.
+5. **Client clipboard acceptance:** not observed in recorded evidence. OSC52 emission is not proof that a terminal or multiplexer accepted the operation, and no exact paste result is claimed.
 
-The PTY run was a targeted observation, not completion of the manual stress and compatibility matrices. Local, SSH without a multiplexer, tmux, terminal resize, scrolling, exact partial endpoints, and exact Unicode/wrapped clipboard-content comparisons were not run.
+The PTY run plus the user's manual run confirm visible pane isolation. They do not complete the remaining manual stress and compatibility matrices. Local, SSH without a multiplexer, tmux, terminal resize, scrolling, exact partial endpoints, and exact Unicode/wrapped clipboard-content comparisons were not recorded.
 
 ## Environment
 
@@ -44,7 +45,7 @@ No PARTIAL result is treated as a pass.
 
 | PRD criterion / gate | Result | Evidence |
 |---|---|---|
-| S1 — Basic pane isolation | PARTIAL | LEFT is a separate non-selectable renderable and PATCH is selectable. A PTY drag wholly inside PATCH completed and emitted OSC52, but exact pasted PATCH text was not observed. |
+| S1 — Basic pane isolation | PASS | LEFT is a separate non-selectable renderable, PATCH is selectable, the PTY drag completed wholly inside PATCH, and the user's real manual run confirmed that PATCH dragging does not visibly select LEFT. Exact client-pasted content remains tracked separately under S3 and S10–S12. |
 | S2 — Partial first/last lines | NOT RUN | No exact mid-line endpoint selection or logical-character-boundary comparison was performed. |
 | S3 — Adjacent pane contamination | PARTIAL | LEFT and PATCH are separate renderable branches, LEFT is dense and non-selectable, and the PTY showed isolated panes. Zero left-pane text in actual clipboard output was not verified. |
 | S4 — Scrolling | NOT RUN | The PATCH scroll box exists, but no scrolled selection was compared with underlying logical lines. |
@@ -109,7 +110,7 @@ For each available environment—local, SSH without a multiplexer, SSH+tmux, and
 
 `REJECT_OPENTUI`
 
-This is a no-go for the current technology gate because release-blocking evidence is incomplete: multiple core mapping cases are PARTIAL or NOT RUN, S9 is not implemented, and no client clipboard delivery was observed. It is **not** a finding that OpenTUI has a demonstrated core defect or that the framework is impossible to use. The limited PTY evidence is encouraging, especially for rendering, OSC52 emission, and splitter/selection independence, but it cannot satisfy the PRD decision gate.
+This is a no-go for the complete current technology gate because several release-blocking requirements remain unverified: exact copied payload boundaries, scrolling, wrapping, Unicode, terminal resize, S9, and client clipboard delivery. It is **not** a failure of the primary pane-isolation hypothesis: the user's real manual run confirms that dragging in PATCH does not visibly select LEFT. No OpenTUI core defect has been demonstrated. The evidence supports continuing with OpenTUI experiments, but not yet declaring the full PRD gate complete.
 
 ## Bounded reconsideration checklist
 
