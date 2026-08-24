@@ -9,8 +9,18 @@ export function createBranchesPane(renderer: CliRenderer, model: AppModel): Pane
 }
 
 export function updateBranchesPane(pane: PaneHandle, model: AppModel): void {
-  pane.update([
+  const listing = model.branches
+  const lines = [
     model.branch ? `* ${model.branch}` : "* (detached/loading)",
     model.upstream ? `  ↳ ${model.upstream}` : "  (no upstream)",
-  ].join("\n"))
+  ]
+  if (listing !== undefined) {
+    lines.push("Local Branches")
+    for (const branch of listing.localBranches) {
+      lines.push(`  ${branch.isCurrent ? "*" : " "} ${branch.name}${branch.upstream === undefined ? "" : ` → ${branch.upstream}`}`)
+    }
+    lines.push("Remotes")
+    for (const remote of listing.remotes) lines.push(`  ${remote.name}`)
+  }
+  pane.update(lines.join("\n"))
 }

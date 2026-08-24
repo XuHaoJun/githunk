@@ -7,15 +7,18 @@ import { inferReviewBase, currentBranchRef, resolveRefOid, reviewBaseCandidates,
 import { parseDiff } from "../domain/diff/parse"
 import type { DiffDocument, DiffFile } from "../domain/diff/document"
 import type { AppModel, PatchSection } from "../domain/repository"
-import type { ReviewTarget, WorkingTreeScope, ChangedFile } from "../domain/review-target"
+import type { BranchListing } from "../domain/branch"
 import type { WorkingTreeSnapshot } from "../domain/repository"
+import type { ReviewTarget, WorkingTreeScope, ChangedFile } from "../domain/review-target"
 import { reviewStateFor, type ReviewDatabase, type ReviewFileState } from "../domain/review-progress"
 import { fingerprintFile, targetKey } from "../review/fingerprint"
 import { emptyReviewDatabase, ReviewStore } from "../review/store"
 import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
+import { checkoutRemoteTracking, createBranch, deleteBranch, fetchRemote, listBranches, listRemoteBranches, renameBranch, switchLocal, type CheckoutRemoteTrackingOptions, type CheckoutRemoteTrackingResult, type DeleteBranchOptions } from "../git/branches"
 import { MutationQueue } from "./mutation-queue"
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
 export type BranchReviewLoader = (baseRef: string) => Promise<BranchReviewSnapshot>
+export type BranchListingLoader = () => Promise<BranchListing>
 export type CommitListLoader = (range: string, filter?: string) => Promise<readonly CommitSummary[]>
 export type CommitLoader = (oid: string) => Promise<CommitDetails>
 export type CommitFilePatchLoader = (oid: string, path: string) => Promise<DiffDocument>
@@ -33,6 +36,8 @@ export type AppControllerOptions = {
   readonly loadCommit?: CommitLoader
   readonly commitLoader?: CommitLoader
   readonly loadCommitFilePatch?: CommitFilePatchLoader
+  readonly loadBranches?: BranchListingLoader
+  readonly branchesLoader?: BranchListingLoader
   readonly commitFilePatchLoader?: CommitFilePatchLoader
   readonly inferBase?: BaseInferenceLoader
   readonly mutations?: GitMutations
@@ -87,6 +92,8 @@ export class AppController {
   readonly mutationQueue = new MutationQueue()
   private readonly loadSnapshot: WorkingTreeLoader
   private readonly loadBranchSnapshot: BranchReviewLoader
+  private readonly loadBranchesListing: BranchListingLoader
+  private readonly automaticBranchListing: boolean
   private readonly loadCommitList: CommitListLoader
   private readonly loadCommitDetails: CommitLoader
   private readonly loadCommitFile: CommitFilePatchLoader
@@ -122,6 +129,10 @@ export class AppController {
     this.loadBranchSnapshot = options instanceof GitRunner
       ? (baseRef) => loadBranchReview(options, baseRef)
       : options.loadBranch ?? options.branchLoader ?? (runner === undefined ? async () => { throw new Error("Branch review requires a GitRunner") } : (baseRef) => loadBranchReview(runner, baseRef))
+    this.automaticBranchListing = options instanceof GitRunner || (options.loadBranches !== undefined || options.branchesLoader !== undefined) || (options.load === undefined && options.loader === undefined && runner !== undefined)
+    this.loadBranchesListing = options instanceof GitRunner
+      ? () => listBranches(options)
+      : options.loadBranches ?? options.branchesLoader ?? (load === undefined && runner !== undefined ? () => listBranches(runner) : async () => ({ detached: true, localBranches: [], remotes: [] }))
     this.loadCommitList = options instanceof GitRunner
       ? (range, filter) => listCommits(options, range, filter)
       : options.loadCommits ?? options.commitsLoader ?? (runner === undefined ? async () => [] : (range, filter) => listCommits(runner, range, filter))
@@ -150,18 +161,124 @@ export class AppController {
       commits: [],
     }
   }
-
   get state(): AppModel {
     return this.currentState
   }
 
   async refresh(): Promise<void> {
+    if (this.automaticBranchListing) await this.refreshBranches()
     const target = this.currentState.reviewTarget
     if (target.kind === "working-tree") {
       await this.refreshTarget(target)
     } else if (target.kind === "branch") {
       await this.openBranchReview()
     }
+  }
+
+  async refreshBranches(): Promise<void> {
+    try {
+      const branches = await this.loadBranchesListing()
+      this.currentState = {
+        ...this.currentState,
+        branches,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    } catch (error) {
+      const banner = error instanceof GitCommandError
+        ? (error.record.stderr || error.message)
+        : error instanceof Error ? error.message : String(error)
+      this.currentState = {
+        ...this.currentState,
+        banner,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    }
+  }
+  async switchLocal(branch: string): Promise<void> {
+    await this.switchLocalBranch(branch)
+  }
+  async switchLocalBranch(branch: string): Promise<void> {
+    await this.runBranchMutation(() => this.requireRunnerOperation((runner) => switchLocal(runner, branch)))
+  }
+
+  async createBranch(branch: string, startPoint?: string): Promise<void> {
+    await this.runBranchMutation(() => this.requireRunnerOperation((runner) => createBranch(runner, branch, startPoint)))
+  }
+
+  async deleteBranch(branch: string, options?: DeleteBranchOptions): Promise<void> {
+    await this.runBranchMutation(() => this.requireRunnerOperation((runner) => deleteBranch(runner, branch, options)))
+  }
+
+  async renameBranch(oldName: string, newName: string): Promise<void> {
+    await this.runBranchMutation(() => this.requireRunnerOperation((runner) => renameBranch(runner, oldName, newName)))
+  }
+
+  async fetchRemote(remote: string): Promise<void> {
+    await this.runBranchMutation(() => this.requireRunnerOperation((runner) => fetchRemote(runner, remote)))
+  }
+
+  async browseRemote(remote: string): Promise<void> {
+    await this.mutationQueue.run(async () => {
+      try {
+        const branches = await this.requireRunnerOperation((runner) => listRemoteBranches(runner, remote))
+        const listing = this.currentState.branches
+        if (listing === undefined) return
+        this.currentState = {
+          ...this.currentState,
+          branches: {
+            ...listing,
+            remotes: listing.remotes.map((candidate) => candidate.name === remote ? { ...candidate, branches } : candidate),
+          },
+          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        }
+      } catch (error) {
+        const banner = error instanceof GitCommandError
+          ? (error.record.stderr || error.message)
+          : error instanceof Error ? error.message : String(error)
+        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+        throw error
+      }
+    })
+  }
+
+
+  async checkoutRemoteTracking(remoteRef: string, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult | undefined> {
+    return this.runBranchMutation(() => this.requireRunnerOperation((runner) => checkoutRemoteTracking(runner, remoteRef, options)))
+  }
+
+  private async requireRunnerOperation<T>(operation: (runner: GitRunner) => Promise<T>): Promise<T> {
+    if (this.runner === undefined) throw new Error("Branch operations require a GitRunner")
+    return operation(this.runner)
+  }
+
+  private async runBranchMutation<T>(operation: () => Promise<T>): Promise<T | undefined> {
+    return this.mutationQueue.run(async () => {
+      try {
+        const result = await operation()
+        if (result !== undefined && result !== null && typeof result === "object" && "kind" in result && result.kind === "mismatch") {
+          const mismatch = result as unknown as { readonly message: string }
+          this.currentState = {
+            ...this.currentState,
+            banner: mismatch.message,
+            commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          }
+          return result
+        }
+        await this.inferBase().catch(() => undefined)
+        await this.refresh()
+        return result
+      } catch (error) {
+        const banner = error instanceof GitCommandError
+          ? (error.record.stderr || error.message)
+          : error instanceof Error ? error.message : String(error)
+        this.currentState = {
+          ...this.currentState,
+          banner,
+          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        }
+        throw error
+      }
+    })
   }
 
   async setWorkingTreeScope(scope: WorkingTreeScope): Promise<void> {
