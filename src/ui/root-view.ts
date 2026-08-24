@@ -15,8 +15,8 @@ import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
 import { createBranchesPane, moveBranchesCursor, selectedBranchItem, updateBranchesPane } from "./panes/branches-pane"
 import { createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
-import { createFilesPane, updateFilesPane } from "./panes/files-pane"
-import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
+import { createFilesPane, filesPaneCommitAvailable, updateFilesPane } from "./panes/files-pane"
+import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, mainPaneCommitAvailable, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
 import { createStashPane, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
@@ -27,6 +27,7 @@ import { discardConfirmation } from "./confirm-dialog"
 import { branchDeleteConfirmation, remoteTrackingMismatchConfirmation } from "./branch-dialogs"
 import { COPY_MENU_ITEMS } from "./copy-menu"
 import type { CheckoutRemoteTrackingResult, RemoteBranchSelection } from "../git/branches"
+import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
 export type RootViewOptions = {
   readonly leftWidth?: number
   readonly logHeight?: number
@@ -45,6 +46,9 @@ export type RootViewOptions = {
   readonly onSelectCommitFile?: (path: string) => Promise<void>
   readonly onCommitBack?: () => Promise<void>
   readonly onMarkFocusedFileReviewed?: (path?: string) => Promise<void>
+  readonly onCommitMessage?: (message: string) => Promise<void>
+  readonly onAmendMessage?: (message: string) => Promise<void>
+  readonly onCurrentCommitMessage?: () => Promise<string>
   readonly onRefresh?: () => Promise<void>
   readonly onSwitchLocalBranch?: (branch: string) => Promise<void>
   readonly onCreateBranch?: (startPoint?: string) => Promise<void>
@@ -89,6 +93,10 @@ export class RootView {
   private readonly onSelectCommit: ((oid: string) => Promise<void>) | undefined
   private readonly onSelectCommitFile: ((path: string) => Promise<void>) | undefined
   private readonly onCommitBack: (() => Promise<void>) | undefined
+  private readonly onCommitMessage: ((message: string) => Promise<void>) | undefined
+  private readonly onAmendMessage: ((message: string) => Promise<void>) | undefined
+  private readonly onCurrentCommitMessage: (() => Promise<string>) | undefined
+  private commitDialog: CommitDialog | undefined
   private readonly onMarkFocusedFileReviewed: ((path?: string) => Promise<void>) | undefined
   private readonly onRefresh: (() => Promise<void>) | undefined
   private readonly onSwitchLocalBranch: ((branch: string) => Promise<void>) | undefined
@@ -144,6 +152,9 @@ export class RootView {
     this.onFilterBranches = options.onFilterBranches
     this.onSelectCommitFile = options.onSelectCommitFile
     this.onSelectCommit = options.onSelectCommit
+    this.onCommitMessage = options.onCommitMessage
+    this.onAmendMessage = options.onAmendMessage
+    this.onCurrentCommitMessage = options.onCurrentCommitMessage
     this.onCommitBack = options.onCommitBack
     this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
     this.renderer = renderer
@@ -302,6 +313,26 @@ export class RootView {
     return false
   }
   private handleMutationKey(key: KeyEvent): boolean {
+    if (this.commitDialog !== undefined) {
+      return this.handleCommitDialogKey(key)
+    }
+    if (!key.ctrl && !key.meta && (key.name === "c" || key.name === "A")) {
+      const commitAvailable = this.focusManager.active === "files"
+        ? filesPaneCommitAvailable(this.model)
+        : this.focusManager.active === "main" && mainPaneCommitAvailable(this.model)
+      if (!commitAvailable) {
+        this.panes.main.box.bottomTitle = "Commit is available in Files or Main staged scope"
+        return true
+      }
+      if (key.name === "c" && this.onCommitMessage !== undefined) {
+        this.openCommitDialog("commit", "")
+        return true
+      }
+      if (key.name === "A" && this.onAmendMessage !== undefined && this.onCurrentCommitMessage !== undefined) {
+        this.openAmendDialog()
+        return true
+      }
+    }
     if ((key.name === "R" || (key.name === "r" && key.shift)) && this.onRefresh !== undefined) {
       this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
@@ -689,7 +720,6 @@ export class RootView {
       if (result?.kind === "mismatch") {
         this.pendingRemoteMismatch = { selection, message: result.message }
         const confirmation = remoteTrackingMismatchConfirmation(result.message)
-        this.panes.branches.box.bottomTitle = `${selection.remote}/${selection.branch}: ${confirmation.message} Press Enter again to confirm or Escape to cancel.`
       } else {
         this.pendingRemoteMismatch = undefined
         this.panes.branches.box.bottomTitle = undefined
@@ -707,6 +737,60 @@ export class RootView {
         this.pendingFileDiscard = undefined
       }
     })
+  }
+  private openCommitDialog(mode: "commit" | "amend", initialMessage: string): void {
+    this.commitDialog = new CommitDialog(mode, initialMessage)
+    this.panes.main.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
+    this.root.requestRender()
+  }
+
+  private openAmendDialog(): void {
+    if (this.onCurrentCommitMessage === undefined) return
+    this.mutationInFlight = true
+    void this.onCurrentCommitMessage().then((message) => {
+      this.openCommitDialog("amend", message)
+    }).catch((error: unknown) => {
+      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+      this.root.requestRender()
+    }).finally(() => {
+      this.mutationInFlight = false
+    })
+  }
+
+  private handleCommitDialogKey(key: KeyEvent): boolean {
+    const dialog = this.commitDialog
+    if (dialog === undefined) return false
+    const result = commitDialogKey(dialog.state, key)
+    if (result.result?.kind === "cancelled") {
+      this.commitDialog = undefined
+      this.panes.main.box.bottomTitle = undefined
+      this.root.requestRender()
+      return true
+    }
+    if (result.result?.kind === "confirmed") {
+      const operation = dialog.state.mode === "amend" ? this.onAmendMessage : this.onCommitMessage
+      if (operation === undefined) return true
+      this.mutationInFlight = true
+      void operation(result.result.message).then(() => {
+        if (this.commitDialog === dialog) {
+          this.commitDialog = undefined
+          this.panes.main.box.bottomTitle = undefined
+        }
+      }).catch((error: unknown) => {
+        dialog.setError(error instanceof Error ? error.message : String(error))
+        this.panes.main.box.bottomTitle = renderCommitDialog(dialog.state)
+      }).finally(() => {
+        this.mutationInFlight = false
+        this.root.requestRender()
+      })
+      return true
+    }
+    const next = commitDialogKey(dialog.state, key)
+    this.commitDialog = new CommitDialog(next.state.mode, next.state.message)
+    this.commitDialog.setError(next.state.error)
+    this.panes.main.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
+    this.root.requestRender()
+    return true
   }
 
   private runUiMutation(operation: Promise<void>): void {

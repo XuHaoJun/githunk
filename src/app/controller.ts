@@ -14,6 +14,7 @@ import { reviewStateFor, type ReviewDatabase, type ReviewFileState } from "../do
 import { fingerprintFile, targetKey } from "../review/fingerprint"
 import { emptyReviewDatabase, ReviewStore } from "../review/store"
 import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
+import { CommitMutations } from "../git/commit-mutations"
 import { checkoutRemoteTracking, createBranch, deleteBranch, fetchRemote, listBranches, listRemoteBranches, renameBranch, switchLocal, type CheckoutRemoteTrackingOptions, type CheckoutRemoteTrackingResult, type DeleteBranchOptions, type RemoteBranchSelection } from "../git/branches"
 import { MutationQueue } from "./mutation-queue"
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
@@ -41,6 +42,7 @@ export type AppControllerOptions = {
   readonly commitFilePatchLoader?: CommitFilePatchLoader
   readonly inferBase?: BaseInferenceLoader
   readonly mutations?: GitMutations
+  readonly commitMutations?: CommitMutations
   readonly reviewStore?: ReviewStore
 }
 
@@ -86,6 +88,7 @@ function changedFilesFromDocument(document: DiffDocument): readonly ChangedFile[
 }
 
 export class AppController {
+  readonly commitMutations: CommitMutations | undefined
   readonly runner: GitRunner | undefined
   readonly mutations: GitMutations | undefined
   readonly reviewStore: ReviewStore | undefined
@@ -122,6 +125,11 @@ export class AppController {
       : options instanceof GitRunner
         ? new GitMutations(runner)
         : options.mutations ?? new GitMutations(runner)
+    this.commitMutations = runner === undefined
+      ? undefined
+      : options instanceof GitRunner
+        ? new CommitMutations(runner)
+        : options.commitMutations ?? new CommitMutations(runner)
     this.loadSnapshot = load ?? ((target) => {
       if (runner === undefined) throw new Error("AppController requires a GitRunner or loader")
       return loadWorkingTree(runner, target.scope)
@@ -584,6 +592,24 @@ export class AppController {
       reviewStatuses,
       reviewSummary: this.reviewSummaryFor(reviewStatuses, this.currentState.files, this.currentState.reviewSummary?.commits ?? 0),
     }
+  }
+  async commit(message: string): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
+    await this.runMutation(() => this.commitMutations?.commit(message))
+  }
+
+  async amend(message: string): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
+    await this.runMutation(() => this.commitMutations?.amend(message))
+  }
+
+  async currentCommitMessage(): Promise<string> {
+    if (this.commitMutations === undefined) throw new Error("Commit mutations require a GitRunner")
+    return this.commitMutations.currentMessage()
+  }
+
+  async amendMessage(): Promise<string> {
+    return this.currentCommitMessage()
   }
   async stageFile(path: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return

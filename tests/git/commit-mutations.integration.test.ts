@@ -1,0 +1,55 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { CommandLog } from "../../src/app/command-log"
+import { CommitMutations, EmptyCommitMessageError } from "../../src/git/commit-mutations"
+import { GitCommandError, GitRunner } from "../../src/git/runner"
+import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
+
+describe("CommitMutations", () => {
+  let repo: TempRepository
+  let runner: GitRunner
+  beforeEach(async () => {
+    repo = await createTempRepository()
+    runner = new GitRunner({ cwd: repo.path, log: new CommandLog() })
+    await repo.write("file.txt", "base\n")
+    await repo.git(["add", "--", "file.txt"])
+    await repo.git(["commit", "--quiet", "-m", "base"])
+  })
+  afterEach(async () => repo.cleanup())
+
+  test("commits subject-only and multiline Unicode messages through stdin", async () => {
+    await repo.write("file.txt", "change\n")
+    await repo.git(["add", "--", "file.txt"])
+    const message = "subject Ω\n\nbody 中文"
+    await new CommitMutations(runner).commit(message)
+    expect((await repo.git(["log", "-1", "--format=%B"])).stdout).toBe(`${message}\n\n`)
+    expect(runner.log.records().at(-1)?.args).toEqual(["commit", "-F", "-"])
+  })
+
+  test("rejects an empty message before invoking Git", async () => {
+    await expect(new CommitMutations(runner).commit(" \n\t")).rejects.toBeInstanceOf(EmptyCommitMessageError)
+    expect(runner.log.records()).toHaveLength(0)
+  })
+
+  test("fails with no staged changes", async () => {
+    await expect(new CommitMutations(runner).commit("nothing")).rejects.toBeInstanceOf(GitCommandError)
+  })
+
+  test("preserves and edits the existing amend message", async () => {
+    const mutations = new CommitMutations(runner)
+    await repo.write("file.txt", "amend\n")
+    await repo.git(["add", "--", "file.txt"])
+    expect(await mutations.currentMessage()).toBe("base\n\n")
+    await mutations.amend("edited\n\nbody")
+    expect((await repo.git(["log", "-1", "--format=%B"])).stdout).toBe("edited\n\nbody\n\n")
+  })
+
+  test("keeps hook stderr in the command log and propagates hook failure", async () => {
+    await repo.write("file.txt", "hook\n")
+    await repo.git(["add", "--", "file.txt"])
+    await repo.write(".git/hooks/commit-msg", "#!/bin/sh\necho hook failed >&2\nexit 1\n")
+    await Bun.write(`${repo.path}/.git/hooks/commit-msg`, "#!/bin/sh\necho hook failed >&2\nexit 1\n")
+    await Bun.spawn(["chmod", "+x", `${repo.path}/.git/hooks/commit-msg`]).exited
+    await expect(new CommitMutations(runner).commit("hook")).rejects.toBeInstanceOf(GitCommandError)
+    expect(runner.log.records().at(-1)?.stderr).toContain("hook failed")
+  })
+})

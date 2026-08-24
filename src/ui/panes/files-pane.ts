@@ -38,3 +38,7 @@ export function fileLineActionReason(file: AppModel["files"][number]): string | 
   if (!file.untracked && file.additions === 0 && file.deletions === 0) return "line actions disabled: binary file"
   return undefined
 }
+
+export function filesPaneCommitAvailable(model: AppModel): boolean {
+  return model.reviewTarget.kind === "working-tree" && model.reviewTarget.scope === "staged"
+}
