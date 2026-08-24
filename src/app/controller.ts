@@ -113,6 +113,7 @@ export class AppController {
   private reviewDatabase: ReviewDatabase = emptyReviewDatabase()
   private workingTreeCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
   private branchCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
+  private priorStashStateForRefresh: AppModel | undefined
   private pendingBranchWarning: string | undefined
   private commitOriginTarget: { readonly kind: "branch"; readonly baseRef: string } | { readonly kind: "working-tree"; readonly scope: WorkingTreeScope } | undefined
 
@@ -258,29 +259,31 @@ export class AppController {
     await this.runMutation(() => this.requireRunnerOperation((runner) => createGitStash(runner, message, options)).then(() => undefined))
   }
   async applyStash(ref: string): Promise<void> {
-    if (!this.ensureWorkingTreeMutation()) return
+    if (!this.ensureStashOperation()) return
     await this.runMutation(() => this.requireRunnerOperation((runner) => applyGitStash(runner, ref)))
   }
   async popStash(ref: string): Promise<void> {
-    if (!this.ensureWorkingTreeMutation()) return
+    if (!this.ensureStashOperation()) return
     await this.runMutation(async () => {
       await this.requireRunnerOperation((runner) => popGitStash(runner, ref))
       if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
+        this.priorStashStateForRefresh = this.currentState
         this.currentState = { ...this.currentState, reviewTarget: { kind: "working-tree", scope: "all" }, title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch) }
       }
     })
   }
   async dropStash(ref: string, options: StashDropOptions): Promise<void> {
-    if (!this.ensureWorkingTreeMutation()) return
+    if (!this.ensureStashOperation()) return
     await this.runMutation(async () => {
       await this.requireRunnerOperation((runner) => dropGitStash(runner, ref, options))
       if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
+        this.priorStashStateForRefresh = this.currentState
         this.currentState = { ...this.currentState, reviewTarget: { kind: "working-tree", scope: "all" }, title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch) }
       }
     })
   }
   async inspectStash(ref: string): Promise<void> {
-    if (!this.ensureWorkingTreeMutation()) return
+    if (!this.ensureStashOperation()) return
     await this.mutationQueue.run(async () => {
       await this.refreshStashTarget(ref)
     })
@@ -753,6 +756,12 @@ export class AppController {
     })
   }
   private ensureWorkingTreeMutation(): boolean {
+    if (this.currentState.reviewTarget.kind === "working-tree") return true
+    const message = this.currentState.reviewTarget.kind === "stash" ? "Stash Review is read-only" : "Branch Review is read-only"
+    this.currentState = { ...this.currentState, banner: message }
+    return false
+  }
+  private ensureStashOperation(): boolean {
     if (this.currentState.reviewTarget.kind === "working-tree" || this.currentState.reviewTarget.kind === "stash") return true
     this.currentState = { ...this.currentState, banner: "Branch Review is read-only" }
     return false
@@ -838,6 +847,7 @@ export class AppController {
     }
   }
   private async refreshTarget(target: Extract<ReviewTarget, { readonly kind: "working-tree" }>): Promise<void> {
+    const previousState = this.priorStashStateForRefresh ?? this.currentState
     const generation = ++this.generation
     this.publishIfCurrent(generation, { loading: true })
     try {
@@ -882,17 +892,18 @@ export class AppController {
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
       }
       this.commitOriginTarget = undefined
+      this.priorStashStateForRefresh = undefined
     } catch (error) {
       if (generation !== this.generation) return
       const banner = error instanceof GitCommandError
         ? (error.record.stderr || error.message)
         : error instanceof Error ? error.message : String(error)
       this.currentState = {
-        ...this.currentState,
-        loading: false,
+        ...previousState,
         banner,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
       }
+      this.priorStashStateForRefresh = undefined
     }
   }
 

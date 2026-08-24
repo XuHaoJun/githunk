@@ -399,6 +399,10 @@ export class RootView {
         this.openCommitDialog("commit", "")
         return true
       }
+      if (amendShortcut && this.onAmendMessage !== undefined && this.onCurrentCommitMessage !== undefined) {
+        this.openAmendDialog()
+        return true
+      }
     }
     if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "s" && this.onCreateStash !== undefined &&
       !(this.focusManager.active === "branches" && this.branchFilterActive)) {
@@ -838,7 +842,7 @@ export class RootView {
     const next = commitDialogKey(dialog.state, key)
     this.commitDialog = new CommitDialog("stash", next.state.message)
     this.commitDialog.setError(next.state.error)
-    this.panes.main.box.bottomTitle = `${renderCommitDialog(this.commitDialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (u toggles)`
+    this.panes.main.box.bottomTitle = `${renderCommitDialog(this.commitDialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`
     this.root.requestRender()
     return true
   }
