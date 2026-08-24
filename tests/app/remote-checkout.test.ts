@@ -18,4 +18,20 @@ describe("AppController remote checkout", () => {
       await repository.cleanup()
     }
   })
+
+  test("keeps branch-list errors visible after a successful target refresh", async () => {
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      loadBranches: async () => { throw new Error("branch listing unavailable") },
+      load: async (target) => ({
+        repositoryRoot: "/tmp/repo",
+        branch: "main",
+        reviewTarget: target,
+        files: [],
+        patches: [],
+      }),
+    })
+    await controller.refresh()
+    expect(controller.state.banner).toBe("branch listing unavailable")
+  })
 })
