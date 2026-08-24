@@ -14,6 +14,12 @@ export type MainCursorTarget = {
   readonly hunkKey?: string
 }
 
+/** When set, main renders this patch instead of the model's own sections (commits-pane preview). */
+export type MainPaneOverride = {
+  readonly label: string
+  readonly raw: string
+}
+
 export function createMainPane(renderer: CliRenderer, model: AppModel): PaneHandle {
   const pane = createPane(renderer, "main", "0 Main", "", true)
   updateMainPane(pane, model, false)
@@ -81,18 +87,22 @@ export function changeLineIndexes(document: DiffDocument, startUtf16: number, en
   })
 }
 
-export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: boolean): void {
-  pane.box.title = model.reviewTarget.kind === "commit"
-    ? `0 Main — ${model.reviewTarget.oid.slice(0, 7)}${model.branchReviewTarget === undefined ? "" : ` · ${model.branchReviewTarget.baseRef}..HEAD`}`
-    : "0 Main"
+export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: boolean, override?: MainPaneOverride): void {
+  pane.box.title = override !== undefined
+    ? `0 Main — ${override.label}`
+    : model.reviewTarget.kind === "commit"
+      ? `0 Main — ${model.reviewTarget.oid.slice(0, 7)}${model.branchReviewTarget === undefined ? "" : ` · ${model.branchReviewTarget.baseRef}..HEAD`}`
+      : "0 Main"
   if (tooSmall) {
     pane.update("Terminal too small")
     documents.delete(pane)
     cursorTargets.delete(pane)
     return
   }
-  const sections = model.rawPatchSections.length > 0 ? model.rawPatchSections : model.patches
-  const raw = sections.map((patch) => patch.text).filter(Boolean).join("")
+  const raw = override !== undefined ? override.raw : (() => {
+    const sections = model.rawPatchSections.length > 0 ? model.rawPatchSections : model.patches
+    return sections.map((patch) => patch.text).filter(Boolean).join("")
+  })()
   if (raw.length === 0) {
     pane.update(model.loading ? "Loading…" : model.banner ? `! ${model.banner}` : "No patch loaded")
     documents.delete(pane)

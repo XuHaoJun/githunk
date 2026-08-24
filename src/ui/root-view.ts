@@ -20,7 +20,7 @@ import { createBranchesPane, branchItemId, branchPaneItems, moveBranchesCursor, 
 import { createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, filesPaneCommitAvailable, updateFilesPane } from "./panes/files-pane"
-import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, mainPaneCommitAvailable, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, mainPaneCommitAvailable, moveMainCursor, setMainCursorTarget, updateMainPane, type MainPaneOverride } from "./panes/main-pane"
 import { createStashPane, moveStashCursor, selectedStashEntry, selectedStashItem, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
@@ -52,6 +52,7 @@ export type RootViewOptions = {
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
   readonly onSelectCommit?: (oid: string) => Promise<void>
+  readonly loadCommitPreview?: (oid: string) => Promise<string>
   readonly onSelectCommitFile?: (path: string) => Promise<void>
   readonly onCommitBack?: () => Promise<void>
   readonly onMarkFocusedFileReviewed?: (path?: string) => Promise<void>
@@ -120,6 +121,7 @@ export class RootView {
   private basePickerIndex = 0
   private readonly onSelectFile: ((path: string) => void) | undefined
   private readonly onSelectCommit: ((oid: string) => Promise<void>) | undefined
+  private readonly loadCommitPreview: ((oid: string) => Promise<string>) | undefined
   private readonly onSelectCommitFile: ((path: string) => Promise<void>) | undefined
   private readonly onCommitBack: (() => Promise<void>) | undefined
   private readonly onCommitMessage: ((message: string) => Promise<void>) | undefined
@@ -148,6 +150,11 @@ export class RootView {
   private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>) | undefined
   private readonly onFilterBranches: (() => Promise<void>) | undefined
   private copyMenuOpen = false
+  // lazygit parity: browsing the commits pane previews the selected commit in main without
+  // switching the review target; leaving the pane reverts main to the model's own patch.
+  private commitPreview: { readonly oid: string; readonly label: string; readonly raw: string } | undefined
+  private previewToken = 0
+  private previewInflight: Promise<void> = Promise.resolve()
   private upstreamCursorIndex = 0
   private stashIncludeUntracked = false
   private pendingDiscardPaths: readonly string[] = []
@@ -211,6 +218,7 @@ export class RootView {
     this.onFilterBranches = options.onFilterBranches
     this.onSelectCommitFile = options.onSelectCommitFile
     this.onSelectCommit = options.onSelectCommit
+    this.loadCommitPreview = options.loadCommitPreview
     this.onCommitMessage = options.onCommitMessage
     this.onAmendMessage = options.onAmendMessage
     this.onCurrentCommitMessage = options.onCurrentCommitMessage
@@ -282,6 +290,7 @@ export class RootView {
         },
       )
       this.applyLayout()
+      this.syncCommitPreview()
     }
     this.handleResize = () => {
       this.geometry = computeLayout(
@@ -368,7 +377,8 @@ export class RootView {
       : model.files.length === 0 ? 0 : Math.min(this.fileCursorIndex, model.files.length - 1)
     updateCommitsPane(this.panes.commits, model)
     updateStashPane(this.panes.stash, model)
-    updateMainPane(this.panes.main, model, this.geometry.tooSmall)
+    updateMainPane(this.panes.main, model, this.geometry.tooSmall, this.activeMainOverride())
+    this.syncCommitPreview()
     this.commandLog.update(model.commandLog)
     this.root.requestRender()
   }
@@ -645,6 +655,7 @@ export class RootView {
         return
       case "commits":
         moveCommitsCursor(this.panes.commits, this.model, direction)
+        this.syncCommitPreview()
         return
       case "stash":
         this.pendingStashDrop = undefined
@@ -1328,6 +1339,41 @@ export class RootView {
     })
   }
 
+  /** Resolves when the current commits-pane preview request (if any) has settled. Exposed for
+   *  tests: preview loads run outside the mutation queue, so they have no other completion signal. */
+  whenPreviewSettled(): Promise<void> {
+    return this.previewInflight
+  }
+
+  private activeMainOverride(): MainPaneOverride | undefined {
+    return this.focusManager.active === "commits" ? this.commitPreview : undefined
+  }
+
+  private syncCommitPreview(): void {
+    if (this.focusManager.active !== "commits") {
+      if (this.commitPreview === undefined) return
+      this.previewToken += 1
+      this.commitPreview = undefined
+      updateMainPane(this.panes.main, this.model, this.geometry.tooSmall)
+      this.root.requestRender()
+      return
+    }
+    const selected = getSelectedCommit(this.panes.commits, this.model)
+    if (selected === undefined || selected.oid === this.commitPreview?.oid || this.loadCommitPreview === undefined) return
+    const token = this.previewToken + 1
+    this.previewToken = token
+    this.previewInflight = this.loadCommitPreview(selected.oid).then((raw) => {
+      if (token !== this.previewToken) return
+      this.commitPreview = { oid: selected.oid, label: selected.shortOid, raw }
+      updateMainPane(this.panes.main, this.model, this.geometry.tooSmall, this.activeMainOverride())
+      this.root.requestRender()
+    }).catch((error: unknown) => {
+      if (token !== this.previewToken) return
+      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+      this.root.requestRender()
+    })
+  }
+
   private moveMainCursor(direction: "next" | "previous"): void {
     const pane = this.panes.main
     const document = getMainDocument(pane)
@@ -1497,7 +1543,7 @@ export class RootView {
     this.commandLog.box.visible = legacy.logVisible && legacy.logHeight > 0 && legacy.mainWidth > 0
     this.commandLog.resize(Math.max(1, legacy.mainWidth), Math.max(1, legacy.logHeight))
     this.commandLog.update(this.model.commandLog)
-    updateMainPane(this.panes.main, this.model, legacy.tooSmall)
+    updateMainPane(this.panes.main, this.model, legacy.tooSmall, this.activeMainOverride())
     this.root.requestRender()
   }
 }

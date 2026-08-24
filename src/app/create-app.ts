@@ -71,6 +71,7 @@ export function createApp(options: CreateAppOptions): App {
     onSelectCommit: async (oid) => {
       try { await controller.selectCommit(oid) } finally { view.update(controller.state) }
     },
+    loadCommitPreview: (oid) => controller.commitPatchPreview(oid),
     onSelectCommitFile: async (path) => {
       try { await controller.selectCommitFile(path) } finally { view.update(controller.state) }
     },

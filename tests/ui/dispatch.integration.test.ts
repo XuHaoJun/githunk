@@ -356,3 +356,50 @@ describe("root view dispatch", () => {
     expect(harness.quitCalled).toBe(true)
   })
 })
+
+describe("commits pane drives the main pane like lazygit", () => {
+  let harness: ShellHarness | undefined
+  afterEach(async () => {
+    await harness?.cleanup()
+    harness = undefined
+  })
+
+  /** Preview loads run outside the mutation queue; RootView exposes their inflight promise. */
+  async function pressKeyForPreview(key: string): Promise<void> {
+    await harness!.pressKey(key)
+    await harness!.app.view!.whenPreviewSettled()
+  }
+
+  test("focusing commits previews the selected commit without entering it", async () => {
+    harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
+
+    await pressKeyForPreview("4")
+    const frame = harness.frame()
+    expect(frame).toContain("revision 2") // the newest commit's a.txt content
+    expect(frame).toContain("0 Main —")
+    // Browsing must not switch the review target: side panels keep working-tree semantics.
+    expect(frame).toContain("Target: Working Tree")
+    expect(frame).toContain("b.txt")
+  })
+
+  test("j re-points the preview at the newly selected commit", async () => {
+    harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
+
+    await pressKeyForPreview("4")
+    expect(harness.frame()).toContain("revision 2")
+    await pressKeyForPreview("j")
+    expect(harness.frame()).toContain("revision 1")
+  })
+
+  test("leaving the commits pane restores the working-tree patch", async () => {
+    harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
+
+    await pressKeyForPreview("4")
+    expect(harness.frame()).toContain("revision 2")
+    await harness.pressKey("2")
+    await harness.app.view!.whenPreviewSettled()
+    const frame = harness.frame()
+    expect(frame).toContain("+unstaged")
+    expect(frame).not.toContain("revision 2")
+  })
+})

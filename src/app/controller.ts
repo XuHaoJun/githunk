@@ -535,6 +535,13 @@ export class AppController {
     }
   }
 
+  /** Read-only preview of a commit's full patch. Unlike {@link selectCommit} it never touches
+   *  state, the review target or the cursor: browsing the commits pane must not switch modes. */
+  async commitPatchPreview(oid: string): Promise<string> {
+    const details = await this.loadCommitDetails(oid)
+    return details.document.text
+  }
+
   async selectCommitFile(path: string): Promise<void> {
     const details = this.currentState.commitDetails
     if (this.currentState.reviewTarget.kind !== "commit" || details === undefined) return
