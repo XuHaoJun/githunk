@@ -24,6 +24,70 @@
 
 ---
 
+## Implementation deltas — READ BEFORE RESUMING
+
+Tasks 1-5 are complete and reviewed. Review found real defects in this plan's own
+code; the fixes landed in the repository and this section records every place the
+shipped code intentionally differs from the task text below. **Where they
+conflict, the repository is correct and this plan's task text is stale.**
+
+- **`normalizeKey` aliases `return` to `enter`** (`src/ui/keymap.ts`). OpenTUI reports a
+  carriage return as `key.name === "return"`, so every `"enter"` binding and the nine
+  pre-existing `key.name === "enter"` comparisons in v0.1 were dead — open file, inspect
+  branch, inspect stash, commit drill-down and modal confirm all did nothing on a real
+  Enter press. Verified empirically: CR is `return`, LF is `linefeed` (deliberately NOT
+  aliased). Every other key name this plan guessed was correct: `pageup`, `pagedown`,
+  `home`, `end`, `tab`, `escape`, `space`, `backspace`, `+`, `_`, `ctrl+d`, `ctrl+u`,
+  and `shift+tab` (which arrives as name `tab` with shift set).
+- **`resolve`/`dispatch` are availability-aware** and MUST be passed `model` and `ui`.
+  An unavailable context binding falls through to the global binding for the same key;
+  a modal never falls through. Without this the global `escape` -> `back` is unreachable
+  from the main, files and commits panes.
+- **`hintsFor`/`menuFor` derive from the same precedence rule as `resolve`**, via one
+  shared `candidatesFor` helper. Computing precedence twice let the hints bar hide a key
+  that dispatch would still route (the `f` key in the branches pane). An invariant test
+  pins the agreement across 7 contexts x 4 review targets x 2 branch kinds x 2 stash
+  selections, with a non-triviality floor derived from the declarations.
+- **`handleModalKey`'s confirm tail routes through `resolveModalAction`**, which consults
+  the registry with `model` and `ui`, instead of calling `action*` methods directly.
+  Calling them directly bypassed every `available` predicate the extraction table traded
+  inline guards for, and allowed deleting a local branch the user never selected from the
+  remote-mismatch confirmation state.
+- **`handleAction` ends with a `never` exhaustiveness default.** This plan claimed the
+  switch was already exhaustive; it was not. `HANDLED_ACTIONS` and its
+  `assertHandlersCover` call were removed as vacuous once the compile-time check existed
+  (`BindingRegistry`'s constructor already rejects an unknown action).
+  **Tasks 6-8 each add cases to this switch — the `never` default will now flag a miss.**
+- **`UiState` carries `hasSelectedStash`**, and stash apply/pop/drop/inspect are gated by
+  `stashOperation` (a stash is selected AND the review target is `working-tree` or
+  `stash`), not by `writable`. Owner decision: match lazygit, which gates only on a
+  selection; the old predicate was stricter than lazygit AND than githunk's own
+  `AppController.ensureStashOperation`.
+- **`{ name: "+" }` is declared as an object, not the string `"+"`**, because
+  `parseKeyStroke` splits a key string on `"+"` as the modifier delimiter.
+- **Shift+D is declared for force branch delete** (`{ keys: ["D"], action: "branch-delete" }`),
+  reusing the action since `handleAction` already forwards `key.shift`. It was lost in the
+  Task 5 migration. The `pendingBranchDelete` identity check requires the same force flag
+  on both presses, so `d` then `D` does not complete a deletion.
+- **The layout's width decision uses mutually exclusive `sideHidden`/`mainHidden`.** Testing
+  `widthTooSmall` before `mainCollapsed` emptied the entire body on a terminal under 59
+  columns with an enlarged focused side pane. Zero-extent windows are also filtered from
+  the returned map, so "absent from `windows` means hidden" is literally true.
+- **`tests/helpers/shell-harness.ts` exposes `settle()`**, which waits on
+  `RootView.isMutating` rather than a fixed delay. `flush()` drains render passes, not the
+  promise a mutation fires, so any test asserting a git-mutation outcome must `settle()`
+  first. Task 10's acceptance tests must use it.
+
+### Known gotcha for Task 7
+
+OpenTUI **silently omits** a box `bottomTitle` that overflows the pane width — it does not
+truncate it. Several refusal messages in `root-view.ts` are long enough to vanish on a
+narrow pane. The hints bar is its own window rather than a box title, so it is not affected,
+but Task 7 should not assume a `bottomTitle` assertion is observable at a normal terminal
+width.
+
+---
+
 ## File Structure
 
 **Created**
