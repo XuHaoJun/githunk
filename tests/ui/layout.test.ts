@@ -143,6 +143,12 @@ describe("computeLayout screen modes", () => {
     expect(layout.sideWidth).toBe(60)
     expect(heightOf(layout.windows.commits)).toBeGreaterThan(0)
     expect(heightOf(layout.windows.files)).toBe(0)
+    // The four non-focused side panes are absent from the map entirely,
+    // rather than present at zero extent (Finding 2).
+    expect(layout.windows.files).toBeUndefined()
+    expect(layout.windows.branches).toBeUndefined()
+    expect(layout.windows.stash).toBeUndefined()
+    expect(layout.windows.status).toBeUndefined()
   })
 
   test("full mode with side focus collapses main", () => {
@@ -150,6 +156,28 @@ describe("computeLayout screen modes", () => {
     expect(layout.windows.main).toBeUndefined()
     expect(layout.windows.vsplit).toBeUndefined()
     expect(widthOf(layout.windows.commits)).toBe(120)
+  })
+
+  test("full mode with side focus on a narrow terminal shows the side pane, not an empty layout", () => {
+    // Regression for Finding 1: width 50 is narrower than MIN_LEFT_WIDTH +
+    // SPLITTER_SIZE + MIN_MAIN_WIDTH (59), and the side pane is enlarged.
+    const layout = computeLayout({ width: 50, height: 40 }, { focus: "commits", screenMode: "full" })
+    expect(Object.keys(layout.windows).length).toBeGreaterThan(0)
+    expect(widthOf(layout.windows.commits)).toBe(50)
+    expect(layout.windows.main).toBeUndefined()
+  })
+
+  test("half mode with side focus on a narrow terminal shows the side pane instead of main", () => {
+    const layout = computeLayout({ width: 50, height: 40 }, { focus: "commits", screenMode: "half" })
+    expect(widthOf(layout.windows.commits)).toBe(50)
+    expect(layout.windows.main).toBeUndefined()
+  })
+
+  test("normal mode on a narrow terminal still hides the side region and gives main full width", () => {
+    const layout = computeLayout({ width: 50, height: 40 }, { focus: "commits", screenMode: "normal" })
+    expect(layout.windows.commits).toBeUndefined()
+    expect(layout.windows.vsplit).toBeUndefined()
+    expect(widthOf(layout.windows.main)).toBe(50)
   })
 
   test("cycles forward and backward without wrapping past the ends", () => {
