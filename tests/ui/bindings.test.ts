@@ -456,4 +456,46 @@ describe("hints/dispatch agreement invariant", () => {
       }
     }
   }
+
+  test("invariant: aggregate binding coverage floor", () => {
+    // Count bindings with displayOnScreen: true to establish the floor
+    const displayedBindings = GITHUNK_BINDINGS.filter((b) => b.displayOnScreen === true).length
+
+    // Accumulate total rows examined across all 112 state combinations
+    let totalRowsExamined = 0
+    for (const { model: stateModel } of targets) {
+      for (const branchKind of branchKinds) {
+        for (const hasSelectedStash of stashSelections) {
+          const state = ui({ selectedBranchKind: branchKind, hasSelectedStash })
+          for (const context of contexts) {
+            totalRowsExamined += registry.hintRowsFor(context, stateModel, state).length
+          }
+        }
+      }
+    }
+
+    expect(totalRowsExamined).toBeGreaterThanOrEqual(displayedBindings)
+  })
+
+  test("invariant: every context renders at least one row in some state", () => {
+    const contextsCovered = new Set<BindingContext>()
+
+    for (const { model: stateModel } of targets) {
+      for (const branchKind of branchKinds) {
+        for (const hasSelectedStash of stashSelections) {
+          const state = ui({ selectedBranchKind: branchKind, hasSelectedStash })
+          for (const context of contexts) {
+            const rows = registry.hintRowsFor(context, stateModel, state)
+            if (rows.length > 0) {
+              contextsCovered.add(context)
+            }
+          }
+        }
+      }
+    }
+
+    for (const context of contexts) {
+      expect(contextsCovered.has(context)).toBe(true)
+    }
+  })
 })
