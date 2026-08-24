@@ -60,13 +60,13 @@ export function changeLineIndexes(document: DiffDocument, startUtf16: number, en
 }
 
 export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: boolean): void {
+  pane.box.title = model.reviewTarget.kind === "commit" ? `0 Main — ${model.reviewTarget.oid.slice(0, 7)}` : "0 Main"
   if (tooSmall) {
     pane.update("Terminal too small")
     documents.delete(pane)
     cursorTargets.delete(pane)
     return
   }
-
   const sections = model.rawPatchSections.length > 0 ? model.rawPatchSections : model.patches
   const raw = sections.map((patch) => patch.text).filter(Boolean).join("")
   if (raw.length === 0) {

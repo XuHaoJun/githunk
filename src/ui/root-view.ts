@@ -13,7 +13,7 @@ import {
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
 import { createBranchesPane, updateBranchesPane } from "./panes/branches-pane"
-import { createCommitsPane, updateCommitsPane } from "./panes/commits-pane"
+import { createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, updateFilesPane } from "./panes/files-pane"
 import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
@@ -39,6 +39,9 @@ export type RootViewOptions = {
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
+  readonly onSelectCommit?: (oid: string) => Promise<void>
+  readonly onSelectCommitFile?: (path: string) => Promise<void>
+  readonly onCommitBack?: () => Promise<void>
   readonly onMarkFocusedFileReviewed?: (path?: string) => Promise<void>
   readonly onRefresh?: () => Promise<void>
 }
@@ -72,6 +75,9 @@ export class RootView {
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
   private basePickerIndex = 0
   private readonly onSelectFile: ((path: string) => void) | undefined
+  private readonly onSelectCommit: ((oid: string) => Promise<void>) | undefined
+  private readonly onSelectCommitFile: ((path: string) => Promise<void>) | undefined
+  private readonly onCommitBack: (() => Promise<void>) | undefined
   private readonly onMarkFocusedFileReviewed: ((path?: string) => Promise<void>) | undefined
   private readonly onRefresh: (() => Promise<void>) | undefined
   private fileCursorIndex = 0
@@ -99,6 +105,9 @@ export class RootView {
     this.onApplySelection = options.onApplySelection
     this.onDiscardSelection = options.onDiscardSelection
     this.onSelectFile = options.onSelectFile
+    this.onSelectCommit = options.onSelectCommit
+    this.onSelectCommitFile = options.onSelectCommitFile
+    this.onCommitBack = options.onCommitBack
     this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
     this.onRefresh = options.onRefresh
     this.renderer = renderer
@@ -279,6 +288,25 @@ export class RootView {
       this.runUiMutation(this.onModeChange("working-tree"))
       return true
     }
+    if (this.focusManager.active === "commits") {
+      if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
+        moveCommitsCursor(this.panes.commits, this.model, key.name === "j" || key.name === "down" ? "next" : "previous")
+        return true
+      }
+      if (key.name === "enter" && this.onSelectCommit !== undefined) {
+        const selected = getSelectedCommit(this.panes.commits, this.model)
+        if (selected !== undefined) {
+          this.runUiMutation(this.onSelectCommit(selected.oid))
+          this.focusManager.focus("files")
+        }
+        return true
+      }
+      if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
+        this.runUiMutation(this.onCommitBack())
+        return true
+      }
+      return false
+    }
     if (this.mutationInFlight && ["space", "d", "tab", "a"].includes(key.name)) {
       this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
       return true
@@ -288,6 +316,11 @@ export class RootView {
       return true
     }
     if (this.focusManager.active === "files") {
+      if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
+        this.runUiMutation(this.onCommitBack())
+        this.focusManager.focus("commits")
+        return true
+      }
       if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
         this.pendingFileDiscard = undefined
         this.discardPending = false
@@ -299,7 +332,13 @@ export class RootView {
       }
       if (key.name === "enter") {
         const selected = this.model.files[this.fileCursorIndex]
-        if (selected !== undefined) this.onSelectFile?.(selected.path)
+        if (selected !== undefined) {
+          if (this.model.reviewTarget.kind === "commit" && this.onSelectCommitFile !== undefined) {
+            this.runUiMutation(this.onSelectCommitFile(selected.path))
+          } else {
+            this.onSelectFile?.(selected.path)
+          }
+        }
         this.focusManager.focus("main")
         return true
       }
@@ -349,6 +388,11 @@ export class RootView {
       return true
     }
     if (this.focusManager.active !== "main") return false
+    if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
+      this.runUiMutation(this.onCommitBack())
+      this.focusManager.focus("commits")
+      return true
+    }
     if (key.name === "tab" && this.onScopeChange !== undefined) {
       const scope = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged" ? "unstaged" : "staged"
       this.runUiMutation(this.onScopeChange(scope))

@@ -1,9 +1,11 @@
 import { GitRunner, GitCommandError } from "../git/runner"
 import { loadWorkingTree } from "../git/diff"
 import { loadBranchReview, type BranchReviewSnapshot } from "../git/branch-review"
+import { listCommits, loadCommit, loadCommitFilePatch } from "../git/commits"
+import type { CommitDetails, CommitSummary } from "../domain/commit"
 import { inferReviewBase, currentBranchRef, resolveRefOid, reviewBaseCandidates, type BaseInference } from "../git/base-inference"
 import { parseDiff } from "../domain/diff/parse"
-import type { DiffDocument } from "../domain/diff/document"
+import type { DiffDocument, DiffFile } from "../domain/diff/document"
 import type { AppModel, PatchSection } from "../domain/repository"
 import type { ReviewTarget, WorkingTreeScope, ChangedFile } from "../domain/review-target"
 import type { WorkingTreeSnapshot } from "../domain/repository"
@@ -12,9 +14,11 @@ import { fingerprintFile, targetKey } from "../review/fingerprint"
 import { emptyReviewDatabase, ReviewStore } from "../review/store"
 import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
 import { MutationQueue } from "./mutation-queue"
-
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
 export type BranchReviewLoader = (baseRef: string) => Promise<BranchReviewSnapshot>
+export type CommitListLoader = (range: string, filter?: string) => Promise<readonly CommitSummary[]>
+export type CommitLoader = (oid: string) => Promise<CommitDetails>
+export type CommitFilePatchLoader = (oid: string, path: string) => Promise<DiffDocument>
 export type BaseInferenceLoader = () => Promise<BaseInference>
 
 export type AppControllerOptions = {
@@ -24,6 +28,12 @@ export type AppControllerOptions = {
   readonly loader?: WorkingTreeLoader
   readonly loadBranch?: BranchReviewLoader
   readonly branchLoader?: BranchReviewLoader
+  readonly loadCommits?: CommitListLoader
+  readonly commitsLoader?: CommitListLoader
+  readonly loadCommit?: CommitLoader
+  readonly commitLoader?: CommitLoader
+  readonly loadCommitFilePatch?: CommitFilePatchLoader
+  readonly commitFilePatchLoader?: CommitFilePatchLoader
   readonly inferBase?: BaseInferenceLoader
   readonly mutations?: GitMutations
   readonly reviewStore?: ReviewStore
@@ -51,6 +61,24 @@ function rawPatchForFile(file: ChangedFile, patches: readonly PatchSection[]): s
 function ownValue<T>(record: Record<string, T> | undefined, key: string): T | undefined {
   return record !== undefined && Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined
 }
+function changedFilesFromDocument(document: DiffDocument): readonly ChangedFile[] {
+  return document.files.flatMap((file: DiffFile) => {
+    const path = file.newPath ?? file.oldPath
+    if (path === undefined || path === "/dev/null") return []
+    const additions = file.lines.filter((line) => line.kind === "addition").length
+    const deletions = file.lines.filter((line) => line.kind === "deletion").length
+    return [{
+      path,
+      ...(file.oldPath !== undefined && file.newPath !== undefined && file.oldPath !== file.newPath ? { previousPath: file.oldPath } : {}),
+      indexStatus: ".",
+      worktreeStatus: ".",
+      untracked: false,
+      conflicted: false,
+      additions,
+      deletions,
+    }]
+  })
+}
 
 export class AppController {
   readonly runner: GitRunner | undefined
@@ -59,18 +87,24 @@ export class AppController {
   readonly mutationQueue = new MutationQueue()
   private readonly loadSnapshot: WorkingTreeLoader
   private readonly loadBranchSnapshot: BranchReviewLoader
+  private readonly loadCommitList: CommitListLoader
+  private readonly loadCommitDetails: CommitLoader
+  private readonly loadCommitFile: CommitFilePatchLoader
   private readonly inferBase: BaseInferenceLoader
+  private readonly automaticCommitHistory: boolean
   private generation = 0
   private currentState: AppModel
   private reviewDatabase: ReviewDatabase = emptyReviewDatabase()
   private workingTreeCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
   private branchCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
   private pendingBranchWarning: string | undefined
+  private commitOriginTarget: ReviewTarget | undefined
 
   constructor(options: AppControllerOptions | GitRunner, loader?: WorkingTreeLoader) {
     const runner = options instanceof GitRunner ? options : options.runner
     const load = options instanceof GitRunner ? loader : options.load ?? options.loader
     const repositoryRoot = options instanceof GitRunner ? options.cwd : options.repositoryRoot ?? runner?.cwd
+    this.automaticCommitHistory = options instanceof GitRunner || options.loadCommits !== undefined || options.commitsLoader !== undefined
     const shouldUseDefaultReviewStore = load === undefined
     this.reviewStore = options instanceof GitRunner
       ? shouldUseDefaultReviewStore ? new ReviewStore({ repositoryRoot, runner }) : undefined
@@ -88,6 +122,15 @@ export class AppController {
     this.loadBranchSnapshot = options instanceof GitRunner
       ? (baseRef) => loadBranchReview(options, baseRef)
       : options.loadBranch ?? options.branchLoader ?? (runner === undefined ? async () => { throw new Error("Branch review requires a GitRunner") } : (baseRef) => loadBranchReview(runner, baseRef))
+    this.loadCommitList = options instanceof GitRunner
+      ? (range, filter) => listCommits(options, range, filter)
+      : options.loadCommits ?? options.commitsLoader ?? (runner === undefined ? async () => [] : (range, filter) => listCommits(runner, range, filter))
+    this.loadCommitDetails = options instanceof GitRunner
+      ? (oid) => loadCommit(options, oid)
+      : options.loadCommit ?? options.commitLoader ?? (runner === undefined ? async () => { throw new Error("Commit details require a GitRunner") } : (oid) => loadCommit(runner, oid))
+    this.loadCommitFile = options instanceof GitRunner
+      ? (oid, path) => loadCommitFilePatch(options, oid, path)
+      : options.loadCommitFilePatch ?? options.commitFilePatchLoader ?? (runner === undefined ? async () => { throw new Error("Commit file patches require a GitRunner") } : (oid, path) => loadCommitFilePatch(runner, oid, path))
     this.inferBase = options instanceof GitRunner
       ? () => inferReviewBase(options)
       : options.inferBase ?? (runner === undefined ? async () => ({ kind: "choose" as const, candidates: [], reason: "no Git runner" }) : () => inferReviewBase(runner))
@@ -104,6 +147,7 @@ export class AppController {
       loading: false,
       commandLog: runner?.log.records() ?? [],
       title: titleFor(target),
+      commits: [],
     }
   }
 
@@ -140,6 +184,75 @@ export class AppController {
 
   async chooseBase(baseRef: string): Promise<void> {
     await this.setBranchBase(baseRef)
+  }
+
+  async selectCommit(oid: string): Promise<void> {
+    const details = await this.loadCommitDetails(oid)
+    if (this.commitOriginTarget === undefined) {
+      this.commitOriginTarget = this.currentState.branchReviewTarget ?? this.currentState.reviewTarget
+    }
+    const files = changedFilesFromDocument(details.document)
+    const patch = { label: "BRANCH" as const, text: details.document.text }
+    const { banner: _previousBanner, commitFilePath: _previousCommitFilePath, ...previousState } = this.currentState
+    this.currentState = {
+      ...previousState,
+      reviewTarget: { kind: "commit", oid },
+      commitDetails: details,
+      files,
+      patches: [patch],
+      rawPatchSections: [patch],
+      ...(files[0] === undefined ? {} : { selectionId: files[0].path, focusId: files[0].path }),
+      title: titleFor({ kind: "commit", oid }, this.currentState.branch),
+      loading: false,
+      commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+    }
+  }
+
+  async selectCommitFile(path: string): Promise<void> {
+    const details = this.currentState.commitDetails
+    if (this.currentState.reviewTarget.kind !== "commit" || details === undefined) return
+    const document = await this.loadCommitFile(this.currentState.reviewTarget.oid, path)
+    const files = changedFilesFromDocument(document)
+    const patch = { label: "BRANCH" as const, text: document.text }
+    this.currentState = {
+      ...this.currentState,
+      commitFilePath: path,
+      files: files.length > 0 ? files : this.currentState.files.filter((file) => file.path === path),
+      patches: [patch],
+      rawPatchSections: [patch],
+      selectionId: path,
+      focusId: path,
+      loading: false,
+      commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+    }
+  }
+
+  async navigateBack(): Promise<void> {
+    if (this.currentState.reviewTarget.kind !== "commit") return
+    if (this.currentState.commitFilePath !== undefined) {
+      const details = this.currentState.commitDetails
+      if (details === undefined) return
+      const patch = { label: "BRANCH" as const, text: details.document.text }
+      const files = changedFilesFromDocument(details.document)
+      const { commitFilePath: _previousCommitFilePath, ...previousState } = this.currentState
+      this.currentState = {
+        ...previousState,
+        files,
+        patches: [patch],
+        rawPatchSections: [patch],
+        ...(files[0] === undefined ? {} : { selectionId: files[0].path, focusId: files[0].path }),
+      }
+      return
+    }
+    const target = this.commitOriginTarget
+    this.commitOriginTarget = undefined
+    if (target?.kind === "branch") {
+      await this.refreshBranchTarget(target.baseRef)
+      return
+    }
+    if (target?.kind === "working-tree") {
+      await this.refreshTarget(target)
+    }
   }
 
   private async openBranchReview(): Promise<void> {
@@ -231,6 +344,10 @@ export class AppController {
   }
 
   async markFileReviewed(path: string): Promise<void> {
+    if (this.currentState.reviewTarget.kind === "commit") {
+      this.currentState = { ...this.currentState, banner: "Commit drill-down is read-only" }
+      return
+    }
     const file = this.currentState.files.find((candidate) => candidate.path === path)
     if (file === undefined) return
     const fingerprint = fingerprintFile(this.currentState.reviewTarget, {
@@ -386,6 +503,14 @@ export class AppController {
       ...(warning === undefined ? {} : { warning }),
     }
   }
+  private async loadCommitHistory(range: string): Promise<readonly CommitSummary[]> {
+    if (!this.automaticCommitHistory) return []
+    try {
+      return await this.loadCommitList(range)
+    } catch {
+      return []
+    }
+  }
   private async refreshTarget(target: Extract<ReviewTarget, { readonly kind: "working-tree" }>): Promise<void> {
     const generation = ++this.generation
     this.publishIfCurrent(generation, { loading: true })
@@ -394,10 +519,21 @@ export class AppController {
       if (generation !== this.generation) return
       const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
       if (generation !== this.generation) return
+      const commits = await this.loadCommitHistory("HEAD")
       const cursor = this.currentState.reviewTarget.kind === "working-tree"
         ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
         : this.workingTreeCursor
-      const { upstream: _previousUpstream, banner: _previousBanner, basePicker: _previousPicker, selectionId: _previousSelectionId, focusId: _previousFocusId, ...previousState } = this.currentState
+      const {
+        upstream: _previousUpstream,
+        banner: _previousBanner,
+        basePicker: _previousPicker,
+        selectionId: _previousSelectionId,
+        focusId: _previousFocusId,
+        commitDetails: _previousCommitDetails,
+        commitFilePath: _previousCommitFilePath,
+        branchReviewTarget: _previousBranchReviewTarget,
+        ...previousState
+      } = this.currentState
       this.currentState = {
         ...previousState,
         ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
@@ -412,10 +548,12 @@ export class AppController {
         rawPatchSections: snapshot.patches,
         reviewStatuses: review.statuses,
         reviewSummary: review.summary,
+        commits,
         loading: false,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
       }
+      this.commitOriginTarget = undefined
     } catch (error) {
       if (generation !== this.generation) return
       const banner = error instanceof GitCommandError
@@ -438,28 +576,42 @@ export class AppController {
       if (generation !== this.generation) return false
       const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
       if (generation !== this.generation) return false
+      const commits = await this.loadCommitHistory(`${snapshot.baseRef}..HEAD`)
+      if (generation !== this.generation) return false
       const cursor = this.currentState.reviewTarget.kind === "branch"
         ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
         : this.branchCursor
       const branchWarning = review.warning ?? this.pendingBranchWarning
       this.pendingBranchWarning = undefined
-      const { upstream: _previousUpstream, banner: _previousBanner, basePicker: _previousPicker, selectionId: _previousSelectionId, focusId: _previousFocusId, ...previousState } = this.currentState
+      const {
+        upstream: _previousUpstream,
+        banner: _previousBanner,
+        basePicker: _previousPicker,
+        selectionId: _previousSelectionId,
+        focusId: _previousFocusId,
+        commitDetails: _previousCommitDetails,
+        commitFilePath: _previousCommitFilePath,
+        ...previousState
+      } = this.currentState
       this.currentState = {
         ...previousState,
         ...(branchWarning === undefined ? {} : { banner: branchWarning }),
         branch: snapshot.branch,
         reviewTarget: snapshot.reviewTarget,
+        branchReviewTarget: snapshot.reviewTarget,
         files: snapshot.files,
         patches: snapshot.patches,
         rawPatchSections: snapshot.patches,
         reviewStatuses: review.statuses,
         reviewSummary: this.reviewSummaryFor(review.statuses, snapshot.files, snapshot.commitCount),
+        commits,
         loading: false,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
         ...(cursor.selectionId === undefined ? {} : { selectionId: cursor.selectionId }),
         ...(cursor.focusId === undefined ? {} : { focusId: cursor.focusId }),
       }
+      this.commitOriginTarget = undefined
       return true
     } catch (error) {
       if (generation !== this.generation) return false

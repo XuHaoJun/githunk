@@ -55,6 +55,15 @@ export async function startApp(): Promise<number> {
       controller.selectFile(path)
       view.update(controller.state)
     },
+    onSelectCommit: async (oid) => {
+      try { await controller.selectCommit(oid) } finally { view.update(controller.state) }
+    },
+    onSelectCommitFile: async (path) => {
+      try { await controller.selectCommitFile(path) } finally { view.update(controller.state) }
+    },
+    onCommitBack: async () => {
+      try { await controller.navigateBack() } finally { view.update(controller.state) }
+    },
     onMarkFocusedFileReviewed: async (path) => {
       try { await controller.markFocusedFileReviewed(path) } finally { view.update(controller.state) }
     },
