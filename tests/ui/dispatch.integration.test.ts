@@ -535,3 +535,77 @@ describe("hints bar and keybinding menu", () => {
     expect(open).toContain("fetch the selected remote  (unavailable)")
   })
 })
+
+describe("navigation keys", () => {
+  let harness: ShellHarness | undefined
+  afterEach(async () => { await harness?.cleanup() })
+
+  test("J and K scroll the main pane while a left pane keeps focus", async () => {
+    harness = await createShellHarness({ height: 20 })
+    const view = harness.app.view!
+    // The default one-line b.txt diff is shorter than the viewport, so there is nothing
+    // to scroll; give the working tree a patch taller than a 20-row terminal first.
+    await harness.repository.write("b.txt", Array.from({ length: 60 }, (_, line) => `line ${line}`).join("\n") + "\n")
+    await harness.app.refresh()
+
+    await harness.pressKey("2")
+    await harness.pressKey("J")
+    expect(view.focusManager.active).toBe("files")
+    expect(view.mainScrollY).toBeGreaterThan(0)
+    await harness.pressKey("K")
+    expect(view.mainScrollY).toBe(0)
+  })
+
+  test("H and L scroll the main pane horizontally", async () => {
+    harness = await createShellHarness()
+    const view = harness.app.view!
+    // The default b.txt diff has no line longer than the 120-column viewport; write a
+    // line far wider than it so horizontal scrolling has somewhere to go.
+    await harness.repository.write("b.txt", `wide ${"x".repeat(200)}\n`)
+    await harness.app.refresh()
+
+    await harness.pressKey("2")
+    await harness.pressKey("L")
+    expect(view.mainScrollX).toBeGreaterThan(0)
+    await harness.pressKey("H")
+    expect(view.mainScrollX).toBe(0)
+  })
+
+  test("angle brackets jump a list to its ends", async () => {
+    harness = await createShellHarness({ commits: ["alpha", "beta", "gamma", "delta"] })
+
+    await harness.pressKey("4")
+    await harness.pressKey(">")
+    expect(harness.frame()).toContain("alpha")
+    await harness.pressKey("<")
+    expect(harness.frame()).toContain("delta")
+  })
+
+  test("comma and period page a list", async () => {
+    harness = await createShellHarness({ commits: ["c1", "c2", "c3", "c4", "c5", "c6"], height: 24 })
+    const view = harness.app.view!
+
+    await harness.pressKey("4")
+    const before = view.commitsCursorIndex
+
+    await harness.pressKey(".")
+    expect(view.commitsCursorIndex).toBeGreaterThan(before + 1)
+  })
+
+  test("h and l move between hunks inside the main pane without moving focus", async () => {
+    harness = await createShellHarness()
+    const view = harness.app.view!
+    // moveMainCursor clamps to the current target when the patch has only one, so
+    // give it a second unstaged file to navigate onto.
+    await harness.repository.write("c.txt", "second file\n")
+    await harness.app.refresh()
+
+    await harness.pressKey("2")
+    await harness.pressKey("RETURN")
+    expect(view.focusManager.active).toBe("main")
+    const before = getMainCursorTarget(view.mainPane)
+    await harness.pressKey("l")
+    expect(view.focusManager.active).toBe("main")
+    expect(getMainCursorTarget(view.mainPane)).not.toEqual(before)
+  })
+})

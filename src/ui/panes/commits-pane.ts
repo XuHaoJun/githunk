@@ -46,3 +46,7 @@ export function updateCommitsPane(pane: PaneHandle, model: AppModel): void {
   pane.update(lines.join("\n"))
   pane.box.bottomTitle = `${index + 1}/${commits.length}: ${commits[index]?.subject ?? "No commit selected"}`
 }
+
+export function commitsCursorIndex(pane: PaneHandle): number {
+  return cursors.get(pane) ?? 0
+}

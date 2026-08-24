@@ -148,3 +148,12 @@ export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: bool
   pane.text.wrapMode = "char"
   pane.update(renderDiff(document).styledText)
 }
+
+/** Scrolls the main pane's text viewport, clamped to its content. */
+export function scrollMainPane(pane: PaneHandle, axis: "x" | "y", delta: number): void {
+  if (axis === "y") {
+    pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY + delta))
+    return
+  }
+  pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX + delta))
+}

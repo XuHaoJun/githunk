@@ -20,15 +20,16 @@ import {
   type LayoutGeometry,
   type LayoutRequest,
   type ScreenMode,
+  type SideWindow,
   type WindowName,
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
 import { indexForStableId } from "../app/filter"
 import { createBranchesPane, branchItemId, branchPaneItems, moveBranchesCursor, selectedBranchItem, updateBranchesPane } from "./panes/branches-pane"
-import { createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
+import { commitsCursorIndex as readCommitsCursorIndex, createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, filesPaneCommitAvailable, updateFilesPane } from "./panes/files-pane"
-import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, mainPaneCommitAvailable, moveMainCursor, setMainCursorTarget, updateMainPane, type MainPaneOverride } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, updateMainPane, type MainPaneOverride } from "./panes/main-pane"
 import { createStashPane, moveStashCursor, selectedStashEntry, selectedStashItem, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
@@ -413,6 +414,13 @@ export class RootView {
     return this.mutationInFlight
   }
 
+  /** The main pane's text viewport scroll positions, for tests and diagnostics. */
+  get mainScrollY(): number { return this.panes.main.text.scrollY }
+  get mainScrollX(): number { return this.panes.main.text.scrollX }
+  /** The commits pane's list cursor index. */
+  get commitsCursorIndex(): number { return readCommitsCursorIndex(this.panes.commits) }
+  get mainPane(): PaneHandle { return this.panes.main }
+
   private uiState(): UiState {
     const target = this.model.reviewTarget
     const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
@@ -487,12 +495,20 @@ export class RootView {
         this.menuOpen = !this.menuOpen
         this.recomputeLayout()
         return
-      // Implemented in Task 8.
-      case "page-next": case "page-previous": case "goto-top": case "goto-bottom":
-      case "main-scroll-down": case "main-scroll-up": case "main-scroll-left": case "main-scroll-right":
-      case "main-half-page-down": case "main-half-page-up":
-      case "hunk-next": case "hunk-previous":
-        return
+      case "main-scroll-down": scrollMainPane(this.panes.main, "y", 1); this.root.requestRender(); return
+      case "main-scroll-up": scrollMainPane(this.panes.main, "y", -1); this.root.requestRender(); return
+      case "main-scroll-right": scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
+      case "main-scroll-left": scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
+      case "main-half-page-down": scrollMainPane(this.panes.main, "y", this.mainPageStep()); this.root.requestRender(); return
+      case "main-half-page-up": scrollMainPane(this.panes.main, "y", -this.mainPageStep()); this.root.requestRender(); return
+      case "page-next": this.actionPage("next"); return
+      case "page-previous": this.actionPage("previous"); return
+      case "goto-top": this.actionJump("top"); return
+      case "goto-bottom": this.actionJump("bottom"); return
+      // hunk-next/previous are the same hunk-granular move j/k already perform in the
+      // main pane; reuse it so both report cursor position identically.
+      case "hunk-next": this.moveMainCursor("next"); return
+      case "hunk-previous": this.moveMainCursor("previous"); return
       default: {
         const unhandled: never = action
         return unhandled
@@ -690,14 +706,45 @@ export class RootView {
         moveStashCursor(this.panes.stash, this.model, direction)
         return
       case "main":
-        // j/k move the hunk cursor here (MainCursorTarget is hunk-granular and githunk has
-        // no line cursor yet). h/l are bound to hunk-previous/hunk-next in main, not to
-        // next/previous, and are no-ops until Task 8 implements hunk navigation.
+        // j/k (and h/l via hunk-next/previous) move the hunk cursor here:
+        // MainCursorTarget is hunk-granular and githunk has no line cursor yet.
         this.moveMainCursor(direction)
         return
       default:
         return
     }
+  }
+
+  /** Half the main pane's visible rows, at least one. */
+  private mainPageStep(): number {
+    return Math.max(1, Math.floor(heightOf(this.geometry.windows.main) / 2))
+  }
+
+  /** The visible rows of the focused pane, at least one, used as the page step. */
+  private focusedPageStep(): number {
+    const focus = this.focusManager.active
+    const dimensions = focus === "command-log"
+      ? this.geometry.windows.log
+      : this.geometry.windows[focus as SideWindow] ?? this.geometry.windows.main
+    return Math.max(1, heightOf(dimensions) - 2)
+  }
+
+  private actionPage(direction: "next" | "previous"): void {
+    const step = this.focusedPageStep()
+    for (let moved = 0; moved < step; moved += 1) this.actionMoveCursor(direction)
+  }
+
+  private actionJump(edge: "top" | "bottom"): void {
+    // Lists are short enough that repeating the single-step move is simpler
+    // and cannot disagree with it about clamping or selection side effects.
+    const direction = edge === "bottom" ? "next" : "previous"
+    const limit = Math.max(
+      this.model.files.length,
+      (this.model.commits ?? []).length,
+      (this.model.stashes ?? []).length,
+      branchPaneItems(this.model, this.branchFilter).length,
+    ) + 1
+    for (let moved = 0; moved < limit; moved += 1) this.actionMoveCursor(direction)
   }
 
   private actionInspect(): void {
