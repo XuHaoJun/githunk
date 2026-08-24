@@ -65,6 +65,14 @@ export type MenuEntry = {
   readonly enabled: boolean
 }
 
+export type ResolveOptions = {
+  readonly context?: BindingContext
+  readonly modal?: boolean
+  /** Supplying both `model` and `ui` enables availability filtering during resolution. */
+  readonly model?: AppModel
+  readonly ui?: UiState
+}
+
 const HINT_SEPARATOR = " | "
 const HINT_ELLIPSIS = "…"
 
@@ -138,28 +146,53 @@ export class BindingRegistry {
     }
   }
 
-  resolve(key: KeyLike, options: { readonly context?: BindingContext; readonly modal?: boolean } = {}): Binding | undefined {
+  resolve(key: KeyLike, options: ResolveOptions = {}): Binding | undefined {
     const id = strokeId(normalizeKey(key))
-    // A modal is a hard input boundary: it never falls through to pane or global bindings.
-    if (options.modal === true) return this.byContext.get("modal")?.get(id)
+    const hasAvailability = options.model !== undefined && options.ui !== undefined
+    // Skip a binding whose `available` predicate returns false, rather than matching it, so
+    // resolution can continue to the next priority level. Without model/ui we can't evaluate
+    // `available`, so behave exactly as before: no filtering.
+    const admit = (binding: Binding | undefined): Binding | undefined =>
+      binding !== undefined && hasAvailability && !isAvailable(binding, options.model as AppModel, options.ui as UiState)
+        ? undefined
+        : binding
+
+    // A modal is a hard input boundary: it never falls through to pane or global bindings,
+    // even when the matched binding itself is unavailable.
+    if (options.modal === true) return admit(this.byContext.get("modal")?.get(id))
+
     const context = options.context
     const focused = context === undefined ? undefined : this.byContext.get(context)?.get(id)
-    return focused ?? this.byContext.get("global")?.get(id)
+    const admittedFocused = admit(focused)
+    if (admittedFocused !== undefined) return admittedFocused
+    // Fall through to the global binding for the same key when the context binding is missing
+    // or unavailable. Motivating case: `escape` is declared as `commit-back` in the main, files
+    // and commits contexts (available only while reviewing a commit) and as `back` globally.
+    // Without this fall-through, `back` — which clears a pending discard/delete confirmation —
+    // would be permanently shadowed by the unavailable `commit-back` binding in those contexts.
+    return admit(this.byContext.get("global")?.get(id))
   }
 
-  dispatch(key: KeyLike, options: { readonly context?: BindingContext; readonly modal?: boolean } = {}): Action | undefined {
+  dispatch(key: KeyLike, options: ResolveOptions = {}): Action | undefined {
     return this.resolve(key, options)?.action
   }
 
-  /** Context bindings first, then global bindings whose keys the context has not overridden. */
-  private orderedFor(context: BindingContext): readonly Binding[] {
+  /** Context bindings first, then global bindings whose keys the context has not overridden, each paired with its group. */
+  private groupedFor(context: BindingContext): readonly { readonly binding: Binding; readonly group: "context" | "global" }[] {
     const contextBindings = this.bindings.filter((binding) => (binding.contexts ?? []).includes(context))
     const shadowed = new Set(contextBindings.flatMap((binding) => binding.keys.map((key) => strokeId(normalizeKey(key)))))
     const globalBindings = this.bindings.filter((binding) =>
       binding.contexts === undefined &&
       !binding.keys.some((key) => shadowed.has(strokeId(normalizeKey(key)))),
     )
-    return [...contextBindings, ...globalBindings]
+    return [
+      ...contextBindings.map((binding) => ({ binding, group: "context" as const })),
+      ...globalBindings.map((binding) => ({ binding, group: "global" as const })),
+    ]
+  }
+
+  private orderedFor(context: BindingContext): readonly Binding[] {
+    return this.groupedFor(context).map((entry) => entry.binding)
   }
 
   hintsFor(context: BindingContext, model: AppModel, ui: UiState, width: number): string {
@@ -170,11 +203,8 @@ export class BindingRegistry {
   }
 
   menuFor(context: BindingContext, model: AppModel, ui: UiState): readonly MenuEntry[] {
-    const contextActions = new Set(this.bindings
-      .filter((binding) => (binding.contexts ?? []).includes(context))
-      .map((binding) => binding.action))
-    return this.orderedFor(context).map((binding) => ({
-      group: contextActions.has(binding.action) ? "context" as const : "global" as const,
+    return this.groupedFor(context).map(({ binding, group }) => ({
+      group,
       keys: displayKeyFor(binding),
       description: binding.menuDescription ?? binding.description,
       enabled: isAvailable(binding, model, ui),

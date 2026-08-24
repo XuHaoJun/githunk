@@ -127,6 +127,52 @@ describe("BindingRegistry resolution", () => {
   })
 })
 
+describe("BindingRegistry availability-aware resolution", () => {
+  const registry = createRegistry()
+  const workingTree = model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } })
+  const commit = model({ reviewTarget: { kind: "commit", oid: "abc123" } })
+
+  test("escape in main falls through to back when not reviewing a commit", () => {
+    expect(registry.dispatch({ name: "escape" }, { context: "main", model: workingTree, ui: ui() })).toBe("back")
+  })
+
+  test("escape in main resolves to commit-back when reviewing a commit", () => {
+    expect(registry.dispatch({ name: "escape" }, { context: "main", model: commit, ui: ui() })).toBe("commit-back")
+  })
+
+  test("escape in files falls through to back when not reviewing a commit, and to commit-back when it is", () => {
+    expect(registry.dispatch({ name: "escape" }, { context: "files", model: workingTree, ui: ui() })).toBe("back")
+    expect(registry.dispatch({ name: "escape" }, { context: "files", model: commit, ui: ui() })).toBe("commit-back")
+  })
+
+  test("escape in commits falls through to back when not reviewing a commit, and to commit-back when it is", () => {
+    expect(registry.dispatch({ name: "escape" }, { context: "commits", model: workingTree, ui: ui() })).toBe("back")
+    expect(registry.dispatch({ name: "escape" }, { context: "commits", model: commit, ui: ui() })).toBe("commit-back")
+  })
+
+  test("resolves to undefined when the only binding for a key is unavailable", () => {
+    const onlyUnavailable = new BindingRegistry([
+      { keys: ["x"], action: "quit", description: "quit", contexts: ["files"], available: () => false },
+    ])
+    expect(onlyUnavailable.dispatch({ name: "x" }, { context: "files", model: workingTree, ui: ui() })).toBeUndefined()
+  })
+
+  test("an unavailable modal binding resolves to undefined without falling through", () => {
+    const modalBoundary = new BindingRegistry([
+      { keys: ["x"], action: "quit", description: "quit", contexts: ["modal"], available: () => false },
+      { keys: ["x"], action: "refresh", description: "refresh", contexts: ["files"] },
+      { keys: ["x"], action: "back", description: "back" },
+    ])
+    expect(modalBoundary.dispatch({ name: "x" }, { context: "files", modal: true, model: workingTree, ui: ui() })).toBeUndefined()
+  })
+
+  test("omitting model and ui resolves the context binding regardless of availability", () => {
+    expect(registry.dispatch({ name: "escape" }, { context: "main" })).toBe("commit-back")
+    expect(registry.dispatch({ name: "escape" }, { context: "files" })).toBe("commit-back")
+    expect(registry.dispatch({ name: "escape" }, { context: "commits" })).toBe("commit-back")
+  })
+})
+
 describe("BindingRegistry hints", () => {
   const registry = new BindingRegistry([
     { keys: ["space"], action: "stage-file", description: "stage", contexts: ["files"], displayOnScreen: true },
