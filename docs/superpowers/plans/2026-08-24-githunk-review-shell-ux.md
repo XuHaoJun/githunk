@@ -4256,3 +4256,149 @@ One suite asserts each symptom that prompted this work: an empty commits
 pane, no keybinding hints, a fixed-width side region, a stash pane that
 never folds, missing hjkl, and a right region that could not be adjusted."
 ```
+
+---
+
+## Task 11: Overflow scrollbars and keyboard auto-scroll
+
+Owner request (2026-08-25): panes whose content overflows show a scrollbar, and keyboard
+navigation keeps the selected line visible automatically — behavior every lazygit list has.
+
+**OpenTUI ground truth (verified against node_modules/@opentui/core 0.5.6 source):**
+- `TextBufferRenderable` (base of `TextRenderable`) exposes `scrollY/scrollX/maxScrollY/maxScrollX/scrollHeight`
+  (`renderables/TextBufferRenderable.d.ts:59-66`); the `scrollY` setter clamps. No scrollTo/scrollBy.
+- `ScrollBarRenderable` (`renderables/ScrollBar.d.ts`) draws track+thumb natively with
+  `orientation`, `trackOptions: { backgroundColor, foregroundColor }` (defaults #252527/#9a9ea3),
+  sub-cell thumb positioning, built-in auto-hide whenever `viewportSize >= scrollSize`
+  (index.node.js ~13506), and its own mouse handling. Do NOT migrate panes to ScrollBoxRenderable.
+- Nothing built-in keeps a selection visible on a bare TextRenderable; githunk must set `scrollY`
+  itself. (command-log-pane.ts:73,77 already does this pattern for sticky-bottom.)
+- Paint order: a child added after the pane's `text` draws above it; `overflow: hidden` scissors
+  it to the pane. Place the bar at `top: 1, bottom: 1, right: 0` so it stays inside the border ring.
+- Never read `width/height` synchronously after constructing/resizing (yoga layout is async);
+  hook `onSizeChange` instead. Reading `text.scrollHeight` immediately after `pane.update()` is valid.
+
+**Files:**
+- Modify: `src/ui/panes/common.ts` — `createPane` attaches a vertical `ScrollBarRenderable`
+  (width 1, absolute, top 1 / bottom 1 / right 0, default colors, no arrows) and `PaneHandle.update()`
+  syncs `bar.scrollSize = text.scrollHeight`, `bar.viewportSize = text.height`,
+  `bar.scrollPosition = text.scrollY` after setting content.
+- Modify: `src/ui/panes/common.ts` — add and export the pure function
+  `scrollYToReveal(firstVisibleLine: number, lastVisibleLine: number, viewportLines: number): number`
+  returning the new scrollY that makes `[firstVisibleLine, lastVisibleLine]` visible with minimal
+  movement, clamped to `[0, max]`. All panes use this one function; no per-pane clamping variants.
+- Modify: `src/ui/panes/{files-pane,branches-pane,commits-pane,stash-pane}.ts` — after a cursor move,
+  set `pane.text.scrollY = scrollYToReveal(cursorIndex, cursorIndex, visibleLines)` where
+  `visibleLines` is the pane's inner height minus borders (read once per call from geometry-independent
+  `text.height` is NOT reliable pre-layout; pass the value RootView already knows or derive from
+  `Math.max(1, ...)` of the pane box height when available — implementer picks the reading that is
+  correct under the timing pitfall above and documents it).
+- Modify: `src/ui/root-view.ts` — nothing structural; only if a pane needs the arranged window
+  height at cursor-move time, read it from `this.geometry.windows[name]`.
+
+**Interfaces:**
+```ts
+// src/ui/panes/common.ts (additions)
+export function scrollYToReveal(top: number, bottom: number, viewportLines: number): number
+// PaneHandle gains nothing public beyond what createPane already returns; the bar is internal.
+```
+
+- [ ] **Step 1: Failing unit tests for scrollYToReveal**
+
+Create `tests/ui/scroll-reveal.test.ts`: below viewport (top < scrollY) scrolls up to `top`;
+above viewport scrolls down to `bottom - viewportLines + 1`; inside viewport returns current;
+clamps at 0 and at max; single-line viewport edge cases.
+
+- [ ] **Step 2: Failing integration tests**
+
+Append to `tests/ui/dispatch.integration.test.ts`:
+
+```ts
+  test("moving down a long commit list scrolls the pane to keep the cursor visible", async () => {
+    const subjects = Array.from({ length: 30 }, (_v, i) => `commit number ${String(i).padStart(2, "0")}`)
+    harness = await createShellHarness({ commits: subjects, height: 24 })
+    await harness.pressKey("4")
+    expect(harness.frame()).toContain("commit number 00")
+    for (let moved = 0; moved < 15; moved += 1) await harness.pressKey("j")
+    const frame = harness.frame()
+    expect(frame).toContain("commit number 15") // cursor row revealed
+    expect(frame).toContain("commit number 02") // earliest rows scrolled away is fine; presence proves scroll
+  })
+```
+Adjust the exact assertions to the pane's real inner height; the property under test is "the newly
+selected row is on screen after the move", not specific line numbers.
+
+- [ ] **Step 3: Implement per Files above; every pane gets the bar for free via createPane**
+
+Command Log keeps its existing sticky-bottom behavior; its bar appears through the shared path.
+
+- [ ] **Step 4: Main pane auto-scroll (attempt, bounded)**
+
+`j/k`/hunk moves in main should reveal the cursor target's hunk. Derive the hunk's first rendered
+line from the DiffDocument (files before it, their hunks, header/context lines) as a pure function
+next to `changeLineIndexes`; reuse `scrollYToReveal`. If the derivation turns out ambiguous for
+renames/binary sections, ship the lists-only scope and record exactly which cases stay unscrolled
+rather than guessing.
+
+- [ ] **Step 5: Verify and commit**
+
+Run: `bun run check`; probe by hand (`bun run start`, resize terminal, navigate all panes).
+Commit: `feat: overflow scrollbars and keyboard auto-scroll in every pane`
+
+---
+
+## Task 12: Stop repeating the commit subject under the commits pane
+
+The commits pane's bottomTitle renders `${index + 1}/${count}: ${subject}` while the selected
+row directly above already ends with the same subject — the title appears twice, stacked.
+Lazygit renders nothing beneath a list; the cursor marks the selection. Owner request
+(2026-08-25): drop the repetition entirely, counter included.
+
+**Files:**
+
+- Modify: `src/ui/panes/commits-pane.ts:47` (bottomTitle assignment)
+- Test: `tests/ui/dispatch.integration.test.ts`
+
+**Interfaces:** none change. `createPane(renderer, "commits", "4 Commits", "No commit selected")`
+keeps its placeholder for the empty case; once commits exist the bottomTitle is cleared.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `tests/ui/dispatch.integration.test.ts` inside the existing describe:
+
+```ts
+  test("the commits pane does not echo the selected commit's subject beneath the list", async () => {
+    harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
+
+    await harness.pressKey("4")
+    const frame = harness.frame()
+    expect(frame).toContain("gamma commit") // the row itself stays
+    expect(frame).not.toContain("1/3") // no counter/title strip below the border
+    expect(frame).toContain("revision 2") // the preview from the commits-preview suite keeps passing
+  })
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `bun test tests/ui/dispatch.integration.test.ts -t "echo the selected"`
+Expected: FAIL — `1/3` appears via the current bottomTitle.
+
+- [ ] **Step 3: Implement**
+
+Replace the bottomTitle assignment at `src/ui/panes/commits-pane.ts:47` with clearing it:
+
+```ts
+  // lazygit shows nothing beneath a list; the selected row already carries the subject.
+  pane.box.bottomTitle = undefined
+```
+
+- [ ] **Step 4: Sweep for siblings, report only**
+
+Grep `src/ui/panes/` for other bottomTitle assignments that embed a selected item's own label
+(files pane path, stash ref, branch name). Do NOT change them; list them in the report so the
+controller can rule whether they get the same treatment.
+
+- [ ] **Step 5: Verify and commit**
+
+Run: `bun run check`
+Then commit: `fix: stop echoing the selected commit subject under the commits pane`
