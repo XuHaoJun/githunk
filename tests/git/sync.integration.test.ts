@@ -20,6 +20,8 @@ describe("synchronization operations", () => {
       await local.write("file.txt", "local\n")
       await local.git(["add", "file.txt"])
       await local.git(["commit", "-m", "local"])
+      const missingPull = await pull(runner)
+      expect(missingPull).toMatchObject({ kind: "upstream-required", branch })
       const missing = await push(runner)
       expect(missing.kind).toBe("upstream-required")
       if (missing.kind === "upstream-required") expect(missing.branch).toBe(branch)

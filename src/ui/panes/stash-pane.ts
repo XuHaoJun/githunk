@@ -5,7 +5,7 @@ import { createPane, type PaneHandle } from "./common"
 const cursors = new WeakMap<PaneHandle, number>()
 
 export function createStashPane(renderer: CliRenderer, model: AppModel): PaneHandle {
-  const pane = createPane(renderer, "stash", "5 Stash", "No stashes", true)
+  const pane = createPane(renderer, "stash", "5 Stash", "No stashes")
   updateStashPane(pane, model, 0)
   return pane
 }

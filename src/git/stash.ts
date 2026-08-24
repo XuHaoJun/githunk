@@ -28,7 +28,7 @@ export async function loadStash(runner: CommandRunner, ref: string): Promise<Sta
   const stashes = await listStashes(runner)
   const stash = stashes.find((entry) => entry.ref === ref || entry.oid === ref)
   if (stash === undefined) throw new Error(`stash not found: ${ref}`)
-  const result = await runner.run(["stash", "show", "--patch", "--no-color", "--binary", stash.ref], { readOnly: true })
+  const result = await runner.run(["stash", "show", "--patch", "--no-color", "--binary", "--include-untracked", stash.ref], { readOnly: true })
   return { stash, patch: result.stdout }
 }
 

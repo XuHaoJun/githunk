@@ -1,4 +1,4 @@
-export type CommitDialogMode = "commit" | "amend" | "stash"
+export type CommitDialogMode = "commit" | "amend" | "stash" | "branch-create" | "branch-rename"
 export type CommitDialogResult =
   | { readonly kind: "confirmed"; readonly message: string }
   | { readonly kind: "cancelled" }
@@ -33,7 +33,7 @@ export function reduceCommitDialog(state: CommitDialogState, event: CommitDialog
   if (event.kind === "newline") return { state: stateWithoutError({ ...state, message: `${state.message}\n` }), }
   if (event.kind === "backspace") return { state: stateWithoutError({ ...state, message: removeLastGrapheme(state.message) }), }
   if (state.message.trim().length === 0) {
-    return { state: { ...state, error: "Commit message cannot be empty" } }
+    return { state: { ...state, error: `${state.mode === "branch-create" || state.mode === "branch-rename" ? "Branch name" : state.mode === "stash" ? "Stash message" : "Commit message"} cannot be empty` } }
   }
   return { state: stateWithoutError(state), result: { kind: "confirmed", message: state.message } }
 }
@@ -87,7 +87,11 @@ function printableText(key: CommitDialogKey): string | undefined {
 }
 
 export function renderCommitDialog(state: CommitDialogState): string {
-  const title = state.mode === "amend" ? "Amend commit" : state.mode === "stash" ? "Create stash" : "Commit staged changes"
+  const title = state.mode === "amend" ? "Amend commit"
+    : state.mode === "stash" ? "Create stash"
+      : state.mode === "branch-create" ? "Create branch"
+        : state.mode === "branch-rename" ? "Rename branch"
+          : "Commit staged changes"
   const error = state.error === undefined ? "" : `\n! ${state.error}`
   return `${title}\n\n${state.message}\n\nCtrl+Enter confirm · Esc cancel${error}`
 }

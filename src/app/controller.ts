@@ -74,13 +74,13 @@ function ownValue<T>(record: Record<string, T> | undefined, key: string): T | un
 }
 function changedFilesFromDocument(document: DiffDocument): readonly ChangedFile[] {
   return document.files.flatMap((file: DiffFile) => {
-    const path = file.newPath ?? file.oldPath
+    const path = file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
     if (path === undefined || path === "/dev/null") return []
     const additions = file.lines.filter((line) => line.kind === "addition").length
     const deletions = file.lines.filter((line) => line.kind === "deletion").length
     return [{
       path,
-      ...(file.oldPath !== undefined && file.newPath !== undefined && file.oldPath !== file.newPath ? { previousPath: file.oldPath } : {}),
+      ...(file.oldPath !== undefined && file.newPath !== undefined && file.oldPath !== "/dev/null" && file.newPath !== "/dev/null" && file.oldPath !== file.newPath ? { previousPath: file.oldPath } : {}),
       indexStatus: ".",
       worktreeStatus: ".",
       untracked: false,
@@ -294,7 +294,20 @@ export class AppController {
   }
   async pull(): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
-    await this.runMutation(() => this.requireRunnerOperation((runner) => pullSync(runner)))
+    await this.mutationQueue.run(async () => {
+      try {
+        const result = await this.requireRunnerOperation((runner) => pullSync(runner))
+        if (result.kind === "upstream-required") {
+          this.currentState = { ...this.currentState, upstreamChoice: result, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+          return
+        }
+        await this.refresh()
+      } catch (error) {
+        const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
+        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+        throw error
+      }
+    })
   }
   async push(options: PushOptions = {}): Promise<PushResult> {
     if (!this.ensureWorkingTreeMutation()) return { kind: "pushed" }
@@ -353,7 +366,7 @@ export class AppController {
   async inspectBranch(branchRef: string): Promise<void> {
     await this.mutationQueue.run(async () => {
       const history = await this.loadCommitHistory(branchRef)
-      this.commitOriginTarget = { kind: "branch", baseRef: branchRef }
+      if (history.warning === undefined) this.commitOriginTarget = { kind: "branch", baseRef: branchRef }
       const { banner: _previousBanner, ...previousState } = this.currentState
       this.currentState = {
         ...previousState,
@@ -475,6 +488,14 @@ export class AppController {
   async chooseBase(baseRef: string): Promise<void> {
     await this.setBranchBase(baseRef)
   }
+  async cancelBasePicker(): Promise<void> {
+    const { basePicker: _picker, ...state } = this.currentState
+    this.currentState = { ...state, loading: false }
+  }
+  async cancelUpstreamChoice(): Promise<void> {
+    const { upstreamChoice: _choice, ...state } = this.currentState
+    this.currentState = state
+  }
 
   async selectCommit(oid: string): Promise<void> {
     this.rememberCursor()
@@ -522,8 +543,9 @@ export class AppController {
     }
     const files = changedFilesFromDocument(document)
     const patch = { label: "BRANCH" as const, text: document.text }
+    const { banner: _previousBanner, ...previousState } = this.currentState
     this.currentState = {
-      ...this.currentState,
+      ...previousState,
       commitFilePath: path,
       files: files.length > 0 ? files : this.currentState.files.filter((file) => file.path === path),
       patches: [patch],
@@ -862,6 +884,7 @@ export class AppController {
         : this.workingTreeCursor
       const selectionId = cursor.selectionId !== undefined && snapshot.files.some((file) => file.path === cursor.selectionId) ? cursor.selectionId : undefined
       const focusId = cursor.focusId !== undefined && snapshot.files.some((file) => file.path === cursor.focusId) ? cursor.focusId : undefined
+      const warning = history.warning ?? review.warning
       const {
         upstream: _previousUpstream,
         upstreamChoice: _previousUpstreamChoice,
@@ -877,6 +900,7 @@ export class AppController {
       this.currentState = {
         ...previousState,
         ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
+        ...(warning === undefined ? {} : { banner: warning }),
         ...(focusId === undefined ? {} : { focusId }),
         repositoryRoot: snapshot.repositoryRoot,
         branch: snapshot.branch,

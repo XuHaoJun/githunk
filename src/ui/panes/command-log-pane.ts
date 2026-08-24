@@ -41,14 +41,7 @@ export function tailCommandLogLines(records: readonly CommandRecord[], lineLimit
   }
   return selected.slice(-limit)
 }
-function visibleLineLimit(text: TextRenderable): number {
-  const height = Number(text.height)
-  return Number.isFinite(height) && height > 1 ? Math.floor(height) - 1 : 7
-}
 
-class NonScrollableTextRenderable extends TextRenderable {
-  protected handleScroll(_event: unknown): void {}
-}
 
 export function createCommandLogPane(renderer: CliRenderer, records: readonly CommandRecord[]): CommandLogPaneHandle {
   const box = new BoxRenderable(renderer, {
@@ -62,7 +55,7 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
     height: "100%",
     overflow: "hidden",
   })
-  const text = new NonScrollableTextRenderable(renderer, {
+  const text = new TextRenderable(renderer, {
     id: "command-log-text",
     content: "No commands recorded",
     selectable: false,
@@ -75,8 +68,8 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
     box,
     text,
     update(nextRecords: readonly CommandRecord[]) {
-      text.content = tailCommandLogLines(nextRecords, visibleLineLimit(text)).join("\n")
-      text.scrollY = 0
+      text.content = nextRecords.length === 0 ? "No commands recorded" : nextRecords.map(formatRecord).join("\n\n")
+      text.scrollY = text.maxScrollY
     },
     setFocused(focused: boolean) {
       box.borderColor = focused ? "#ffffff" : "#555555"

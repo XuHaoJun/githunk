@@ -18,6 +18,7 @@ export type PushOptions = {
 }
 
 export type PushResult = { readonly kind: "pushed" } | UpstreamRequired
+export type PullResult = { readonly kind: "pulled" } | UpstreamRequired
 
 async function currentBranch(runner: CommandRunner): Promise<string> {
   const result = await runner.run(["symbolic-ref", "--quiet", "--short", "HEAD"], { readOnly: true })
@@ -57,9 +58,13 @@ async function upstreamCandidates(runner: CommandRunner): Promise<readonly Upstr
 export async function fetch(runner: CommandRunner, remote?: string): Promise<void> {
   await runner.run(remote === undefined ? ["fetch"] : ["fetch", remote])
 }
-
-export async function pull(runner: CommandRunner): Promise<void> {
+export async function pull(runner: CommandRunner): Promise<PullResult> {
+  const branch = await currentBranch(runner)
+  if (await upstreamRef(runner) === undefined) {
+    return { kind: "upstream-required", branch, candidates: await upstreamCandidates(runner) }
+  }
   await runner.run(["pull"])
+  return { kind: "pulled" }
 }
 
 export async function push(runner: CommandRunner, options: PushOptions = {}): Promise<PushResult> {

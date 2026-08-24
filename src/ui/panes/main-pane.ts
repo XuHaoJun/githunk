@@ -1,13 +1,18 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import { parseDiff } from "../../domain/diff/parse"
-import type { DiffDocument } from "../../domain/diff/document"
+import type { DiffDocument, DiffFile } from "../../domain/diff/document"
 import { renderDiff } from "../../domain/diff/render"
 import { createPane, type PaneHandle } from "./common"
 
 const documents = new WeakMap<PaneHandle, DiffDocument>()
-export type MainCursorTarget = { readonly fileIndex: number; readonly hunkIndex?: number }
 const cursorTargets = new WeakMap<PaneHandle, MainCursorTarget>()
+export type MainCursorTarget = {
+  readonly fileIndex: number
+  readonly hunkIndex?: number
+  readonly filePath?: string
+  readonly hunkKey?: string
+}
 
 export function createMainPane(renderer: CliRenderer, model: AppModel): PaneHandle {
   const pane = createPane(renderer, "main", "0 Main", "", true)
@@ -21,13 +26,26 @@ export function getMainDocument(pane: PaneHandle): DiffDocument | undefined {
 export function getMainCursorTarget(pane: PaneHandle): MainCursorTarget | undefined {
   return cursorTargets.get(pane)
 }
+function hunkKey(hunk: DiffFile["hunks"][number]): string {
+  return `${hunk.header.raw}\u0000${hunk.oldStart}:${hunk.oldCount}:${hunk.newStart}:${hunk.newCount}`
+}
+function targetWithIdentity(document: DiffDocument, target: MainCursorTarget): MainCursorTarget {
+  const file = document.files[target.fileIndex]
+  if (file === undefined) return target
+  const filePath = file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
+  return {
+    ...target,
+    ...(filePath === undefined ? {} : { filePath }),
+    ...(target.hunkIndex === undefined || file.hunks[target.hunkIndex] === undefined ? {} : { hunkKey: hunkKey(file.hunks[target.hunkIndex]!) }),
+  }
+}
 
 export function setMainCursorTarget(pane: PaneHandle, target: MainCursorTarget): void {
   const document = documents.get(pane)
   const file = document?.files[target.fileIndex]
   if (!file) return
   if (target.hunkIndex === undefined ? file.hunks.length > 0 : file.hunks[target.hunkIndex] === undefined) return
-  cursorTargets.set(pane, target)
+  cursorTargets.set(pane, targetWithIdentity(document!, target))
 }
 export function moveMainCursor(document: DiffDocument, current: MainCursorTarget | undefined, direction: "next" | "previous"): MainCursorTarget | undefined {
   const targets: MainCursorTarget[] = document.files.flatMap((file) => file.hunks.length > 0
@@ -83,14 +101,40 @@ export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: bool
   }
 
   const document = parseDiff(raw)
+  const previousDocument = documents.get(pane)
   const previousTarget = cursorTargets.get(pane)
-  const previousHunkIndex = previousTarget?.hunkIndex
-  const previousFile = previousTarget ? document.files[previousTarget.fileIndex] : undefined
-  const hasPreviousTarget = previousFile !== undefined
-    && (previousHunkIndex === undefined ? previousFile.hunks.length === 0 : previousFile.hunks[previousHunkIndex] !== undefined)
-  const initialTarget = hasPreviousTarget ? previousTarget : moveMainCursor(document, undefined, "next")
+  let preservedTarget: MainCursorTarget | undefined
+  if (previousTarget !== undefined && previousDocument !== undefined) {
+    const oldFile = previousDocument.files[previousTarget.fileIndex]
+    const filePath = previousTarget.filePath ?? (oldFile?.newPath !== undefined && oldFile.newPath !== "/dev/null" ? oldFile.newPath : oldFile?.oldPath)
+    const newFileIndex = filePath === undefined ? -1 : document.files.findIndex((file) => {
+      const path = file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
+      return path === filePath
+    })
+    if (newFileIndex >= 0) {
+      const newFile = document.files[newFileIndex]!
+      if (previousTarget.hunkIndex === undefined) {
+        if (newFile.hunks.length === 0) {
+          preservedTarget = { fileIndex: newFileIndex, ...(filePath === undefined ? {} : { filePath }) }
+        }
+      } else {
+        const key = previousTarget.hunkKey ?? (oldFile?.hunks[previousTarget.hunkIndex] === undefined ? undefined : hunkKey(oldFile.hunks[previousTarget.hunkIndex]!))
+        const newHunkIndex = key === undefined ? -1 : newFile.hunks.findIndex((hunk) => hunkKey(hunk) === key)
+        if (newHunkIndex >= 0) {
+          preservedTarget = {
+            fileIndex: newFileIndex,
+            hunkIndex: newHunkIndex,
+            ...(filePath === undefined ? {} : { filePath }),
+            ...(key === undefined ? {} : { hunkKey: key }),
+          }
+        }
+      }
+    }
+  }
+  const initialTarget = preservedTarget ?? moveMainCursor(document, undefined, "next")
   documents.set(pane, document)
-  if (initialTarget) cursorTargets.set(pane, initialTarget)
+  if (initialTarget) cursorTargets.set(pane, targetWithIdentity(document, initialTarget))
   else cursorTargets.delete(pane)
+  pane.text.wrapMode = "char"
   pane.update(renderDiff(document).styledText)
 }

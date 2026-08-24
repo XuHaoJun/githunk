@@ -39,10 +39,16 @@ async function remotes(runner: CommandRunner): Promise<readonly string[]> {
 export async function reviewBaseCandidates(runner: CommandRunner): Promise<readonly string[]> {
   const localRaw = await output(runner, ["for-each-ref", "--format=%(refname:short)", "refs/heads"])
   const remoteRaw = await output(runner, ["for-each-ref", "--format=%(refname)", "refs/remotes"])
+  const configuredRemotes = await remotes(runner)
   const values = [
     ...(localRaw ?? "").split(/\r?\n/),
     ...(remoteRaw ?? "").split(/\r?\n/),
-  ].map((ref) => ref.trim()).filter((ref) => ref.length > 0 && !ref.endsWith("/HEAD"))
+  ].map((ref) => ref.trim()).filter((ref) => {
+    if (ref.length === 0) return false
+    if (!ref.startsWith("refs/remotes/")) return true
+    const remoteRef = ref.slice("refs/remotes/".length)
+    return !configuredRemotes.some((remote) => remoteRef === `${remote}/HEAD`)
+  })
   return [...new Set(values)].sort()
 }
 
@@ -59,8 +65,10 @@ export async function inferReviewBase(runner: CommandRunner): Promise<BaseInfere
 
   const remoteNames = await remotes(runner)
   const upstream = (await output(runner, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]))?.trim()
-  const upstreamRemote = upstream?.split("/")[0]
-  if (upstreamRemote !== undefined && remoteNames.includes(upstreamRemote)) {
+  const upstreamRemote = remoteNames
+    .filter((remote) => upstream !== undefined && upstream.startsWith(`${remote}/`))
+    .sort((left, right) => right.length - left.length)[0]
+  if (upstreamRemote !== undefined) {
     const preferred = await symbolicDefault(runner, upstreamRemote)
     if (preferred !== undefined) {
       return { kind: "confident", ref: preferred.ref, oid: preferred.oid, reason: `remote default for upstream ${upstreamRemote}` }

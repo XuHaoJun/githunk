@@ -42,6 +42,7 @@ export type RootViewOptions = {
   readonly onScopeChange?: (scope: "staged" | "unstaged") => Promise<void>
   readonly onModeChange?: (mode: "working-tree" | "branch") => Promise<void>
   readonly onChooseBase?: (baseRef: string) => Promise<void>
+  readonly onCancelBase?: () => Promise<void>
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
@@ -54,17 +55,18 @@ export type RootViewOptions = {
   readonly onCurrentCommitMessage?: () => Promise<string>
   readonly onRefresh?: () => Promise<void>
   readonly onSwitchLocalBranch?: (branch: string) => Promise<void>
-  readonly onCreateBranch?: (startPoint?: string) => Promise<void>
+  readonly onCreateBranch?: (startPoint?: string, branchName?: string) => Promise<void>
   readonly onDeleteBranch?: (branch: string, force: boolean) => Promise<void>
-  readonly onRenameBranch?: (branch: string) => Promise<void>
   readonly onFetchRemote?: (remote: string) => Promise<void>
+  readonly onRenameBranch?: (branch: string, newName?: string) => Promise<void>
   readonly onFetch?: () => Promise<void>
   readonly onPull?: () => Promise<void>
   readonly onPush?: () => Promise<void>
   readonly onChooseUpstream?: (remote: string, branch: string) => Promise<void>
+  readonly onCancelUpstream?: () => Promise<void>
+  readonly onPopStash?: (ref: string) => Promise<void>
   readonly onCreateStash?: (message: string, includeUntracked: boolean) => Promise<void>
   readonly onApplyStash?: (ref: string) => Promise<void>
-  readonly onPopStash?: (ref: string) => Promise<void>
   readonly onDropStash?: (ref: string) => Promise<void>
   readonly onInspectStash?: (ref: string) => Promise<void>
   readonly onBrowseRemote?: (remote: string) => Promise<void>
@@ -99,6 +101,7 @@ export class RootView {
   private readonly onScopeChange: ((scope: "staged" | "unstaged") => Promise<void>) | undefined
   private readonly onModeChange: ((mode: "working-tree" | "branch") => Promise<void>) | undefined
   private readonly onChooseBase: ((baseRef: string) => Promise<void>) | undefined
+  private readonly onCancelBase: (() => Promise<void>) | undefined
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
   private basePickerIndex = 0
@@ -113,14 +116,15 @@ export class RootView {
   private readonly onMarkFocusedFileReviewed: ((path?: string) => Promise<void>) | undefined
   private readonly onRefresh: (() => Promise<void>) | undefined
   private readonly onSwitchLocalBranch: ((branch: string) => Promise<void>) | undefined
-  private readonly onCreateBranch: ((startPoint?: string) => Promise<void>) | undefined
+  private readonly onCreateBranch: ((startPoint?: string, branchName?: string) => Promise<void>) | undefined
   private readonly onDeleteBranch: ((branch: string, force: boolean) => Promise<void>) | undefined
-  private readonly onRenameBranch: ((branch: string) => Promise<void>) | undefined
+  private readonly onRenameBranch: ((branch: string, newName?: string) => Promise<void>) | undefined
   private readonly onFetchRemote: ((remote: string) => Promise<void>) | undefined
   private readonly onFetch: (() => Promise<void>) | undefined
   private readonly onPull: (() => Promise<void>) | undefined
   private readonly onPush: (() => Promise<void>) | undefined
   private readonly onChooseUpstream: ((remote: string, branch: string) => Promise<void>) | undefined
+  private readonly onCancelUpstream: (() => Promise<void>) | undefined
   private readonly onCreateStash: ((message: string, includeUntracked: boolean) => Promise<void>) | undefined
   private readonly onApplyStash: ((ref: string) => Promise<void>) | undefined
   private readonly onPopStash: ((ref: string) => Promise<void>) | undefined
@@ -133,9 +137,11 @@ export class RootView {
   private copyMenuOpen = false
   private upstreamCursorIndex = 0
   private stashIncludeUntracked = false
+  private pendingDiscardPaths: readonly string[] = []
   private discardPending = false
   private pendingStashDrop: { readonly oid: string; readonly ref: string } | undefined
   private pendingFileDiscard: { readonly path: string; readonly untracked: boolean } | undefined
+  private branchDialogContext: { readonly mode: "branch-create"; readonly startPoint?: string } | { readonly mode: "branch-rename"; readonly branch: string } | undefined
   private mutationInFlight = false
   private fileCursorIndex = 0
   private pendingBranchDelete: { readonly branch: string; readonly force: boolean } | undefined
@@ -161,7 +167,7 @@ export class RootView {
     this.onModeChange = options.onModeChange
     this.onQuit = options.onQuit
     this.onChooseBase = options.onChooseBase
-    this.onStageFile = options.onStageFile
+    this.onCancelBase = options.onCancelBase
     this.onUnstageFile = options.onUnstageFile
     this.onDiscardFile = options.onDiscardFile
     this.onToggleAllFiles = options.onToggleAllFiles
@@ -176,7 +182,7 @@ export class RootView {
     this.onCreateStash = options.onCreateStash
     this.onPush = options.onPush
     this.onChooseUpstream = options.onChooseUpstream
-    this.onApplyStash = options.onApplyStash
+    this.onCancelUpstream = options.onCancelUpstream
     this.onPopStash = options.onPopStash
     this.onDropStash = options.onDropStash
     this.onInspectStash = options.onInspectStash
@@ -243,6 +249,7 @@ export class RootView {
     renderer.root.add(this.root)
 
     this.focusManager.onChange = (focus, logVisible) => {
+      this.clearDiscardState()
       this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
       this.pendingStashDrop = undefined
@@ -318,8 +325,8 @@ export class RootView {
     this.applyFocus(this.focusManager.active)
     this.applyLayout()
   }
-
   update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean } = {}): void {
+    this.clearDiscardState()
     if (!options.preserveRemoteCheckout) {
       this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
@@ -355,6 +362,11 @@ export class RootView {
     updateMainPane(this.panes.main, model, this.geometry.tooSmall)
     this.commandLog.update(model.commandLog)
     this.root.requestRender()
+  }
+  private clearDiscardState(): void {
+    this.discardPending = false
+    this.pendingDiscardPaths = []
+    this.pendingFileDiscard = undefined
   }
   private modalInputActive(): boolean {
     return this.branchFilterActive || this.commitDialog !== undefined || this.copyMenuOpen ||
@@ -424,6 +436,7 @@ export class RootView {
         this.copyMainMode(COPY_MENU_ITEMS[index]!.mode)
         return true
       }
+      return true
     }
     if (key.ctrl && key.name === "o") {
       this.copyMainMode("text")
@@ -452,17 +465,22 @@ export class RootView {
       }
       return this.handleStashDialogKey(key)
     }
-    if (this.commitDialog !== undefined) {
+    if (this.commitDialog?.state.mode === "branch-create" || this.commitDialog?.state.mode === "branch-rename") {
       if (this.mutationInFlight) return true
-      return this.handleCommitDialogKey(key)
+      return this.handleBranchDialogKey(key)
     }
-    if (this.model.upstreamChoice !== undefined && this.onChooseUpstream !== undefined) {
+    if (this.model.upstreamChoice !== undefined) {
       if (this.mutationInFlight) return true
+      if (key.name === "escape") {
+        if (this.onCancelUpstream !== undefined) this.runUiMutation(() => this.onCancelUpstream!())
+        return true
+      }
+      if (this.onChooseUpstream === undefined) return true
       const count = this.model.upstreamChoice.candidates.length
       const numeric = Number(key.name) - 1
       if (Number.isInteger(numeric) && numeric >= 0 && numeric < count) {
         const choice = this.model.upstreamChoice.candidates[numeric]!
-        this.runUiMutation(this.onChooseUpstream(choice.remote, choice.branch))
+        this.runUiMutation(() => this.onChooseUpstream!(choice.remote, choice.branch))
         return true
       }
       if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
@@ -471,9 +489,10 @@ export class RootView {
       }
       if (count > 0 && key.name === "enter") {
         const choice = this.model.upstreamChoice.candidates[this.upstreamCursorIndex]!
-        this.runUiMutation(this.onChooseUpstream(choice.remote, choice.branch))
+        this.runUiMutation(() => this.onChooseUpstream!(choice.remote, choice.branch))
         return true
       }
+      return true
     }
     const amendShortcut = key.name === "A" || (key.name === "a" && key.shift === true)
     if (!this.mutationInFlight && !key.ctrl && !key.meta && (key.name === "c" || amendShortcut)) {
@@ -502,29 +521,34 @@ export class RootView {
     if ((key.name === "R" || (key.name === "r" && key.shift)) && this.onRefresh !== undefined) {
       this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
-      this.runUiMutation(this.onRefresh())
+      this.runUiMutation(() => this.onRefresh!())
       return true
     }
     if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "f" && this.focusManager.active !== "branches" && this.onFetch !== undefined) {
-      this.runUiMutation(this.onFetch())
+      this.runUiMutation(() => this.onFetch!())
       return true
     }
     if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "p" &&
       !(this.focusManager.active === "branches" && this.branchFilterActive) && this.onPull !== undefined && key.shift !== true) {
-      this.runUiMutation(this.onPull())
+      this.runUiMutation(() => this.onPull!())
       return true
     }
     if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "p" && key.shift === true &&
       !(this.focusManager.active === "branches" && this.branchFilterActive) && this.onPush !== undefined) {
-      this.runUiMutation(this.onPush())
+      this.runUiMutation(() => this.onPush!())
       return true
     }
-    if (this.model.basePicker !== undefined && this.onChooseBase !== undefined) {
+    if (this.model.basePicker !== undefined) {
       if (this.mutationInFlight) return true
+      if (key.name === "escape") {
+        if (this.onCancelBase !== undefined) this.runUiMutation(() => this.onCancelBase!())
+        return true
+      }
+      if (this.onChooseBase === undefined) return true
       const count = this.model.basePicker.candidates.length
       const numericIndex = Number(key.name) - 1
       if (Number.isInteger(numericIndex) && numericIndex >= 0 && numericIndex < count) {
-        this.runUiMutation(this.onChooseBase(this.model.basePicker.candidates[numericIndex]!))
+        this.runUiMutation(() => this.onChooseBase!(this.model.basePicker!.candidates[numericIndex]!))
         return true
       }
       if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
@@ -533,22 +557,23 @@ export class RootView {
         return true
       }
       if (count > 0 && key.name === "enter") {
-        this.runUiMutation(this.onChooseBase(this.model.basePicker.candidates[this.basePickerIndex]!))
+        this.runUiMutation(() => this.onChooseBase!(this.model.basePicker!.candidates[this.basePickerIndex]!))
         return true
       }
+      return true
     }
     if (!key.ctrl && !key.meta && key.name === "b" && this.onModeChange !== undefined) {
       if (this.mutationInFlight) return true
       this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
-      this.runUiMutation(this.onModeChange("branch"))
+      this.runUiMutation(() => this.onModeChange!("branch"))
       return true
     }
     if (!key.ctrl && !key.meta && key.name === "w" && this.onModeChange !== undefined) {
       if (this.mutationInFlight) return true
       this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
-      this.runUiMutation(this.onModeChange("working-tree"))
+      this.runUiMutation(() => this.onModeChange!("working-tree"))
       return true
     }
     if (this.focusManager.active === "stash") {
@@ -563,7 +588,7 @@ export class RootView {
         this.model.reviewTarget.kind === "working-tree" && !this.mutationInFlight) {
         const operation = key.name === "space" ? this.onApplyStash : key.name === "g" ? this.onPopStash : this.onInspectStash
         if (operation !== undefined) {
-          this.runUiMutation(operation(selected.oid))
+          this.runUiMutation(() => operation(selected.oid))
           return true
         }
       }
@@ -571,7 +596,7 @@ export class RootView {
         if (this.pendingStashDrop?.oid === selected.oid) {
           this.pendingStashDrop = undefined
           this.panes.stash.box.bottomTitle = undefined
-          this.runUiMutation(this.onDropStash(selected.oid))
+          this.runUiMutation(() => this.onDropStash!(selected.oid))
         } else {
           this.pendingStashDrop = selected
           this.panes.stash.box.bottomTitle = `Drop ${selected.ref}? Press d again to confirm or Escape to cancel.`
@@ -585,6 +610,7 @@ export class RootView {
       }
       return false
     }
+      if (this.mutationInFlight && ["space", "n", "r", "d", "f", "enter"].includes(key.name)) return true
     if (this.focusManager.active === "branches") {
       let selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
       if (this.branchFilterActive && key.name.length === 1 && !key.ctrl && !key.meta) {
@@ -614,14 +640,15 @@ export class RootView {
         return true
       }
       if (key.name === "space" && selected !== undefined) {
-        if (selected.kind === "local" && this.onSwitchLocalBranch !== undefined) this.runUiMutation(this.onSwitchLocalBranch(selected.name))
+        if (selected.kind === "local" && this.onSwitchLocalBranch !== undefined) this.runUiMutation(() => this.onSwitchLocalBranch!(selected.name))
         if (selected.kind === "remote-branch" && this.onCheckoutRemoteTracking !== undefined) {
           this.runRemoteCheckout({ remote: selected.remote, branch: selected.name, ref: selected.ref }, false)
         }
         return true
       }
       if (key.name === "n" && this.onCreateBranch !== undefined) {
-        this.runUiMutation(this.onCreateBranch(selected?.kind === "local" ? selected.name : undefined))
+        this.branchDialogContext = { mode: "branch-create", ...(selected?.kind === "local" ? { startPoint: selected.name } : {}) }
+        this.openBranchDialog("branch-create", "")
         return true
       }
       if (key.name === "d" && selected?.kind === "local" && this.onDeleteBranch !== undefined) {
@@ -630,7 +657,7 @@ export class RootView {
         if (pending?.branch === selected.name && pending.force === force) {
           this.pendingBranchDelete = undefined
           this.panes.branches.box.bottomTitle = undefined
-          this.runUiMutation(this.onDeleteBranch(selected.name, force))
+          this.runUiMutation(() => this.onDeleteBranch!(selected.name, force))
         } else {
           this.pendingBranchDelete = { branch: selected.name, force }
           const confirmation = branchDeleteConfirmation(selected.name, force)
@@ -649,11 +676,12 @@ export class RootView {
         return true
       }
       if (key.name === "r" && selected?.kind === "local" && this.onRenameBranch !== undefined) {
-        this.runUiMutation(this.onRenameBranch(selected.name))
+        this.branchDialogContext = { mode: "branch-rename", branch: selected.name }
+        this.openBranchDialog("branch-rename", "")
         return true
       }
       if (key.name === "f" && selected !== undefined) {
-        if (selected.kind === "remote" && this.onFetchRemote !== undefined) this.runUiMutation(this.onFetchRemote(selected.name))
+        if (selected.kind === "remote" && this.onFetchRemote !== undefined) this.runUiMutation(() => this.onFetchRemote!(selected.name))
         else this.panes.branches.box.bottomTitle = "Fetch is available for a selected remote"
         return true
       }
@@ -661,12 +689,12 @@ export class RootView {
         if (selected.kind === "local" && this.onInspectBranch !== undefined) {
           this.invalidateRemoteCheckout()
           this.panes.branches.box.bottomTitle = undefined
-          this.runUiMutation(this.onInspectBranch(selected.name))
+          this.runUiMutation(() => this.onInspectBranch!(selected.name))
         }
         if (selected.kind === "remote" && this.onBrowseRemote !== undefined) {
           this.invalidateRemoteCheckout()
           this.panes.branches.box.bottomTitle = undefined
-          this.runUiMutation(this.onBrowseRemote(selected.name))
+          this.runUiMutation(() => this.onBrowseRemote!(selected.name))
         }
         if (selected.kind === "remote-branch" && this.onInspectBranch !== undefined) {
           const selection = { remote: selected.remote, branch: selected.name, ref: selected.ref }
@@ -678,7 +706,7 @@ export class RootView {
           } else {
             this.invalidateRemoteCheckout()
             this.panes.branches.box.bottomTitle = undefined
-            this.runUiMutation(this.onInspectBranch(selected.ref))
+            this.runUiMutation(() => this.onInspectBranch!(selected.ref))
           }
         }
         return true
@@ -707,14 +735,14 @@ export class RootView {
         const selected = getSelectedCommit(this.panes.commits, this.model)
         if (selected !== undefined) {
           this.invalidateRemoteCheckout()
-          this.runUiMutation(this.onSelectCommit(selected.oid))
+          this.runUiMutation(() => this.onSelectCommit!(selected.oid))
           this.focusManager.focus("files")
         }
         return true
       }
       if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
         this.invalidateRemoteCheckout()
-        this.runUiMutation(this.onCommitBack())
+        this.runUiMutation(() => this.onCommitBack!())
       }
       return false
     }
@@ -729,12 +757,11 @@ export class RootView {
     if (this.focusManager.active === "files") {
       if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
         this.invalidateRemoteCheckout()
-        this.runUiMutation(this.onCommitBack())
+        this.runUiMutation(() => this.onCommitBack!())
         return true
       }
       if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
-        this.pendingFileDiscard = undefined
-        this.discardPending = false
+        this.clearDiscardState()
         this.fileCursorIndex = Math.max(0, Math.min(this.model.files.length - 1, this.fileCursorIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
         const selected = this.model.files[this.fileCursorIndex]
         this.panes.files.box.bottomTitle = selected?.path ?? "No files"
@@ -745,7 +772,7 @@ export class RootView {
         const selected = this.model.files[this.fileCursorIndex]
         if (selected !== undefined) {
           if (this.model.reviewTarget.kind === "commit" && this.onSelectCommitFile !== undefined) {
-            this.runUiMutation(this.onSelectCommitFile(selected.path))
+            this.runUiMutation(() => this.onSelectCommitFile!(selected.path))
           } else {
             this.onSelectFile?.(selected.path)
           }
@@ -759,17 +786,17 @@ export class RootView {
         const reviewPath = focusedPath !== undefined && this.model.files.some((candidate) => candidate.path === focusedPath)
           ? focusedPath
           : file?.path
-        this.runUiMutation(this.onMarkFocusedFileReviewed(reviewPath))
+        this.runUiMutation(() => this.onMarkFocusedFileReviewed!(reviewPath))
         return true
       }
       if (key.name === "a" && this.onToggleAllFiles !== undefined) {
-        this.runUiMutation(this.onToggleAllFiles())
+        this.runUiMutation(() => this.onToggleAllFiles!())
         return true
       }
       if (file !== undefined && key.name === "space") {
         const staged = !file.untracked && file.worktreeStatus === "." && file.indexStatus !== "."
         const operation = staged ? this.onUnstageFile : this.onStageFile
-        if (operation !== undefined) this.runUiMutation(operation(file.path))
+        if (operation !== undefined) this.runUiMutation(() => operation(file.path))
         return operation !== undefined
       }
       if (file !== undefined && key.name === "d" && this.onDiscardFile !== undefined) {
@@ -780,7 +807,7 @@ export class RootView {
         const pending = this.pendingFileDiscard
         if (pending?.path === file.path && pending.untracked === file.untracked) {
           this.pendingFileDiscard = undefined
-          this.runUiMutation(this.onDiscardFile(file.path, file.untracked))
+          this.runUiMutation(() => this.onDiscardFile!(file.path, file.untracked))
         } else {
           this.pendingFileDiscard = { path: file.path, untracked: file.untracked }
           this.panes.files.box.bottomTitle = `${discardConfirmation(file.path, file.untracked).message} Press d again to confirm or Escape to cancel.`
@@ -788,7 +815,7 @@ export class RootView {
         return true
       }
       if (key.name === "escape" && this.pendingFileDiscard !== undefined) {
-        this.pendingFileDiscard = undefined
+        this.clearDiscardState()
         this.panes.files.box.bottomTitle = undefined
         return true
       }
@@ -800,14 +827,14 @@ export class RootView {
     }
     if (this.focusManager.active !== "main") return false
     if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
-      this.runUiMutation(this.onCommitBack())
+      this.runUiMutation(() => this.onCommitBack!())
       this.focusManager.focus("commits")
       return true
     }
     if (key.name === "tab" && this.onScopeChange !== undefined) {
       this.invalidateRemoteCheckout()
       const scope = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged" ? "unstaged" : "staged"
-      this.runUiMutation(this.onScopeChange(scope))
+      this.runUiMutation(() => this.onScopeChange!(scope))
       return true
     }
     if (key.name === "space" && this.onApplySelection !== undefined) {
@@ -827,7 +854,7 @@ export class RootView {
         this.panes.main.box.bottomTitle = "No changed lines selected"
       } else {
         const reverse = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged"
-        this.runUiMutation(this.onApplySelection(selected.document, selected.indexes, reverse))
+        this.runUiMutation(() => this.onApplySelection!(selected.document, selected.indexes, reverse))
       }
       return true
     }
@@ -840,13 +867,13 @@ export class RootView {
       const target = getMainCursorTarget(this.panes.main)
       const document = getMainDocument(this.panes.main)
       const targetFile = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]
-      const path = targetFile?.newPath ?? targetFile?.oldPath ?? "selected changes"
-      const modelFile = target === undefined ? undefined : this.model.files.find((file) => file.path === path)
+      const path = targetFile?.newPath !== undefined && targetFile.newPath !== "/dev/null" ? targetFile.newPath : targetFile?.oldPath ?? "selected changes"
+      const modelFile = this.model.files.find((file) => file.path === path)
       if (modelFile?.untracked && this.onDiscardFile !== undefined) {
         const pending = this.pendingFileDiscard
         if (pending?.path === path && pending.untracked) {
           this.pendingFileDiscard = undefined
-          this.runUiMutation(this.onDiscardFile(path, true))
+          this.runUiMutation(() => this.onDiscardFile!(path, true))
         } else {
           this.pendingFileDiscard = { path, untracked: true }
           this.panes.main.box.bottomTitle = `${discardConfirmation(path, true).message} Press d again to confirm or Escape to cancel.`
@@ -862,24 +889,38 @@ export class RootView {
         this.panes.main.box.bottomTitle = availability.reason
         return true
       }
-      
       if (selected === undefined || selected.indexes.length === 0) {
         this.panes.main.box.bottomTitle = "No changed lines selected"
-      } else if (!this.discardPending) {
-        this.discardPending = true
-        this.panes.main.box.bottomTitle = `${discardConfirmation(path).message} Press d again to confirm or Escape to cancel.`
       } else {
-        this.discardPending = false
-        this.runUiMutation(this.onDiscardSelection(selected.document, selected.indexes))
+        const paths = this.selectionPaths(selected.document, selected.indexes)
+        const label = paths.join(", ")
+        if (!this.discardPending || this.pendingDiscardPaths.join("\u0000") !== paths.join("\u0000")) {
+          this.discardPending = true
+          this.pendingDiscardPaths = paths
+          this.panes.main.box.bottomTitle = `${discardConfirmation(label || path).message} Press d again to confirm or Escape to cancel.`
+        } else {
+          this.clearDiscardState()
+          this.runUiMutation(() => this.onDiscardSelection!(selected.document, selected.indexes))
+        }
       }
       return true
     }
     if (key.name === "escape" && this.discardPending) {
-      this.discardPending = false
+      this.clearDiscardState()
       this.panes.main.box.bottomTitle = undefined
       return true
     }
     return false
+  }
+
+  private selectionPaths(document: DiffDocument, indexes: readonly number[]): readonly string[] {
+    const paths = new Set<string>()
+    for (const index of indexes) {
+      const file = document.files[document.lines[index]?.fileIndex ?? -1]
+      const path = file?.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file?.oldPath
+      if (path !== undefined && path !== "/dev/null") paths.add(path)
+    }
+    return [...paths]
   }
 
   private mainChangeSelection(): { readonly document: DiffDocument; readonly indexes: readonly number[] } | undefined {
@@ -905,6 +946,39 @@ export class RootView {
         return index >= 0 && (line.kind === "addition" || line.kind === "deletion") ? [index] : []
       }),
     }
+  }
+
+  private handleBranchDialogKey(key: KeyEvent): boolean {
+    const dialog = this.commitDialog
+    const context = this.branchDialogContext
+    if (dialog === undefined || context === undefined) return false
+    const result = commitDialogKey(dialog.state, key)
+    if (result.result?.kind === "cancelled") {
+      this.commitDialog = undefined
+      this.branchDialogContext = undefined
+      this.panes.branches.box.bottomTitle = undefined
+      this.clearDiscardState()
+      this.root.requestRender()
+      return true
+    }
+    if (result.result?.kind === "confirmed") {
+      const message = result.result.message
+      const operation = context.mode === "branch-create"
+        ? this.onCreateBranch === undefined ? undefined : () => this.onCreateBranch!(context.startPoint, message)
+        : this.onRenameBranch === undefined ? undefined : () => this.onRenameBranch!(context.branch, message)
+      if (operation === undefined) return true
+      this.commitDialog = undefined
+      this.branchDialogContext = undefined
+      this.runUiMutation(operation)
+      return true
+    }
+    const next = result
+    const nextDialog = new CommitDialog(next.state.mode, next.state.message)
+    nextDialog.setError(next.state.error)
+    this.commitDialog = nextDialog
+    this.panes.branches.box.bottomTitle = renderCommitDialog(nextDialog.state)
+    this.root.requestRender()
+    return true
   }
 
   private handleStashDialogKey(key: KeyEvent): boolean {
@@ -987,14 +1061,18 @@ export class RootView {
       this.mutationInFlight = false
       this.remoteCheckoutInFlight = false
       if (requestGeneration === this.remoteCheckoutGeneration) {
-        this.discardPending = false
-        this.pendingFileDiscard = undefined
+        this.clearDiscardState()
       }
     })
   }
   private openCommitDialog(mode: "commit" | "amend" | "stash", initialMessage: string): void {
     this.commitDialog = new CommitDialog(mode, initialMessage)
     this.panes.main.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
+    this.root.requestRender()
+  }
+  private openBranchDialog(mode: "branch-create" | "branch-rename", initialMessage: string): void {
+    this.commitDialog = new CommitDialog(mode, initialMessage)
+    this.panes.branches.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
     this.root.requestRender()
   }
 
@@ -1022,10 +1100,11 @@ export class RootView {
       return true
     }
     if (result.result?.kind === "confirmed") {
+      const message = result.result.message
       const operation = dialog.state.mode === "amend" ? this.onAmendMessage : this.onCommitMessage
       if (operation === undefined) return true
       this.mutationInFlight = true
-      void operation(result.result.message).then(() => {
+      void operation(message).then(() => {
         if (this.commitDialog === dialog) {
           this.commitDialog = undefined
           this.panes.main.box.bottomTitle = undefined
@@ -1039,25 +1118,31 @@ export class RootView {
       })
       return true
     }
-    const next = commitDialogKey(dialog.state, key)
-    this.commitDialog = new CommitDialog(next.state.mode, next.state.message)
-    this.commitDialog.setError(next.state.error)
-    this.panes.main.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
+    const next = result
+    const nextDialog = new CommitDialog(next.state.mode, next.state.message)
+    nextDialog.setError(next.state.error)
+    this.commitDialog = nextDialog
+    this.panes.main.box.bottomTitle = renderCommitDialog(nextDialog.state)
     this.root.requestRender()
     return true
   }
 
-  private runUiMutation(operation: Promise<void>): void {
+  private runUiMutation(operation: () => Promise<void> | undefined): void {
     if (this.mutationInFlight) return
     this.mutationInFlight = true
+    this.clearDiscardState()
     this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
-    void operation.catch((error: unknown) => {
+    const promise = operation()
+    if (promise === undefined) {
+      this.mutationInFlight = false
+      return
+    }
+    void promise.catch((error: unknown) => {
       this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
       this.root.requestRender()
     }).finally(() => {
       this.mutationInFlight = false
-      this.discardPending = false
-      this.pendingFileDiscard = undefined
+      this.clearDiscardState()
     })
   }
 
@@ -1076,8 +1161,7 @@ export class RootView {
       return
     }
     setMainCursorTarget(pane, target)
-    this.discardPending = false
-    this.pendingFileDiscard = undefined
+    this.clearDiscardState()
     const location = target.hunkIndex === undefined ? "file" : `hunk ${target.hunkIndex + 1}`
     pane.box.bottomTitle = `Cursor file ${target.fileIndex + 1}, ${location}`
     this.root.requestRender()
@@ -1156,6 +1240,10 @@ export class RootView {
       pane.box.onMouseScroll = (event: MouseEvent) => {
         event.stopPropagation()
       }
+    }
+    this.panes.main.text.onMouseDown = (event: MouseEvent) => {
+      event.stopPropagation()
+      this.clearDiscardState()
     }
     this.commandLog.box.onMouseDown = (event: MouseEvent) => {
       event.stopPropagation()

@@ -45,6 +45,9 @@ export async function startApp(): Promise<number> {
     onChooseBase: async (baseRef) => {
       try { await controller.chooseBase(baseRef) } finally { view.update(controller.state) }
     },
+    onCancelBase: async () => {
+      try { await controller.cancelBasePicker() } finally { view.update(controller.state) }
+    },
     onApplySelection: async (document, indexes, reverse) => {
       try { await controller.applySelection(document, indexes, { reverse, wholeFile: false }) } finally { view.update(controller.state) }
     },
@@ -82,15 +85,16 @@ export async function startApp(): Promise<number> {
     onSwitchLocalBranch: async (branch) => {
       try { await controller.switchLocalBranch(branch) } finally { view.update(controller.state) }
     },
-    onCreateBranch: async (startPoint) => {
-      if (startPoint === undefined) return
-      try { await controller.createBranch(`${startPoint}-copy`, startPoint) } finally { view.update(controller.state) }
+    onCreateBranch: async (startPoint, branchName) => {
+      if (branchName === undefined) return
+      try { await controller.createBranch(branchName, startPoint) } finally { view.update(controller.state) }
     },
     onDeleteBranch: async (branch, force) => {
       try { await controller.deleteBranch(branch, { force, confirmed: force }) } finally { view.update(controller.state) }
     },
-    onRenameBranch: async (branch) => {
-      try { await controller.renameBranch(branch, `${branch}-renamed`) } finally { view.update(controller.state) }
+    onRenameBranch: async (branch, newName) => {
+      if (newName === undefined) return
+      try { await controller.renameBranch(branch, newName) } finally { view.update(controller.state) }
     },
     onFetchRemote: async (remote) => {
       try { await controller.fetchRemote(remote) } finally { view.update(controller.state) }
@@ -121,6 +125,9 @@ export async function startApp(): Promise<number> {
     },
     onChooseUpstream: async (remote, branch) => {
       try { await controller.push({ upstream: { remote, branch } }) } finally { view.update(controller.state) }
+    },
+    onCancelUpstream: async () => {
+      try { await controller.cancelUpstreamChoice() } finally { view.update(controller.state) }
     },
     onBrowseRemote: async (remote) => {
       try { await controller.browseRemote(remote) } finally { view.update(controller.state) }

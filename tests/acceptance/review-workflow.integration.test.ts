@@ -175,7 +175,7 @@ describe("v0.1 review workflow acceptance", () => {
     const stashTarget = controller.state.reviewTarget as { readonly kind: "stash"; readonly ref: string }
     expect(stashTarget).toEqual({ kind: "stash", ref: stashOid! })
     expect(controller.state.title).toBe(`Stash — ${stashOid}`)
-    expect(controller.state.patches[0]?.text).toBe((await expectGit(clonePath, ["stash", "show", "--patch", "--no-color", "--binary", stashOid!])).stdout)
+    expect(controller.state.patches[0]?.text).toBe((await expectGit(clonePath, ["stash", "show", "--patch", "--no-color", "--binary", "--include-untracked", stashOid!])).stdout)
     await controller.dropStash(dropRef!, { confirmed: true })
     const targetAfterUnrelatedDrop = controller.state.reviewTarget as { readonly kind: "stash"; readonly ref: string }
     expect(targetAfterUnrelatedDrop).toEqual(stashTarget)

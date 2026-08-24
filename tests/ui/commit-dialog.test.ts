@@ -18,6 +18,22 @@ describe("commit dialog", () => {
     expect(dialog.state.error).toContain("empty")
   })
 
+  test("collects non-empty names for branch create and rename dialogs", () => {
+    const create = new CommitDialog("branch-create")
+    expect(create.handleKey({ name: "enter", ctrl: true })).toBeUndefined()
+    expect(create.state.error).toContain("Branch name")
+    expect(create.handleKey({ name: "f" })).toBeUndefined()
+    expect(create.handleKey({ name: "e" })).toBeUndefined()
+    expect(create.handleKey({ name: "a" })).toBeUndefined()
+    expect(create.handleKey({ name: "t" })).toBeUndefined()
+    expect(create.handleKey({ name: "u" })).toBeUndefined()
+    expect(create.handleKey({ name: "r" })).toBeUndefined()
+    expect(create.handleKey({ name: "e" })).toBeUndefined()
+    expect(create.handleKey({ name: "enter", ctrl: true })).toEqual({ kind: "confirmed", message: "feature" })
+    const rename = new CommitDialog("branch-rename", "release")
+    expect(rename.handleKey({ name: "enter", ctrl: true })).toEqual({ kind: "confirmed", message: "release" })
+  })
+
   test("Esc cancels without producing a message", () => {
     const dialog = new CommitDialog("amend", "existing\n")
     expect(dialog.handleKey({ name: "escape" })).toEqual({ kind: "cancelled" })
