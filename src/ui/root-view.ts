@@ -34,7 +34,7 @@ import type { CheckoutRemoteTrackingResult, RemoteBranchSelection } from "../git
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
 import { FilterInput } from "./filter-input"
 import { normalizeKey } from "./keymap"
-import { assertHandlersCover, createRegistry, type Action, type UiState } from "./bindings"
+import { ACTIONS, assertHandlersCover, createRegistry, type Action, type UiState } from "./bindings"
 
 export type RootViewOptions = {
   readonly leftWidth?: number
@@ -90,23 +90,15 @@ function stackedHeights(total: number, count: number): number[] {
 /** Ring order for the `[` / `]` scope-cycle keys in the main pane. */
 const SCOPE_ORDER: readonly WorkingTreeScope[] = ["all", "staged", "unstaged"]
 
-const HANDLED_ACTIONS: ReadonlySet<string> = new Set<Action>([
-  "focus-main", "focus-status", "focus-files", "focus-branches", "focus-commits", "focus-stash",
-  "command-log", "pane-next", "pane-previous",
-  "screen-mode-next", "screen-mode-previous", "keybinding-menu",
-  "next", "previous", "page-next", "page-previous", "goto-top", "goto-bottom",
-  "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
-  "main-half-page-down", "main-half-page-up",
-  "hunk-next", "hunk-previous", "scope-next", "scope-previous",
-  "mode-branch", "mode-working-tree", "mark-reviewed",
-  "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection",
-  "commit", "amend", "commit-drilldown", "commit-back",
-  "branch-checkout", "branch-create", "branch-delete", "branch-rename", "fetch-remote",
-  "stash-create", "stash-apply", "stash-pop", "stash-drop", "stash-inspect",
-  "fetch", "pull", "push", "refresh",
-  "copy-menu", "copy-exact",
-  "filter", "inspect", "back", "modal-cancel", "modal-confirm", "filter-backspace", "quit",
-])
+// `HANDLED_ACTIONS` used to be a hand-copied duplicate of `ACTIONS`, which could drift from the
+// switch in `handleAction` (an action added to both lists but never given a `case` would silently
+// no-op with a green suite and a clean typecheck). `handleAction`'s `default` case below now makes
+// the compiler enforce that every action in `ACTIONS` has a `case`, so that drift can no longer
+// happen; deriving this set directly from `ACTIONS` keeps it correct by construction instead of by
+// discipline. `assertHandlersCover` stays wired to it below as a cheap runtime cross-check against
+// whatever registry is actually constructed at startup (or in a test) — belt and suspenders with
+// the compile-time check, not a replacement for it.
+const HANDLED_ACTIONS: ReadonlySet<Action> = new Set(ACTIONS)
 
 export class RootView {
   readonly renderer: CliRenderer
@@ -393,6 +385,11 @@ export class RootView {
       this.pendingStashDrop !== undefined || this.pendingFileDiscard !== undefined || this.discardPending
   }
 
+  /** Whether a mutation (git operation triggered via `runUiMutation`) is currently in flight. */
+  get isMutating(): boolean {
+    return this.mutationInFlight
+  }
+
   private uiState(): UiState {
     const target = this.model.reviewTarget
     const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
@@ -467,6 +464,10 @@ export class RootView {
       case "main-half-page-down": case "main-half-page-up":
       case "hunk-next": case "hunk-previous":
         return
+      default: {
+        const unhandled: never = action
+        return unhandled
+      }
     }
   }
 
@@ -560,30 +561,49 @@ export class RootView {
     }
     // A pending two-press confirmation (branch delete, stash drop, file/selection discard,
     // remote-tracking mismatch) is also modal input: the confirming or cancelling keystroke
-    // must re-run the same pane action rather than fall through to the registry.
+    // must re-run the same pane action rather than fall through to the registry. Each dispatch
+    // below is guarded by re-resolving the key through the registry (with the current context,
+    // model and ui) so the binding's `available` predicate still governs it — the same rule the
+    // non-modal path enforces. Without this, a key that happens to match "d" or "enter" here
+    // would bypass the predicate entirely (e.g. deleting a branch that isn't the selected one).
     if (key.name === "escape") {
       this.actionBack()
       return
     }
     if (key.name === "d" || key.name === "enter") {
+      const resolvedAction = this.resolveModalAction(key)
       switch (this.focusManager.active) {
         case "files":
-          if (key.name === "d") this.actionDiscardFile()
+          if (key.name === "d" && resolvedAction === "discard-file") this.actionDiscardFile()
           return
         case "branches":
-          if (key.name === "d") this.actionBranchDelete(key.shift === true)
-          if (key.name === "enter") this.actionBranchInspect()
+          if (key.name === "d" && resolvedAction === "branch-delete") this.actionBranchDelete(key.shift === true)
+          if (key.name === "enter" && resolvedAction === "inspect") this.actionBranchInspect()
           return
         case "stash":
-          if (key.name === "d") this.actionStashDrop()
+          if (key.name === "d" && resolvedAction === "stash-drop") this.actionStashDrop()
           return
         case "main":
-          if (key.name === "d") this.actionDiscardSelection()
+          if (key.name === "d" && resolvedAction === "discard-selection") this.actionDiscardSelection()
           return
         default:
           return
       }
     }
+  }
+
+  /**
+   * Resolves `key` through the registry using the current pane context, model and ui — the same
+   * availability-aware resolution `handleKey` uses on the non-modal path. `handleModalKey`'s
+   * confirm/cancel tail uses this to decide whether a two-press confirmation may actually act,
+   * rather than calling the action method unconditionally and re-implementing its guard inline.
+   */
+  private resolveModalAction(key: KeyEvent): Action | undefined {
+    return this.registry.resolve(key, {
+      context: this.focusManager.active,
+      model: this.model,
+      ui: this.uiState(),
+    })?.action
   }
 
   private handleFilterKey(key: KeyEvent): boolean {
@@ -633,8 +653,9 @@ export class RootView {
         moveStashCursor(this.panes.stash, this.model, direction)
         return
       case "main":
-        // h/l and j/k do the same thing in main: MainCursorTarget is hunk-granular and
-        // githunk has no line cursor yet.
+        // j/k move the hunk cursor here (MainCursorTarget is hunk-granular and githunk has
+        // no line cursor yet). h/l are bound to hunk-previous/hunk-next in main, not to
+        // next/previous, and are no-ops until Task 8 implements hunk navigation.
         this.moveMainCursor(direction)
         return
       default:
@@ -728,6 +749,7 @@ export class RootView {
   }
 
   private actionStageSelection(): void {
+    if (this.mutationInFlight) return
     if (this.onApplySelection === undefined) return
     if (this.model.reviewTarget.kind === "branch") {
       this.panes.main.box.bottomTitle = "Branch Review is read-only"
@@ -803,7 +825,7 @@ export class RootView {
     } else {
       const paths = this.selectionPaths(selected.document, selected.indexes)
       const label = paths.join(", ")
-      if (!this.discardPending || this.pendingDiscardPaths.join(" ") !== paths.join(" ")) {
+      if (!this.discardPending || this.pendingDiscardPaths.join("\0") !== paths.join("\0")) {
         this.discardPending = true
         this.pendingDiscardPaths = paths
         this.panes.main.box.bottomTitle = `${discardConfirmation(label || path).message} Press d again to confirm or Escape to cancel.`

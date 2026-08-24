@@ -14,9 +14,15 @@ export type ShellHarnessOptions = {
 export type ShellHarness = {
   readonly app: App
   readonly repository: TempRepository
+  /** Whether RootView's `onQuit` callback (the "quit" action) has fired. */
+  readonly quitCalled: boolean
   pressKey(key: KeyInput, modifiers?: { shift?: boolean; ctrl?: boolean }): Promise<void>
   drag(startX: number, startY: number, endX: number, endY: number): Promise<void>
   resize(width: number, height: number): Promise<void>
+  /** Waits until no mutation (a git operation started via `runUiMutation`) is in flight and the
+   *  view has settled, rather than relying on `flush()` alone or a fixed sleep. Use this after a
+   *  key press that triggers an async git operation and before asserting on its outcome. */
+  settle(): Promise<void>
   frame(): string
   cleanup(): Promise<void>
 }
@@ -41,12 +47,24 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     height: options.height ?? 40,
     useMouse: true,
     enableMouseMovement: true,
+    // Matches src/main.ts's real renderer configuration explicitly, rather than relying on the
+    // library default of `true` for the same value: ctrl+c must behave the same way under test
+    // as it does in the shipped app.
+    exitOnCtrlC: true,
   })
+
+  // Exposes whether the app's quit path ran, from either of the two independent mechanisms that
+  // can trigger it: RootView's own `onQuit` (reached via the "quit" action, bound to both `q` and
+  // ctrl+c) and the renderer's own `exitOnCtrlC` handling (which — like in the shipped app —
+  // destroys the renderer directly on ctrl+c, regardless of RootView's key handling).
+  let quitCalled = false
+  setup.renderer.on("destroy", () => { quitCalled = true })
 
   const app = createApp({
     repositoryRoot: repository.path,
     runner: new GitRunner(repository.path),
     renderer: setup.renderer,
+    onQuit: () => { quitCalled = true },
   })
   await app.refresh()
   await setup.flush()
@@ -54,8 +72,19 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
   return {
     app,
     repository,
+    get quitCalled() {
+      return quitCalled
+    },
     async pressKey(key, modifiers) {
       setup.mockInput.pressKey(key, modifiers)
+      if (key === "ESCAPE") {
+        // A lone ESC byte needs the stdin parser's real-time arm timeout (20ms) to elapse before
+        // it's recognized as a standalone Escape rather than a prefix of a longer sequence.
+        // Without this wait, a key pressed immediately afterwards can be parsed as part of the
+        // same escape sequence (e.g. Escape then "d" arriving as Alt+d) instead of two separate
+        // keypresses, silently corrupting whatever the next pressKey call was meant to simulate.
+        await new Promise((resolve) => setTimeout(resolve, 30))
+      }
       await setup.flush()
     },
     async drag(startX, startY, endX, endY) {
@@ -64,6 +93,23 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     },
     async resize(width, height) {
       setup.resize(width, height)
+      await setup.flush()
+    },
+    async settle() {
+      // `setup.waitFor` gives up once the renderer's own frame scheduler goes idle, but a git
+      // mutation is driven by a subprocess promise that isn't tied to render scheduling until it
+      // resolves — so that helper can (and did) report a spurious timeout while a mutation was
+      // still genuinely in flight. Poll RootView's own `isMutating` flag instead: each iteration
+      // yields a real tick (so the underlying subprocess I/O can actually progress) and the loop
+      // exits the instant the flag flips, rather than waiting out a fixed sleep.
+      const maxIterations = 2000
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
+        if (app.view === undefined || !app.view.isMutating) break
+        if (iteration === maxIterations - 1) {
+          throw new Error("settle(): timed out waiting for RootView.isMutating to clear")
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1))
+      }
       await setup.flush()
     },
     frame: () => setup.captureCharFrame(),
