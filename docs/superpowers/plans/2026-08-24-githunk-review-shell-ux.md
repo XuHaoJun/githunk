@@ -1059,14 +1059,14 @@ export function previousScreenMode(current: ScreenMode): ScreenMode {
 function sideChildren(
   focusedSide: SideWindow | undefined,
   accordion: boolean,
-  enlarged: boolean,
+  enlargedSide: boolean,
 ): (width: number, height: number) => readonly Box[] {
   const absorber = focusedSide ?? "files"
   return (_width, height) => {
-    if (enlarged) {
-      return SIDE_WINDOWS.map((window) =>
-        window === absorber ? { window, weight: 1 } : { window, weight: 0 },
-      )
+    if (enlargedSide) {
+      // Only the focused pane, so the documented "absent means hidden" contract
+      // stays literally true rather than emitting zero-extent entries.
+      return [{ window: absorber, weight: 1 }]
     }
     if (height >= MIN_HEIGHT_FOR_NORMAL_LAYOUT) {
       return SIDE_WINDOWS.map((window): Box => {
@@ -1108,19 +1108,27 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
   const tooSmall = widthTooSmall || heightTooSmall
 
   const focusedSide = isSideWindow(focus) ? focus : undefined
-  const enlarged = screenMode !== "normal" && focusedSide !== undefined
+  const enlargedSide = screenMode !== "normal" && focusedSide !== undefined
   const sideCollapsed = screenMode !== "normal" && focusedSide === undefined
   const mainCollapsed = screenMode === "full" && focusedSide !== undefined
 
+  // A terminal too narrow to host both regions hides whichever one the user did
+  // not just ask to enlarge, rather than hiding both. sideHidden and mainHidden
+  // are mutually exclusive: sideCollapsed requires no focused side pane, while
+  // mainCollapsed and enlargedSide require one, and the two widthTooSmall terms
+  // are negations of each other.
+  const sideHidden = sideCollapsed || (widthTooSmall && !enlargedSide)
+  const mainHidden = mainCollapsed || (widthTooSmall && enlargedSide)
+
   let sideWidth: number
-  if (widthTooSmall || sideCollapsed) sideWidth = 0
-  else if (mainCollapsed) sideWidth = terminalWidth
+  if (sideHidden) sideWidth = 0
+  else if (mainHidden) sideWidth = terminalWidth
   else {
     const target = screenMode === "half" ? Math.floor(terminalWidth / 2) : Math.round(terminalWidth * requestedRatio)
     sideWidth = clamp(target, MIN_LEFT_WIDTH, terminalWidth - SPLITTER_SIZE - MIN_MAIN_WIDTH)
   }
-  const splitterWidth = sideWidth > 0 && !mainCollapsed ? SPLITTER_SIZE : 0
-  const mainWidth = mainCollapsed ? 0 : terminalWidth - sideWidth - splitterWidth
+  const splitterWidth = sideWidth > 0 && !mainHidden ? SPLITTER_SIZE : 0
+  const mainWidth = mainHidden ? 0 : terminalWidth - sideWidth - splitterWidth
 
   const logCapacity = bodyHeight - SPLITTER_SIZE - MIN_MAIN_HEIGHT
   const logHeight = !logVisible || mainWidth === 0 || logCapacity < MIN_LOG_HEIGHT
@@ -1139,26 +1147,35 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
     bodyChildren.push({
       direction: "row",
       ...(mainWidth === 0 ? { weight: 1 } : { size: sideWidth }),
-      conditionalChildren: sideChildren(focusedSide, accordion, enlarged),
+      conditionalChildren: sideChildren(focusedSide, accordion, enlargedSide),
     })
   }
   if (splitterWidth > 0) bodyChildren.push({ window: "vsplit", size: splitterWidth })
   if (mainWidth > 0) bodyChildren.push({ direction: "row", weight: 1, children: mainSectionChildren })
 
-  const statusWidth = clamp(Math.floor(requested.statusWidth ?? 0), 0, terminalWidth)
+  const statusWidth = Number.isFinite(requested.statusWidth ?? Number.NaN)
+    ? clamp(Math.floor(requested.statusWidth as number), 0, terminalWidth)
+    : 0
   const infoChildren: Box[] = [{ window: "hints", weight: 1 }]
   if (statusWidth > 0) infoChildren.push({ window: "info", size: statusWidth })
 
   const rootChildren: Box[] = [{ direction: "column", weight: 1, children: bodyChildren }]
   if (infoHeight > 0) rootChildren.push({ direction: "column", size: infoHeight, children: infoChildren })
 
-  const windows = arrangeWindows(
+  const rawWindows = arrangeWindows(
     { direction: "row", children: rootChildren },
     0,
     0,
     terminalWidth,
     terminalHeight,
-  ) as Readonly<Partial<Record<WindowName, Dimensions>>>
+  )
+  // Drop zero-extent entries so "absent from this map means hidden" is literally
+  // true for every consumer, including a pane squeezed to nothing by a degenerate
+  // terminal size.
+  const windows: Partial<Record<WindowName, Dimensions>> = {}
+  for (const [name, dimensions] of Object.entries(rawWindows)) {
+    if (widthOf(dimensions) > 0 && heightOf(dimensions) > 0) windows[name as WindowName] = dimensions
+  }
 
   return {
     terminalWidth,
