@@ -5,6 +5,7 @@ import {
   type MouseEvent,
 } from "@opentui/core"
 import type { AppModel } from "../app/model"
+import type { WorkingTreeScope } from "../domain/review-target"
 import {
   computeLayout,
   heightOf,
@@ -32,7 +33,9 @@ import { COPY_MENU_ITEMS } from "./copy-menu"
 import type { CheckoutRemoteTrackingResult, RemoteBranchSelection } from "../git/branches"
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
 import { FilterInput } from "./filter-input"
-import { CORE_KEYMAP, Keymap, normalizeKey } from "./keymap"
+import { normalizeKey } from "./keymap"
+import { assertHandlersCover, createRegistry, type Action, type UiState } from "./bindings"
+
 export type RootViewOptions = {
   readonly leftWidth?: number
   readonly logHeight?: number
@@ -41,7 +44,7 @@ export type RootViewOptions = {
   readonly onUnstageFile?: (path: string) => Promise<void>
   readonly onDiscardFile?: (path: string, untracked: boolean) => Promise<void>
   readonly onToggleAllFiles?: () => Promise<void>
-  readonly onScopeChange?: (scope: "staged" | "unstaged") => Promise<void>
+  readonly onScopeChange?: (scope: WorkingTreeScope) => Promise<void>
   readonly onModeChange?: (mode: "working-tree" | "branch") => Promise<void>
   readonly onChooseBase?: (baseRef: string) => Promise<void>
   readonly onCancelBase?: () => Promise<void>
@@ -84,6 +87,27 @@ function stackedHeights(total: number, count: number): number[] {
   return Array.from({ length: count }, (_, index) => base + (index < remainder ? 1 : 0))
 }
 
+/** Ring order for the `[` / `]` scope-cycle keys in the main pane. */
+const SCOPE_ORDER: readonly WorkingTreeScope[] = ["all", "staged", "unstaged"]
+
+const HANDLED_ACTIONS: ReadonlySet<string> = new Set<Action>([
+  "focus-main", "focus-status", "focus-files", "focus-branches", "focus-commits", "focus-stash",
+  "command-log", "pane-next", "pane-previous",
+  "screen-mode-next", "screen-mode-previous", "keybinding-menu",
+  "next", "previous", "page-next", "page-previous", "goto-top", "goto-bottom",
+  "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
+  "main-half-page-down", "main-half-page-up",
+  "hunk-next", "hunk-previous", "scope-next", "scope-previous",
+  "mode-branch", "mode-working-tree", "mark-reviewed",
+  "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection",
+  "commit", "amend", "commit-drilldown", "commit-back",
+  "branch-checkout", "branch-create", "branch-delete", "branch-rename", "fetch-remote",
+  "stash-create", "stash-apply", "stash-pop", "stash-drop", "stash-inspect",
+  "fetch", "pull", "push", "refresh",
+  "copy-menu", "copy-exact",
+  "filter", "inspect", "back", "modal-cancel", "modal-confirm", "filter-backspace", "quit",
+])
+
 export class RootView {
   readonly renderer: CliRenderer
   readonly root: BoxRenderable
@@ -100,7 +124,7 @@ export class RootView {
   private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
   private readonly onDiscardFile: ((path: string, untracked: boolean) => Promise<void>) | undefined
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
-  private readonly onScopeChange: ((scope: "staged" | "unstaged") => Promise<void>) | undefined
+  private readonly onScopeChange: ((scope: WorkingTreeScope) => Promise<void>) | undefined
   private readonly onModeChange: ((mode: "working-tree" | "branch") => Promise<void>) | undefined
   private readonly onChooseBase: ((baseRef: string) => Promise<void>) | undefined
   private readonly onCancelBase: (() => Promise<void>) | undefined
@@ -153,7 +177,7 @@ export class RootView {
   private branchFilter = ""
   private branchFilterActive = false
   private branchCursorIndex = 0
-  private readonly keymap = new Keymap(CORE_KEYMAP)
+  private readonly registry = createRegistry()
   private readonly onQuit: (() => void) | undefined
   private readonly filterInput = new FilterInput()
   private readonly handleResize: () => void
@@ -293,41 +317,31 @@ export class RootView {
         meta: normalized.meta,
         option: normalized.option,
       } as KeyEvent
-      const modal = this.modalInputActive()
-      const action = this.keymap.dispatch(routedKey, { context: this.focusManager.active, modal })
-      if (action === "quit") {
-        this.onQuit?.()
-        key.preventDefault()
-        key.stopPropagation()
-        return
-      }
-      if (modal) {
+
+      // Dialogs consume raw characters, so modal input keeps its own path.
+      if (this.modalInputActive()) {
         this.handleModalKey(routedKey)
         key.preventDefault()
         key.stopPropagation()
         return
       }
-      if (this.handleFilterKey(routedKey) || this.handleMutationKey(routedKey) || this.handleCopyKey(routedKey)) {
-        key.preventDefault()
-        key.stopPropagation()
-        return
-      }
-      if (action?.startsWith("focus:")) {
-        this.focusManager.handleKey(action.slice("focus:".length))
-        key.preventDefault()
-        key.stopPropagation()
-        return
-      }
-      if (this.focusManager.handleKey(routedKey.name)) {
-        key.preventDefault()
-        key.stopPropagation()
-      }
+
+      const action = this.registry.dispatch(routedKey, {
+        context: this.focusManager.active,
+        model: this.model,
+        ui: this.uiState(),
+      })
+      if (action === undefined) return
+      this.handleAction(action, routedKey)
+      key.preventDefault()
+      key.stopPropagation()
     }
     renderer.on("resize", this.handleResize)
     renderer.keyInput.on("keypress", this.handleKey)
     this.installMouseHandlers()
     this.applyFocus(this.focusManager.active)
     this.applyLayout()
+    assertHandlersCover(this.registry, HANDLED_ACTIONS)
   }
   update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean } = {}): void {
     this.clearDiscardState()
@@ -379,30 +393,197 @@ export class RootView {
       this.pendingStashDrop !== undefined || this.pendingFileDiscard !== undefined || this.discardPending
   }
 
+  private uiState(): UiState {
+    const target = this.model.reviewTarget
+    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+    return {
+      focus: this.focusManager.active,
+      screenMode: this.geometry.screenMode,
+      modal: this.modalInputActive(),
+      mainScope: target.kind === "working-tree" ? target.scope : undefined,
+      selectedBranchKind: selected?.kind,
+      hasSelectedStash: selectedStashEntry(this.panes.stash, this.model) !== undefined,
+    }
+  }
+
+  private handleAction(action: Action, key: KeyEvent): void {
+    switch (action) {
+      case "quit": this.onQuit?.(); return
+      case "focus-main": this.focusManager.focus("main"); return
+      case "focus-status": this.focusManager.focus("status"); return
+      case "focus-files": this.focusManager.focus("files"); return
+      case "focus-branches": this.focusManager.focus("branches"); return
+      case "focus-commits": this.focusManager.focus("commits"); return
+      case "focus-stash": this.focusManager.focus("stash"); return
+      case "command-log": this.focusManager.handleKey("@"); return
+      case "pane-next": this.focusManager.cycle("next"); return
+      case "pane-previous": this.focusManager.cycle("previous"); return
+      case "next": this.actionMoveCursor("next"); return
+      case "previous": this.actionMoveCursor("previous"); return
+      case "stage-file": this.actionStageFile(); return
+      case "discard-file": this.actionDiscardFile(); return
+      case "stage-all": this.actionStageAll(); return
+      case "mark-reviewed": this.actionMarkReviewed(); return
+      case "inspect": this.actionInspect(); return
+      case "stage-selection": this.actionStageSelection(); return
+      case "discard-selection": this.actionDiscardSelection(); return
+      case "scope-next": this.actionScopeCycle("next"); return
+      case "scope-previous": this.actionScopeCycle("previous"); return
+      case "branch-checkout": this.actionBranchCheckout(); return
+      case "branch-create": this.actionBranchCreate(); return
+      case "branch-delete": this.actionBranchDelete(key.shift === true); return
+      case "branch-rename": this.actionBranchRename(); return
+      case "fetch-remote": this.actionFetchRemote(); return
+      case "commit-drilldown": this.actionCommitDrilldown(); return
+      case "commit-back": this.actionCommitBack(); return
+      case "back": this.actionBack(); return
+      case "stash-create": this.actionStashCreate(); return
+      case "stash-apply": this.actionStashApply(); return
+      case "stash-pop": this.actionStashPop(); return
+      case "stash-drop": this.actionStashDrop(); return
+      case "stash-inspect": this.actionStashInspect(); return
+      case "commit": this.actionCommit(); return
+      case "amend": this.actionAmend(); return
+      case "fetch": this.actionFetch(); return
+      case "pull": this.actionPull(); return
+      case "push": this.actionPush(); return
+      case "refresh": this.actionRefresh(); return
+      case "mode-branch": this.actionModeBranch(); return
+      case "mode-working-tree": this.actionModeWorkingTree(); return
+      case "filter": this.actionFilter(); return
+      case "copy-menu": this.actionCopyMenu(); return
+      case "copy-exact": this.actionCopyExact(); return
+      case "modal-cancel": case "modal-confirm": case "filter-backspace":
+        this.handleModalKey(key); return
+      // Implemented in Task 6.
+      case "screen-mode-next": case "screen-mode-previous":
+        return
+      // Implemented in Task 7.
+      case "keybinding-menu":
+        return
+      // Implemented in Task 8.
+      case "page-next": case "page-previous": case "goto-top": case "goto-bottom":
+      case "main-scroll-down": case "main-scroll-up": case "main-scroll-left": case "main-scroll-right":
+      case "main-half-page-down": case "main-half-page-up":
+      case "hunk-next": case "hunk-previous":
+        return
+    }
+  }
+
   private handleModalKey(key: KeyEvent): void {
     if (this.branchFilterActive) {
       this.handleFilterKey(key)
       return
     }
     if (this.commitDialog !== undefined) {
-      this.handleMutationKey(key)
+      const mode = this.commitDialog.state.mode
+      if (mode === "stash") {
+        if (this.mutationInFlight) return
+        if (key.name === "u" && key.ctrl === true && !key.meta) {
+          this.stashIncludeUntracked = !this.stashIncludeUntracked
+          this.panes.main.box.bottomTitle = `${renderCommitDialog(this.commitDialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`
+          this.root.requestRender()
+          return
+        }
+        this.handleStashDialogKey(key)
+        return
+      }
+      if (mode === "branch-create" || mode === "branch-rename") {
+        if (this.mutationInFlight) return
+        this.handleBranchDialogKey(key)
+        return
+      }
+      if (this.mutationInFlight) return
+      this.handleCommitDialogKey(key)
       return
     }
     if (this.copyMenuOpen) {
-      this.handleCopyKey(key)
+      if (key.name === "escape") {
+        this.copyMenuOpen = false
+        this.panes.main.box.bottomTitle = undefined
+        this.root.requestRender()
+        return
+      }
+      const index = Number(key.name) - 1
+      if (Number.isInteger(index) && index >= 0 && index < COPY_MENU_ITEMS.length) {
+        this.copyMenuOpen = false
+        this.copyMainMode(COPY_MENU_ITEMS[index]!.mode)
+      }
       return
     }
-    const navigation = key.name === "j" || key.name === "k" || key.name === "up" || key.name === "down"
-    const numeric = /^[0-9]$/.test(key.name)
-    if (this.model.upstreamChoice !== undefined && (navigation || numeric || key.name === "enter" || key.name === "escape")) {
-      this.handleMutationKey(key)
+    if (this.model.upstreamChoice !== undefined) {
+      if (this.mutationInFlight) return
+      if (key.name === "escape") {
+        if (this.onCancelUpstream !== undefined) this.runUiMutation(() => this.onCancelUpstream!())
+        return
+      }
+      if (this.onChooseUpstream === undefined) return
+      const count = this.model.upstreamChoice.candidates.length
+      const numeric = Number(key.name) - 1
+      if (Number.isInteger(numeric) && numeric >= 0 && numeric < count) {
+        const choice = this.model.upstreamChoice.candidates[numeric]!
+        this.runUiMutation(() => this.onChooseUpstream!(choice.remote, choice.branch))
+        return
+      }
+      if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
+        this.upstreamCursorIndex = Math.max(0, Math.min(count - 1, this.upstreamCursorIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
+        return
+      }
+      if (count > 0 && key.name === "enter") {
+        const choice = this.model.upstreamChoice.candidates[this.upstreamCursorIndex]!
+        this.runUiMutation(() => this.onChooseUpstream!(choice.remote, choice.branch))
+      }
       return
     }
-    if (this.model.basePicker !== undefined && (navigation || numeric || key.name === "enter" || key.name === "escape")) {
-      this.handleMutationKey(key)
+    if (this.model.basePicker !== undefined) {
+      if (this.mutationInFlight) return
+      if (key.name === "escape") {
+        if (this.onCancelBase !== undefined) this.runUiMutation(() => this.onCancelBase!())
+        return
+      }
+      if (this.onChooseBase === undefined) return
+      const count = this.model.basePicker.candidates.length
+      const numericIndex = Number(key.name) - 1
+      if (Number.isInteger(numericIndex) && numericIndex >= 0 && numericIndex < count) {
+        this.runUiMutation(() => this.onChooseBase!(this.model.basePicker!.candidates[numericIndex]!))
+        return
+      }
+      if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
+        this.basePickerIndex = Math.max(0, Math.min(count - 1, this.basePickerIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
+        this.panes.status.box.bottomTitle = `${this.basePickerIndex + 1}/${count}: ${this.model.basePicker.candidates[this.basePickerIndex]} — Enter to choose`
+        return
+      }
+      if (count > 0 && key.name === "enter") {
+        this.runUiMutation(() => this.onChooseBase!(this.model.basePicker!.candidates[this.basePickerIndex]!))
+      }
       return
     }
-    if (key.name === "d" || key.name === "enter" || key.name === "escape") this.handleMutationKey(key)
+    // A pending two-press confirmation (branch delete, stash drop, file/selection discard,
+    // remote-tracking mismatch) is also modal input: the confirming or cancelling keystroke
+    // must re-run the same pane action rather than fall through to the registry.
+    if (key.name === "escape") {
+      this.actionBack()
+      return
+    }
+    if (key.name === "d" || key.name === "enter") {
+      switch (this.focusManager.active) {
+        case "files":
+          if (key.name === "d") this.actionDiscardFile()
+          return
+        case "branches":
+          if (key.name === "d") this.actionBranchDelete(key.shift === true)
+          if (key.name === "enter") this.actionBranchInspect()
+          return
+        case "stash":
+          if (key.name === "d") this.actionStashDrop()
+          return
+        case "main":
+          if (key.name === "d") this.actionDiscardSelection()
+          return
+        default:
+          return
+      }
+    }
   }
 
   private handleFilterKey(key: KeyEvent): boolean {
@@ -425,503 +606,470 @@ export class RootView {
     updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
     return result.consumed
   }
-  private handleCopyKey(key: KeyEvent): boolean {
-    if (this.focusManager.active !== "main") return false
-    if (this.copyMenuOpen) {
-      if (key.name === "escape") {
-        this.copyMenuOpen = false
-        this.panes.main.box.bottomTitle = undefined
-        this.root.requestRender()
-        return true
-      }
-      const index = Number(key.name) - 1
-      if (Number.isInteger(index) && index >= 0 && index < COPY_MENU_ITEMS.length) {
-        this.copyMenuOpen = false
-        this.copyMainMode(COPY_MENU_ITEMS[index]!.mode)
-        return true
-      }
-      return true
-    }
-    if (key.ctrl && key.name === "o") {
-      this.copyMainMode("text")
-      return true
-    }
-    if (!key.ctrl && !key.meta && key.name === "y") {
-      this.copyMenuOpen = true
-      this.panes.main.box.bottomTitle = `Copy: ${COPY_MENU_ITEMS.map((item, index) => `${index + 1} ${item.label}`).join(" | ")}`
-      this.root.requestRender()
-      return true
-    }
-    if (!key.ctrl && !key.meta && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
-      this.moveMainCursor(key.name === "j" || key.name === "down" ? "next" : "previous")
-      return true
-    }
-    return false
-  }
-  private handleMutationKey(key: KeyEvent): boolean {
-    if (this.commitDialog !== undefined &&
-      this.commitDialog.state.mode !== "stash" &&
-      this.commitDialog.state.mode !== "branch-create" &&
-      this.commitDialog.state.mode !== "branch-rename") {
-      if (this.mutationInFlight) return true
-      return this.handleCommitDialogKey(key)
-    }
-    if (this.commitDialog?.state.mode === "stash") {
-      if (this.mutationInFlight) return true
-      if (key.name === "u" && key.ctrl === true && !key.meta) {
-        this.stashIncludeUntracked = !this.stashIncludeUntracked
-        this.panes.main.box.bottomTitle = `${renderCommitDialog(this.commitDialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`
-        this.root.requestRender()
-        return true
-      }
-      return this.handleStashDialogKey(key)
-    }
-    if (this.commitDialog?.state.mode === "branch-create" || this.commitDialog?.state.mode === "branch-rename") {
-      if (this.mutationInFlight) return true
-      return this.handleBranchDialogKey(key)
-    }
-    if (this.model.upstreamChoice !== undefined) {
-      if (this.mutationInFlight) return true
-      if (key.name === "escape") {
-        if (this.onCancelUpstream !== undefined) this.runUiMutation(() => this.onCancelUpstream!())
-        return true
-      }
-      if (this.onChooseUpstream === undefined) return true
-      const count = this.model.upstreamChoice.candidates.length
-      const numeric = Number(key.name) - 1
-      if (Number.isInteger(numeric) && numeric >= 0 && numeric < count) {
-        const choice = this.model.upstreamChoice.candidates[numeric]!
-        this.runUiMutation(() => this.onChooseUpstream!(choice.remote, choice.branch))
-        return true
-      }
-      if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
-        this.upstreamCursorIndex = Math.max(0, Math.min(count - 1, this.upstreamCursorIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
-        return true
-      }
-      if (count > 0 && key.name === "enter") {
-        const choice = this.model.upstreamChoice.candidates[this.upstreamCursorIndex]!
-        this.runUiMutation(() => this.onChooseUpstream!(choice.remote, choice.branch))
-        return true
-      }
-      return true
-    }
-    const amendShortcut = key.name === "A" || (key.name === "a" && key.shift === true)
-    if (!this.mutationInFlight && !key.ctrl && !key.meta && (key.name === "c" || amendShortcut)) {
-      const commitAvailable = this.focusManager.active === "files"
-        ? filesPaneCommitAvailable(this.model)
-        : this.focusManager.active === "main" && mainPaneCommitAvailable(this.model)
-      if (!commitAvailable) {
-        this.panes.main.box.bottomTitle = "Commit is available in Files or Main staged scope"
-        return true
-      }
-      if (key.name === "c" && this.onCommitMessage !== undefined) {
-        this.openCommitDialog("commit", "")
-        return true
-      }
-      if (amendShortcut && this.onAmendMessage !== undefined && this.onCurrentCommitMessage !== undefined) {
-        this.openAmendDialog()
-        return true
-      }
-    }
-    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "s" && this.onCreateStash !== undefined &&
-      !(this.focusManager.active === "branches" && this.branchFilterActive)) {
-      this.stashIncludeUntracked = false
-      this.openCommitDialog("stash", "")
-      return true
-    }
-    if ((key.name === "R" || (key.name === "r" && key.shift)) && this.onRefresh !== undefined) {
-      this.invalidateRemoteCheckout()
-      this.panes.branches.box.bottomTitle = undefined
-      this.runUiMutation(() => this.onRefresh!())
-      return true
-    }
-    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "f" && this.focusManager.active !== "branches" && this.onFetch !== undefined) {
-      this.runUiMutation(() => this.onFetch!())
-      return true
-    }
-    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "p" &&
-      !(this.focusManager.active === "branches" && this.branchFilterActive) && this.onPull !== undefined && key.shift !== true) {
-      this.runUiMutation(() => this.onPull!())
-      return true
-    }
-    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "p" && key.shift === true &&
-      !(this.focusManager.active === "branches" && this.branchFilterActive) && this.onPush !== undefined) {
-      this.runUiMutation(() => this.onPush!())
-      return true
-    }
-    if (this.model.basePicker !== undefined) {
-      if (this.mutationInFlight) return true
-      if (key.name === "escape") {
-        if (this.onCancelBase !== undefined) this.runUiMutation(() => this.onCancelBase!())
-        return true
-      }
-      if (this.onChooseBase === undefined) return true
-      const count = this.model.basePicker.candidates.length
-      const numericIndex = Number(key.name) - 1
-      if (Number.isInteger(numericIndex) && numericIndex >= 0 && numericIndex < count) {
-        this.runUiMutation(() => this.onChooseBase!(this.model.basePicker!.candidates[numericIndex]!))
-        return true
-      }
-      if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
-        this.basePickerIndex = Math.max(0, Math.min(count - 1, this.basePickerIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
-        this.panes.status.box.bottomTitle = `${this.basePickerIndex + 1}/${count}: ${this.model.basePicker.candidates[this.basePickerIndex]} — Enter to choose`
-        return true
-      }
-      if (count > 0 && key.name === "enter") {
-        this.runUiMutation(() => this.onChooseBase!(this.model.basePicker!.candidates[this.basePickerIndex]!))
-        return true
-      }
-      return true
-    }
-    if (!key.ctrl && !key.meta && key.name === "b" && this.onModeChange !== undefined) {
-      if (this.mutationInFlight) return true
-      this.invalidateRemoteCheckout()
-      this.panes.branches.box.bottomTitle = undefined
-      this.runUiMutation(() => this.onModeChange!("branch"))
-      return true
-    }
-    if (!key.ctrl && !key.meta && key.name === "w" && this.onModeChange !== undefined) {
-      if (this.mutationInFlight) return true
-      this.invalidateRemoteCheckout()
-      this.panes.branches.box.bottomTitle = undefined
-      this.runUiMutation(() => this.onModeChange!("working-tree"))
-      return true
-    }
-    if (this.focusManager.active === "stash") {
-      const selected = selectedStashEntry(this.panes.stash, this.model)
-      if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
-        this.pendingStashDrop = undefined
-        this.panes.stash.box.bottomTitle = undefined
-        moveStashCursor(this.panes.stash, this.model, key.name === "j" || key.name === "down" ? "next" : "previous")
-        return true
-      }
-      if (selected !== undefined && (key.name === "space" || key.name === "g" || key.name === "enter") &&
-        this.model.reviewTarget.kind === "working-tree" && !this.mutationInFlight) {
-        const operation = key.name === "space" ? this.onApplyStash : key.name === "g" ? this.onPopStash : this.onInspectStash
-        if (operation !== undefined) {
-          this.runUiMutation(() => operation(selected.oid))
-          return true
-        }
-      }
-      if (selected !== undefined && key.name === "d" && this.onDropStash !== undefined && this.model.reviewTarget.kind === "working-tree" && !this.mutationInFlight) {
-        if (this.pendingStashDrop?.oid === selected.oid) {
-          this.pendingStashDrop = undefined
-          this.panes.stash.box.bottomTitle = undefined
-          this.runUiMutation(() => this.onDropStash!(selected.oid))
-        } else {
-          this.pendingStashDrop = selected
-          this.panes.stash.box.bottomTitle = `Drop ${selected.ref}? Press d again to confirm or Escape to cancel.`
-        }
-        return true
-      }
-      if (key.name === "escape" && this.pendingStashDrop !== undefined) {
-        this.pendingStashDrop = undefined
-        this.panes.stash.box.bottomTitle = undefined
-        return true
-      }
-      return false
-    }
-      if (this.mutationInFlight && ["space", "n", "r", "d", "f", "enter"].includes(key.name)) return true
-    if (this.focusManager.active === "branches") {
-      let selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-      if (this.branchFilterActive && key.name.length === 1 && !key.ctrl && !key.meta) {
-        this.pendingBranchDelete = undefined
-        this.invalidateRemoteCheckout()
-        this.panes.branches.box.bottomTitle = undefined
-        this.branchFilter += key.name
-        this.branchCursorIndex = 0
-        selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-        updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
-        return true
-      }
-      if (key.name === "backspace" && this.branchFilterActive) {
-        this.pendingBranchDelete = undefined
-        this.invalidateRemoteCheckout()
-        this.panes.branches.box.bottomTitle = undefined
-        this.branchFilter = this.branchFilter.slice(0, -1)
-        updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
-        return true
-      }
-      if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
-        this.pendingBranchDelete = undefined
-        this.invalidateRemoteCheckout()
-        this.panes.branches.box.bottomTitle = undefined
-        this.branchCursorIndex = moveBranchesCursor(this.model, this.branchCursorIndex, key.name === "j" || key.name === "down" ? "next" : "previous", this.branchFilter)
-        updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
-        return true
-      }
-      if (key.name === "space" && selected !== undefined) {
-        if (selected.kind === "local" && this.onSwitchLocalBranch !== undefined) this.runUiMutation(() => this.onSwitchLocalBranch!(selected.name))
-        if (selected.kind === "remote-branch" && this.onCheckoutRemoteTracking !== undefined) {
-          this.runRemoteCheckout({ remote: selected.remote, branch: selected.name, ref: selected.ref }, false)
-        }
-        return true
-      }
-      if (key.name === "n" && this.onCreateBranch !== undefined) {
-        this.branchDialogContext = { mode: "branch-create", ...(selected?.kind === "local" ? { startPoint: selected.name } : {}) }
-        this.openBranchDialog("branch-create", "")
-        return true
-      }
-      if (key.name === "d" && selected?.kind === "local" && this.onDeleteBranch !== undefined) {
-        const force = key.shift === true
-        const pending = this.pendingBranchDelete
-        if (pending?.branch === selected.name && pending.force === force) {
-          this.pendingBranchDelete = undefined
-          this.panes.branches.box.bottomTitle = undefined
-          this.runUiMutation(() => this.onDeleteBranch!(selected.name, force))
-        } else {
-          this.pendingBranchDelete = { branch: selected.name, force }
-          const confirmation = branchDeleteConfirmation(selected.name, force)
-          this.panes.branches.box.bottomTitle = `${confirmation.message} Press ${force ? "D" : "d"} again to confirm or Escape to cancel.`
-        }
-      }
-      if (key.name === "escape" && (this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined || this.branchFilterActive || this.remoteCheckoutInFlight)) {
-        this.pendingBranchDelete = undefined
-        this.invalidateRemoteCheckout()
-        this.panes.branches.box.bottomTitle = undefined
-        this.branchFilterActive = false
-        this.filterInput.clear()
-        this.filterInput.close()
-        this.branchFilter = ""
-        updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
-        return true
-      }
-      if (key.name === "r" && selected?.kind === "local" && this.onRenameBranch !== undefined) {
-        this.branchDialogContext = { mode: "branch-rename", branch: selected.name }
-        this.openBranchDialog("branch-rename", "")
-        return true
-      }
-      if (key.name === "f" && selected !== undefined) {
-        if (selected.kind === "remote" && this.onFetchRemote !== undefined) this.runUiMutation(() => this.onFetchRemote!(selected.name))
-        else this.panes.branches.box.bottomTitle = "Fetch is available for a selected remote"
-        return true
-      }
-      if (key.name === "enter" && selected !== undefined) {
-        if (selected.kind === "local" && this.onInspectBranch !== undefined) {
-          this.invalidateRemoteCheckout()
-          this.panes.branches.box.bottomTitle = undefined
-          this.runUiMutation(() => this.onInspectBranch!(selected.name))
-        }
-        if (selected.kind === "remote" && this.onBrowseRemote !== undefined) {
-          this.invalidateRemoteCheckout()
-          this.panes.branches.box.bottomTitle = undefined
-          this.runUiMutation(() => this.onBrowseRemote!(selected.name))
-        }
-        if (selected.kind === "remote-branch" && this.onInspectBranch !== undefined) {
-          const selection = { remote: selected.remote, branch: selected.name, ref: selected.ref }
-          if (this.pendingRemoteMismatch !== undefined &&
-            this.pendingRemoteMismatch.selection.remote === selection.remote &&
-            this.pendingRemoteMismatch.selection.branch === selection.branch &&
-            this.pendingRemoteMismatch.selection.ref === selection.ref) {
-            this.runRemoteCheckout(selection, true)
-          } else {
-            this.invalidateRemoteCheckout()
-            this.panes.branches.box.bottomTitle = undefined
-            this.runUiMutation(() => this.onInspectBranch!(selected.ref))
-          }
-        }
-        return true
-      }
-      if (key.name === "/") {
-        this.pendingBranchDelete = undefined
-        this.invalidateRemoteCheckout()
-        this.panes.branches.box.bottomTitle = undefined
-        const selectedBeforeFilter = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-        const selectedId = selectedBeforeFilter === undefined ? undefined : branchItemId(selectedBeforeFilter)
-        this.filterInput.open()
-        this.branchFilterActive = true
-        this.branchFilter = ""
-        this.branchCursorIndex = indexForStableId(branchPaneItems(this.model), selectedId, branchItemId, this.branchCursorIndex)
-        updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
-        return true
-      }
-      return false
-    }
-    if (this.focusManager.active === "commits") {
-      if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
-        moveCommitsCursor(this.panes.commits, this.model, key.name === "j" || key.name === "down" ? "next" : "previous")
-        return true
-      }
-      if (key.name === "enter" && this.onSelectCommit !== undefined) {
-        const selected = getSelectedCommit(this.panes.commits, this.model)
-        if (selected !== undefined) {
-          this.invalidateRemoteCheckout()
-          this.runUiMutation(() => this.onSelectCommit!(selected.oid))
-          this.focusManager.focus("files")
-        }
-        return true
-      }
-      if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
-        this.invalidateRemoteCheckout()
-        this.runUiMutation(() => this.onCommitBack!())
-      }
-      return false
-    }
-    if (this.mutationInFlight && ["space", "d", "tab", "a"].includes(key.name)) {
-      this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
-      return true
-    }
-    if (this.model.reviewTarget.kind === "branch" && ["space", "d", "a"].includes(key.name)) {
-      this.panes.main.box.bottomTitle = "Branch Review is read-only"
-      return true
-    }
-    if (this.focusManager.active === "files") {
-      if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
-        this.invalidateRemoteCheckout()
-        this.runUiMutation(() => this.onCommitBack!())
-        return true
-      }
-      if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
+
+  private actionMoveCursor(direction: "next" | "previous"): void {
+    switch (this.focusManager.active) {
+      case "files": {
         this.clearDiscardState()
-        this.fileCursorIndex = Math.max(0, Math.min(this.model.files.length - 1, this.fileCursorIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
+        this.fileCursorIndex = Math.max(0, Math.min(this.model.files.length - 1, this.fileCursorIndex + (direction === "next" ? 1 : -1)))
         const selected = this.model.files[this.fileCursorIndex]
         this.panes.files.box.bottomTitle = selected?.path ?? "No files"
         if (selected !== undefined) this.onSelectFile?.(selected.path)
-        return true
+        return
       }
-      if (key.name === "enter") {
-        const selected = this.model.files[this.fileCursorIndex]
-        if (selected !== undefined) {
-          if (this.model.reviewTarget.kind === "commit" && this.onSelectCommitFile !== undefined) {
-            this.runUiMutation(() => this.onSelectCommitFile!(selected.path))
-          } else {
-            this.onSelectFile?.(selected.path)
-          }
-        }
-        this.focusManager.focus("main")
-        return true
+      case "branches":
+        this.pendingBranchDelete = undefined
+        this.invalidateRemoteCheckout()
+        this.panes.branches.box.bottomTitle = undefined
+        this.branchCursorIndex = moveBranchesCursor(this.model, this.branchCursorIndex, direction, this.branchFilter)
+        updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
+        return
+      case "commits":
+        moveCommitsCursor(this.panes.commits, this.model, direction)
+        return
+      case "stash":
+        this.pendingStashDrop = undefined
+        this.panes.stash.box.bottomTitle = undefined
+        moveStashCursor(this.panes.stash, this.model, direction)
+        return
+      case "main":
+        // h/l and j/k do the same thing in main: MainCursorTarget is hunk-granular and
+        // githunk has no line cursor yet.
+        this.moveMainCursor(direction)
+        return
+      default:
+        return
+    }
+  }
+
+  private actionInspect(): void {
+    switch (this.focusManager.active) {
+      case "files":
+        this.actionOpenFile()
+        return
+      case "branches":
+        this.actionBranchInspect()
+        return
+      default:
+        return
+    }
+  }
+
+  private actionOpenFile(): void {
+    if (this.mutationInFlight) return
+    const selected = this.model.files[this.fileCursorIndex]
+    if (selected !== undefined) {
+      if (this.model.reviewTarget.kind === "commit" && this.onSelectCommitFile !== undefined) {
+        this.runUiMutation(() => this.onSelectCommitFile!(selected.path))
+      } else {
+        this.onSelectFile?.(selected.path)
       }
-      const file = this.model.files[this.fileCursorIndex]
-      if (key.name === "r" && this.onMarkFocusedFileReviewed !== undefined) {
-        const focusedPath = this.model.focusId ?? this.model.selectionId
-        const reviewPath = focusedPath !== undefined && this.model.files.some((candidate) => candidate.path === focusedPath)
-          ? focusedPath
-          : file?.path
-        this.runUiMutation(() => this.onMarkFocusedFileReviewed!(reviewPath))
-        return true
+    }
+    this.focusManager.focus("main")
+  }
+
+  private actionStageFile(): void {
+    if (this.mutationInFlight) return
+    if (this.model.reviewTarget.kind === "branch") {
+      this.panes.main.box.bottomTitle = "Branch Review is read-only"
+      return
+    }
+    const file = this.model.files[this.fileCursorIndex]
+    if (file === undefined) return
+    const staged = !file.untracked && file.worktreeStatus === "." && file.indexStatus !== "."
+    const operation = staged ? this.onUnstageFile : this.onStageFile
+    if (operation !== undefined) this.runUiMutation(() => operation(file.path))
+  }
+
+  private actionDiscardFile(): void {
+    if (this.mutationInFlight) return
+    if (this.model.reviewTarget.kind === "branch") {
+      this.panes.main.box.bottomTitle = "Branch Review is read-only"
+      return
+    }
+    const file = this.model.files[this.fileCursorIndex]
+    if (file === undefined || this.onDiscardFile === undefined) return
+    if (!file.untracked && file.worktreeStatus === "." && file.indexStatus !== ".") {
+      this.panes.files.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
+      return
+    }
+    const pending = this.pendingFileDiscard
+    if (pending?.path === file.path && pending.untracked === file.untracked) {
+      this.pendingFileDiscard = undefined
+      this.runUiMutation(() => this.onDiscardFile!(file.path, file.untracked))
+    } else {
+      this.pendingFileDiscard = { path: file.path, untracked: file.untracked }
+      this.panes.files.box.bottomTitle = `${discardConfirmation(file.path, file.untracked).message} Press d again to confirm or Escape to cancel.`
+    }
+  }
+
+  private actionStageAll(): void {
+    if (this.mutationInFlight) {
+      this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
+      return
+    }
+    if (this.model.reviewTarget.kind === "branch") {
+      this.panes.main.box.bottomTitle = "Branch Review is read-only"
+      return
+    }
+    if (this.onToggleAllFiles === undefined) return
+    this.runUiMutation(() => this.onToggleAllFiles!())
+  }
+
+  private actionMarkReviewed(): void {
+    if (this.mutationInFlight) return
+    if (this.onMarkFocusedFileReviewed === undefined) return
+    const file = this.model.files[this.fileCursorIndex]
+    const focusedPath = this.model.focusId ?? this.model.selectionId
+    const reviewPath = focusedPath !== undefined && this.model.files.some((candidate) => candidate.path === focusedPath)
+      ? focusedPath
+      : file?.path
+    this.runUiMutation(() => this.onMarkFocusedFileReviewed!(reviewPath))
+  }
+
+  private actionStageSelection(): void {
+    if (this.onApplySelection === undefined) return
+    if (this.model.reviewTarget.kind === "branch") {
+      this.panes.main.box.bottomTitle = "Branch Review is read-only"
+      return
+    }
+    if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "all") {
+      this.panes.main.box.bottomTitle = "Line actions disabled in All scope; press ] to choose staged or unstaged"
+      return
+    }
+    const selected = this.mainChangeSelection()
+    const document = getMainDocument(this.panes.main)
+    const target = getMainCursorTarget(this.panes.main)
+    const parsedPath = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]?.newPath ?? document.files[target.fileIndex]?.oldPath
+    const modelFile = parsedPath === undefined ? undefined : this.model.files.find((file) => file.path === parsedPath)
+    const availability = modelFile?.conflicted
+      ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: conflicted file" }
+      : modelFile !== undefined && !modelFile.untracked && modelFile.additions === 0 && modelFile.deletions === 0
+        ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: binary file" }
+        : mainActionAvailability(document, target)
+    if (!availability.canStageLines) {
+      this.panes.main.box.bottomTitle = availability.reason
+    } else if (selected === undefined || selected.indexes.length === 0) {
+      this.panes.main.box.bottomTitle = "No changed lines selected"
+    } else {
+      const reverse = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged"
+      this.runUiMutation(() => this.onApplySelection!(selected.document, selected.indexes, reverse))
+    }
+  }
+
+  private actionDiscardSelection(): void {
+    if (this.mutationInFlight) return
+    if (this.onDiscardSelection === undefined) return
+    if (this.model.reviewTarget.kind === "branch") {
+      this.panes.main.box.bottomTitle = "Branch Review is read-only"
+      return
+    }
+    if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "all") {
+      this.panes.main.box.bottomTitle = "Line actions disabled in All scope; press ] to choose staged or unstaged"
+      return
+    }
+    if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged") {
+      this.panes.main.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
+      return
+    }
+    const selected = this.mainChangeSelection()
+    const target = getMainCursorTarget(this.panes.main)
+    const document = getMainDocument(this.panes.main)
+    const targetFile = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]
+    const path = targetFile?.newPath !== undefined && targetFile.newPath !== "/dev/null" ? targetFile.newPath : targetFile?.oldPath ?? "selected changes"
+    const modelFile = this.model.files.find((file) => file.path === path)
+    if (modelFile?.untracked && this.onDiscardFile !== undefined) {
+      const pending = this.pendingFileDiscard
+      if (pending?.path === path && pending.untracked) {
+        this.pendingFileDiscard = undefined
+        this.runUiMutation(() => this.onDiscardFile!(path, true))
+      } else {
+        this.pendingFileDiscard = { path, untracked: true }
+        this.panes.main.box.bottomTitle = `${discardConfirmation(path, true).message} Press d again to confirm or Escape to cancel.`
       }
-      if (key.name === "a" && this.onToggleAllFiles !== undefined) {
-        this.runUiMutation(() => this.onToggleAllFiles!())
-        return true
-      }
-      if (file !== undefined && key.name === "space") {
-        const staged = !file.untracked && file.worktreeStatus === "." && file.indexStatus !== "."
-        const operation = staged ? this.onUnstageFile : this.onStageFile
-        if (operation !== undefined) this.runUiMutation(() => operation(file.path))
-        return operation !== undefined
-      }
-      if (file !== undefined && key.name === "d" && this.onDiscardFile !== undefined) {
-        if (!file.untracked && file.worktreeStatus === "." && file.indexStatus !== ".") {
-          this.panes.files.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
-          return true
-        }
-        const pending = this.pendingFileDiscard
-        if (pending?.path === file.path && pending.untracked === file.untracked) {
-          this.pendingFileDiscard = undefined
-          this.runUiMutation(() => this.onDiscardFile!(file.path, file.untracked))
-        } else {
-          this.pendingFileDiscard = { path: file.path, untracked: file.untracked }
-          this.panes.files.box.bottomTitle = `${discardConfirmation(file.path, file.untracked).message} Press d again to confirm or Escape to cancel.`
-        }
-        return true
-      }
-      if (key.name === "escape" && this.pendingFileDiscard !== undefined) {
+      return
+    }
+    const availability = modelFile?.conflicted
+      ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: conflicted file" }
+      : modelFile !== undefined && !modelFile.untracked && modelFile.additions === 0 && modelFile.deletions === 0
+        ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: binary file" }
+        : mainActionAvailability(document, target)
+    if (!availability.canDiscardLines) {
+      this.panes.main.box.bottomTitle = availability.reason
+      return
+    }
+    if (selected === undefined || selected.indexes.length === 0) {
+      this.panes.main.box.bottomTitle = "No changed lines selected"
+    } else {
+      const paths = this.selectionPaths(selected.document, selected.indexes)
+      const label = paths.join(", ")
+      if (!this.discardPending || this.pendingDiscardPaths.join(" ") !== paths.join(" ")) {
+        this.discardPending = true
+        this.pendingDiscardPaths = paths
+        this.panes.main.box.bottomTitle = `${discardConfirmation(label || path).message} Press d again to confirm or Escape to cancel.`
+      } else {
         this.clearDiscardState()
-        this.panes.files.box.bottomTitle = undefined
-        return true
+        this.runUiMutation(() => this.onDiscardSelection!(selected.document, selected.indexes))
       }
-      return false
     }
-    if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "all" && (key.name === "space" || key.name === "d")) {
-      this.panes.main.box.bottomTitle = "Line actions disabled in All scope; press Tab to choose staged or unstaged"
-      return true
+  }
+
+  private actionScopeCycle(direction: "next" | "previous"): void {
+    if (this.mutationInFlight) {
+      this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
+      return
     }
-    if (this.focusManager.active !== "main") return false
-    if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
-      this.runUiMutation(() => this.onCommitBack!())
-      this.focusManager.focus("commits")
-      return true
+    if (this.onScopeChange === undefined) return
+    if (this.model.reviewTarget.kind !== "working-tree") return
+    this.invalidateRemoteCheckout()
+    const index = SCOPE_ORDER.indexOf(this.model.reviewTarget.scope)
+    const nextIndex = direction === "next" ? (index + 1) % SCOPE_ORDER.length : (index - 1 + SCOPE_ORDER.length) % SCOPE_ORDER.length
+    const scope = SCOPE_ORDER[nextIndex]!
+    this.runUiMutation(() => this.onScopeChange!(scope))
+  }
+
+  private actionBranchCheckout(): void {
+    if (this.mutationInFlight) return
+    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+    if (selected === undefined) return
+    if (selected.kind === "local" && this.onSwitchLocalBranch !== undefined) this.runUiMutation(() => this.onSwitchLocalBranch!(selected.name))
+    if (selected.kind === "remote-branch" && this.onCheckoutRemoteTracking !== undefined) {
+      this.runRemoteCheckout({ remote: selected.remote, branch: selected.name, ref: selected.ref }, false)
     }
-    if (key.name === "tab" && this.onScopeChange !== undefined) {
+  }
+
+  private actionBranchCreate(): void {
+    if (this.mutationInFlight) return
+    if (this.onCreateBranch === undefined) return
+    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+    this.branchDialogContext = { mode: "branch-create", ...(selected?.kind === "local" ? { startPoint: selected.name } : {}) }
+    this.openBranchDialog("branch-create", "")
+  }
+
+  private actionBranchDelete(force: boolean): void {
+    if (this.mutationInFlight) return
+    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+    if (selected === undefined || this.onDeleteBranch === undefined) return
+    const pending = this.pendingBranchDelete
+    if (pending?.branch === selected.name && pending.force === force) {
+      this.pendingBranchDelete = undefined
+      this.panes.branches.box.bottomTitle = undefined
+      this.runUiMutation(() => this.onDeleteBranch!(selected.name, force))
+    } else {
+      this.pendingBranchDelete = { branch: selected.name, force }
+      const confirmation = branchDeleteConfirmation(selected.name, force)
+      this.panes.branches.box.bottomTitle = `${confirmation.message} Press ${force ? "D" : "d"} again to confirm or Escape to cancel.`
+    }
+  }
+
+  private actionBranchRename(): void {
+    if (this.mutationInFlight) return
+    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+    if (selected === undefined || this.onRenameBranch === undefined) return
+    this.branchDialogContext = { mode: "branch-rename", branch: selected.name }
+    this.openBranchDialog("branch-rename", "")
+  }
+
+  private actionFetchRemote(): void {
+    if (this.mutationInFlight) return
+    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+    if (selected?.kind === "remote" && this.onFetchRemote !== undefined) this.runUiMutation(() => this.onFetchRemote!(selected.name))
+  }
+
+  private actionBranchInspect(): void {
+    if (this.mutationInFlight) return
+    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+    if (selected === undefined) return
+    if (selected.kind === "local" && this.onInspectBranch !== undefined) {
       this.invalidateRemoteCheckout()
-      const scope = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged" ? "unstaged" : "staged"
-      this.runUiMutation(() => this.onScopeChange!(scope))
-      return true
+      this.panes.branches.box.bottomTitle = undefined
+      this.runUiMutation(() => this.onInspectBranch!(selected.name))
     }
-    if (key.name === "space" && this.onApplySelection !== undefined) {
-      const selected = this.mainChangeSelection()
-      const document = getMainDocument(this.panes.main)
-      const target = getMainCursorTarget(this.panes.main)
-      const parsedPath = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]?.newPath ?? document.files[target.fileIndex]?.oldPath
-      const modelFile = parsedPath === undefined ? undefined : this.model.files.find((file) => file.path === parsedPath)
-      const availability = modelFile?.conflicted
-        ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: conflicted file" }
-        : modelFile !== undefined && !modelFile.untracked && modelFile.additions === 0 && modelFile.deletions === 0
-          ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: binary file" }
-          : mainActionAvailability(document, target)
-      if (!availability.canStageLines) {
-        this.panes.main.box.bottomTitle = availability.reason
-      } else if (selected === undefined || selected.indexes.length === 0) {
-        this.panes.main.box.bottomTitle = "No changed lines selected"
+    if (selected.kind === "remote" && this.onBrowseRemote !== undefined) {
+      this.invalidateRemoteCheckout()
+      this.panes.branches.box.bottomTitle = undefined
+      this.runUiMutation(() => this.onBrowseRemote!(selected.name))
+    }
+    if (selected.kind === "remote-branch" && this.onInspectBranch !== undefined) {
+      const selection = { remote: selected.remote, branch: selected.name, ref: selected.ref }
+      if (this.pendingRemoteMismatch !== undefined &&
+        this.pendingRemoteMismatch.selection.remote === selection.remote &&
+        this.pendingRemoteMismatch.selection.branch === selection.branch &&
+        this.pendingRemoteMismatch.selection.ref === selection.ref) {
+        this.runRemoteCheckout(selection, true)
       } else {
-        const reverse = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged"
-        this.runUiMutation(() => this.onApplySelection!(selected.document, selected.indexes, reverse))
+        this.invalidateRemoteCheckout()
+        this.panes.branches.box.bottomTitle = undefined
+        this.runUiMutation(() => this.onInspectBranch!(selected.ref))
       }
-      return true
     }
-    if (key.name === "d" && this.onDiscardSelection !== undefined) {
-      if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged") {
-        this.panes.main.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
-        return true
-      }
-      const selected = this.mainChangeSelection()
-      const target = getMainCursorTarget(this.panes.main)
-      const document = getMainDocument(this.panes.main)
-      const targetFile = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]
-      const path = targetFile?.newPath !== undefined && targetFile.newPath !== "/dev/null" ? targetFile.newPath : targetFile?.oldPath ?? "selected changes"
-      const modelFile = this.model.files.find((file) => file.path === path)
-      if (modelFile?.untracked && this.onDiscardFile !== undefined) {
-        const pending = this.pendingFileDiscard
-        if (pending?.path === path && pending.untracked) {
-          this.pendingFileDiscard = undefined
-          this.runUiMutation(() => this.onDiscardFile!(path, true))
-        } else {
-          this.pendingFileDiscard = { path, untracked: true }
-          this.panes.main.box.bottomTitle = `${discardConfirmation(path, true).message} Press d again to confirm or Escape to cancel.`
-        }
-        return true
-      }
-      const availability = modelFile?.conflicted
-        ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: conflicted file" }
-        : modelFile !== undefined && !modelFile.untracked && modelFile.additions === 0 && modelFile.deletions === 0
-          ? { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: binary file" }
-          : mainActionAvailability(document, target)
-      if (!availability.canDiscardLines) {
-        this.panes.main.box.bottomTitle = availability.reason
-        return true
-      }
-      if (selected === undefined || selected.indexes.length === 0) {
-        this.panes.main.box.bottomTitle = "No changed lines selected"
-      } else {
-        const paths = this.selectionPaths(selected.document, selected.indexes)
-        const label = paths.join(", ")
-        if (!this.discardPending || this.pendingDiscardPaths.join("\u0000") !== paths.join("\u0000")) {
-          this.discardPending = true
-          this.pendingDiscardPaths = paths
-          this.panes.main.box.bottomTitle = `${discardConfirmation(label || path).message} Press d again to confirm or Escape to cancel.`
-        } else {
-          this.clearDiscardState()
-          this.runUiMutation(() => this.onDiscardSelection!(selected.document, selected.indexes))
-        }
-      }
-      return true
+  }
+
+  private actionCommitDrilldown(): void {
+    if (this.mutationInFlight) return
+    if (this.onSelectCommit === undefined) return
+    const selected = getSelectedCommit(this.panes.commits, this.model)
+    if (selected === undefined) return
+    this.invalidateRemoteCheckout()
+    this.runUiMutation(() => this.onSelectCommit!(selected.oid))
+    this.focusManager.focus("files")
+  }
+
+  private actionCommitBack(): void {
+    if (this.onCommitBack === undefined) return
+    this.invalidateRemoteCheckout()
+    this.runUiMutation(() => this.onCommitBack!())
+    if (this.focusManager.active === "main") this.focusManager.focus("commits")
+  }
+
+  private actionBack(): void {
+    if (this.pendingStashDrop !== undefined) {
+      this.pendingStashDrop = undefined
+      this.panes.stash.box.bottomTitle = undefined
     }
-    if (key.name === "escape" && this.discardPending) {
+    if (this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined || this.branchFilterActive || this.remoteCheckoutInFlight) {
+      this.pendingBranchDelete = undefined
+      this.invalidateRemoteCheckout()
+      this.panes.branches.box.bottomTitle = undefined
+      this.branchFilterActive = false
+      this.filterInput.clear()
+      this.filterInput.close()
+      this.branchFilter = ""
+      updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
+    }
+    if (this.pendingFileDiscard !== undefined) {
+      this.clearDiscardState()
+      this.panes.files.box.bottomTitle = undefined
+    }
+    if (this.discardPending) {
       this.clearDiscardState()
       this.panes.main.box.bottomTitle = undefined
-      return true
     }
-    return false
+  }
+
+  private actionStashCreate(): void {
+    if (this.mutationInFlight || this.onCreateStash === undefined) return
+    this.stashIncludeUntracked = false
+    this.openCommitDialog("stash", "")
+  }
+
+  private actionStashApply(): void {
+    if (this.mutationInFlight) return
+    const selected = selectedStashEntry(this.panes.stash, this.model)
+    if (selected === undefined || this.onApplyStash === undefined) return
+    this.runUiMutation(() => this.onApplyStash!(selected.oid))
+  }
+
+  private actionStashPop(): void {
+    if (this.mutationInFlight) return
+    const selected = selectedStashEntry(this.panes.stash, this.model)
+    if (selected === undefined || this.onPopStash === undefined) return
+    this.runUiMutation(() => this.onPopStash!(selected.oid))
+  }
+
+  private actionStashDrop(): void {
+    if (this.mutationInFlight) return
+    const selected = selectedStashEntry(this.panes.stash, this.model)
+    if (selected === undefined || this.onDropStash === undefined) return
+    if (this.pendingStashDrop?.oid === selected.oid) {
+      this.pendingStashDrop = undefined
+      this.panes.stash.box.bottomTitle = undefined
+      this.runUiMutation(() => this.onDropStash!(selected.oid))
+    } else {
+      this.pendingStashDrop = selected
+      this.panes.stash.box.bottomTitle = `Drop ${selected.ref}? Press d again to confirm or Escape to cancel.`
+    }
+  }
+
+  private actionStashInspect(): void {
+    if (this.mutationInFlight) return
+    const selected = selectedStashEntry(this.panes.stash, this.model)
+    if (selected === undefined || this.onInspectStash === undefined) return
+    this.runUiMutation(() => this.onInspectStash!(selected.oid))
+  }
+
+  private actionCommit(): void {
+    if (this.mutationInFlight || this.onCommitMessage === undefined) return
+    const commitAvailable = this.focusManager.active === "files"
+      ? filesPaneCommitAvailable(this.model)
+      : this.focusManager.active === "main" && mainPaneCommitAvailable(this.model)
+    if (!commitAvailable) {
+      this.panes.main.box.bottomTitle = "Commit is available in Files or Main staged scope"
+      return
+    }
+    this.openCommitDialog("commit", "")
+  }
+
+  private actionAmend(): void {
+    if (this.mutationInFlight || this.onAmendMessage === undefined || this.onCurrentCommitMessage === undefined) return
+    const commitAvailable = this.focusManager.active === "files"
+      ? filesPaneCommitAvailable(this.model)
+      : this.focusManager.active === "main" && mainPaneCommitAvailable(this.model)
+    if (!commitAvailable) {
+      this.panes.main.box.bottomTitle = "Commit is available in Files or Main staged scope"
+      return
+    }
+    this.openAmendDialog()
+  }
+
+  private actionFetch(): void {
+    if (this.mutationInFlight || this.onFetch === undefined) return
+    this.runUiMutation(() => this.onFetch!())
+  }
+
+  private actionPull(): void {
+    if (this.mutationInFlight || this.onPull === undefined) return
+    this.runUiMutation(() => this.onPull!())
+  }
+
+  private actionPush(): void {
+    if (this.mutationInFlight || this.onPush === undefined) return
+    this.runUiMutation(() => this.onPush!())
+  }
+
+  private actionRefresh(): void {
+    if (this.onRefresh === undefined) return
+    this.invalidateRemoteCheckout()
+    this.panes.branches.box.bottomTitle = undefined
+    this.runUiMutation(() => this.onRefresh!())
+  }
+
+  private actionModeBranch(): void {
+    if (this.onModeChange === undefined || this.mutationInFlight) return
+    this.invalidateRemoteCheckout()
+    this.panes.branches.box.bottomTitle = undefined
+    this.runUiMutation(() => this.onModeChange!("branch"))
+  }
+
+  private actionModeWorkingTree(): void {
+    if (this.onModeChange === undefined || this.mutationInFlight) return
+    this.invalidateRemoteCheckout()
+    this.panes.branches.box.bottomTitle = undefined
+    this.runUiMutation(() => this.onModeChange!("working-tree"))
+  }
+
+  private actionFilter(): void {
+    if (this.focusManager.active !== "branches") return
+    this.pendingBranchDelete = undefined
+    this.invalidateRemoteCheckout()
+    this.panes.branches.box.bottomTitle = undefined
+    const selectedBeforeFilter = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+    const selectedId = selectedBeforeFilter === undefined ? undefined : branchItemId(selectedBeforeFilter)
+    this.filterInput.open()
+    this.branchFilterActive = true
+    this.branchFilter = ""
+    this.branchCursorIndex = indexForStableId(branchPaneItems(this.model), selectedId, branchItemId, this.branchCursorIndex)
+    updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
+  }
+
+  private actionCopyMenu(): void {
+    this.copyMenuOpen = true
+    this.panes.main.box.bottomTitle = `Copy: ${COPY_MENU_ITEMS.map((item, index) => `${index + 1} ${item.label}`).join(" | ")}`
+    this.root.requestRender()
+  }
+
+  private actionCopyExact(): void {
+    this.copyMainMode("text")
   }
 
   private selectionPaths(document: DiffDocument, indexes: readonly number[]): readonly string[] {
