@@ -24,9 +24,9 @@ import { copySelection, selectionFromRenderable } from "../domain/diff/selection
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
 import { discardConfirmation } from "./confirm-dialog"
-import { branchDeleteConfirmation } from "./branch-dialogs"
+import { branchDeleteConfirmation, remoteTrackingMismatchConfirmation } from "./branch-dialogs"
 import { COPY_MENU_ITEMS } from "./copy-menu"
-import type { RemoteBranchSelection } from "../git/branches"
+import type { CheckoutRemoteTrackingResult, RemoteBranchSelection } from "../git/branches"
 export type RootViewOptions = {
   readonly leftWidth?: number
   readonly logHeight?: number
@@ -53,7 +53,7 @@ export type RootViewOptions = {
   readonly onFetchRemote?: (remote: string) => Promise<void>
   readonly onBrowseRemote?: (remote: string) => Promise<void>
   readonly onInspectBranch?: (branch: string) => Promise<void>
-  readonly onCheckoutRemoteTracking?: (selection: RemoteBranchSelection) => Promise<void>
+  readonly onCheckoutRemoteTracking?: (selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>
   readonly onFilterBranches?: () => Promise<void>
 }
 
@@ -98,7 +98,7 @@ export class RootView {
   private readonly onFetchRemote: ((remote: string) => Promise<void>) | undefined
   private readonly onBrowseRemote: ((remote: string) => Promise<void>) | undefined
   private readonly onInspectBranch: ((branch: string) => Promise<void>) | undefined
-  private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection) => Promise<void>) | undefined
+  private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>) | undefined
   private readonly onFilterBranches: (() => Promise<void>) | undefined
   private copyMenuOpen = false
   private discardPending = false
@@ -106,6 +106,7 @@ export class RootView {
   private mutationInFlight = false
   private fileCursorIndex = 0
   private pendingBranchDelete: { readonly branch: string; readonly force: boolean } | undefined
+  private pendingRemoteMismatch: { readonly selection: RemoteBranchSelection; readonly message: string } | undefined
   private branchFilter = ""
   private branchFilterActive = false
   private branchCursorIndex = 0
@@ -139,6 +140,7 @@ export class RootView {
     this.onBrowseRemote = options.onBrowseRemote
     this.onCheckoutRemoteTracking = options.onCheckoutRemoteTracking
     this.onFilterBranches = options.onFilterBranches
+    this.onSelectCommitFile = options.onSelectCommitFile
     this.onSelectCommit = options.onSelectCommit
     this.onCommitBack = options.onCommitBack
     this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
@@ -191,6 +193,7 @@ export class RootView {
 
     this.focusManager.onChange = (focus, logVisible) => {
       this.pendingBranchDelete = undefined
+      this.pendingRemoteMismatch = undefined
       this.panes.branches.box.bottomTitle = undefined
       this.branchFilterActive = false
       this.applyFocus(focus)
@@ -240,6 +243,7 @@ export class RootView {
 
   update(model: AppModel): void {
     this.pendingBranchDelete = undefined
+    this.pendingRemoteMismatch = undefined
     this.panes.branches.box.bottomTitle = undefined
     this.branchFilterActive = false
     this.branchFilter = ""
@@ -295,6 +299,8 @@ export class RootView {
   }
   private handleMutationKey(key: KeyEvent): boolean {
     if ((key.name === "R" || (key.name === "r" && key.shift)) && this.onRefresh !== undefined) {
+      this.pendingRemoteMismatch = undefined
+      this.panes.branches.box.bottomTitle = undefined
       this.runUiMutation(this.onRefresh())
       return true
     }
@@ -318,17 +324,24 @@ export class RootView {
     }
     if (!key.ctrl && !key.meta && key.name === "b" && this.onModeChange !== undefined) {
       if (this.mutationInFlight) return true
+      this.pendingRemoteMismatch = undefined
+      this.panes.branches.box.bottomTitle = undefined
       this.runUiMutation(this.onModeChange("branch"))
       return true
     }
     if (!key.ctrl && !key.meta && key.name === "w" && this.onModeChange !== undefined) {
       if (this.mutationInFlight) return true
+      this.pendingRemoteMismatch = undefined
+      this.panes.branches.box.bottomTitle = undefined
       this.runUiMutation(this.onModeChange("working-tree"))
       return true
     }
     if (this.focusManager.active === "branches") {
       let selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
       if (this.branchFilterActive && key.name.length === 1 && !key.ctrl && !key.meta) {
+        this.pendingBranchDelete = undefined
+        this.pendingRemoteMismatch = undefined
+        this.panes.branches.box.bottomTitle = undefined
         this.branchFilter += key.name
         this.branchCursorIndex = 0
         selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
@@ -336,18 +349,26 @@ export class RootView {
         return true
       }
       if (key.name === "backspace" && this.branchFilterActive) {
+        this.pendingBranchDelete = undefined
+        this.pendingRemoteMismatch = undefined
+        this.panes.branches.box.bottomTitle = undefined
         this.branchFilter = this.branchFilter.slice(0, -1)
         updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
         return true
       }
       if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
+        this.pendingBranchDelete = undefined
+        this.pendingRemoteMismatch = undefined
+        this.panes.branches.box.bottomTitle = undefined
         this.branchCursorIndex = moveBranchesCursor(this.model, this.branchCursorIndex, key.name === "j" || key.name === "down" ? "next" : "previous", this.branchFilter)
         updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
         return true
       }
       if (key.name === "space" && selected !== undefined) {
         if (selected.kind === "local" && this.onSwitchLocalBranch !== undefined) this.runUiMutation(this.onSwitchLocalBranch(selected.name))
-        if (selected.kind === "remote-branch" && this.onCheckoutRemoteTracking !== undefined) this.runUiMutation(this.onCheckoutRemoteTracking({ remote: selected.remote, branch: selected.name, ref: selected.ref }))
+        if (selected.kind === "remote-branch" && this.onCheckoutRemoteTracking !== undefined) {
+          this.runRemoteCheckout({ remote: selected.remote, branch: selected.name, ref: selected.ref }, false)
+        }
         return true
       }
       if (key.name === "n" && this.onCreateBranch !== undefined) {
@@ -368,8 +389,9 @@ export class RootView {
         }
         return true
       }
-      if (key.name === "escape" && (this.pendingBranchDelete !== undefined || this.branchFilterActive)) {
+      if (key.name === "escape" && (this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined || this.branchFilterActive)) {
         this.pendingBranchDelete = undefined
+        this.pendingRemoteMismatch = undefined
         this.panes.branches.box.bottomTitle = undefined
         this.branchFilterActive = false
         this.branchFilter = ""
@@ -386,12 +408,34 @@ export class RootView {
         return true
       }
       if (key.name === "enter" && selected !== undefined) {
-        if (selected.kind === "local" && this.onInspectBranch !== undefined) this.runUiMutation(this.onInspectBranch(selected.name))
-        if (selected.kind === "remote" && this.onBrowseRemote !== undefined) this.runUiMutation(this.onBrowseRemote(selected.name))
-        if (selected.kind === "remote-branch" && this.onBrowseRemote !== undefined) this.runUiMutation(this.onBrowseRemote(selected.remote))
+        if (selected.kind === "local" && this.onInspectBranch !== undefined) {
+          this.pendingRemoteMismatch = undefined
+          this.panes.branches.box.bottomTitle = undefined
+          this.runUiMutation(this.onInspectBranch(selected.name))
+        }
+        if (selected.kind === "remote" && this.onBrowseRemote !== undefined) {
+          this.pendingRemoteMismatch = undefined
+          this.panes.branches.box.bottomTitle = undefined
+          this.runUiMutation(this.onBrowseRemote(selected.name))
+        }
+        if (selected.kind === "remote-branch" && this.onInspectBranch !== undefined) {
+          const selection = { remote: selected.remote, branch: selected.name, ref: selected.ref }
+          if (this.pendingRemoteMismatch !== undefined &&
+            this.pendingRemoteMismatch.selection.remote === selection.remote &&
+            this.pendingRemoteMismatch.selection.branch === selection.branch &&
+            this.pendingRemoteMismatch.selection.ref === selection.ref) {
+            this.runRemoteCheckout(selection, true)
+          } else {
+            this.pendingRemoteMismatch = undefined
+            this.panes.branches.box.bottomTitle = undefined
+            this.runUiMutation(this.onInspectBranch(selected.ref))
+          }
+        }
         return true
       }
       if (key.name === "/") {
+        this.pendingRemoteMismatch = undefined
+        this.panes.branches.box.bottomTitle = undefined
         this.branchFilterActive = true
         this.branchFilter = ""
         this.branchCursorIndex = 0
@@ -605,6 +649,31 @@ export class RootView {
         return index >= 0 && (line.kind === "addition" || line.kind === "deletion") ? [index] : []
       }),
     }
+  }
+
+
+  private runRemoteCheckout(selection: RemoteBranchSelection, confirmedMismatch: boolean): void {
+    if (this.onCheckoutRemoteTracking === undefined || this.mutationInFlight) return
+    this.mutationInFlight = true
+    this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
+    void this.onCheckoutRemoteTracking(selection, confirmedMismatch).then((result) => {
+      if (result?.kind === "mismatch") {
+        this.pendingRemoteMismatch = { selection, message: result.message }
+        const confirmation = remoteTrackingMismatchConfirmation(result.message)
+        this.panes.branches.box.bottomTitle = `${selection.remote}/${selection.branch}: ${confirmation.message} Press Enter again to confirm or Escape to cancel.`
+      } else {
+        this.pendingRemoteMismatch = undefined
+        this.panes.branches.box.bottomTitle = undefined
+      }
+      this.root.requestRender()
+    }).catch((error: unknown) => {
+      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+      this.root.requestRender()
+    }).finally(() => {
+      this.mutationInFlight = false
+      this.discardPending = false
+      this.pendingFileDiscard = undefined
+    })
   }
 
   private runUiMutation(operation: Promise<void>): void {

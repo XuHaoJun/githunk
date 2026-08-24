@@ -141,4 +141,18 @@ describe("AppController branch mode", () => {
     await controller.switchMode("branch")
     expect(controller.state.banner).toBe("review state was quarantined")
   })
+  test("inspects commits for the selected local or remote branch", async () => {
+    const seenRanges: string[] = []
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async (target) => workingSnapshot(target.scope),
+      loadCommits: async (range) => {
+        seenRanges.push(range)
+        return []
+      },
+    })
+    await controller.inspectBranch("feature/local")
+    await controller.inspectBranch("origin/feature/remote")
+    expect(seenRanges).toEqual(["feature/local", "origin/feature/remote"])
+  })
 })

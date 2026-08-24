@@ -249,6 +249,19 @@ export class AppController {
       }
     })
   }
+  async inspectBranch(branchRef: string): Promise<void> {
+    await this.mutationQueue.run(async () => {
+      const history = await this.loadCommitHistory(branchRef)
+      const { banner: _previousBanner, ...previousState } = this.currentState
+      this.currentState = {
+        ...previousState,
+        commits: history.commits,
+        ...(history.warning === undefined ? {} : { banner: history.warning }),
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    })
+  }
+
 
 
   async checkoutRemoteTracking(remoteRef: string | RemoteBranchSelection, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult | undefined> {
@@ -275,13 +288,49 @@ export class AppController {
           }
           return result
         }
-        await this.inferBase().catch(() => undefined)
-        if (this.currentState.reviewTarget.kind === "commit") {
+        const wasCommit = this.currentState.reviewTarget.kind === "commit"
+        const origin = wasCommit ? this.commitOriginTarget : undefined
+        if (wasCommit) {
           this.commitOriginTarget = undefined
+          const {
+            banner: _previousBanner,
+            basePicker: _previousPicker,
+            commitDetails: _previousCommitDetails,
+            commitFilePath: _previousCommitFilePath,
+            branchReviewTarget: _previousBranchReviewTarget,
+            selectionId: _previousSelectionId,
+            focusId: _previousFocusId,
+            ...previousState
+          } = this.currentState
+          const target: Extract<ReviewTarget, { readonly kind: "working-tree" }> = { kind: "working-tree", scope: "all" }
           this.currentState = {
-            ...this.currentState,
+            ...previousState,
+            reviewTarget: target,
+            title: titleFor(target, this.currentState.branch),
+            files: [],
+            patches: [],
+            rawPatchSections: [],
+            commits: [],
+            loading: false,
           }
+          const branchWarning = await this.refreshBranches()
+          const inferred = await this.inferBase().catch(() => undefined)
+          if (origin?.kind === "branch" && inferred?.kind === "choose") {
+            this.currentState = { ...this.currentState, basePicker: inferred, loading: false }
+          } else if (origin?.kind === "branch" && inferred?.kind === "confident") {
+            const loaded = await this.refreshBranchTarget(inferred.ref)
+            if (loaded) await this.rememberBase(inferred.ref)
+          } else if (origin?.kind === "branch") {
+            await this.openBranchReview()
+          } else {
+            await this.refreshTarget(target)
+          }
+          if (branchWarning !== undefined) {
+            this.currentState = { ...this.currentState, banner: branchWarning }
+          }
+          return result
         }
+        await this.inferBase().catch(() => undefined)
         await this.refresh()
         return result
       } catch (error) {
