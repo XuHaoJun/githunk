@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
 import { GitRunner } from "../../src/git/runner"
-import { listCommits, loadCommit, loadCommitFilePatch } from "../../src/git/commits"
+import { listCommits, loadCommit, loadCommitFilePatch, parseCommitLog } from "../../src/git/commits"
 
 describe("commit history loaders", () => {
+  test("does not treat control separators in free-form fields as delimiters", () => {
+    const parsed = parseCommitLog("oid\nshort\nparent\nA\u001futhor\n2026-01-01T00:00:00Z\nsubject\u001ftext\nbody\u001fline\0")
+    expect(parsed[0]?.authorName).toBe("A\u001futhor")
+    expect(parsed[0]?.subject).toBe("subject\u001ftext")
+    expect(parsed[0]?.body).toBe("body\u001fline")
+  })
   let repository: TempRepository | undefined
   afterEach(async () => { await repository?.cleanup() })
 
@@ -49,6 +55,7 @@ describe("commit history loaders", () => {
     const runner = new GitRunner(repository.path)
     const details = await loadCommit(runner, oid)
     expect(details.oid).toBe(oid)
+    expect(details.parentOids).toHaveLength(1)
     expect(details.subject).toBe("change")
     expect(details.document.files).toHaveLength(1)
     const file = await loadCommitFilePatch(runner, oid, "space name.txt")

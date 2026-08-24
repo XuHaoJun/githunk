@@ -9,15 +9,20 @@ export function createStatusPane(renderer: CliRenderer, model: AppModel): PaneHa
 }
 
 export function updateStatusPane(pane: PaneHandle, model: AppModel): void {
+  const aggregate = model.branchReviewTarget
   const target = model.reviewTarget.kind === "working-tree"
     ? `Working Tree (${model.reviewTarget.scope})`
     : model.reviewTarget.kind === "branch"
       ? `Branch Changes (${model.branch || "current"} vs ${model.reviewTarget.baseRef})`
-      : model.reviewTarget.kind
+      : model.reviewTarget.kind === "commit"
+        ? aggregate === undefined
+          ? model.reviewTarget.kind
+          : `Commit ${model.reviewTarget.oid.slice(0, 7)} (Branch Review: ${aggregate.baseRef})`
+        : model.reviewTarget.kind
   const summary = model.reviewSummary
-  const branchDetails = model.reviewTarget.kind === "branch"
-    ? `Base: ${model.reviewTarget.baseRef} (${model.reviewTarget.baseOid})`
-    : undefined
+  const branchDetails = aggregate === undefined
+    ? model.reviewTarget.kind === "branch" ? `Base: ${model.reviewTarget.baseRef} (${model.reviewTarget.baseOid})` : undefined
+    : `Base: ${aggregate.baseRef} (${aggregate.baseOid}) · Aggregate target ${aggregate.baseOid}..${aggregate.headOid}`
   pane.update([
     model.branch ? `Branch: ${model.branch}` : "Branch: (loading)",
     `Target: ${target}`,

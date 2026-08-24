@@ -5,22 +5,27 @@ import { GitRunner } from "./runner"
 
 type CommandRunner = Pick<GitRunner, "run">
 
-/** `%x1f` separates fields; `-z` terminates each record with NUL. */
-const LOG_FORMAT = "%H%x1f%h%x1f%P%x1f%an%x1f%aI%x1f%s%x1f%b"
+/** Each commit is one NUL record; the seven fields are line-framed. */
+const LOG_FORMAT = "%H%n%h%n%P%n%an%n%aI%n%s%n%b"
 
 function parseSummary(record: string): CommitSummary | undefined {
-  const fields = record.split("\x1f")
+  const fields = record.split("\n")
   if (fields.length < 7) return undefined
-  const [oid, shortOid, parents, authorName, authoredAt, subject, ...bodyFields] = fields
-  if (!oid || !shortOid || !authorName || !authoredAt || subject === undefined) return undefined
+  const oid = fields[0]!
+  const shortOid = fields[1]!
+  const parents = fields[2]!
+  const authorName = fields[3]!
+  const authoredAt = fields[4]!
+  const subject = fields[5]!
+  if (!oid || !shortOid || !authorName || !authoredAt) return undefined
   return {
     oid,
     shortOid,
-    parentOids: parents === undefined || parents === "" ? [] : parents.split(" ").filter(Boolean),
+    parentOids: parents === "" ? [] : parents.split(" ").filter(Boolean),
     authorName,
     authoredAt,
     subject,
-    body: bodyFields.join("\x1f"),
+    body: fields.slice(6).join("\n"),
   }
 }
 
@@ -45,8 +50,7 @@ function metadataValue(raw: string, label: string): string | undefined {
   const match = new RegExp(`^${label}: ([^\\n]*)$`, "m").exec(raw)
   return match?.[1]
 }
-
-function detailsFromShow(raw: string, oid: string): CommitDetails {
+function detailsFromShow(raw: string, oid: string, parentOids: readonly string[]): CommitDetails {
   const headerEnd = raw.indexOf("\n\n")
   const messageStart = headerEnd < 0 ? raw.length : headerEnd + 2
   const patchText = patchFromShow(raw)
@@ -55,11 +59,9 @@ function detailsFromShow(raw: string, oid: string): CommitDetails {
   const lines = messageLines.map((line) => line.startsWith("    ") ? line.slice(4) : line)
   const subject = lines.shift() ?? ""
   const body = lines.join("\n").replace(/^\n+/, "").replace(/\n+$/, "")
-  const authorName = metadataValue(raw, "Author") ?? ""
+  const authorName = (metadataValue(raw, "Author") ?? "").trim()
   const authoredAt = metadataValue(raw, "AuthorDate") ?? ""
   const shortOid = oid.slice(0, 7)
-  const parentLine = /^Merge: (.*)$/m.exec(raw)?.[1] ?? metadataValue(raw, "Parent") ?? ""
-  const parentOids = parentLine === "" ? [] : parentLine.split(/\s+/).filter(Boolean)
   const document = parseDiff(patchText)
   return {
     oid,
@@ -75,12 +77,19 @@ function detailsFromShow(raw: string, oid: string): CommitDetails {
   }
 }
 
+async function parentOidsFor(runner: CommandRunner, oid: string): Promise<readonly string[]> {
+  const result = await runner.run(["rev-list", "--parents", "-n", "1", oid], { readOnly: true })
+  const fields = result.stdout.trim().split(/\s+/)
+  return fields.slice(1)
+}
+
 export async function loadCommit(runner: CommandRunner, oid: string): Promise<CommitDetails> {
-  const result = await runner.run(["show", "--format=fuller", "--no-ext-diff", "--no-color", "--find-renames", "--binary", oid, "--"], { readOnly: true })
-  return detailsFromShow(result.stdout, oid)
+  const result = await runner.run(["show", "--format=fuller", "--no-ext-diff", "--no-color", "--find-renames", "--binary", "-m", oid, "--"], { readOnly: true })
+  const parents = await parentOidsFor(runner, oid)
+  return detailsFromShow(result.stdout, oid, parents)
 }
 
 export async function loadCommitFilePatch(runner: CommandRunner, oid: string, path: string): Promise<DiffDocument> {
-  const result = await runner.run(["show", "--format=fuller", "--no-ext-diff", "--no-color", "--find-renames", "--binary", oid, "--", path], { readOnly: true })
+  const result = await runner.run(["show", "--format=fuller", "--no-ext-diff", "--no-color", "--find-renames", "--binary", "-m", oid, "--", path], { readOnly: true })
   return parseDiff(patchFromShow(result.stdout))
 }

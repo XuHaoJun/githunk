@@ -187,7 +187,14 @@ export class AppController {
   }
 
   async selectCommit(oid: string): Promise<void> {
-    const details = await this.loadCommitDetails(oid)
+    this.rememberCursor()
+    let details: CommitDetails
+    try {
+      details = await this.loadCommitDetails(oid)
+    } catch (error) {
+      this.currentState = { ...this.currentState, banner: error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error), commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      return
+    }
     if (this.commitOriginTarget === undefined) {
       this.commitOriginTarget = this.currentState.branchReviewTarget ?? this.currentState.reviewTarget
     }
@@ -211,7 +218,13 @@ export class AppController {
   async selectCommitFile(path: string): Promise<void> {
     const details = this.currentState.commitDetails
     if (this.currentState.reviewTarget.kind !== "commit" || details === undefined) return
-    const document = await this.loadCommitFile(this.currentState.reviewTarget.oid, path)
+    let document: DiffDocument
+    try {
+      document = await this.loadCommitFile(this.currentState.reviewTarget.oid, path)
+    } catch (error) {
+      this.currentState = { ...this.currentState, banner: error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error), commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      return
+    }
     const files = changedFilesFromDocument(document)
     const patch = { label: "BRANCH" as const, text: document.text }
     this.currentState = {
@@ -503,12 +516,15 @@ export class AppController {
       ...(warning === undefined ? {} : { warning }),
     }
   }
-  private async loadCommitHistory(range: string): Promise<readonly CommitSummary[]> {
-    if (!this.automaticCommitHistory) return []
+  private async loadCommitHistory(range: string): Promise<{ readonly commits: readonly CommitSummary[]; readonly warning?: string }> {
+    if (!this.automaticCommitHistory) return { commits: [] }
     try {
-      return await this.loadCommitList(range)
-    } catch {
-      return []
+      return { commits: await this.loadCommitList(range) }
+    } catch (error) {
+      const warning = error instanceof GitCommandError
+        ? (error.record.stderr || error.message)
+        : error instanceof Error ? error.message : String(error)
+      return { commits: this.currentState.commits ?? [], warning }
     }
   }
   private async refreshTarget(target: Extract<ReviewTarget, { readonly kind: "working-tree" }>): Promise<void> {
@@ -519,7 +535,8 @@ export class AppController {
       if (generation !== this.generation) return
       const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
       if (generation !== this.generation) return
-      const commits = await this.loadCommitHistory("HEAD")
+      const history = await this.loadCommitHistory("HEAD")
+      if (generation !== this.generation) return
       const cursor = this.currentState.reviewTarget.kind === "working-tree"
         ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
         : this.workingTreeCursor
@@ -537,7 +554,7 @@ export class AppController {
       this.currentState = {
         ...previousState,
         ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
-        ...(review.warning === undefined ? {} : { banner: review.warning }),
+        ...(history.warning === undefined && review.warning === undefined ? {} : { banner: history.warning ?? review.warning }),
         ...(cursor.selectionId === undefined ? {} : { selectionId: cursor.selectionId }),
         ...(cursor.focusId === undefined ? {} : { focusId: cursor.focusId }),
         repositoryRoot: snapshot.repositoryRoot,
@@ -548,7 +565,7 @@ export class AppController {
         rawPatchSections: snapshot.patches,
         reviewStatuses: review.statuses,
         reviewSummary: review.summary,
-        commits,
+        commits: history.commits,
         loading: false,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
@@ -576,12 +593,12 @@ export class AppController {
       if (generation !== this.generation) return false
       const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
       if (generation !== this.generation) return false
-      const commits = await this.loadCommitHistory(`${snapshot.baseRef}..HEAD`)
+      const history = await this.loadCommitHistory(`${snapshot.baseRef}..HEAD`)
       if (generation !== this.generation) return false
       const cursor = this.currentState.reviewTarget.kind === "branch"
         ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
         : this.branchCursor
-      const branchWarning = review.warning ?? this.pendingBranchWarning
+      const branchWarning = history.warning ?? review.warning ?? this.pendingBranchWarning
       this.pendingBranchWarning = undefined
       const {
         upstream: _previousUpstream,
@@ -604,7 +621,7 @@ export class AppController {
         rawPatchSections: snapshot.patches,
         reviewStatuses: review.statuses,
         reviewSummary: this.reviewSummaryFor(review.statuses, snapshot.files, snapshot.commitCount),
-        commits,
+        commits: history.commits,
         loading: false,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
