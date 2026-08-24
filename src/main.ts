@@ -22,6 +22,7 @@ export async function startApp(): Promise<number> {
     targetFps: 30,
   })
   const controller = new AppController({ repositoryRoot, runner })
+  let pendingRemoteMismatch: { readonly remote: string; readonly branch: string; readonly ref?: string } | undefined
   let view: RootView
   view = new RootView(renderer, controller.state, {
     onStageFile: async (path) => {
@@ -89,8 +90,15 @@ export async function startApp(): Promise<number> {
     onBrowseRemote: async (remote) => {
       try { await controller.browseRemote(remote) } finally { view.update(controller.state) }
     },
+    onInspectBranch: async () => {
+      try { await controller.switchMode("branch") } finally { view.update(controller.state) }
+    },
     onCheckoutRemoteTracking: async (selection) => {
-      try { await controller.checkoutRemoteTracking(selection) } finally { view.update(controller.state) }
+      try {
+        const sameMismatch = pendingRemoteMismatch?.remote === selection.remote && pendingRemoteMismatch.branch === selection.branch && pendingRemoteMismatch.ref === selection.ref
+        const result = await controller.checkoutRemoteTracking(selection, sameMismatch ? { confirmedMismatch: true } : undefined)
+        pendingRemoteMismatch = result?.kind === "mismatch" ? selection : undefined
+      } finally { view.update(controller.state) }
     },
     onFilterBranches: async () => undefined,
   })

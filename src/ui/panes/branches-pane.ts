@@ -7,24 +7,27 @@ export type BranchPaneItem =
   | { readonly kind: "remote"; readonly name: string }
   | { readonly kind: "remote-branch"; readonly remote: string; readonly name: string; readonly ref: string }
 
-export function branchPaneItems(model: AppModel): readonly BranchPaneItem[] {
+export function branchPaneItems(model: AppModel, filter = ""): readonly BranchPaneItem[] {
   const listing = model.branches
   if (listing === undefined) return []
-  return [
+  const all = [
     ...listing.localBranches.map((branch) => ({ kind: "local" as const, name: branch.name })),
     ...listing.remotes.flatMap((remote) => [
       { kind: "remote" as const, name: remote.name },
       ...(remote.branches ?? []).map((branch) => ({ kind: "remote-branch" as const, remote: remote.name, name: branch.name, ref: branch.ref })),
     ]),
   ]
+  const query = filter.trim().toLowerCase()
+  return query.length === 0 ? all : all.filter((item) => item.name.toLowerCase().includes(query))
 }
 
-export function selectedBranchItem(model: AppModel, index: number): BranchPaneItem | undefined {
-  return branchPaneItems(model)[Math.max(0, Math.min(index, branchPaneItems(model).length - 1))]
+export function selectedBranchItem(model: AppModel, index: number, filter = ""): BranchPaneItem | undefined {
+  const items = branchPaneItems(model, filter)
+  return items[Math.max(0, Math.min(index, items.length - 1))]
 }
 
-export function moveBranchesCursor(model: AppModel, index: number, direction: "next" | "previous"): number {
-  const count = branchPaneItems(model).length
+export function moveBranchesCursor(model: AppModel, index: number, direction: "next" | "previous", filter = ""): number {
+  const count = branchPaneItems(model, filter).length
   if (count === 0) return 0
   return Math.max(0, Math.min(count - 1, index + (direction === "next" ? 1 : -1)))
 }
@@ -35,7 +38,7 @@ export function createBranchesPane(renderer: CliRenderer, model: AppModel): Pane
   return pane
 }
 
-export function updateBranchesPane(pane: PaneHandle, model: AppModel, selectedIndex = 0): void {
+export function updateBranchesPane(pane: PaneHandle, model: AppModel, selectedIndex = 0, filter = ""): void {
   const listing = model.branches
   const lines = [
     model.branch ? `* ${model.branch}` : "* (detached/loading)",

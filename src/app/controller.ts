@@ -689,7 +689,7 @@ export class AppController {
       } = this.currentState
       this.currentState = {
         ...previousState,
-        ...(selectionId === undefined ? {} : { selectionId }),
+        ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
         ...(focusId === undefined ? {} : { focusId }),
         repositoryRoot: snapshot.repositoryRoot,
         branch: snapshot.branch,
