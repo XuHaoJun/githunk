@@ -13,14 +13,25 @@ export class EmptyCommitMessageError extends Error {
 }
 
 /** Safe commit and amend operations. Message text is always sent over stdin. */
+const queues = new WeakMap<GitRunner, MutationQueue>()
+
+function queueFor(runner: GitRunner): MutationQueue {
+  const existing = queues.get(runner)
+  if (existing !== undefined) return existing
+  const queue = new MutationQueue()
+  queues.set(runner, queue)
+  return queue
+}
+
 export class CommitMutations {
   readonly runner: GitRunner
   private readonly refresh: () => Promise<void>
-  private readonly queue = new MutationQueue()
+  private readonly queue: MutationQueue
 
   constructor(runner: GitRunner, options: CommitMutationOptions = {}) {
     this.runner = runner
     this.refresh = options.refresh ?? (async () => undefined)
+    this.queue = queueFor(runner)
   }
 
   async commit(message: string): Promise<void> {

@@ -9,13 +9,19 @@ export type CommitDialogState = {
   readonly error?: string
 }
 
+export type CommitDialogKey = {
+  readonly name: string
+  readonly ctrl?: boolean
+  readonly meta?: boolean
+  readonly shift?: boolean
+}
+
 export type CommitDialogEvent =
   | { readonly kind: "insert"; readonly text: string }
   | { readonly kind: "backspace" }
   | { readonly kind: "newline" }
   | { readonly kind: "confirm" }
   | { readonly kind: "cancel" }
-
 export function createCommitDialog(mode: CommitDialogMode, initialMessage = ""): CommitDialogState {
   return { mode, message: initialMessage }
 }
@@ -24,11 +30,19 @@ export function reduceCommitDialog(state: CommitDialogState, event: CommitDialog
   if (event.kind === "cancel") return { state, result: { kind: "cancelled" } }
   if (event.kind === "insert") return { state: stateWithoutError({ ...state, message: state.message + event.text }), }
   if (event.kind === "newline") return { state: stateWithoutError({ ...state, message: `${state.message}\n` }), }
-  if (event.kind === "backspace") return { state: stateWithoutError({ ...state, message: state.message.slice(0, -1) }), }
+  if (event.kind === "backspace") return { state: stateWithoutError({ ...state, message: removeLastGrapheme(state.message) }), }
   if (state.message.trim().length === 0) {
     return { state: { ...state, error: "Commit message cannot be empty" } }
   }
   return { state: stateWithoutError(state), result: { kind: "confirmed", message: state.message } }
+}
+
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
+
+function removeLastGrapheme(message: string): string {
+  const segments = Array.from(graphemeSegmenter.segment(message), (segment) => segment.segment)
+  segments.pop()
+  return segments.join("")
 }
 
 function stateWithoutError(state: CommitDialogState): CommitDialogState {
@@ -37,14 +51,22 @@ function stateWithoutError(state: CommitDialogState): CommitDialogState {
   return withoutError
 }
 
-export function commitDialogKey(state: CommitDialogState, key: { readonly name: string; readonly ctrl?: boolean; readonly meta?: boolean }): { readonly state: CommitDialogState; readonly result?: CommitDialogResult } {
+export function commitDialogKey(state: CommitDialogState, key: CommitDialogKey): { readonly state: CommitDialogState; readonly result?: CommitDialogResult } {
   if (key.name === "escape") return reduceCommitDialog(state, { kind: "cancel" })
   if ((key.name === "enter" || key.name === "return") && key.ctrl === true) return reduceCommitDialog(state, { kind: "confirm" })
   if (key.name === "enter" || key.name === "return") return reduceCommitDialog(state, { kind: "newline" })
   if (key.name === "backspace") return reduceCommitDialog(state, { kind: "backspace" })
   if (key.name === "space" && key.ctrl !== true && key.meta !== true) return reduceCommitDialog(state, { kind: "insert", text: " " })
-  if (key.name.length === 1 && key.ctrl !== true && key.meta !== true) return reduceCommitDialog(state, { kind: "insert", text: key.name })
-  return { state }
+  const text = printableText(key)
+  return text === undefined ? { state } : reduceCommitDialog(state, { kind: "insert", text })
+}
+
+function printableText(key: CommitDialogKey): string | undefined {
+  if (key.ctrl === true || key.meta === true || key.name.length === 0) return undefined
+  if (key.name === "space") return " "
+  if (key.name.length === 1) return key.shift === true && /^[a-z]$/.test(key.name) ? key.name.toUpperCase() : key.name
+  if (/^\P{Cc}+$/u.test(key.name)) return key.name
+  return undefined
 }
 
 export function renderCommitDialog(state: CommitDialogState): string {
@@ -70,7 +92,7 @@ export class CommitDialog {
     return next.result
   }
 
-  handleKey(key: { readonly name: string; readonly ctrl?: boolean; readonly meta?: boolean }): CommitDialogResult | undefined {
+  handleKey(key: CommitDialogKey): CommitDialogResult | undefined {
     const next = commitDialogKey(this.current, key)
     this.current = next.state
     return next.result

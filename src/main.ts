@@ -70,7 +70,9 @@ export async function startApp(): Promise<number> {
     onAmendMessage: async (message) => {
       try { await controller.amend(message) } finally { view.update(controller.state) }
     },
-    onCurrentCommitMessage: () => controller.currentCommitMessage(),
+    onCurrentCommitMessage: async () => {
+      try { return await controller.currentCommitMessage() } finally { view.update(controller.state) }
+    },
     onMarkFocusedFileReviewed: async (path) => {
       try { await controller.markFocusedFileReviewed(path) } finally { view.update(controller.state) }
     },

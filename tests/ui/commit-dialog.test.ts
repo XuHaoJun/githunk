@@ -23,4 +23,12 @@ describe("commit dialog", () => {
     expect(dialog.handleKey({ name: "escape" })).toEqual({ kind: "cancelled" })
     expect(dialog.state.message).toBe("existing\n")
   })
+
+  test("preserves shifted characters and removes a complete astral grapheme", () => {
+    let state = createCommitDialog("commit")
+    state = commitDialogKey(state, { name: "a", shift: true }).state
+    state = commitDialogKey(state, { name: "😀" }).state
+    expect(state.message).toBe("A😀")
+    expect(commitDialogKey(state, { name: "backspace" }).state.message).toBe("A")
+  })
 })

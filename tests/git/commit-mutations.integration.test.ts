@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { CommandLog } from "../../src/app/command-log"
-import { CommitMutations, EmptyCommitMessageError } from "../../src/git/commit-mutations"
+import { amend, CommitMutations, commit, EmptyCommitMessageError } from "../../src/git/commit-mutations"
 import { GitCommandError, GitRunner } from "../../src/git/runner"
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
 
@@ -51,5 +51,13 @@ describe("CommitMutations", () => {
     await Bun.spawn(["chmod", "+x", `${repo.path}/.git/hooks/commit-msg`]).exited
     await expect(new CommitMutations(runner).commit("hook")).rejects.toBeInstanceOf(GitCommandError)
     expect(runner.log.records().at(-1)?.stderr).toContain("hook failed")
+  })
+
+  test("serializes exported helper calls sharing one runner", async () => {
+    await repo.write("file.txt", "concurrent\n")
+    await repo.git(["add", "--", "file.txt"])
+    await Promise.all([commit(runner, "first"), amend(runner, "second")])
+    expect((await repo.git(["log", "-1", "--format=%s"])).stdout.trim()).toBe("second")
+    expect(runner.log.records().filter((record) => record.args[0] === "commit")).toHaveLength(2)
   })
 })

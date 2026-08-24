@@ -314,9 +314,11 @@ export class RootView {
   }
   private handleMutationKey(key: KeyEvent): boolean {
     if (this.commitDialog !== undefined) {
+      if (this.mutationInFlight) return true
       return this.handleCommitDialogKey(key)
     }
-    if (!key.ctrl && !key.meta && (key.name === "c" || key.name === "A")) {
+    const amendShortcut = key.name === "A" || (key.name === "a" && key.shift === true)
+    if (!this.mutationInFlight && !key.ctrl && !key.meta && (key.name === "c" || amendShortcut)) {
       const commitAvailable = this.focusManager.active === "files"
         ? filesPaneCommitAvailable(this.model)
         : this.focusManager.active === "main" && mainPaneCommitAvailable(this.model)
@@ -328,7 +330,7 @@ export class RootView {
         this.openCommitDialog("commit", "")
         return true
       }
-      if (key.name === "A" && this.onAmendMessage !== undefined && this.onCurrentCommitMessage !== undefined) {
+      if (amendShortcut && this.onAmendMessage !== undefined && this.onCurrentCommitMessage !== undefined) {
         this.openAmendDialog()
         return true
       }
