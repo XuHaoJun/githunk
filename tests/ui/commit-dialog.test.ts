@@ -32,9 +32,9 @@ describe("commit dialog", () => {
     expect(commitDialogKey(state, { name: "backspace" }).state.message).toBe("A")
   })
 
-  test("ignores named navigation and function keys as text", () => {
+  test("ignores all named control families regardless of name", () => {
     const state = createCommitDialog("commit", "A")
-    for (const name of ["tab", "linefeed", "left", "right", "up", "down", "delete", "pageup", "f1", "escape"]) {
+    for (const name of ["tab", "linefeed", "left", "right", "up", "down", "delete", "pageup", "f1", "escape", "clear", "f25", "f35", "kpenter", "kppageup", "mediaPlay", "volumeUp", "scrolllock"]) {
       expect(commitDialogKey(state, { name }).state.message).toBe("A")
     }
   })

@@ -14,6 +14,7 @@ export type CommitDialogKey = {
   readonly ctrl?: boolean
   readonly meta?: boolean
   readonly shift?: boolean
+  readonly sequence?: string
 }
 
 export type CommitDialogEvent =
@@ -64,17 +65,24 @@ export function commitDialogKey(state: CommitDialogState, key: CommitDialogKey):
 const NON_PRINTABLE_KEY_NAMES: Record<string, true> = {
   tab: true, linefeed: true, left: true, right: true, up: true, down: true, home: true, end: true, insert: true, delete: true,
   pageup: true, pagedown: true, "page-up": true, "page-down": true, escape: true, enter: true, return: true, backspace: true,
-  f1: true, f2: true, f3: true, f4: true, f5: true, f6: true, f7: true, f8: true, f9: true, f10: true, f11: true, f12: true,
-  f13: true, f14: true, f15: true, f16: true, f17: true, f18: true, f19: true, f20: true, f21: true, f22: true, f23: true, f24: true,
-  shift: true, ctrl: true, alt: true, meta: true, capslock: true, numlock: true, printscreen: true, pause: true, menu: true,
+  clear: true, shift: true, ctrl: true, alt: true, meta: true, capslock: true, numlock: true, printscreen: true, pause: true, menu: true,
+  scrolllock: true, media: true, play: true, pausemedia: true, volumeup: true, volumedown: true, volumemute: true,
+}
+
+function isNamedControl(name: string): boolean {
+  return NON_PRINTABLE_KEY_NAMES[name] === true
+    || /^f\d+$/u.test(name)
+    || /^kp(?:enter|page(?:up|down)|left|right|up|down|home|end|insert|delete)$/u.test(name)
+    || /^(?:media|volume|scroll)/u.test(name)
 }
 
 function printableText(key: CommitDialogKey): string | undefined {
-  if (key.ctrl === true || key.meta === true || key.name.length === 0 || NON_PRINTABLE_KEY_NAMES[key.name] === true) return undefined
+  if (key.ctrl === true || key.meta === true || key.name.length === 0 || isNamedControl(key.name)) return undefined
   if (key.name === "space") return " "
-  if (key.name.length === 1) return key.shift === true && /^[a-z]$/.test(key.name) ? key.name.toUpperCase() : key.name
-  const graphemes = Array.from(graphemeSegmenter.segment(key.name))
-  if (graphemes.length === 1 && /^\P{Cc}+$/u.test(key.name)) return key.name
+  const candidate = key.sequence ?? (key.shift === true && /^[a-z]$/u.test(key.name) ? key.name.toUpperCase() : key.name)
+  if (candidate.length === 0 || /[\u0000-\u001F\u007F\u001B]/u.test(candidate)) return undefined
+  const graphemes = Array.from(graphemeSegmenter.segment(candidate))
+  if (graphemes.length === 1 && /^\P{Cc}+$/u.test(candidate)) return candidate
   return undefined
 }
 
