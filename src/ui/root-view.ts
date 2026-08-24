@@ -29,10 +29,10 @@ import { createBranchesPane, branchItemId, branchPaneItems, moveBranchesCursor, 
 import { commitsCursorIndex as readCommitsCursorIndex, createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, filesPaneCommitAvailable, updateFilesPane } from "./panes/files-pane"
-import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, updateMainPane, type MainPaneOverride } from "./panes/main-pane"
-import { createStashPane, moveStashCursor, selectedStashEntry, selectedStashItem, updateStashPane } from "./panes/stash-pane"
+import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, updateMainPane, type MainPaneOverride } from "./panes/main-pane"
+import { createStashPane, moveStashCursor, selectedStashEntry, selectedStashItem, stashCursorIndex, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
-import type { PaneHandle } from "./panes/common"
+import { scrollYToReveal, type PaneHandle } from "./panes/common"
 import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
@@ -684,6 +684,7 @@ export class RootView {
         const selected = this.model.files[this.fileCursorIndex]
         this.panes.files.box.bottomTitle = selected?.path ?? "No files"
         if (selected !== undefined) this.onSelectFile?.(selected.path)
+        this.revealListRow("files", this.panes.files, this.fileCursorIndex)
         return
       }
       case "branches":
@@ -692,15 +693,19 @@ export class RootView {
         this.panes.branches.box.bottomTitle = undefined
         this.branchCursorIndex = moveBranchesCursor(this.model, this.branchCursorIndex, direction, this.branchFilter)
         updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
+        // Items render below the branch/upstream header and the section title.
+        this.revealListRow("branches", this.panes.branches, 3 + this.branchCursorIndex)
         return
       case "commits":
         moveCommitsCursor(this.panes.commits, this.model, direction)
+        this.revealListRow("commits", this.panes.commits, readCommitsCursorIndex(this.panes.commits))
         this.syncCommitPreview()
         return
       case "stash":
         this.pendingStashDrop = undefined
         this.panes.stash.box.bottomTitle = undefined
         moveStashCursor(this.panes.stash, this.model, direction)
+        this.revealListRow("stash", this.panes.stash, stashCursorIndex(this.panes.stash))
         return
       case "main":
         // j/k (and h/l via hunk-next/previous) move the hunk cursor here:
@@ -710,6 +715,18 @@ export class RootView {
       default:
         return
     }
+  }
+
+  /**
+   * Scrolls a pane so the given content row is on screen after a cursor move. The viewport
+   * height is read from computeLayout's windows map rather than from `text.height`: the
+   * layout engine computes asynchronously, so `text.height` can be stale at cursor-move
+   * time, while this.geometry is updated synchronously by recomputeLayout (the same
+   * source focusedPageStep and mainPageStep already trust).
+   */
+  private revealListRow(name: SideWindow | "main", pane: PaneHandle, line: number): void {
+    const visibleLines = Math.max(1, heightOf(this.geometry.windows[name]) - 2)
+    pane.text.scrollY = scrollYToReveal(line, line, visibleLines, pane.text.scrollY)
   }
 
   /** Half the main pane's visible rows, at least one. */
@@ -1460,6 +1477,8 @@ export class RootView {
       return
     }
     setMainCursorTarget(pane, target)
+    const targetLine = mainCursorTargetLine(document, target)
+    if (targetLine !== undefined) this.revealListRow("main", pane, targetLine)
     this.clearDiscardState()
     const location = target.hunkIndex === undefined ? "file" : `hunk ${target.hunkIndex + 1}`
     pane.box.bottomTitle = `Cursor file ${target.fileIndex + 1}, ${location}`

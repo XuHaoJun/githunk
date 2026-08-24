@@ -63,6 +63,19 @@ export function moveMainCursor(document: DiffDocument, current: MainCursorTarget
   return targets[nextIndex]
 }
 
+/**
+ * First rendered row of a main cursor target: the hunk's `@@` header for hunk targets, or
+ * the file's `diff --git` header for files without hunks (binary/conflicted). renderDiff
+ * emits exactly one display row per document line, so the document-lines index is directly
+ * the on-screen row to reveal.
+ */
+export function mainCursorTargetLine(document: DiffDocument, target: MainCursorTarget): number | undefined {
+  const index = document.lines.findIndex((line) =>
+    line.fileIndex === target.fileIndex
+    && (target.hunkIndex === undefined || line.hunkIndex === target.hunkIndex))
+  return index < 0 ? undefined : index
+}
+
 export type MainActionAvailability = {
   readonly canStageLines: boolean
   readonly canDiscardLines: boolean

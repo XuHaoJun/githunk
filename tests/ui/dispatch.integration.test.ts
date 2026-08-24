@@ -648,3 +648,82 @@ describe("dividers", () => {
     await first.repository.cleanup()
   })
 })
+
+describe("overflow scrollbars and keyboard auto-scroll", () => {
+  let harness: ShellHarness | undefined
+  afterEach(async () => { await harness?.cleanup() })
+
+  test("moving down a long commit list scrolls the pane to keep the cursor visible", async () => {
+    const subjects = Array.from({ length: 60 }, (_v, i) => `commit number ${String(i).padStart(2, "0")}`)
+    harness = await createShellHarness({ commits: subjects, height: 40 })
+
+    await harness.pressKey("4")
+    await harness.pressKey("j")
+    for (let moved = 1; moved < 45; moved += 1) await harness.pressKey("j")
+
+    const frame = harness.frame()
+    // The commits pane lists newest-first, so cursor index 45 is the 15th-oldest subject.
+    // The newly selected row is on screen after the move...
+    expect(frame).toContain("commit number 14")
+    // ...and the earliest rows have scrolled away, which proves real scrolling happened.
+    expect(frame).not.toContain("commit number 00")
+  })
+
+  test("moving back up reveals rows above the viewport again", async () => {
+    const subjects = Array.from({ length: 60 }, (_v, i) => `commit number ${String(i).padStart(2, "0")}`)
+    harness = await createShellHarness({ commits: subjects, height: 40 })
+
+    await harness.pressKey("4")
+    for (let moved = 0; moved < 45; moved += 1) await harness.pressKey("j")
+    for (let moved = 0; moved < 45; moved += 1) await harness.pressKey("k")
+
+    // Back at the top of the list: the oldest commit is on screen again.
+    expect(harness.frame()).toContain("commit number 59")
+  })
+
+  test("a short list keeps its pane unscrolled with every row visible", async () => {
+    harness = await createShellHarness({ commits: ["alpha commit", "beta commit"], height: 40 })
+
+    await harness.pressKey("4")
+    await harness.pressKey("j")
+
+    const frame = harness.frame()
+    expect(frame).toContain("alpha commit")
+    expect(frame).toContain("beta commit")
+  })
+
+  test("an overflowing pane renders the shared scrollbar; a short one hides it", async () => {
+    const subjects = Array.from({ length: 60 }, (_v, i) => `commit number ${String(i).padStart(2, "0")}`)
+    harness = await createShellHarness({ commits: subjects, height: 40 })
+
+    await harness.pressKey("4")
+    const lines = harness.frame().split("\n")
+    const paneRows = (title: string): string[] => {
+      const start = lines.findIndex((line) => line.startsWith(`┌─${title}`))
+      const borderColumn = lines[start]!.indexOf("┐")
+      const rows: string[] = []
+      for (let y = start + 1; y < lines.length && !lines[y]!.startsWith("└"); y += 1) rows.push(lines[y]![borderColumn - 1] ?? " ")
+      return rows
+    }
+    // Commits overflows: the column inside the right border carries thumb glyphs.
+    expect(paneRows("4 Commits").some((glyph) => "█▄▀".includes(glyph))).toBe(true)
+    // Files fits its two entries: nothing but blank space inside the right border.
+    expect(paneRows("2 Files").every((glyph) => glyph === " ")).toBe(true)
+  })
+
+  test("hunk moves in the main pane scroll the target hunk's header into view", async () => {
+    harness = await createShellHarness({ height: 24 })
+    await harness.repository.write("big.txt", `${Array.from({ length: 120 }, (_v, i) => `line ${i}`).join("\n")}\n`)
+    const stage = Bun.spawn(["git", "add", "big.txt"], { cwd: harness.repository.path })
+    await stage.exited
+    await harness.app.refresh()
+
+    await harness.pressKey("0")
+    for (let moved = 0; moved < 8; moved += 1) await harness.pressKey("j")
+
+    const pane = harness.app.view!.mainPane
+    // A tall diff scrolled near its end: the revealed hunk header sits at the viewport bottom.
+    expect(pane.text.scrollY).toBeGreaterThan(0)
+    expect(harness.frame()).toContain("@@ -0,0 +1 @@")
+  })
+})

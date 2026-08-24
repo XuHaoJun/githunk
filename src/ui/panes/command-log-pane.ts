@@ -1,4 +1,5 @@
 import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
+import { attachVerticalScrollbar, syncVerticalScrollbar } from "./common"
 import type { CommandRecord } from "../../domain/command"
 import type { FocusId } from "../focus"
 
@@ -63,6 +64,7 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
     width: "100%",
   })
   box.add(text)
+  const bar = attachVerticalScrollbar(box, text, "command-log")
   const pane: CommandLogPaneHandle = {
     id: "command-log",
     box,
@@ -71,10 +73,12 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
       text.width = Math.max(1, Math.floor(width) - 2)
       text.height = Math.max(1, Math.floor(height) - 2)
       text.scrollY = text.maxScrollY
+      syncVerticalScrollbar(bar, text)
     },
     update(nextRecords: readonly CommandRecord[]) {
       text.content = nextRecords.length === 0 ? "No commands recorded" : nextRecords.map(formatRecord).join("\n\n")
       text.scrollY = text.maxScrollY
+      syncVerticalScrollbar(bar, text)
     },
     setFocused(focused: boolean) {
       box.borderColor = focused ? "#ffffff" : "#555555"
