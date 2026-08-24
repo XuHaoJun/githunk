@@ -94,8 +94,13 @@ export async function startApp(): Promise<number> {
     },
     onCheckoutRemoteTracking: async (selection, confirmedMismatch) => {
       try {
-        return await controller.checkoutRemoteTracking(selection, confirmedMismatch === true ? { confirmedMismatch: true } : undefined)
-      } finally { view.update(controller.state) }
+        const result = await controller.checkoutRemoteTracking(selection, confirmedMismatch === true ? { confirmedMismatch: true } : undefined)
+        view.update(controller.state, { preserveRemoteCheckout: result?.kind === "mismatch" })
+        return result
+      } catch (error) {
+        view.update(controller.state)
+        throw error
+      }
     },
     onFilterBranches: async () => undefined,
   })

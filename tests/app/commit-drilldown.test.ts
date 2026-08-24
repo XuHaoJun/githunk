@@ -79,4 +79,69 @@ describe("commit drill-down controller", () => {
       await repository.cleanup()
     }
   })
+  test("restores the active Working Tree scope after commit checkout", async () => {
+    const repository = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      await repository.git(["switch", "-c", "feature"])
+      await repository.write("file.txt", "feature\n")
+      await repository.git(["commit", "-am", "feature"])
+      await repository.git(["switch", "-"])
+      const runner = new GitRunner(repository.path)
+      const loadedScopes: string[] = []
+      const controller = new AppController({
+        runner,
+        load: async (target) => {
+          loadedScopes.push(target.scope)
+          return { ...working, reviewTarget: target }
+        },
+        loadCommit: async () => details,
+        loadCommits: async () => commits,
+        inferBase: async () => ({ kind: "confident" as const, ref: "HEAD~1", oid: "base", reason: "test" }),
+      })
+      await controller.setWorkingTreeScope("staged")
+      await controller.selectCommit("commit-1")
+      await controller.switchLocalBranch("feature")
+      expect(controller.state.reviewTarget).toEqual({ kind: "working-tree", scope: "staged" })
+      expect(loadedScopes.at(-1)).toBe("staged")
+    } finally {
+      await repository.cleanup()
+    }
+  })
+  test("refreshes the checked-out model before presenting a base picker", async () => {
+    const repository = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      await repository.git(["switch", "-c", "feature"])
+      await repository.write("file.txt", "feature\n")
+      await repository.git(["commit", "-am", "feature"])
+      await repository.git(["switch", "-"])
+      const runner = new GitRunner(repository.path)
+      const controller = new AppController({
+        runner,
+        load: async (target) => ({
+          ...working,
+          branch: (await repository.git(["branch", "--show-current"])).stdout.trim(),
+          reviewTarget: target,
+          files: [{ path: "file.txt", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 }],
+        }),
+        loadCommit: async () => details,
+        loadCommits: async () => commits,
+        inferBase: async () => ({ kind: "choose" as const, candidates: ["main", "feature"], reason: "ambiguous" }),
+      })
+      await controller.inspectBranch("main")
+      await controller.selectCommit("commit-1")
+      await controller.switchLocalBranch("feature")
+      expect(controller.state.branch).toBe("feature")
+      expect(controller.state.basePicker?.candidates).toEqual(["main", "feature"])
+      expect(controller.state.files.length).toBe(1)
+      expect(controller.state.title).toContain("Working Tree")
+    } finally {
+      await repository.cleanup()
+    }
+  })
 })

@@ -105,7 +105,7 @@ export class AppController {
   private workingTreeCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
   private branchCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
   private pendingBranchWarning: string | undefined
-  private commitOriginTarget: ReviewTarget | undefined
+  private commitOriginTarget: { readonly kind: "branch"; readonly baseRef: string } | { readonly kind: "working-tree"; readonly scope: WorkingTreeScope } | undefined
 
   constructor(options: AppControllerOptions | GitRunner, loader?: WorkingTreeLoader) {
     const runner = options instanceof GitRunner ? options : options.runner
@@ -252,6 +252,7 @@ export class AppController {
   async inspectBranch(branchRef: string): Promise<void> {
     await this.mutationQueue.run(async () => {
       const history = await this.loadCommitHistory(branchRef)
+      this.commitOriginTarget = { kind: "branch", baseRef: branchRef }
       const { banner: _previousBanner, ...previousState } = this.currentState
       this.currentState = {
         ...previousState,
@@ -302,7 +303,10 @@ export class AppController {
             focusId: _previousFocusId,
             ...previousState
           } = this.currentState
-          const target: Extract<ReviewTarget, { readonly kind: "working-tree" }> = { kind: "working-tree", scope: "all" }
+          const target: Extract<ReviewTarget, { readonly kind: "working-tree" }> = {
+            kind: "working-tree",
+            scope: origin?.kind === "working-tree" ? origin.scope : "all",
+          }
           this.currentState = {
             ...previousState,
             reviewTarget: target,
@@ -316,6 +320,7 @@ export class AppController {
           const branchWarning = await this.refreshBranches()
           const inferred = await this.inferBase().catch(() => undefined)
           if (origin?.kind === "branch" && inferred?.kind === "choose") {
+            await this.refreshTarget(target)
             this.currentState = { ...this.currentState, basePicker: inferred, loading: false }
           } else if (origin?.kind === "branch" && inferred?.kind === "confident") {
             const loaded = await this.refreshBranchTarget(inferred.ref)
@@ -330,6 +335,7 @@ export class AppController {
           }
           return result
         }
+        this.commitOriginTarget = undefined
         await this.inferBase().catch(() => undefined)
         await this.refresh()
         return result
@@ -379,7 +385,12 @@ export class AppController {
       return
     }
     if (this.commitOriginTarget === undefined) {
-      this.commitOriginTarget = this.currentState.branchReviewTarget ?? this.currentState.reviewTarget
+      const origin = this.currentState.branchReviewTarget ?? this.currentState.reviewTarget
+      this.commitOriginTarget = origin.kind === "branch"
+        ? { kind: "branch", baseRef: origin.baseRef }
+        : origin.kind === "working-tree"
+          ? { kind: "working-tree", scope: origin.scope }
+          : undefined
     }
     const files = changedFilesFromDocument(details.document)
     const patch = { label: "BRANCH" as const, text: details.document.text }
@@ -447,7 +458,7 @@ export class AppController {
       return
     }
     if (target?.kind === "working-tree") {
-      await this.refreshTarget(target)
+      await this.refreshTarget({ kind: "working-tree", scope: target.scope })
     }
   }
 

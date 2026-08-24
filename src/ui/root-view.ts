@@ -107,6 +107,8 @@ export class RootView {
   private fileCursorIndex = 0
   private pendingBranchDelete: { readonly branch: string; readonly force: boolean } | undefined
   private pendingRemoteMismatch: { readonly selection: RemoteBranchSelection; readonly message: string } | undefined
+  private remoteCheckoutGeneration = 0
+  private remoteCheckoutInFlight = false
   private branchFilter = ""
   private branchFilterActive = false
   private branchCursorIndex = 0
@@ -193,7 +195,7 @@ export class RootView {
 
     this.focusManager.onChange = (focus, logVisible) => {
       this.pendingBranchDelete = undefined
-      this.pendingRemoteMismatch = undefined
+      this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
       this.branchFilterActive = false
       this.applyFocus(focus)
@@ -241,12 +243,14 @@ export class RootView {
     this.applyLayout()
   }
 
-  update(model: AppModel): void {
-    this.pendingBranchDelete = undefined
-    this.pendingRemoteMismatch = undefined
-    this.panes.branches.box.bottomTitle = undefined
-    this.branchFilterActive = false
-    this.branchFilter = ""
+  update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean } = {}): void {
+    if (!options.preserveRemoteCheckout) {
+      this.pendingBranchDelete = undefined
+      this.invalidateRemoteCheckout()
+      this.panes.branches.box.bottomTitle = undefined
+      this.branchFilterActive = false
+      this.branchFilter = ""
+    }
     this.model = model
     const pickerCount = model.basePicker?.candidates.length ?? 0
     this.basePickerIndex = pickerCount === 0 ? 0 : Math.min(this.basePickerIndex, pickerCount - 1)
@@ -299,7 +303,7 @@ export class RootView {
   }
   private handleMutationKey(key: KeyEvent): boolean {
     if ((key.name === "R" || (key.name === "r" && key.shift)) && this.onRefresh !== undefined) {
-      this.pendingRemoteMismatch = undefined
+      this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
       this.runUiMutation(this.onRefresh())
       return true
@@ -324,14 +328,14 @@ export class RootView {
     }
     if (!key.ctrl && !key.meta && key.name === "b" && this.onModeChange !== undefined) {
       if (this.mutationInFlight) return true
-      this.pendingRemoteMismatch = undefined
+      this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
       this.runUiMutation(this.onModeChange("branch"))
       return true
     }
     if (!key.ctrl && !key.meta && key.name === "w" && this.onModeChange !== undefined) {
       if (this.mutationInFlight) return true
-      this.pendingRemoteMismatch = undefined
+      this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
       this.runUiMutation(this.onModeChange("working-tree"))
       return true
@@ -340,7 +344,7 @@ export class RootView {
       let selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
       if (this.branchFilterActive && key.name.length === 1 && !key.ctrl && !key.meta) {
         this.pendingBranchDelete = undefined
-        this.pendingRemoteMismatch = undefined
+        this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
         this.branchFilter += key.name
         this.branchCursorIndex = 0
@@ -350,7 +354,7 @@ export class RootView {
       }
       if (key.name === "backspace" && this.branchFilterActive) {
         this.pendingBranchDelete = undefined
-        this.pendingRemoteMismatch = undefined
+        this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
         this.branchFilter = this.branchFilter.slice(0, -1)
         updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
@@ -358,7 +362,7 @@ export class RootView {
       }
       if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
         this.pendingBranchDelete = undefined
-        this.pendingRemoteMismatch = undefined
+        this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
         this.branchCursorIndex = moveBranchesCursor(this.model, this.branchCursorIndex, key.name === "j" || key.name === "down" ? "next" : "previous", this.branchFilter)
         updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
@@ -387,11 +391,10 @@ export class RootView {
           const confirmation = branchDeleteConfirmation(selected.name, force)
           this.panes.branches.box.bottomTitle = `${confirmation.message} Press ${force ? "D" : "d"} again to confirm or Escape to cancel.`
         }
-        return true
       }
-      if (key.name === "escape" && (this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined || this.branchFilterActive)) {
+      if (key.name === "escape" && (this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined || this.branchFilterActive || this.remoteCheckoutInFlight)) {
         this.pendingBranchDelete = undefined
-        this.pendingRemoteMismatch = undefined
+        this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
         this.branchFilterActive = false
         this.branchFilter = ""
@@ -409,12 +412,12 @@ export class RootView {
       }
       if (key.name === "enter" && selected !== undefined) {
         if (selected.kind === "local" && this.onInspectBranch !== undefined) {
-          this.pendingRemoteMismatch = undefined
+          this.invalidateRemoteCheckout()
           this.panes.branches.box.bottomTitle = undefined
           this.runUiMutation(this.onInspectBranch(selected.name))
         }
         if (selected.kind === "remote" && this.onBrowseRemote !== undefined) {
-          this.pendingRemoteMismatch = undefined
+          this.invalidateRemoteCheckout()
           this.panes.branches.box.bottomTitle = undefined
           this.runUiMutation(this.onBrowseRemote(selected.name))
         }
@@ -426,7 +429,7 @@ export class RootView {
             this.pendingRemoteMismatch.selection.ref === selection.ref) {
             this.runRemoteCheckout(selection, true)
           } else {
-            this.pendingRemoteMismatch = undefined
+            this.invalidateRemoteCheckout()
             this.panes.branches.box.bottomTitle = undefined
             this.runUiMutation(this.onInspectBranch(selected.ref))
           }
@@ -434,7 +437,7 @@ export class RootView {
         return true
       }
       if (key.name === "/") {
-        this.pendingRemoteMismatch = undefined
+        this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
         this.branchFilterActive = true
         this.branchFilter = ""
@@ -452,14 +455,15 @@ export class RootView {
       if (key.name === "enter" && this.onSelectCommit !== undefined) {
         const selected = getSelectedCommit(this.panes.commits, this.model)
         if (selected !== undefined) {
+          this.invalidateRemoteCheckout()
           this.runUiMutation(this.onSelectCommit(selected.oid))
           this.focusManager.focus("files")
         }
         return true
       }
       if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
+        this.invalidateRemoteCheckout()
         this.runUiMutation(this.onCommitBack())
-        return true
       }
       return false
     }
@@ -473,8 +477,8 @@ export class RootView {
     }
     if (this.focusManager.active === "files") {
       if (key.name === "escape" && this.model.reviewTarget.kind === "commit" && this.onCommitBack !== undefined) {
+        this.invalidateRemoteCheckout()
         this.runUiMutation(this.onCommitBack())
-        this.focusManager.focus("commits")
         return true
       }
       if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
@@ -550,6 +554,7 @@ export class RootView {
       return true
     }
     if (key.name === "tab" && this.onScopeChange !== undefined) {
+      this.invalidateRemoteCheckout()
       const scope = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged" ? "unstaged" : "staged"
       this.runUiMutation(this.onScopeChange(scope))
       return true
@@ -652,11 +657,35 @@ export class RootView {
   }
 
 
+  private invalidateRemoteCheckout(): void {
+    this.remoteCheckoutGeneration += 1
+    this.pendingRemoteMismatch = undefined
+  }
+
   private runRemoteCheckout(selection: RemoteBranchSelection, confirmedMismatch: boolean): void {
     if (this.onCheckoutRemoteTracking === undefined || this.mutationInFlight) return
+    const requestGeneration = ++this.remoteCheckoutGeneration
+    const requestFocus = this.focusManager.active
+    const requestCursor = this.branchCursorIndex
+    const requestFilter = this.branchFilter
+    const requestFilterActive = this.branchFilterActive
+    const requestTarget = JSON.stringify(this.model.reviewTarget)
     this.mutationInFlight = true
+    this.remoteCheckoutInFlight = true
     this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
+    const isCurrent = (): boolean => {
+      if (requestGeneration !== this.remoteCheckoutGeneration) return false
+      if (this.focusManager.active !== requestFocus || this.branchCursorIndex !== requestCursor ||
+        this.branchFilter !== requestFilter || this.branchFilterActive !== requestFilterActive ||
+        JSON.stringify(this.model.reviewTarget) !== requestTarget) return false
+      const current = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+      return current?.kind === "remote-branch" &&
+        current.remote === selection.remote &&
+        current.name === selection.branch &&
+        current.ref === selection.ref
+    }
     void this.onCheckoutRemoteTracking(selection, confirmedMismatch).then((result) => {
+      if (!isCurrent()) return
       if (result?.kind === "mismatch") {
         this.pendingRemoteMismatch = { selection, message: result.message }
         const confirmation = remoteTrackingMismatchConfirmation(result.message)
@@ -667,12 +696,16 @@ export class RootView {
       }
       this.root.requestRender()
     }).catch((error: unknown) => {
+      if (!isCurrent()) return
       this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
       this.root.requestRender()
     }).finally(() => {
       this.mutationInFlight = false
-      this.discardPending = false
-      this.pendingFileDiscard = undefined
+      this.remoteCheckoutInFlight = false
+      if (requestGeneration === this.remoteCheckoutGeneration) {
+        this.discardPending = false
+        this.pendingFileDiscard = undefined
+      }
     })
   }
 

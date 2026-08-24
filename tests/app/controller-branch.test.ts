@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { AppController } from "../../src/app/controller"
-import type { BranchReviewSnapshot, } from "../../src/git/branch-review"
+import type { BranchReviewSnapshot } from "../../src/git/branch-review"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
+import type { CommitDetails } from "../../src/domain/commit"
 
 function workingSnapshot(scope: "all" | "staged" | "unstaged"): WorkingTreeSnapshot {
   return {
@@ -154,5 +155,36 @@ describe("AppController branch mode", () => {
     await controller.inspectBranch("feature/local")
     await controller.inspectBranch("origin/feature/remote")
     expect(seenRanges).toEqual(["feature/local", "origin/feature/remote"])
+  })
+  test("uses the inspected branch as commit origin when returning from a commit", async () => {
+    const seenBases: string[] = []
+    const details: CommitDetails = {
+      oid: "commit-1",
+      shortOid: "commit",
+      parentOids: ["parent"],
+      authorName: "A",
+      authoredAt: "2026-01-01T00:00:00Z",
+      subject: "one",
+      body: "",
+      document: { text: "diff --git a/a.txt b/a.txt\n", lines: [], files: [] },
+      patch: { text: "diff --git a/a.txt b/a.txt\n", lines: [], files: [] },
+      raw: "",
+    }
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async (target) => workingSnapshot(target.scope),
+      loadBranch: async (baseRef) => {
+        seenBases.push(baseRef)
+        return branchSnapshot(baseRef)
+      },
+      loadCommits: async () => [{ oid: "commit-1", shortOid: "commit", parentOids: ["parent"], authorName: "A", authoredAt: "2026-01-01T00:00:00Z", subject: "one", body: "" }],
+      loadCommit: async () => details,
+      inferBase: async () => ({ kind: "confident" as const, ref: "origin/main", oid: "base-oid", reason: "test" }),
+    })
+    await controller.switchMode("branch")
+    await controller.inspectBranch("feature/local")
+    await controller.selectCommit("commit-1")
+    await controller.navigateBack()
+    expect(seenBases.at(-1)).toBe("feature/local")
   })
 })
