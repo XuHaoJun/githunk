@@ -106,4 +106,46 @@ describe("branch and remote operations", () => {
       await repository.cleanup()
     }
   })
+  test("rejects option-like start points and preserves branch refs ending in HEAD", async () => {
+    const repository = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      const runner = new GitRunner(repository.path)
+      await expect(createBranch(runner, "feature/option", "--track")).rejects.toThrow()
+      await repository.git(["update-ref", "refs/remotes/origin/feature/HEAD", "HEAD"])
+      await repository.git(["remote", "add", "origin", "https://example.invalid/origin.git"])
+      const branches = await listRemoteBranches(runner, "origin")
+      expect(branches.map((branch) => branch.name)).toContain("feature/HEAD")
+      expect(trackingLocalName("origin", "feature/HEAD")).toBe("feature/HEAD")
+    } finally {
+      await repository.cleanup()
+    }
+  })
+
+  test("preserves slash-containing remote identity for tracking checkout", async () => {
+    const repository = await createTempRepository()
+    const bare = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      await bare.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin/foo", bare.path])
+      await repository.git(["push", "origin/foo", "master:feature/bar"])
+      const runner = new GitRunner(repository.path)
+      await fetchRemote(runner, "origin/foo")
+      const branch = (await listRemoteBranches(runner, "origin/foo")).find((candidate) => candidate.name === "feature/bar")
+      expect(branch).toBeDefined()
+      if (branch !== undefined) {
+        const result = await checkoutRemoteTracking(runner, { remote: "origin/foo", branch: branch.name, ref: branch.ref })
+        expect(result.kind).toBe("created")
+        expect(result.localBranch).toBe("feature/bar")
+      }
+    } finally {
+      await repository.cleanup()
+      await bare.cleanup()
+    }
+  })
 })

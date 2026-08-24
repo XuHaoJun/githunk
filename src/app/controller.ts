@@ -14,7 +14,7 @@ import { reviewStateFor, type ReviewDatabase, type ReviewFileState } from "../do
 import { fingerprintFile, targetKey } from "../review/fingerprint"
 import { emptyReviewDatabase, ReviewStore } from "../review/store"
 import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
-import { checkoutRemoteTracking, createBranch, deleteBranch, fetchRemote, listBranches, listRemoteBranches, renameBranch, switchLocal, type CheckoutRemoteTrackingOptions, type CheckoutRemoteTrackingResult, type DeleteBranchOptions } from "../git/branches"
+import { checkoutRemoteTracking, createBranch, deleteBranch, fetchRemote, listBranches, listRemoteBranches, renameBranch, switchLocal, type CheckoutRemoteTrackingOptions, type CheckoutRemoteTrackingResult, type DeleteBranchOptions, type RemoteBranchSelection } from "../git/branches"
 import { MutationQueue } from "./mutation-queue"
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
 export type BranchReviewLoader = (baseRef: string) => Promise<BranchReviewSnapshot>
@@ -166,16 +166,23 @@ export class AppController {
   }
 
   async refresh(): Promise<void> {
-    if (this.automaticBranchListing) await this.refreshBranches()
+    const branchWarning = this.automaticBranchListing ? await this.refreshBranches() : undefined
     const target = this.currentState.reviewTarget
     if (target.kind === "working-tree") {
       await this.refreshTarget(target)
     } else if (target.kind === "branch") {
       await this.openBranchReview()
     }
+    if (branchWarning !== undefined) {
+      this.currentState = {
+        ...this.currentState,
+        banner: branchWarning,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    }
   }
 
-  async refreshBranches(): Promise<void> {
+  async refreshBranches(): Promise<string | undefined> {
     try {
       const branches = await this.loadBranchesListing()
       this.currentState = {
@@ -183,6 +190,7 @@ export class AppController {
         branches,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
       }
+      return undefined
     } catch (error) {
       const banner = error instanceof GitCommandError
         ? (error.record.stderr || error.message)
@@ -192,6 +200,7 @@ export class AppController {
         banner,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
       }
+      return banner
     }
   }
   async switchLocal(branch: string): Promise<void> {
@@ -242,8 +251,10 @@ export class AppController {
   }
 
 
-  async checkoutRemoteTracking(remoteRef: string, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult | undefined> {
-    return this.runBranchMutation(() => this.requireRunnerOperation((runner) => checkoutRemoteTracking(runner, remoteRef, options)))
+  async checkoutRemoteTracking(remoteRef: string | RemoteBranchSelection, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult | undefined> {
+    return this.runBranchMutation(() => this.requireRunnerOperation((runner) => typeof remoteRef === "string"
+      ? checkoutRemoteTracking(runner, remoteRef, options)
+      : checkoutRemoteTracking(runner, remoteRef, options)))
   }
 
   private async requireRunnerOperation<T>(operation: (runner: GitRunner) => Promise<T>): Promise<T> {
@@ -265,6 +276,12 @@ export class AppController {
           return result
         }
         await this.inferBase().catch(() => undefined)
+        if (this.currentState.reviewTarget.kind === "commit") {
+          this.commitOriginTarget = undefined
+          this.currentState = {
+            ...this.currentState,
+          }
+        }
         await this.refresh()
         return result
       } catch (error) {
@@ -657,6 +674,8 @@ export class AppController {
       const cursor = this.currentState.reviewTarget.kind === "working-tree"
         ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
         : this.workingTreeCursor
+      const selectionId = cursor.selectionId !== undefined && snapshot.files.some((file) => file.path === cursor.selectionId) ? cursor.selectionId : undefined
+      const focusId = cursor.focusId !== undefined && snapshot.files.some((file) => file.path === cursor.focusId) ? cursor.focusId : undefined
       const {
         upstream: _previousUpstream,
         banner: _previousBanner,
@@ -670,10 +689,8 @@ export class AppController {
       } = this.currentState
       this.currentState = {
         ...previousState,
-        ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
-        ...(history.warning === undefined && review.warning === undefined ? {} : { banner: history.warning ?? review.warning }),
-        ...(cursor.selectionId === undefined ? {} : { selectionId: cursor.selectionId }),
-        ...(cursor.focusId === undefined ? {} : { focusId: cursor.focusId }),
+        ...(selectionId === undefined ? {} : { selectionId }),
+        ...(focusId === undefined ? {} : { focusId }),
         repositoryRoot: snapshot.repositoryRoot,
         branch: snapshot.branch,
         reviewTarget: snapshot.reviewTarget,
@@ -715,6 +732,8 @@ export class AppController {
       const cursor = this.currentState.reviewTarget.kind === "branch"
         ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
         : this.branchCursor
+      const selectionId = cursor.selectionId !== undefined && snapshot.files.some((file) => file.path === cursor.selectionId) ? cursor.selectionId : undefined
+      const focusId = cursor.focusId !== undefined && snapshot.files.some((file) => file.path === cursor.focusId) ? cursor.focusId : undefined
       const branchWarning = history.warning ?? review.warning ?? this.pendingBranchWarning
       this.pendingBranchWarning = undefined
       const {
@@ -742,8 +761,8 @@ export class AppController {
         loading: false,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
-        ...(cursor.selectionId === undefined ? {} : { selectionId: cursor.selectionId }),
-        ...(cursor.focusId === undefined ? {} : { focusId: cursor.focusId }),
+        ...(selectionId === undefined ? {} : { selectionId }),
+        ...(focusId === undefined ? {} : { focusId }),
       }
       this.commitOriginTarget = undefined
       return true

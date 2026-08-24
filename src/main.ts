@@ -70,6 +70,29 @@ export async function startApp(): Promise<number> {
     onRefresh: async () => {
       try { await controller.refresh() } finally { view.update(controller.state) }
     },
+    onSwitchLocalBranch: async (branch) => {
+      try { await controller.switchLocalBranch(branch) } finally { view.update(controller.state) }
+    },
+    onCreateBranch: async (startPoint) => {
+      if (startPoint === undefined) return
+      try { await controller.createBranch(`${startPoint}-copy`, startPoint) } finally { view.update(controller.state) }
+    },
+    onDeleteBranch: async (branch, force) => {
+      try { await controller.deleteBranch(branch, { force, confirmed: force }) } finally { view.update(controller.state) }
+    },
+    onRenameBranch: async (branch) => {
+      try { await controller.renameBranch(branch, `${branch}-renamed`) } finally { view.update(controller.state) }
+    },
+    onFetchRemote: async (remote) => {
+      try { await controller.fetchRemote(remote) } finally { view.update(controller.state) }
+    },
+    onBrowseRemote: async (remote) => {
+      try { await controller.browseRemote(remote) } finally { view.update(controller.state) }
+    },
+    onCheckoutRemoteTracking: async (selection) => {
+      try { await controller.checkoutRemoteTracking(selection) } finally { view.update(controller.state) }
+    },
+    onFilterBranches: async () => undefined,
   })
   renderer.once("destroy", () => view.destroy())
 

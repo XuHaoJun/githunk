@@ -12,7 +12,7 @@ import {
   type LayoutGeometry,
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
-import { createBranchesPane, updateBranchesPane } from "./panes/branches-pane"
+import { createBranchesPane, moveBranchesCursor, selectedBranchItem, updateBranchesPane } from "./panes/branches-pane"
 import { createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, updateFilesPane } from "./panes/files-pane"
@@ -24,7 +24,9 @@ import { copySelection, selectionFromRenderable } from "../domain/diff/selection
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
 import { discardConfirmation } from "./confirm-dialog"
+import { branchDeleteConfirmation } from "./branch-dialogs"
 import { COPY_MENU_ITEMS } from "./copy-menu"
+import type { RemoteBranchSelection } from "../git/branches"
 export type RootViewOptions = {
   readonly leftWidth?: number
   readonly logHeight?: number
@@ -44,6 +46,14 @@ export type RootViewOptions = {
   readonly onCommitBack?: () => Promise<void>
   readonly onMarkFocusedFileReviewed?: (path?: string) => Promise<void>
   readonly onRefresh?: () => Promise<void>
+  readonly onSwitchLocalBranch?: (branch: string) => Promise<void>
+  readonly onCreateBranch?: (startPoint?: string) => Promise<void>
+  readonly onDeleteBranch?: (branch: string, force: boolean) => Promise<void>
+  readonly onRenameBranch?: (branch: string) => Promise<void>
+  readonly onFetchRemote?: (remote: string) => Promise<void>
+  readonly onBrowseRemote?: (remote: string) => Promise<void>
+  readonly onCheckoutRemoteTracking?: (selection: RemoteBranchSelection) => Promise<void>
+  readonly onFilterBranches?: () => Promise<void>
 }
 
 function stackedHeights(total: number, count: number): number[] {
@@ -80,11 +90,21 @@ export class RootView {
   private readonly onCommitBack: (() => Promise<void>) | undefined
   private readonly onMarkFocusedFileReviewed: ((path?: string) => Promise<void>) | undefined
   private readonly onRefresh: (() => Promise<void>) | undefined
-  private fileCursorIndex = 0
+  private readonly onSwitchLocalBranch: ((branch: string) => Promise<void>) | undefined
+  private readonly onCreateBranch: ((startPoint?: string) => Promise<void>) | undefined
+  private readonly onDeleteBranch: ((branch: string, force: boolean) => Promise<void>) | undefined
+  private readonly onRenameBranch: ((branch: string) => Promise<void>) | undefined
+  private readonly onFetchRemote: ((remote: string) => Promise<void>) | undefined
+  private readonly onBrowseRemote: ((remote: string) => Promise<void>) | undefined
+  private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection) => Promise<void>) | undefined
+  private readonly onFilterBranches: (() => Promise<void>) | undefined
   private copyMenuOpen = false
   private discardPending = false
   private pendingFileDiscard: { readonly path: string; readonly untracked: boolean } | undefined
   private mutationInFlight = false
+  private fileCursorIndex = 0
+  private pendingBranchDelete: string | undefined
+  private branchCursorIndex = 0
   private readonly handleResize: () => void
   private readonly handleKey: (key: KeyEvent) => void
   private destroyed = false
@@ -104,7 +124,15 @@ export class RootView {
     this.onScopeChange = options.onScopeChange
     this.onApplySelection = options.onApplySelection
     this.onDiscardSelection = options.onDiscardSelection
-    this.onSelectFile = options.onSelectFile
+    this.onRefresh = options.onRefresh
+    this.onSwitchLocalBranch = options.onSwitchLocalBranch
+    this.onCreateBranch = options.onCreateBranch
+    this.onDeleteBranch = options.onDeleteBranch
+    this.onRenameBranch = options.onRenameBranch
+    this.onFetchRemote = options.onFetchRemote
+    this.onBrowseRemote = options.onBrowseRemote
+    this.onCheckoutRemoteTracking = options.onCheckoutRemoteTracking
+    this.onFilterBranches = options.onFilterBranches
     this.onSelectCommit = options.onSelectCommit
     this.onSelectCommitFile = options.onSelectCommitFile
     this.onCommitBack = options.onCommitBack
@@ -212,7 +240,8 @@ export class RootView {
     if (model.basePicker === undefined) this.basePickerIndex = 0
     updateStatusPane(this.panes.status, model)
     updateFilesPane(this.panes.files, model)
-    updateBranchesPane(this.panes.branches, model)
+    this.branchCursorIndex = Math.min(this.branchCursorIndex, Math.max(0, model.branches === undefined ? 0 : model.branches.localBranches.length + model.branches.remotes.reduce((count, remote) => count + 1 + (remote.branches?.length ?? 0), 0) - 1))
+    updateBranchesPane(this.panes.branches, model, this.branchCursorIndex)
     const focusedIndex = model.focusId === undefined ? -1 : model.files.findIndex((file) => file.path === model.focusId)
     this.fileCursorIndex = focusedIndex >= 0
       ? focusedIndex
@@ -287,6 +316,59 @@ export class RootView {
       if (this.mutationInFlight) return true
       this.runUiMutation(this.onModeChange("working-tree"))
       return true
+    }
+    if (this.focusManager.active === "branches") {
+      const selected = selectedBranchItem(this.model, this.branchCursorIndex)
+      if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
+        this.branchCursorIndex = moveBranchesCursor(this.model, this.branchCursorIndex, key.name === "j" || key.name === "down" ? "next" : "previous")
+        updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex)
+        return true
+      }
+      if (key.name === "space" && selected !== undefined) {
+        if (selected.kind === "local" && this.onSwitchLocalBranch !== undefined) this.runUiMutation(this.onSwitchLocalBranch(selected.name))
+        if (selected.kind === "remote-branch" && this.onCheckoutRemoteTracking !== undefined) this.runUiMutation(this.onCheckoutRemoteTracking({ remote: selected.remote, branch: selected.name, ref: selected.ref }))
+        return true
+      }
+      if (key.name === "n" && this.onCreateBranch !== undefined) {
+        this.runUiMutation(this.onCreateBranch(selected?.kind === "local" ? selected.name : undefined))
+        return true
+      }
+      if ((key.name === "d" || key.name === "D") && selected?.kind === "local" && this.onDeleteBranch !== undefined) {
+        if (key.name === "D") {
+          this.pendingBranchDelete = undefined
+          this.runUiMutation(this.onDeleteBranch(selected.name, true))
+        } else if (this.pendingBranchDelete === selected.name) {
+          this.pendingBranchDelete = undefined
+          this.runUiMutation(this.onDeleteBranch(selected.name, false))
+        } else {
+          this.pendingBranchDelete = selected.name
+          this.panes.branches.box.bottomTitle = `${branchDeleteConfirmation(selected.name).message} Press d again to confirm or Escape to cancel.`
+        }
+        return true
+      }
+      if (key.name === "escape" && this.pendingBranchDelete !== undefined) {
+        this.pendingBranchDelete = undefined
+        this.panes.branches.box.bottomTitle = undefined
+        return true
+      }
+      if (key.name === "r" && selected?.kind === "local" && this.onRenameBranch !== undefined) {
+        this.runUiMutation(this.onRenameBranch(selected.name))
+        return true
+      }
+      if (key.name === "f" && selected !== undefined && this.onFetchRemote !== undefined) {
+        this.runUiMutation(this.onFetchRemote(selected.kind === "remote" ? selected.name : selected.kind === "remote-branch" ? selected.remote : selected.name))
+        return true
+      }
+      if (key.name === "enter" && selected !== undefined) {
+        if (selected.kind === "remote" && this.onBrowseRemote !== undefined) this.runUiMutation(this.onBrowseRemote(selected.name))
+        if (selected.kind === "remote-branch" && this.onCheckoutRemoteTracking !== undefined) this.runUiMutation(this.onCheckoutRemoteTracking({ remote: selected.remote, branch: selected.name, ref: selected.ref }))
+        return true
+      }
+      if (key.name === "/" && this.onFilterBranches !== undefined) {
+        this.runUiMutation(this.onFilterBranches())
+        return true
+      }
+      return false
     }
     if (this.focusManager.active === "commits") {
       if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {

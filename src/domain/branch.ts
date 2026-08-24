@@ -30,7 +30,7 @@ export function trackingLocalName(remote: string, remoteBranch: string): string 
     ? remoteBranch.slice(normalizedRemote.length + 1)
     : remoteBranch
   if (normalizedRemote.length === 0) throw new Error("remote name must not be empty")
-  if (normalizedBranch.length === 0 || normalizedBranch === "HEAD" || normalizedBranch.endsWith("/HEAD")) {
+  if (normalizedBranch.length === 0 || normalizedBranch === "HEAD") {
     throw new Error(`remote branch is not checkoutable: ${remoteBranch}`)
   }
   return normalizedBranch
