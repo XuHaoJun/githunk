@@ -46,6 +46,32 @@ describe("root view dispatch", () => {
     expect(harness.frame()).toContain("beta commit")
   })
 
+  test("Enter in the files pane opens the selected file in the main pane", async () => {
+    // Regression test: OpenTUI reports a physical Enter keypress as key.name === "return", not
+    // "enter". Press the real carriage return via KeyCodes.RETURN (not a synthetic { name:
+    // "enter" } key object) so this exercises the actual terminal parse path, through
+    // normalizeKey's return -> enter alias, rather than assuming the harness already hands
+    // handlers a pre-normalized name.
+    harness = await createShellHarness()
+
+    await harness.pressKey("2") // focus files
+    expect(harness.app.view!.focusManager.active).toBe("files")
+    await harness.pressKey("RETURN")
+    expect(harness.app.view!.focusManager.active).toBe("main")
+  })
+
+  test("Enter in the commits pane drills into the selected commit", async () => {
+    // Same physical-Enter regression as above, exercised against the commits pane's
+    // commit-drilldown binding.
+    harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
+
+    await harness.pressKey("4") // focus commits
+    expect(harness.app.controller.state.reviewTarget.kind).not.toBe("commit")
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    expect(harness.app.controller.state.reviewTarget.kind).toBe("commit")
+  })
+
   test("bracket keys change the main scope and tab no longer does", async () => {
     harness = await createShellHarness()
 

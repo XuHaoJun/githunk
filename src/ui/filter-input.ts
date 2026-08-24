@@ -13,14 +13,14 @@ export type FilterInputResult = {
   readonly cancelled?: boolean
 }
 
-const namedKeys = new Set(["escape", "enter", "return", "backspace", "delete", "tab", "up", "down", "left", "right", "home", "end", "pageup", "pagedown", "insert", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12"])
+const namedKeys = new Set(["escape", "enter", "backspace", "delete", "tab", "up", "down", "left", "right", "home", "end", "pageup", "pagedown", "insert", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12"])
 
 /** Pure key transition for a modal search field. */
 export function filterInputKey(state: FilterInputState, key: KeyLike): FilterInputResult {
   if (!state.active) return { state, consumed: false }
   if (key.ctrl || key.meta || key.option || key.alt || key.super) return { state, consumed: true }
   if (key.name === "escape") return { state: { active: false, query: state.query }, consumed: true, cancelled: true }
-  if (key.name === "enter" || key.name === "return") return { state: { active: false, query: state.query }, consumed: true, submitted: state.query }
+  if (key.name === "enter") return { state: { active: false, query: state.query }, consumed: true, submitted: state.query }
   if (key.name === "backspace" || key.name === "delete") {
     return { state: { active: true, query: removeLastSearchCharacter(state.query) }, consumed: true }
   }

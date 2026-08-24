@@ -22,13 +22,23 @@ function modifierValue(value: boolean | undefined): boolean {
   return value === true
 }
 
+/**
+ * OpenTUI reports a physical carriage return (0x0D) with `key.name === "return"`. `enter` is
+ * githunk's canonical name for that key, so every declaration and handler can be written once,
+ * in terms of `enter`, regardless of what the terminal layer calls it. Only `return` is aliased
+ * here: `linefeed` (Ctrl+J on most terminals) is a distinct key and must not collapse into it.
+ */
+function canonicalName(name: string): string {
+  return name === "return" ? "enter" : name
+}
+
 /** Normalize OpenTUI's physical uppercase names to lowercase + Shift. */
 export function normalizeKey(key: string | KeyLike): KeyStroke {
   if (typeof key === "string") return parseKeyStroke(key)
   const rawName = key.name
   const isPhysicalUppercase = rawName.length === 1 && rawName >= "A" && rawName <= "Z"
   return {
-    name: rawName.toLocaleLowerCase(),
+    name: canonicalName(rawName.toLocaleLowerCase()),
     ctrl: modifierValue(key.ctrl),
     shift: modifierValue(key.shift) || isPhysicalUppercase,
     meta: modifierValue(key.meta),
@@ -43,7 +53,7 @@ function parseKeyStroke(value: string): KeyStroke {
   const modifiers = new Set(pieces.map((piece) => piece.toLocaleLowerCase()))
   const isPhysicalUppercase = rawName.length === 1 && rawName >= "A" && rawName <= "Z"
   return {
-    name: rawName.toLocaleLowerCase(),
+    name: canonicalName(rawName.toLocaleLowerCase()),
     ctrl: modifiers.has("ctrl") || modifiers.has("control"),
     shift: modifiers.has("shift") || isPhysicalUppercase,
     meta: modifiers.has("meta") || modifiers.has("cmd"),

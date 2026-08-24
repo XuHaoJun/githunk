@@ -54,8 +54,8 @@ function stateWithoutError(state: CommitDialogState): CommitDialogState {
 
 export function commitDialogKey(state: CommitDialogState, key: CommitDialogKey): { readonly state: CommitDialogState; readonly result?: CommitDialogResult } {
   if (key.name === "escape") return reduceCommitDialog(state, { kind: "cancel" })
-  if ((key.name === "enter" || key.name === "return") && key.ctrl === true) return reduceCommitDialog(state, { kind: "confirm" })
-  if (key.name === "enter" || key.name === "return") return reduceCommitDialog(state, { kind: "newline" })
+  if (key.name === "enter" && key.ctrl === true) return reduceCommitDialog(state, { kind: "confirm" })
+  if (key.name === "enter") return reduceCommitDialog(state, { kind: "newline" })
   if (key.name === "backspace") return reduceCommitDialog(state, { kind: "backspace" })
   if (key.name === "space" && key.ctrl !== true && key.meta !== true) return reduceCommitDialog(state, { kind: "insert", text: " " })
   const text = printableText(key)
