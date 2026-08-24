@@ -61,11 +61,20 @@ export function commitDialogKey(state: CommitDialogState, key: CommitDialogKey):
   return text === undefined ? { state } : reduceCommitDialog(state, { kind: "insert", text })
 }
 
+const NON_PRINTABLE_KEY_NAMES: Record<string, true> = {
+  tab: true, linefeed: true, left: true, right: true, up: true, down: true, home: true, end: true, insert: true, delete: true,
+  pageup: true, pagedown: true, "page-up": true, "page-down": true, escape: true, enter: true, return: true, backspace: true,
+  f1: true, f2: true, f3: true, f4: true, f5: true, f6: true, f7: true, f8: true, f9: true, f10: true, f11: true, f12: true,
+  f13: true, f14: true, f15: true, f16: true, f17: true, f18: true, f19: true, f20: true, f21: true, f22: true, f23: true, f24: true,
+  shift: true, ctrl: true, alt: true, meta: true, capslock: true, numlock: true, printscreen: true, pause: true, menu: true,
+}
+
 function printableText(key: CommitDialogKey): string | undefined {
-  if (key.ctrl === true || key.meta === true || key.name.length === 0) return undefined
+  if (key.ctrl === true || key.meta === true || key.name.length === 0 || NON_PRINTABLE_KEY_NAMES[key.name] === true) return undefined
   if (key.name === "space") return " "
   if (key.name.length === 1) return key.shift === true && /^[a-z]$/.test(key.name) ? key.name.toUpperCase() : key.name
-  if (/^\P{Cc}+$/u.test(key.name)) return key.name
+  const graphemes = Array.from(graphemeSegmenter.segment(key.name))
+  if (graphemes.length === 1 && /^\P{Cc}+$/u.test(key.name)) return key.name
   return undefined
 }
 
