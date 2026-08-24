@@ -17,9 +17,20 @@ This is a compatibility guide, not a claim of complete lazygit parity. The refer
 | `@` | Toggle/show/focus Command Log | Global command-log options (line 12). |
 | `Ctrl+O`, `y` | Exact Main selection copy and copy menu | Copy bindings in Commit files, Commits, Files, and Main patch sections (lines 59, 86, 136, 237). |
 | `q`, `Ctrl+C` | Quit | Global quit (line 31). |
+| `h`/`l` | Move focus to the previous/next pane | `PrevBlockAlt`/`NextBlockAlt` (`user_config.go:1020-1021`). |
+| `Tab`/`Shift+Tab` | Cycle pane focus in the same order as `l`/`h` | `TogglePanel` is `<tab>` and `<backtab>` also navigates blocks (`user_config.go:1002,1022-1023`). The main pane's scope toggle moved from `Tab` to `[`/`]`; see "Intentionally changed". |
+| `,`/`.` | Page up/down in the focused list | `PrevPage`/`NextPage` (`user_config.go:1007-1008`). |
+| `<`/`>`, `Home`/`End` | Jump to the top/bottom of the focused list | `GotoTop`/`GotoBottom` with `<home>`/`<end>` alternates (`user_config.go:1011-1014`). |
+| `H`/`L` | Scroll the Main pane left/right | `ScrollLeft`/`ScrollRight` (`user_config.go:1009-1010`). |
+| `J`/`K` | Scroll the Main pane down/up | `ScrollDownMainAlt1`/`ScrollUpMainAlt1` (`user_config.go:1049-1050`). |
+| `Ctrl+D`/`Ctrl+U`, `PgDn`/`PgUp` | Half-page and full-page Main scrolling | `ScrollDownMainAlt2`/`ScrollUpMainAlt2` and `ScrollUpMain`/`ScrollDownMain` (`user_config.go:1047-1052`). |
+| `+`/`_` | Cycle screen modes: enlarge or shrink the focused region (normal → half → full) | `NextScreenMode`/`PrevScreenMode` (`user_config.go:1061-1062`). |
+| `?` | Open the full keybinding menu; `Esc` closes it | `OptionMenu` (`user_config.go:1033`). |
+| `[`/`]` | Previous/next Working Tree scope (all, staged, unstaged) while Main is focused | Deliberate divergence: these keys are lazygit's `PrevTab`/`NextTab` (`user_config.go:1059-1060`); githunk reuses them because `Tab` now cycles panes and the scope toggle needed a home — see "Intentionally changed". |
 
 ## Intentionally changed
 
+- **`Tab` no longer toggles the Main pane's review scope:** pane focus claimed `Tab`/`Shift+Tab` (matching lazygit's block navigation, where `<tab>` and `<backtab>` move between panels), so the scope toggle moved to `[`/`]`. Lazygit uses `[`/`]` for previous/next tab inside a panel; githunk has no panel tabs in v0.1, and reusing those keys keeps the scope toggle one keypress away instead of displacing the navigation muscle memory every other pane shares.
 - **Pane model and focus:** githunk has six numbered panes plus a separately toggled Command Log. Lazygit’s reference generally maps `0` to Main and uses panel-local focus; the extra focus IDs make githunk’s review layout explicit.
 - **Filtering:** githunk uses a shared Unicode-aware case-insensitive substring filter and stable item IDs. A modal filter consumes printable input before pane/global actions; zero matches is an explicit empty view. This preserves the reference’s `/` affordance while making filtering deterministic for branch/review data.
 - **Copy semantics:** `Ctrl+O` copies the exact selectable Main text and `y` opens githunk’s copy-mode menu. The reference assigns `Ctrl+O` to path/hash/selected-text variants depending on panel (lines 59, 86, 136, 237); githunk keeps Main text selection and does not make adjacent panes or Command Log selectable.
