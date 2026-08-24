@@ -46,11 +46,10 @@ async function upstreamCandidates(runner: CommandRunner): Promise<readonly Upstr
   const candidates: UpstreamCandidate[] = []
   for (const ref of refs) {
     const remoteRef = ref.slice("refs/remotes/".length)
-    const slash = remoteRef.indexOf("/")
-    if (slash <= 0 || slash === remoteRef.length - 1) continue
-    const remote = remoteRef.slice(0, slash)
-    const branch = remoteRef.slice(slash + 1)
-    if (remotes.includes(remote)) candidates.push({ remote, branch })
+    const remote = remotes.slice().sort((left, right) => right.length - left.length).find((candidate) => remoteRef.startsWith(`${candidate}/`))
+    if (remote === undefined) continue
+    const branch = remoteRef.slice(remote.length + 1)
+    if (branch.length > 0) candidates.push({ remote, branch })
   }
   return candidates
 }

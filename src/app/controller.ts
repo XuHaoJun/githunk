@@ -184,7 +184,7 @@ export class AppController {
   }
 
   async refresh(): Promise<void> {
-    if (this.automaticStashListing) await this.refreshStashes()
+    const stashWarning = this.automaticStashListing ? await this.refreshStashes() : undefined
     const branchWarning = this.automaticBranchListing ? await this.refreshBranches() : undefined
     const target = this.currentState.reviewTarget
     if (target.kind === "working-tree") {
@@ -201,9 +201,12 @@ export class AppController {
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
       }
     }
+    if (stashWarning !== undefined) {
+      this.currentState = { ...this.currentState, banner: stashWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+    }
   }
-  private async refreshStashes(): Promise<void> {
-    if (!this.automaticStashListing) return
+  private async refreshStashes(): Promise<string | undefined> {
+    if (!this.automaticStashListing) return undefined
     try {
       const stashes = await this.loadStashesListing()
       this.currentState = {
@@ -211,9 +214,11 @@ export class AppController {
         stashes,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
       }
+      return undefined
     } catch (error) {
       const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
       this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      return banner
     }
   }
 
@@ -249,34 +254,47 @@ export class AppController {
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => createBranch(runner, branch, startPoint)))
   }
   async createStash(message: string, options: StashCreateOptions): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.requireRunnerOperation((runner) => createGitStash(runner, message, options)).then(() => undefined))
   }
   async applyStash(ref: string): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.requireRunnerOperation((runner) => applyGitStash(runner, ref)))
   }
   async popStash(ref: string): Promise<void> {
-    await this.runMutation(() => this.requireRunnerOperation((runner) => popGitStash(runner, ref)))
+    if (!this.ensureWorkingTreeMutation()) return
+    await this.runMutation(async () => {
+      await this.requireRunnerOperation((runner) => popGitStash(runner, ref))
+      if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
+        this.currentState = { ...this.currentState, reviewTarget: { kind: "working-tree", scope: "all" }, title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch) }
+      }
+    })
   }
   async dropStash(ref: string, options: StashDropOptions): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(async () => {
       await this.requireRunnerOperation((runner) => dropGitStash(runner, ref, options))
-      if (this.currentState.reviewTarget.kind === "stash") {
-        this.currentState = { ...this.currentState, reviewTarget: { kind: "working-tree", scope: "all" }, files: [], patches: [], rawPatchSections: [], title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch) }
+      if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
+        this.currentState = { ...this.currentState, reviewTarget: { kind: "working-tree", scope: "all" }, title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch) }
       }
     })
   }
   async inspectStash(ref: string): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.mutationQueue.run(async () => {
       await this.refreshStashTarget(ref)
     })
   }
   async fetch(remote?: string): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.requireRunnerOperation((runner) => fetchSync(runner, remote)))
   }
   async pull(): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.requireRunnerOperation((runner) => pullSync(runner)))
   }
   async push(options: PushOptions = {}): Promise<PushResult> {
+    if (!this.ensureWorkingTreeMutation()) return { kind: "pushed" }
     return this.mutationQueue.run(async () => {
       try {
         const result = await this.requireRunnerOperation((runner) => pushSync(runner, options))
@@ -735,7 +753,7 @@ export class AppController {
     })
   }
   private ensureWorkingTreeMutation(): boolean {
-    if (this.currentState.reviewTarget.kind === "working-tree") return true
+    if (this.currentState.reviewTarget.kind === "working-tree" || this.currentState.reviewTarget.kind === "stash") return true
     this.currentState = { ...this.currentState, banner: "Branch Review is read-only" }
     return false
   }
@@ -863,6 +881,7 @@ export class AppController {
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
       }
+      this.commitOriginTarget = undefined
     } catch (error) {
       if (generation !== this.generation) return
       const banner = error instanceof GitCommandError
@@ -883,10 +902,17 @@ export class AppController {
       const patch: PatchSection = { label: "BRANCH", text: loaded.patch }
       const document = parseDiff(loaded.patch)
       const files = changedFilesFromDocument(document)
-      const target: ReviewTarget = { kind: "stash", ref }
+      const target: ReviewTarget = { kind: "stash", ref: loaded.stash.oid }
       const review = await this.reviewForSnapshot(target, files, [patch])
+      const {
+        banner: _previousBanner,
+        branchReviewTarget: _previousBranchReviewTarget,
+        commitDetails: _previousCommitDetails,
+        commitFilePath: _previousCommitFilePath,
+        ...previousState
+      } = this.currentState
       this.currentState = {
-        ...this.currentState,
+        ...previousState,
         reviewTarget: target,
         files,
         patches: [patch],
@@ -922,6 +948,7 @@ export class AppController {
       this.pendingBranchWarning = undefined
       const {
         upstream: _previousUpstream,
+        upstreamChoice: _previousUpstreamChoice,
         banner: _previousBanner,
         basePicker: _previousPicker,
         selectionId: _previousSelectionId,

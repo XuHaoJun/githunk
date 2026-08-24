@@ -26,9 +26,9 @@ export async function listStashes(runner: CommandRunner): Promise<readonly Stash
 
 export async function loadStash(runner: CommandRunner, ref: string): Promise<StashPatch> {
   const stashes = await listStashes(runner)
-  const stash = stashes.find((entry) => entry.ref === ref)
+  const stash = stashes.find((entry) => entry.ref === ref || entry.oid === ref)
   if (stash === undefined) throw new Error(`stash not found: ${ref}`)
-  const result = await runner.run(["stash", "show", "--patch", "--no-color", "--binary", ref], { readOnly: true })
+  const result = await runner.run(["stash", "show", "--patch", "--no-color", "--binary", stash.ref], { readOnly: true })
   return { stash, patch: result.stdout }
 }
 
@@ -42,19 +42,28 @@ export async function createStash(
   const args = ["stash", "push"]
   if (options.includeUntracked) args.push("--include-untracked")
   args.push("-m", message)
+  const before = await listStashes(runner)
   await runner.run(args)
-  return (await listStashes(runner))[0]
+  const after = await listStashes(runner)
+  if (after.length === before.length) return undefined
+  return after[0]
+}
+
+async function resolveStashRef(runner: CommandRunner, ref: string): Promise<string> {
+  const stash = (await listStashes(runner)).find((entry) => entry.ref === ref || entry.oid === ref)
+  if (stash === undefined) throw new Error(`stash not found: ${ref}`)
+  return stash.ref
 }
 
 export async function applyStash(runner: CommandRunner, ref: string): Promise<void> {
-  await runner.run(["stash", "apply", ref])
+  await runner.run(["stash", "apply", await resolveStashRef(runner, ref)])
 }
 
 export async function popStash(runner: CommandRunner, ref: string): Promise<void> {
-  await runner.run(["stash", "pop", ref])
+  await runner.run(["stash", "pop", await resolveStashRef(runner, ref)])
 }
 
 export async function dropStash(runner: CommandRunner, ref: string, options: StashDropOptions): Promise<void> {
   if (options === undefined || options.confirmed !== true) throw new Error("dropping a stash requires confirmation")
-  await runner.run(["stash", "drop", ref])
+  await runner.run(["stash", "drop", await resolveStashRef(runner, ref)])
 }

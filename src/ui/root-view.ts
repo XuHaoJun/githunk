@@ -17,7 +17,7 @@ import { createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsP
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, filesPaneCommitAvailable, updateFilesPane } from "./panes/files-pane"
 import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, mainPaneCommitAvailable, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
-import { createStashPane, moveStashCursor, selectedStashItem, updateStashPane } from "./panes/stash-pane"
+import { createStashPane, moveStashCursor, selectedStashEntry, selectedStashItem, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
 import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
@@ -130,7 +130,7 @@ export class RootView {
   private upstreamCursorIndex = 0
   private stashIncludeUntracked = false
   private discardPending = false
-  private pendingStashDrop: string | undefined
+  private pendingStashDrop: { readonly oid: string; readonly ref: string } | undefined
   private pendingFileDiscard: { readonly path: string; readonly untracked: boolean } | undefined
   private mutationInFlight = false
   private fileCursorIndex = 0
@@ -237,6 +237,8 @@ export class RootView {
     this.focusManager.onChange = (focus, logVisible) => {
       this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
+      this.pendingStashDrop = undefined
+      this.panes.stash.box.bottomTitle = undefined
       this.panes.branches.box.bottomTitle = undefined
       this.branchFilterActive = false
       this.applyFocus(focus)
@@ -293,6 +295,10 @@ export class RootView {
       this.branchFilter = ""
     }
     this.model = model
+    if (this.pendingStashDrop !== undefined && !(model.stashes ?? []).some((stash) => stash.oid === this.pendingStashDrop?.oid)) {
+      this.pendingStashDrop = undefined
+      this.panes.stash.box.bottomTitle = undefined
+    }
     const pickerCount = model.basePicker?.candidates.length ?? 0
     this.basePickerIndex = pickerCount === 0 ? 0 : Math.min(this.basePickerIndex, pickerCount - 1)
     if (model.upstreamChoice !== undefined) {
@@ -349,15 +355,20 @@ export class RootView {
   private handleMutationKey(key: KeyEvent): boolean {
     if (this.commitDialog?.state.mode === "stash") {
       if (this.mutationInFlight) return true
-      if (key.name === "u" && !key.ctrl && !key.meta) {
+      if (key.name === "u" && key.ctrl === true && !key.meta) {
         this.stashIncludeUntracked = !this.stashIncludeUntracked
-        this.panes.main.box.bottomTitle = `${renderCommitDialog(this.commitDialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (u toggles)`
+        this.panes.main.box.bottomTitle = `${renderCommitDialog(this.commitDialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`
         this.root.requestRender()
         return true
       }
       return this.handleStashDialogKey(key)
     }
+    if (this.commitDialog !== undefined) {
+      if (this.mutationInFlight) return true
+      return this.handleCommitDialogKey(key)
+    }
     if (this.model.upstreamChoice !== undefined && this.onChooseUpstream !== undefined) {
+      if (this.mutationInFlight) return true
       const count = this.model.upstreamChoice.candidates.length
       const numeric = Number(key.name) - 1
       if (Number.isInteger(numeric) && numeric >= 0 && numeric < count) {
@@ -388,12 +399,9 @@ export class RootView {
         this.openCommitDialog("commit", "")
         return true
       }
-      if (amendShortcut && this.onAmendMessage !== undefined && this.onCurrentCommitMessage !== undefined) {
-        this.openAmendDialog()
-        return true
-      }
     }
-    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "s" && this.onCreateStash !== undefined) {
+    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "s" && this.onCreateStash !== undefined &&
+      !(this.focusManager.active === "branches" && this.branchFilterActive)) {
       this.stashIncludeUntracked = false
       this.openCommitDialog("stash", "")
       return true
@@ -408,11 +416,13 @@ export class RootView {
       this.runUiMutation(this.onFetch())
       return true
     }
-    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "p" && this.onPull !== undefined) {
+    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "p" &&
+      !(this.focusManager.active === "branches" && this.branchFilterActive) && this.onPull !== undefined && key.shift !== true) {
       this.runUiMutation(this.onPull())
       return true
     }
-    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "P" && this.onPush !== undefined) {
+    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "p" && key.shift === true &&
+      !(this.focusManager.active === "branches" && this.branchFilterActive) && this.onPush !== undefined) {
       this.runUiMutation(this.onPush())
       return true
     }
@@ -449,37 +459,35 @@ export class RootView {
       return true
     }
     if (this.focusManager.active === "stash") {
-      const selected = selectedStashItem(this.panes.stash, this.model)
+      const selected = selectedStashEntry(this.panes.stash, this.model)
       if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
         this.pendingStashDrop = undefined
+        this.panes.stash.box.bottomTitle = undefined
         moveStashCursor(this.panes.stash, this.model, key.name === "j" || key.name === "down" ? "next" : "previous")
         return true
       }
-      if (selected !== undefined && key.name === "space" && this.onApplyStash !== undefined) {
-        this.runUiMutation(this.onApplyStash(selected))
-        return true
+      if (selected !== undefined && (key.name === "space" || key.name === "g" || key.name === "enter") &&
+        this.model.reviewTarget.kind === "working-tree" && !this.mutationInFlight) {
+        const operation = key.name === "space" ? this.onApplyStash : key.name === "g" ? this.onPopStash : this.onInspectStash
+        if (operation !== undefined) {
+          this.runUiMutation(operation(selected.oid))
+          return true
+        }
       }
-      if (selected !== undefined && key.name === "g" && this.onPopStash !== undefined) {
-        this.runUiMutation(this.onPopStash(selected))
-        return true
-      }
-      if (selected !== undefined && key.name === "d" && this.onDropStash !== undefined) {
-        if (this.pendingStashDrop === selected) {
+      if (selected !== undefined && key.name === "d" && this.onDropStash !== undefined && this.model.reviewTarget.kind === "working-tree" && !this.mutationInFlight) {
+        if (this.pendingStashDrop?.oid === selected.oid) {
           this.pendingStashDrop = undefined
-          this.runUiMutation(this.onDropStash(selected))
+          this.panes.stash.box.bottomTitle = undefined
+          this.runUiMutation(this.onDropStash(selected.oid))
         } else {
           this.pendingStashDrop = selected
-          this.panes.stash.box.bottomTitle = `Drop ${selected}? Press d again to confirm or Escape to cancel.`
+          this.panes.stash.box.bottomTitle = `Drop ${selected.ref}? Press d again to confirm or Escape to cancel.`
         }
         return true
       }
       if (key.name === "escape" && this.pendingStashDrop !== undefined) {
         this.pendingStashDrop = undefined
         this.panes.stash.box.bottomTitle = undefined
-        return true
-      }
-      if (selected !== undefined && key.name === "enter" && this.onInspectStash !== undefined) {
-        this.runUiMutation(this.onInspectStash(selected))
         return true
       }
       return false
@@ -820,7 +828,7 @@ export class RootView {
         }
       }).catch((error: unknown) => {
         dialog.setError(error instanceof Error ? error.message : String(error))
-        this.panes.main.box.bottomTitle = `${renderCommitDialog(dialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (u toggles)`
+        this.panes.main.box.bottomTitle = `${renderCommitDialog(dialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`
       }).finally(() => {
         this.mutationInFlight = false
         this.root.requestRender()

@@ -10,10 +10,15 @@ export function createStashPane(renderer: CliRenderer, model: AppModel): PaneHan
   return pane
 }
 
-export function selectedStashItem(pane: PaneHandle, model: AppModel): string | undefined {
+export function selectedStashEntry(pane: PaneHandle, model: AppModel): { readonly ref: string; readonly oid: string } | undefined {
   const stashes = model.stashes ?? []
   const index = Math.max(0, Math.min(cursors.get(pane) ?? 0, stashes.length - 1))
-  return stashes[index]?.ref
+  const entry = stashes[index]
+  return entry === undefined ? undefined : { ref: entry.ref, oid: entry.oid }
+}
+
+export function selectedStashItem(pane: PaneHandle, model: AppModel): string | undefined {
+  return selectedStashEntry(pane, model)?.ref
 }
 
 export function moveStashCursor(pane: PaneHandle, model: AppModel, direction: "next" | "previous"): void {
