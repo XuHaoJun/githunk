@@ -230,18 +230,3 @@ export function logHeightForMouseY(geometry: LayoutGeometry, mouseY: number): nu
   return Math.max(0, bodyHeight - Math.floor(mouseY) - SPLITTER_SIZE)
 }
 
-/** @deprecated Removed in the root-view migration. Use ratioForMouseX. */
-export function resizeLeftPane(current: LayoutGeometry, mouseX: number): LayoutGeometry {
-  return computeLayout(
-    { width: current.terminalWidth, height: current.terminalHeight },
-    { sidePanelRatio: ratioForMouseX(current, mouseX), logHeight: current.logHeight, logVisible: current.logVisible },
-  )
-}
-
-/** @deprecated Removed in the root-view migration. Use logHeightForMouseY. */
-export function resizeCommandLog(current: LayoutGeometry, mouseY: number): LayoutGeometry {
-  return computeLayout(
-    { width: current.terminalWidth, height: current.terminalHeight },
-    { sidePanelRatio: current.sidePanelRatio, logHeight: logHeightForMouseY(current, mouseY), logVisible: current.logVisible },
-  )
-}

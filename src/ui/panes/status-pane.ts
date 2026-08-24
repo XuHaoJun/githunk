@@ -23,9 +23,12 @@ export function updateStatusPane(pane: PaneHandle, model: AppModel): void {
   const branchDetails = aggregate === undefined
     ? model.reviewTarget.kind === "branch" ? `Base: ${model.reviewTarget.baseRef} (${model.reviewTarget.baseOid})` : undefined
     : `Base: ${aggregate.baseRef} (${aggregate.baseOid}) · Aggregate target ${aggregate.baseOid}..${aggregate.headOid}`
+  // The arranged layout pins this pane to STATUS_PANE_HEIGHT rows — one visible content
+  // row — so the review target leads; it is the line every downstream assertion and the
+  // user's routing decision depend on seeing.
   pane.update([
-    model.branch ? `Branch: ${model.branch}` : "Branch: (loading)",
     `Target: ${target}`,
+    model.branch ? `Branch: ${model.branch}` : "Branch: (loading)",
     ...(branchDetails === undefined ? [] : [branchDetails]),
     model.basePicker === undefined ? "" : `Base picker: ${model.basePicker.candidates.join(", ") || "(none)"}`,
     model.loading ? "Loading…" : `${summary?.files ?? model.files.length} files · ${summary?.additions ?? 0} additions · ${summary?.deletions ?? 0} deletions`,

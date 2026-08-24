@@ -403,3 +403,58 @@ describe("commits pane drives the main pane like lazygit", () => {
     expect(frame).not.toContain("revision 2")
   })
 })
+
+describe("screen modes and layout", () => {
+  let harness: ShellHarness | undefined
+  afterEach(async () => {
+    await harness?.cleanup()
+    harness = undefined
+  })
+
+  test("the side region takes a third of the width by default, not thirty columns", async () => {
+    harness = await createShellHarness({ width: 200, height: 40 })
+    expect(harness.app.view!.geometry.sideWidth).toBe(Math.round(200 * 0.3333))
+  })
+
+  test("plus and underscore move through the screen modes", async () => {
+    harness = await createShellHarness()
+    const view = harness.app.view!
+
+    await harness.pressKey("0")
+    expect(view.screenMode).toBe("normal")
+    await harness.pressKey("+")
+    expect(view.screenMode).toBe("half")
+    expect(view.geometry.sideWidth).toBe(0)
+    await harness.pressKey("+")
+    expect(view.screenMode).toBe("full")
+    await harness.pressKey("_")
+    await harness.pressKey("_")
+    expect(view.screenMode).toBe("normal")
+    expect(view.geometry.sideWidth).toBeGreaterThan(0)
+  })
+
+  test("the focused left pane is taller than its siblings and stash folds when unfocused", async () => {
+    harness = await createShellHarness({ height: 40 })
+    const view = harness.app.view!
+
+    await harness.pressKey("4")
+    const commits = view.geometry.windows.commits
+    const branches = view.geometry.windows.branches
+    const stash = view.geometry.windows.stash
+    expect((commits!.y1 - commits!.y0 + 1)).toBeGreaterThan(branches!.y1 - branches!.y0 + 1)
+    expect((stash!.y1 - stash!.y0 + 1)).toBe(3)
+
+    await harness.pressKey("5")
+    const focusedStash = view.geometry.windows.stash!
+    expect(focusedStash.y1 - focusedStash.y0 + 1).toBeGreaterThan(3)
+  })
+
+  test("a terminal resize keeps the layout consistent", async () => {
+    harness = await createShellHarness({ width: 200, height: 50 })
+    await harness.resize(90, 30)
+    const view = harness.app.view!
+    expect(view.geometry.terminalWidth).toBe(90)
+    expect(view.geometry.sideWidth).toBeGreaterThanOrEqual(18)
+    expect(view.geometry.windows.main).toBeDefined()
+  })
+})

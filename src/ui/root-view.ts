@@ -7,12 +7,20 @@ import {
 import type { AppModel } from "../app/model"
 import type { WorkingTreeScope } from "../domain/review-target"
 import {
+  DEFAULT_LOG_HEIGHT,
+  DEFAULT_SIDE_PANEL_RATIO,
+  SIDE_WINDOWS,
   computeLayout,
   heightOf,
-  resizeCommandLog,
-  resizeLeftPane,
+  logHeightForMouseY,
+  nextScreenMode,
+  previousScreenMode,
+  ratioForMouseX,
   widthOf,
   type LayoutGeometry,
+  type LayoutRequest,
+  type ScreenMode,
+  type WindowName,
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
 import { indexForStableId } from "../app/filter"
@@ -37,7 +45,7 @@ import { normalizeKey } from "./keymap"
 import { createRegistry, type Action, type UiState } from "./bindings"
 
 export type RootViewOptions = {
-  readonly leftWidth?: number
+  readonly sidePanelRatio?: number
   readonly logHeight?: number
   readonly logVisible?: boolean
   readonly onStageFile?: (path: string) => Promise<void>
@@ -87,11 +95,6 @@ function capitalizeKeyName(key: string): string {
   return key.length === 0 ? key : key[0]!.toUpperCase() + key.slice(1)
 }
 
-function stackedHeights(total: number, count: number): number[] {
-  const base = Math.floor(total / count)
-  const remainder = total % count
-  return Array.from({ length: count }, (_, index) => base + (index < remainder ? 1 : 0))
-}
 
 /** Ring order for the `[` / `]` scope-cycle keys in the main pane. */
 const SCOPE_ORDER: readonly WorkingTreeScope[] = ["all", "staged", "unstaged"]
@@ -101,6 +104,10 @@ export class RootView {
   readonly root: BoxRenderable
   readonly focusManager = new FocusManager()
   geometry: LayoutGeometry
+  /** lazygit parity: + / _ cycle how much of the terminal the two regions claim. */
+  screenMode: ScreenMode = "normal"
+  sidePanelRatio = DEFAULT_SIDE_PANEL_RATIO
+  private logHeight: number
 
   private model: AppModel
   private readonly panes: Record<Exclude<FocusId, "command-log">, PaneHandle>
@@ -226,12 +233,12 @@ export class RootView {
     this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
     this.renderer = renderer
     this.model = model
+    this.focusManager.logVisible = options.logVisible ?? false
+    this.logHeight = options.logHeight ?? DEFAULT_LOG_HEIGHT
+    if (options.sidePanelRatio !== undefined) this.sidePanelRatio = options.sidePanelRatio
     this.geometry = computeLayout(
       { width: renderer.terminalWidth, height: renderer.terminalHeight },
-      {
-        ...options,
-        logVisible: options.logVisible ?? false,
-      },
+      this.layoutOptions(),
     )
     this.root = new BoxRenderable(renderer, {
       id: "githunk-root",
@@ -271,7 +278,7 @@ export class RootView {
     this.root.add(this.horizontalSplitter)
     renderer.root.add(this.root)
 
-    this.focusManager.onChange = (focus, logVisible) => {
+    this.focusManager.onChange = (focus, _logVisible) => {
       this.clearDiscardState()
       this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
@@ -281,27 +288,11 @@ export class RootView {
       this.branchFilterActive = false
       this.filterInput.close()
       this.applyFocus(focus)
-      this.geometry = computeLayout(
-        { width: renderer.terminalWidth, height: renderer.terminalHeight },
-        {
-          sidePanelRatio: this.geometry.sidePanelRatio,
-          logHeight: this.geometry.logHeight,
-          logVisible,
-        },
-      )
-      this.applyLayout()
+      this.recomputeLayout()
       this.syncCommitPreview()
     }
     this.handleResize = () => {
-      this.geometry = computeLayout(
-        { width: renderer.terminalWidth, height: renderer.terminalHeight },
-        {
-          sidePanelRatio: this.geometry.sidePanelRatio,
-          logHeight: this.geometry.logHeight,
-          logVisible: this.focusManager.logVisible,
-        },
-      )
-      this.applyLayout()
+      this.recomputeLayout()
     }
     this.handleKey = (key: KeyEvent) => {
       const normalized = normalizeKey(key)
@@ -461,8 +452,13 @@ export class RootView {
       case "copy-exact": this.actionCopyExact(); return
       case "modal-cancel": case "modal-confirm": case "filter-backspace":
         this.handleModalKey(key); return
-      // Implemented in Task 6.
-      case "screen-mode-next": case "screen-mode-previous":
+      case "screen-mode-next":
+        this.screenMode = nextScreenMode(this.screenMode)
+        this.recomputeLayout()
+        return
+      case "screen-mode-previous":
+        this.screenMode = previousScreenMode(this.screenMode)
+        this.recomputeLayout()
         return
       // Implemented in Task 7.
       case "keybinding-menu":
@@ -1447,8 +1443,8 @@ export class RootView {
     this.verticalSplitter.onMouseDrag = (event: MouseEvent) => {
       event.preventDefault()
       event.stopPropagation()
-      this.geometry = resizeLeftPane(this.geometry, event.x)
-      this.applyLayout()
+      this.sidePanelRatio = ratioForMouseX(this.geometry, event.x)
+      this.recomputeLayout()
     }
     this.horizontalSplitter.onMouseDown = (event: MouseEvent) => {
       event.preventDefault()
@@ -1457,8 +1453,8 @@ export class RootView {
     this.horizontalSplitter.onMouseDrag = (event: MouseEvent) => {
       event.preventDefault()
       event.stopPropagation()
-      this.geometry = resizeCommandLog(this.geometry, event.y)
-      this.applyLayout()
+      this.logHeight = logHeightForMouseY(this.geometry, event.y)
+      this.recomputeLayout()
     }
     for (const pane of Object.values(this.panes)) {
       pane.box.onMouseDown = (event: MouseEvent) => {
@@ -1484,66 +1480,58 @@ export class RootView {
     this.commandLog.setFocused(active === "command-log")
   }
 
+  private recomputeLayout(): void {
+    this.geometry = computeLayout(
+      { width: this.renderer.terminalWidth, height: this.renderer.terminalHeight },
+      this.layoutOptions(),
+    )
+    this.applyLayout()
+  }
+
+  private layoutOptions(): LayoutRequest {
+    return {
+      sidePanelRatio: this.sidePanelRatio,
+      logHeight: this.logHeight,
+      logVisible: this.focusManager.logVisible,
+      focus: this.focusManager.active,
+      screenMode: this.screenMode,
+      hintsVisible: true,
+      statusWidth: this.statusSegmentWidth(),
+    }
+  }
+
+  /** Task 7 renders the status segment; until then it claims no space in the info row. */
+  private statusSegmentWidth(): number {
+    return 0
+  }
+
   private applyLayout(): void {
-    const geometry = this.geometry
-    const main = geometry.windows.main
-    const log = geometry.windows.log
-    const legacy = {
-      leftX: 0,
-      leftWidth: geometry.sideWidth,
-      leftHeight: geometry.terminalHeight,
-      verticalSplitterX: geometry.sideWidth,
-      verticalSplitterWidth: geometry.windows.vsplit === undefined ? 0 : 1,
-      rightX: main?.x0 ?? 0,
-      mainY: main?.y0 ?? 0,
-      mainWidth: widthOf(main),
-      mainHeight: heightOf(main),
-      horizontalSplitterY: heightOf(main),
-      horizontalSplitterHeight: geometry.windows.hsplit === undefined ? 0 : 1,
-      logY: log?.y0 ?? 0,
-      logHeight: geometry.logHeight,
-      logVisible: geometry.logVisible,
-      terminalHeight: geometry.terminalHeight,
-      tooSmall: geometry.tooSmall,
-    }
-    const leftHeights = stackedHeights(legacy.terminalHeight, FOCUS_IDS.length - 1)
-    let top = 0
-    for (const id of FOCUS_IDS.slice(1)) {
-      const pane = this.panes[id]
-      const height = leftHeights[top === 0 ? 0 : FOCUS_IDS.indexOf(id) - 1] ?? 0
-      pane.box.left = legacy.leftX
-      pane.box.top = top
-      pane.box.width = Math.max(1, legacy.leftWidth)
-      pane.box.height = Math.max(1, height)
-      pane.box.visible = legacy.leftWidth > 0 && height > 0
-      top += height
+    const windows = this.geometry.windows
+    const place = (renderable: BoxRenderable, name: WindowName): void => {
+      const dimensions = windows[name]
+      if (dimensions === undefined) {
+        renderable.visible = false
+        return
+      }
+      renderable.left = dimensions.x0
+      renderable.top = dimensions.y0
+      renderable.width = Math.max(1, widthOf(dimensions))
+      renderable.height = Math.max(1, heightOf(dimensions))
+      renderable.visible = widthOf(dimensions) > 0 && heightOf(dimensions) > 0
     }
 
-    const mainBox = this.panes.main.box
-    mainBox.left = legacy.rightX
-    mainBox.top = legacy.mainY
-    mainBox.width = Math.max(1, legacy.mainWidth)
-    mainBox.height = Math.max(1, legacy.mainHeight)
-    mainBox.visible = legacy.mainWidth > 0 && legacy.mainHeight > 0
-    this.verticalSplitter.left = legacy.verticalSplitterX
-    this.verticalSplitter.top = 0
-    this.verticalSplitter.width = Math.max(1, legacy.verticalSplitterWidth)
-    this.verticalSplitter.height = Math.max(1, legacy.terminalHeight)
-    this.verticalSplitter.visible = legacy.verticalSplitterWidth > 0
-    this.horizontalSplitter.left = legacy.rightX
-    this.horizontalSplitter.top = legacy.horizontalSplitterY
-    this.horizontalSplitter.width = Math.max(1, legacy.mainWidth)
-    this.horizontalSplitter.height = Math.max(1, legacy.horizontalSplitterHeight)
-    this.horizontalSplitter.visible = legacy.logVisible && legacy.horizontalSplitterHeight > 0 && legacy.mainWidth > 0
+    for (const name of SIDE_WINDOWS) place(this.panes[name].box, name)
+    place(this.panes.main.box, "main")
+    place(this.commandLog.box, "log")
+    place(this.verticalSplitter, "vsplit")
+    place(this.horizontalSplitter, "hsplit")
 
-    this.commandLog.box.left = legacy.rightX
-    this.commandLog.box.top = legacy.logY
-    this.commandLog.box.width = Math.max(1, legacy.mainWidth)
-    this.commandLog.box.height = Math.max(1, legacy.logHeight)
-    this.commandLog.box.visible = legacy.logVisible && legacy.logHeight > 0 && legacy.mainWidth > 0
-    this.commandLog.resize(Math.max(1, legacy.mainWidth), Math.max(1, legacy.logHeight))
-    this.commandLog.update(this.model.commandLog)
-    updateMainPane(this.panes.main, this.model, legacy.tooSmall, this.activeMainOverride())
+    const log = windows.log
+    if (log !== undefined) {
+      this.commandLog.resize(Math.max(1, widthOf(log)), Math.max(1, heightOf(log)))
+      this.commandLog.update(this.model.commandLog)
+    }
+    updateMainPane(this.panes.main, this.model, this.geometry.tooSmall, this.activeMainOverride())
     this.root.requestRender()
   }
 }
