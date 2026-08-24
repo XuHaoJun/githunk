@@ -6,7 +6,7 @@ This record is evidence-bounded: invoking the OSC52 path is not treated as proof
 
 | Dimension | Evidence | Result |
 | --- | --- | --- |
-| Terminal emulator | Workstation terminal reported by the harness: `xterm-ghostty` | Identified; remote clipboard delivery not exercised |
+| Terminal emulator | Workstation terminal reported by the harness: `xterm-ghostty`; emulator version was not captured (`Not available` in this run) | Identified; remote clipboard delivery not exercised |
 | `TERM` / `COLORTERM` | Supervised smoke process environment: `TERM=dumb`, `COLORTERM=` | Recorded exactly; not a client-clipboard result |
 | Dimensions | Requested acceptance geometry: 120×40. The smoke launcher did not expose a terminal ioctl (`stty size` returned `Inappropriate ioctl for device`) | 120×40 target recorded; measured dimensions **Not tested** |
 | SSH state | `ssh -V`: `OpenSSH_10.5p1, OpenSSL 3.6.3 9 Jun 2026`; no SSH server/client session was used | **Not tested** |
