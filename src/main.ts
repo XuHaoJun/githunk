@@ -95,6 +95,33 @@ export async function startApp(): Promise<number> {
     onFetchRemote: async (remote) => {
       try { await controller.fetchRemote(remote) } finally { view.update(controller.state) }
     },
+    onFetch: async () => {
+      try { await controller.fetch() } finally { view.update(controller.state) }
+    },
+    onPull: async () => {
+      try { await controller.pull() } finally { view.update(controller.state) }
+    },
+    onPush: async () => {
+      try { await controller.push() } finally { view.update(controller.state) }
+    },
+    onCreateStash: async (message, includeUntracked) => {
+      try { await controller.createStash(message, { includeUntracked }) } finally { view.update(controller.state) }
+    },
+    onApplyStash: async (ref) => {
+      try { await controller.applyStash(ref) } finally { view.update(controller.state) }
+    },
+    onPopStash: async (ref) => {
+      try { await controller.popStash(ref) } finally { view.update(controller.state) }
+    },
+    onDropStash: async (ref) => {
+      try { await controller.dropStash(ref, { confirmed: true }) } finally { view.update(controller.state) }
+    },
+    onInspectStash: async (ref) => {
+      try { await controller.inspectStash(ref) } finally { view.update(controller.state) }
+    },
+    onChooseUpstream: async (remote, branch) => {
+      try { await controller.push({ upstream: { remote, branch } }) } finally { view.update(controller.state) }
+    },
     onBrowseRemote: async (remote) => {
       try { await controller.browseRemote(remote) } finally { view.update(controller.state) }
     },

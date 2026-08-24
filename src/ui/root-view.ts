@@ -17,7 +17,7 @@ import { createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsP
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, filesPaneCommitAvailable, updateFilesPane } from "./panes/files-pane"
 import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, mainPaneCommitAvailable, moveMainCursor, setMainCursorTarget, updateMainPane } from "./panes/main-pane"
-import { createStashPane, updateStashPane } from "./panes/stash-pane"
+import { createStashPane, moveStashCursor, selectedStashItem, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import type { PaneHandle } from "./panes/common"
 import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
@@ -55,6 +55,15 @@ export type RootViewOptions = {
   readonly onDeleteBranch?: (branch: string, force: boolean) => Promise<void>
   readonly onRenameBranch?: (branch: string) => Promise<void>
   readonly onFetchRemote?: (remote: string) => Promise<void>
+  readonly onFetch?: () => Promise<void>
+  readonly onPull?: () => Promise<void>
+  readonly onPush?: () => Promise<void>
+  readonly onChooseUpstream?: (remote: string, branch: string) => Promise<void>
+  readonly onCreateStash?: (message: string, includeUntracked: boolean) => Promise<void>
+  readonly onApplyStash?: (ref: string) => Promise<void>
+  readonly onPopStash?: (ref: string) => Promise<void>
+  readonly onDropStash?: (ref: string) => Promise<void>
+  readonly onInspectStash?: (ref: string) => Promise<void>
   readonly onBrowseRemote?: (remote: string) => Promise<void>
   readonly onInspectBranch?: (branch: string) => Promise<void>
   readonly onCheckoutRemoteTracking?: (selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>
@@ -104,12 +113,24 @@ export class RootView {
   private readonly onDeleteBranch: ((branch: string, force: boolean) => Promise<void>) | undefined
   private readonly onRenameBranch: ((branch: string) => Promise<void>) | undefined
   private readonly onFetchRemote: ((remote: string) => Promise<void>) | undefined
+  private readonly onFetch: (() => Promise<void>) | undefined
+  private readonly onPull: (() => Promise<void>) | undefined
+  private readonly onPush: (() => Promise<void>) | undefined
+  private readonly onChooseUpstream: ((remote: string, branch: string) => Promise<void>) | undefined
+  private readonly onCreateStash: ((message: string, includeUntracked: boolean) => Promise<void>) | undefined
+  private readonly onApplyStash: ((ref: string) => Promise<void>) | undefined
+  private readonly onPopStash: ((ref: string) => Promise<void>) | undefined
+  private readonly onDropStash: ((ref: string) => Promise<void>) | undefined
+  private readonly onInspectStash: ((ref: string) => Promise<void>) | undefined
   private readonly onBrowseRemote: ((remote: string) => Promise<void>) | undefined
   private readonly onInspectBranch: ((branch: string) => Promise<void>) | undefined
   private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>) | undefined
   private readonly onFilterBranches: (() => Promise<void>) | undefined
   private copyMenuOpen = false
+  private upstreamCursorIndex = 0
+  private stashIncludeUntracked = false
   private discardPending = false
+  private pendingStashDrop: string | undefined
   private pendingFileDiscard: { readonly path: string; readonly untracked: boolean } | undefined
   private mutationInFlight = false
   private fileCursorIndex = 0
@@ -142,6 +163,15 @@ export class RootView {
     this.onSelectFile = options.onSelectFile
     this.onRefresh = options.onRefresh
     this.onFetchRemote = options.onFetchRemote
+    this.onFetch = options.onFetch
+    this.onPull = options.onPull
+    this.onCreateStash = options.onCreateStash
+    this.onPush = options.onPush
+    this.onChooseUpstream = options.onChooseUpstream
+    this.onApplyStash = options.onApplyStash
+    this.onPopStash = options.onPopStash
+    this.onDropStash = options.onDropStash
+    this.onInspectStash = options.onInspectStash
     this.onSwitchLocalBranch = options.onSwitchLocalBranch
     this.onCreateBranch = options.onCreateBranch
     this.onDeleteBranch = options.onDeleteBranch
@@ -265,7 +295,11 @@ export class RootView {
     this.model = model
     const pickerCount = model.basePicker?.candidates.length ?? 0
     this.basePickerIndex = pickerCount === 0 ? 0 : Math.min(this.basePickerIndex, pickerCount - 1)
-    if (model.basePicker === undefined) this.basePickerIndex = 0
+    if (model.upstreamChoice !== undefined) {
+      this.upstreamCursorIndex = Math.min(this.upstreamCursorIndex, Math.max(0, model.upstreamChoice.candidates.length - 1))
+      const choices = model.upstreamChoice.candidates.map((candidate, index) => `${index + 1} ${candidate.remote}/${candidate.branch}`).join(" · ")
+      this.panes.main.box.bottomTitle = `Upstream required for ${model.upstreamChoice.branch}: ${choices || "no candidates"} — choose a number`
+    }
     updateStatusPane(this.panes.status, model)
     updateFilesPane(this.panes.files, model)
     this.branchCursorIndex = Math.min(this.branchCursorIndex, Math.max(0, model.branches === undefined ? 0 : model.branches.localBranches.length + model.branches.remotes.reduce((count, remote) => count + 1 + (remote.branches?.length ?? 0), 0) - 1))
@@ -313,9 +347,33 @@ export class RootView {
     return false
   }
   private handleMutationKey(key: KeyEvent): boolean {
-    if (this.commitDialog !== undefined) {
+    if (this.commitDialog?.state.mode === "stash") {
       if (this.mutationInFlight) return true
-      return this.handleCommitDialogKey(key)
+      if (key.name === "u" && !key.ctrl && !key.meta) {
+        this.stashIncludeUntracked = !this.stashIncludeUntracked
+        this.panes.main.box.bottomTitle = `${renderCommitDialog(this.commitDialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (u toggles)`
+        this.root.requestRender()
+        return true
+      }
+      return this.handleStashDialogKey(key)
+    }
+    if (this.model.upstreamChoice !== undefined && this.onChooseUpstream !== undefined) {
+      const count = this.model.upstreamChoice.candidates.length
+      const numeric = Number(key.name) - 1
+      if (Number.isInteger(numeric) && numeric >= 0 && numeric < count) {
+        const choice = this.model.upstreamChoice.candidates[numeric]!
+        this.runUiMutation(this.onChooseUpstream(choice.remote, choice.branch))
+        return true
+      }
+      if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
+        this.upstreamCursorIndex = Math.max(0, Math.min(count - 1, this.upstreamCursorIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
+        return true
+      }
+      if (count > 0 && key.name === "enter") {
+        const choice = this.model.upstreamChoice.candidates[this.upstreamCursorIndex]!
+        this.runUiMutation(this.onChooseUpstream(choice.remote, choice.branch))
+        return true
+      }
     }
     const amendShortcut = key.name === "A" || (key.name === "a" && key.shift === true)
     if (!this.mutationInFlight && !key.ctrl && !key.meta && (key.name === "c" || amendShortcut)) {
@@ -335,10 +393,27 @@ export class RootView {
         return true
       }
     }
+    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "s" && this.onCreateStash !== undefined) {
+      this.stashIncludeUntracked = false
+      this.openCommitDialog("stash", "")
+      return true
+    }
     if ((key.name === "R" || (key.name === "r" && key.shift)) && this.onRefresh !== undefined) {
       this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
       this.runUiMutation(this.onRefresh())
+      return true
+    }
+    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "f" && this.focusManager.active !== "branches" && this.onFetch !== undefined) {
+      this.runUiMutation(this.onFetch())
+      return true
+    }
+    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "p" && this.onPull !== undefined) {
+      this.runUiMutation(this.onPull())
+      return true
+    }
+    if (!this.mutationInFlight && !key.ctrl && !key.meta && key.name === "P" && this.onPush !== undefined) {
+      this.runUiMutation(this.onPush())
       return true
     }
     if (this.model.basePicker !== undefined && this.onChooseBase !== undefined) {
@@ -372,6 +447,42 @@ export class RootView {
       this.panes.branches.box.bottomTitle = undefined
       this.runUiMutation(this.onModeChange("working-tree"))
       return true
+    }
+    if (this.focusManager.active === "stash") {
+      const selected = selectedStashItem(this.panes.stash, this.model)
+      if (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up") {
+        this.pendingStashDrop = undefined
+        moveStashCursor(this.panes.stash, this.model, key.name === "j" || key.name === "down" ? "next" : "previous")
+        return true
+      }
+      if (selected !== undefined && key.name === "space" && this.onApplyStash !== undefined) {
+        this.runUiMutation(this.onApplyStash(selected))
+        return true
+      }
+      if (selected !== undefined && key.name === "g" && this.onPopStash !== undefined) {
+        this.runUiMutation(this.onPopStash(selected))
+        return true
+      }
+      if (selected !== undefined && key.name === "d" && this.onDropStash !== undefined) {
+        if (this.pendingStashDrop === selected) {
+          this.pendingStashDrop = undefined
+          this.runUiMutation(this.onDropStash(selected))
+        } else {
+          this.pendingStashDrop = selected
+          this.panes.stash.box.bottomTitle = `Drop ${selected}? Press d again to confirm or Escape to cancel.`
+        }
+        return true
+      }
+      if (key.name === "escape" && this.pendingStashDrop !== undefined) {
+        this.pendingStashDrop = undefined
+        this.panes.stash.box.bottomTitle = undefined
+        return true
+      }
+      if (selected !== undefined && key.name === "enter" && this.onInspectStash !== undefined) {
+        this.runUiMutation(this.onInspectStash(selected))
+        return true
+      }
+      return false
     }
     if (this.focusManager.active === "branches") {
       let selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
@@ -689,6 +800,40 @@ export class RootView {
     }
   }
 
+  private handleStashDialogKey(key: KeyEvent): boolean {
+    const dialog = this.commitDialog
+    if (dialog === undefined || dialog.state.mode !== "stash") return false
+    const result = commitDialogKey(dialog.state, key)
+    if (result.result?.kind === "cancelled") {
+      this.commitDialog = undefined
+      this.panes.main.box.bottomTitle = undefined
+      this.root.requestRender()
+      return true
+    }
+    if (result.result?.kind === "confirmed") {
+      if (this.onCreateStash === undefined) return true
+      this.mutationInFlight = true
+      void this.onCreateStash(result.result.message, this.stashIncludeUntracked).then(() => {
+        if (this.commitDialog === dialog) {
+          this.commitDialog = undefined
+          this.panes.main.box.bottomTitle = undefined
+        }
+      }).catch((error: unknown) => {
+        dialog.setError(error instanceof Error ? error.message : String(error))
+        this.panes.main.box.bottomTitle = `${renderCommitDialog(dialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (u toggles)`
+      }).finally(() => {
+        this.mutationInFlight = false
+        this.root.requestRender()
+      })
+      return true
+    }
+    const next = commitDialogKey(dialog.state, key)
+    this.commitDialog = new CommitDialog("stash", next.state.message)
+    this.commitDialog.setError(next.state.error)
+    this.panes.main.box.bottomTitle = `${renderCommitDialog(this.commitDialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (u toggles)`
+    this.root.requestRender()
+    return true
+  }
 
   private invalidateRemoteCheckout(): void {
     this.remoteCheckoutGeneration += 1
@@ -740,7 +885,7 @@ export class RootView {
       }
     })
   }
-  private openCommitDialog(mode: "commit" | "amend", initialMessage: string): void {
+  private openCommitDialog(mode: "commit" | "amend" | "stash", initialMessage: string): void {
     this.commitDialog = new CommitDialog(mode, initialMessage)
     this.panes.main.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
     this.root.requestRender()

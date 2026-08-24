@@ -1,3 +1,5 @@
+import type { StashEntry } from "./stash"
+import type { UpstreamRequired } from "../git/sync"
 import type { CommandRecord } from "./command"
 import type { CommitDetails, CommitSummary } from "./commit"
 import type { BranchListing } from "./branch"
@@ -21,6 +23,8 @@ export type AppModel = {
   readonly branch: string
   readonly upstream?: string
   readonly branches?: BranchListing
+  readonly upstreamChoice?: UpstreamRequired
+  readonly stashes?: readonly StashEntry[]
   readonly reviewTarget: ReviewTarget
   /** Aggregate Branch Review identity survives individual commit drill-down. */
   readonly branchReviewTarget?: Extract<ReviewTarget, { readonly kind: "branch" }>

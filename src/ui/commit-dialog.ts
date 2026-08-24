@@ -1,4 +1,4 @@
-export type CommitDialogMode = "commit" | "amend"
+export type CommitDialogMode = "commit" | "amend" | "stash"
 export type CommitDialogResult =
   | { readonly kind: "confirmed"; readonly message: string }
   | { readonly kind: "cancelled" }
@@ -87,7 +87,7 @@ function printableText(key: CommitDialogKey): string | undefined {
 }
 
 export function renderCommitDialog(state: CommitDialogState): string {
-  const title = state.mode === "amend" ? "Amend commit" : "Commit staged changes"
+  const title = state.mode === "amend" ? "Amend commit" : state.mode === "stash" ? "Create stash" : "Commit staged changes"
   const error = state.error === undefined ? "" : `\n! ${state.error}`
   return `${title}\n\n${state.message}\n\nCtrl+Enter confirm · Esc cancel${error}`
 }
