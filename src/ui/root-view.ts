@@ -454,6 +454,7 @@ export class RootView {
       this.moveMainCursor(key.name === "j" || key.name === "down" ? "next" : "previous")
       return true
     }
+    return false
   }
   private handleMutationKey(key: KeyEvent): boolean {
     if (this.commitDialog !== undefined &&
