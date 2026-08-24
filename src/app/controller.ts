@@ -100,10 +100,7 @@ export class AppController {
   private readonly loadSnapshot: WorkingTreeLoader
   private readonly loadBranchSnapshot: BranchReviewLoader
   private readonly loadBranchesListing: BranchListingLoader
-  private readonly automaticBranchListing: boolean
   private readonly loadStashesListing: () => Promise<readonly StashEntry[]>
-  private readonly automaticStashListing: boolean
-  private readonly automaticCommitHistory: boolean
   private readonly loadCommitList: CommitListLoader
   private readonly loadCommitDetails: CommitLoader
   private readonly loadCommitFile: CommitFilePatchLoader
@@ -121,7 +118,6 @@ export class AppController {
     const runner = options instanceof GitRunner ? options : options.runner
     const load = options instanceof GitRunner ? loader : options.load ?? options.loader
     const repositoryRoot = options instanceof GitRunner ? options.cwd : options.repositoryRoot ?? runner?.cwd
-    this.automaticCommitHistory = options instanceof GitRunner || options.loadCommits !== undefined || options.commitsLoader !== undefined
     const shouldUseDefaultReviewStore = load === undefined
     this.reviewStore = options instanceof GitRunner
       ? shouldUseDefaultReviewStore ? new ReviewStore({ repositoryRoot, runner }) : undefined
@@ -144,7 +140,6 @@ export class AppController {
     this.loadBranchSnapshot = options instanceof GitRunner
       ? (baseRef) => loadBranchReview(options, baseRef)
       : options.loadBranch ?? options.branchLoader ?? (runner === undefined ? async () => { throw new Error("Branch review requires a GitRunner") } : (baseRef) => loadBranchReview(runner, baseRef))
-    this.automaticBranchListing = options instanceof GitRunner || (options.loadBranches !== undefined || options.branchesLoader !== undefined) || (options.load === undefined && options.loader === undefined && runner !== undefined)
     this.loadBranchesListing = options instanceof GitRunner
       ? () => listBranches(options)
       : options.loadBranches ?? options.branchesLoader ?? (load === undefined && runner !== undefined ? () => listBranches(runner) : async () => ({ detached: true, localBranches: [], remotes: [] }))
@@ -160,7 +155,6 @@ export class AppController {
     this.inferBase = options instanceof GitRunner
       ? () => inferReviewBase(options)
       : options.inferBase ?? (runner === undefined ? async () => ({ kind: "choose" as const, candidates: [], reason: "no Git runner" }) : () => inferReviewBase(runner))
-    this.automaticStashListing = options instanceof GitRunner || options.loadStashes !== undefined || (load === undefined && runner !== undefined)
     this.loadStashesListing = options instanceof GitRunner
       ? () => listStashes(options)
       : options.loadStashes ?? (runner === undefined ? async () => [] : () => listStashes(runner))
@@ -185,8 +179,8 @@ export class AppController {
   }
 
   async refresh(): Promise<void> {
-    const stashWarning = this.automaticStashListing ? await this.refreshStashes() : undefined
-    const branchWarning = this.automaticBranchListing ? await this.refreshBranches() : undefined
+    const stashWarning = await this.refreshStashes()
+    const branchWarning = await this.refreshBranches()
     const target = this.currentState.reviewTarget
     if (target.kind === "working-tree") {
       await this.refreshTarget(target)
@@ -207,7 +201,6 @@ export class AppController {
     }
   }
   private async refreshStashes(): Promise<string | undefined> {
-    if (!this.automaticStashListing) return undefined
     try {
       const stashes = await this.loadStashesListing()
       this.currentState = {
@@ -869,7 +862,6 @@ export class AppController {
     }
   }
   private async loadCommitHistory(range: string): Promise<{ readonly commits: readonly CommitSummary[]; readonly warning?: string }> {
-    if (!this.automaticCommitHistory) return { commits: [] }
     try {
       return { commits: await this.loadCommitList(range) }
     } catch (error) {
