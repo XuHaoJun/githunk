@@ -40,26 +40,16 @@ export function createBranchesPane(renderer: CliRenderer, model: AppModel): Pane
 
 export function updateBranchesPane(pane: PaneHandle, model: AppModel, selectedIndex = 0, filter = ""): void {
   const listing = model.branches
+  const items = branchPaneItems(model, filter)
   const lines = [
     model.branch ? `* ${model.branch}` : "* (detached/loading)",
     model.upstream ? `  ↳ ${model.upstream}` : "  (no upstream)",
   ]
   if (listing !== undefined) {
-    lines.push("Local Branches")
-    for (const [index, branch] of listing.localBranches.entries()) {
-      const marker = branchPaneItems(model)[index]?.kind === "local" && index === selectedIndex ? ">" : " "
-      lines.push(`${marker} ${branch.isCurrent ? "*" : " "} ${branch.name}${branch.upstream === undefined ? "" : ` → ${branch.upstream}`}`)
-    }
-    lines.push("Remotes")
-    let itemIndex = listing.localBranches.length
-    for (const remote of listing.remotes) {
-      const marker = itemIndex === selectedIndex ? ">" : " "
-      lines.push(`${marker} ${remote.name}`)
-      itemIndex += 1
-      for (const branch of remote.branches ?? []) {
-        lines.push(`${itemIndex === selectedIndex ? ">" : " "}   ${branch.name}`)
-        itemIndex += 1
-      }
+    lines.push(filter.length === 0 ? "Local Branches" : `Branches / ${filter}`)
+    for (const [index, item] of items.entries()) {
+      const marker = index === selectedIndex ? ">" : " "
+      lines.push(item.kind === "remote-branch" ? `${marker}   ${item.remote}/${item.name}` : `${marker} ${item.name}`)
     }
   }
   pane.update(lines.join("\n"))

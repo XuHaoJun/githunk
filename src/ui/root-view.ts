@@ -140,7 +140,7 @@ export class RootView {
     this.onCheckoutRemoteTracking = options.onCheckoutRemoteTracking
     this.onFilterBranches = options.onFilterBranches
     this.onSelectCommit = options.onSelectCommit
-    this.onSelectCommitFile = options.onSelectCommitFile
+    this.onCommitBack = options.onCommitBack
     this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
     this.renderer = renderer
     this.model = model
@@ -191,6 +191,7 @@ export class RootView {
 
     this.focusManager.onChange = (focus, logVisible) => {
       this.pendingBranchDelete = undefined
+      this.panes.branches.box.bottomTitle = undefined
       this.branchFilterActive = false
       this.applyFocus(focus)
       this.geometry = computeLayout(
@@ -239,6 +240,9 @@ export class RootView {
 
   update(model: AppModel): void {
     this.pendingBranchDelete = undefined
+    this.panes.branches.box.bottomTitle = undefined
+    this.branchFilterActive = false
+    this.branchFilter = ""
     this.model = model
     const pickerCount = model.basePicker?.candidates.length ?? 0
     this.basePickerIndex = pickerCount === 0 ? 0 : Math.min(this.basePickerIndex, pickerCount - 1)
@@ -341,11 +345,21 @@ export class RootView {
         updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
         return true
       }
+      if (key.name === "space" && selected !== undefined) {
+        if (selected.kind === "local" && this.onSwitchLocalBranch !== undefined) this.runUiMutation(this.onSwitchLocalBranch(selected.name))
+        if (selected.kind === "remote-branch" && this.onCheckoutRemoteTracking !== undefined) this.runUiMutation(this.onCheckoutRemoteTracking({ remote: selected.remote, branch: selected.name, ref: selected.ref }))
+        return true
+      }
+      if (key.name === "n" && this.onCreateBranch !== undefined) {
+        this.runUiMutation(this.onCreateBranch(selected?.kind === "local" ? selected.name : undefined))
+        return true
+      }
       if ((key.name === "d" || key.name === "D") && selected?.kind === "local" && this.onDeleteBranch !== undefined) {
         const force = key.name === "D"
         const pending = this.pendingBranchDelete
         if (pending?.branch === selected.name && pending.force === force) {
           this.pendingBranchDelete = undefined
+          this.panes.branches.box.bottomTitle = undefined
           this.runUiMutation(this.onDeleteBranch(selected.name, force))
         } else {
           this.pendingBranchDelete = { branch: selected.name, force }
@@ -354,9 +368,12 @@ export class RootView {
         }
         return true
       }
-      if (key.name === "escape" && this.pendingBranchDelete !== undefined) {
+      if (key.name === "escape" && (this.pendingBranchDelete !== undefined || this.branchFilterActive)) {
         this.pendingBranchDelete = undefined
         this.panes.branches.box.bottomTitle = undefined
+        this.branchFilterActive = false
+        this.branchFilter = ""
+        updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
         return true
       }
       if (key.name === "r" && selected?.kind === "local" && this.onRenameBranch !== undefined) {
