@@ -1322,6 +1322,7 @@ Task 5 deletes it.
     readonly modal: boolean
     readonly mainScope: "all" | "staged" | "unstaged" | undefined
     readonly selectedBranchKind: "local" | "remote" | "remote-branch" | undefined
+    readonly hasSelectedStash: boolean
   }
 
   export type Binding = {
@@ -1346,8 +1347,13 @@ Task 5 deletes it.
   export class BindingRegistry {
     constructor(bindings: readonly Binding[])
     readonly bindings: readonly Binding[]
-    resolve(key: KeyLike, options?: { readonly context?: BindingContext; readonly modal?: boolean }): Binding | undefined
-    dispatch(key: KeyLike, options?: { readonly context?: BindingContext; readonly modal?: boolean }): Action | undefined
+    // When both model and ui are supplied, a binding whose `available` predicate is
+    // false is skipped and resolution falls through to the next priority level, so an
+    // unavailable context binding does not shadow a global one (e.g. `escape` declared
+    // as commit-back in `main` must not hide the global `back`). A modal never falls
+    // through. Omitting model/ui skips availability filtering entirely.
+    resolve(key: KeyLike, options?: { readonly context?: BindingContext; readonly modal?: boolean; readonly model?: AppModel; readonly ui?: UiState }): Binding | undefined
+    dispatch(key: KeyLike, options?: { readonly context?: BindingContext; readonly modal?: boolean; readonly model?: AppModel; readonly ui?: UiState }): Action | undefined
     hintsFor(context: BindingContext, model: AppModel, ui: UiState, width: number): string
     menuFor(context: BindingContext, model: AppModel, ui: UiState): readonly MenuEntry[]
   }
@@ -1706,6 +1712,8 @@ export type UiState = {
   readonly modal: boolean
   readonly mainScope: "all" | "staged" | "unstaged" | undefined
   readonly selectedBranchKind: "local" | "remote" | "remote-branch" | undefined
+  /** Whether the stash pane currently has an entry selected. */
+  readonly hasSelectedStash: boolean
 }
 
 export type Binding = {
@@ -1865,6 +1873,14 @@ inline checks.
 const writable = (model: AppModel): boolean => model.reviewTarget.kind === "working-tree"
 const lineActions = (model: AppModel, ui: UiState): boolean => writable(model) && ui.mainScope !== "all"
 const inCommit = (model: AppModel): boolean => model.reviewTarget.kind === "commit"
+/**
+ * Mirrors lazygit, which gates stash actions only on having a stash selected, and
+ * AppController.ensureStashOperation, which permits them from a working-tree or a
+ * stash review target but refuses a branch or commit one.
+ */
+const stashOperation = (model: AppModel, ui: UiState): boolean =>
+  ui.hasSelectedStash &&
+  (model.reviewTarget.kind === "working-tree" || model.reviewTarget.kind === "stash")
 
 export const GITHUNK_BINDINGS: readonly Binding[] = [
   // ---- focus and layout ----
@@ -1960,10 +1976,10 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["commits"] },
 
   // ---- stash pane ----
-  { keys: ["space"], action: "stash-apply", description: "apply", contexts: ["stash"], displayOnScreen: true, available: writable },
-  { keys: ["g"], action: "stash-pop", description: "pop", contexts: ["stash"], displayOnScreen: true, available: writable },
-  { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"], displayOnScreen: true, available: writable },
-  { keys: ["enter"], action: "stash-inspect", description: "inspect", contexts: ["stash"], displayOnScreen: true },
+  { keys: ["space"], action: "stash-apply", description: "apply", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
+  { keys: ["g"], action: "stash-pop", description: "pop", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
+  { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
+  { keys: ["enter"], action: "stash-inspect", description: "inspect", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["stash"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["stash"] },
 
@@ -2368,7 +2384,11 @@ Replace `this.handleKey` with:
         return
       }
 
-      const action = this.registry.dispatch(routedKey, { context: this.focusManager.active })
+      const action = this.registry.dispatch(routedKey, {
+        context: this.focusManager.active,
+        model: this.model,
+        ui: this.uiState(),
+      })
       if (action === undefined) return
       this.handleAction(action, routedKey)
       key.preventDefault()
@@ -2388,6 +2408,7 @@ Add the UI state accessor and the action switch:
       modal: this.modalInputActive(),
       mainScope: target.kind === "working-tree" ? target.scope : undefined,
       selectedBranchKind: selected?.kind,
+      hasSelectedStash: selectedStashEntry(this.panes.stash, this.model) !== undefined,
     }
   }
 
