@@ -458,3 +458,80 @@ describe("screen modes and layout", () => {
     expect(view.geometry.windows.main).toBeDefined()
   })
 })
+
+describe("hints bar and keybinding menu", () => {
+  let harness: ShellHarness | undefined
+  afterEach(async () => { await harness?.cleanup() })
+
+  test("the hints bar changes with the focused pane", async () => {
+    // A stash must exist for the stash bindings to be enabled — hintRowsFor only
+    // advertises available bindings, mirroring what the keys actually do.
+    harness = await createShellHarness({ stash: true })
+
+    await harness.pressKey("2")
+    const files = harness.frame()
+    expect(files).toContain("stage: space")
+    expect(files).toContain("reviewed: r")
+
+    await harness.pressKey("5")
+    const stash = harness.frame()
+    expect(stash).toContain("apply: space")
+    expect(stash).not.toContain("reviewed: r")
+  })
+
+  test("the review status is rendered on the right of the same row", async () => {
+    harness = await createShellHarness()
+    expect(harness.frame()).toContain("Working Tree")
+  })
+
+  test("question mark opens a menu listing the focused pane's bindings", async () => {
+    harness = await createShellHarness()
+
+    await harness.pressKey("5")
+    await harness.pressKey("?")
+    const open = harness.frame()
+    expect(open).toContain("Keybindings")
+    expect(open).toContain("pop")
+
+    await harness.pressKey("ESCAPE")
+    expect(harness.frame()).not.toContain("Keybindings")
+  })
+
+  test("the menu swallows pane keys while it is open", async () => {
+    harness = await createShellHarness()
+    const view = harness.app.view!
+
+    await harness.pressKey("2")
+    await harness.pressKey("?")
+    await harness.pressKey("4")
+    expect(view.focusManager.active).toBe("files")
+    await harness.pressKey("?")
+    await harness.pressKey("4")
+    expect(view.focusManager.active).toBe("commits")
+  })
+
+  test("a banner replaces the routine status segment so it stays visible with a patch loaded", async () => {
+    harness = await createShellHarness()
+
+    // Drill into a commit (main shows its patch), then try to mark a file reviewed:
+    // the controller refuses with a banner that used to surface only in the status
+    // pane's empty-patch branch, i.e. never while a patch was loaded.
+    await harness.pressKey("4")
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    await harness.pressKey("2")
+    await harness.pressKey("r")
+    await harness.settle()
+    expect(harness.frame()).toContain("! Commit drill-down is read-only")
+  })
+
+  test("the ? menu distinguishes fetch-remote from global fetch on the branches pane", async () => {
+    harness = await createShellHarness()
+
+    await harness.pressKey("3")
+    await harness.pressKey("?")
+    const open = harness.frame()
+    expect(open).toContain("fetch the selected remote")
+    expect(open).toContain("fetch the selected remote  (unavailable)")
+  })
+})

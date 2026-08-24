@@ -334,7 +334,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["d"], action: "branch-delete", description: "delete", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local", menuDescription: "delete the branch" },
   { keys: ["D"], action: "branch-delete", description: "force delete", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local", menuDescription: "force delete the branch, even if unmerged" },
   { keys: ["r"], action: "branch-rename", description: "rename", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local" },
-  { keys: ["f"], action: "fetch-remote", description: "fetch", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "remote" },
+  { keys: ["f"], action: "fetch-remote", description: "fetch", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "remote", menuDescription: "fetch the selected remote" },
   { keys: ["enter"], action: "inspect", description: "inspect", contexts: ["branches"], displayOnScreen: true },
   { keys: ["/"], action: "filter", description: "filter", contexts: ["branches"], displayOnScreen: true },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["branches"] },

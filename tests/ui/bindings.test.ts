@@ -438,7 +438,7 @@ describe("branches pane: f agrees between hints, menu and dispatch", () => {
     const entries = registry.menuFor("branches", workingTree, state)
     const fEntries = entries.filter((entry) => entry.keys === "f")
     expect(fEntries).toHaveLength(2)
-    expect(fEntries).toContainEqual({ group: "context", keys: "f", description: "fetch", enabled: false })
+    expect(fEntries).toContainEqual({ group: "context", keys: "f", description: "fetch the selected remote", enabled: false })
     expect(fEntries).toContainEqual({ group: "global", keys: "f", description: "fetch", enabled: true })
   })
 
@@ -455,7 +455,7 @@ describe("branches pane: f agrees between hints, menu and dispatch", () => {
     const entries = registry.menuFor("branches", workingTree, state)
     const fEntries = entries.filter((entry) => entry.keys === "f")
     expect(fEntries).toHaveLength(1)
-    expect(fEntries[0]).toEqual({ group: "context", keys: "f", description: "fetch", enabled: true })
+    expect(fEntries[0]).toEqual({ group: "context", keys: "f", description: "fetch the selected remote", enabled: true })
   })
 })
 

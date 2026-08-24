@@ -42,8 +42,20 @@ import type { CheckoutRemoteTrackingResult, RemoteBranchSelection } from "../git
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
 import { FilterInput } from "./filter-input"
 import { normalizeKey } from "./keymap"
-import { createRegistry, type Action, type UiState } from "./bindings"
+import { createHintsBar, reviewStatusText, type HintsBarHandle } from "./hints-bar"
+import { createKeybindingMenu, type KeybindingMenuHandle } from "./keybinding-menu"
+import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
 
+
+const PANE_TITLES: Readonly<Record<FocusId, string>> = {
+  main: "Main", status: "Review", files: "Files",
+  branches: "Branches", commits: "Commits", stash: "Stash",
+  "command-log": "Command Log",
+}
+
+function paneTitleFor(focus: FocusId): string {
+  return PANE_TITLES[focus]
+}
 export type RootViewOptions = {
   readonly sidePanelRatio?: number
   readonly logHeight?: number
@@ -115,6 +127,8 @@ export class RootView {
   private readonly clipboard: ClipboardService
   private readonly verticalSplitter: BoxRenderable
   private readonly horizontalSplitter: BoxRenderable
+  private readonly hintsBar: HintsBarHandle
+  private readonly keybindingMenu: KeybindingMenuHandle
   private readonly onStageFile: ((path: string) => Promise<void>) | undefined
   private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
   private readonly onDiscardFile: ((path: string, untracked: boolean) => Promise<void>) | undefined
@@ -157,6 +171,7 @@ export class RootView {
   private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>) | undefined
   private readonly onFilterBranches: (() => Promise<void>) | undefined
   private copyMenuOpen = false
+  private menuOpen = false
   // lazygit parity: browsing the commits pane previews the selected commit in main without
   // switching the review target; leaving the pane reverts main to the model's own patch.
   private commitPreview: { readonly oid: string; readonly label: string; readonly raw: string } | undefined
@@ -276,6 +291,11 @@ export class RootView {
     this.root.add(this.commandLog.box)
     this.root.add(this.verticalSplitter)
     this.root.add(this.horizontalSplitter)
+    this.hintsBar = createHintsBar(renderer)
+    this.keybindingMenu = createKeybindingMenu(renderer)
+    this.root.add(this.hintsBar.hints)
+    this.root.add(this.hintsBar.status)
+    this.root.add(this.keybindingMenu.box)
     renderer.root.add(this.root)
 
     this.focusManager.onChange = (focus, _logVisible) => {
@@ -371,7 +391,9 @@ export class RootView {
     updateMainPane(this.panes.main, model, this.geometry.tooSmall, this.activeMainOverride())
     this.syncCommitPreview()
     this.commandLog.update(model.commandLog)
-    this.root.requestRender()
+    // A model change can widen the status segment (or set a banner), so the bottom
+    // row is re-arranged rather than merely redrawn.
+    this.recomputeLayout()
   }
   private clearDiscardState(): void {
     this.discardPending = false
@@ -380,6 +402,7 @@ export class RootView {
   }
   private modalInputActive(): boolean {
     return this.branchFilterActive || this.commitDialog !== undefined || this.copyMenuOpen ||
+      this.menuOpen ||
       this.model.upstreamChoice !== undefined || this.model.basePicker !== undefined ||
       this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined ||
       this.pendingStashDrop !== undefined || this.pendingFileDiscard !== undefined || this.discardPending
@@ -460,8 +483,9 @@ export class RootView {
         this.screenMode = previousScreenMode(this.screenMode)
         this.recomputeLayout()
         return
-      // Implemented in Task 7.
       case "keybinding-menu":
+        this.menuOpen = !this.menuOpen
+        this.recomputeLayout()
         return
       // Implemented in Task 8.
       case "page-next": case "page-previous": case "goto-top": case "goto-bottom":
@@ -477,6 +501,13 @@ export class RootView {
   }
 
   private handleModalKey(key: KeyEvent): void {
+    if (this.menuOpen) {
+      if (key.name === "escape" || key.name === "?") {
+        this.menuOpen = false
+        this.recomputeLayout()
+      }
+      return
+    }
     if (this.branchFilterActive) {
       this.handleFilterKey(key)
       return
@@ -1500,14 +1531,23 @@ export class RootView {
     }
   }
 
-  /** Task 7 renders the status segment; until then it claims no space in the info row. */
+  /** Width the review-status segment occupies in the bottom row's right-hand window. */
   private statusSegmentWidth(): number {
-    return 0
+    return reviewStatusText(this.model).length
   }
 
   private applyLayout(): void {
     const windows = this.geometry.windows
-    const place = (renderable: BoxRenderable, name: WindowName): void => {
+    const place = (
+      renderable: {
+        left: number | "auto" | `${number}%` | undefined
+        top: number | "auto" | `${number}%` | undefined
+        width: number | "auto" | `${number}%` | undefined
+        height: number | "auto" | `${number}%` | undefined
+        visible: boolean
+      },
+      name: WindowName,
+    ): void => {
       const dimensions = windows[name]
       if (dimensions === undefined) {
         renderable.visible = false
@@ -1532,6 +1572,29 @@ export class RootView {
       this.commandLog.update(this.model.commandLog)
     }
     updateMainPane(this.panes.main, this.model, this.geometry.tooSmall, this.activeMainOverride())
+
+    place(this.hintsBar.hints, "hints")
+    place(this.hintsBar.status, "info")
+    const hintsWidth = widthOf(windows.hints)
+    this.hintsBar.update(
+      hintsWidth === 0 ? "" : this.registry.hintsFor(this.focusManager.active, this.model, this.uiState(), hintsWidth),
+      reviewStatusText(this.model),
+    )
+
+    const menuHost = windows.main ?? windows.hints
+    if (this.menuOpen && menuHost !== undefined) {
+      const width = Math.max(20, Math.min(72, widthOf(menuHost) - 4))
+      const height = Math.max(6, Math.min(this.geometry.terminalHeight - 4, heightOf(menuHost) - 2))
+      this.keybindingMenu.box.left = menuHost.x0 + Math.floor((widthOf(menuHost) - width) / 2)
+      this.keybindingMenu.box.top = menuHost.y0 + Math.floor((heightOf(menuHost) - height) / 2)
+      this.keybindingMenu.box.width = width
+      this.keybindingMenu.box.height = height
+      this.keybindingMenu.update(
+        this.registry.menuFor(this.focusManager.active, this.model, this.uiState()),
+        paneTitleFor(this.focusManager.active),
+      )
+    }
+    this.keybindingMenu.box.visible = this.menuOpen
     this.root.requestRender()
   }
 }
