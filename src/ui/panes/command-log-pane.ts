@@ -6,6 +6,7 @@ export type CommandLogPaneHandle = {
   readonly id: FocusId
   readonly box: BoxRenderable
   readonly text: TextRenderable
+  resize(width: number, height: number): void
   update(records: readonly CommandRecord[]): void
   setFocused(focused: boolean): void
 }
@@ -24,8 +25,7 @@ function formatRecord(record: CommandRecord): string {
   if (record.stderr) output.push(`stderr:\n${record.stderr.trimEnd()}`)
   return output.join("\n")
 }
-
-/** Keep the newest command-log lines inside a fixed, non-scrollable viewport. */
+/** Keep command output inspectable in a non-selectable, scrollable viewport. */
 export function tailCommandLogLines(records: readonly CommandRecord[], lineLimit: number): readonly string[] {
   const limit = Math.max(1, Math.floor(lineLimit))
   const selected: string[] = []
@@ -67,6 +67,11 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
     id: "command-log",
     box,
     text,
+    resize(width: number, height: number) {
+      text.width = Math.max(1, Math.floor(width) - 2)
+      text.height = Math.max(1, Math.floor(height) - 2)
+      text.scrollY = text.maxScrollY
+    },
     update(nextRecords: readonly CommandRecord[]) {
       text.content = nextRecords.length === 0 ? "No commands recorded" : nextRecords.map(formatRecord).join("\n\n")
       text.scrollY = text.maxScrollY

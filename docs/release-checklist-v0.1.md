@@ -33,11 +33,12 @@ Evidence is split between deterministic automated coverage and the recorded TUI 
 ## Release gates
 
 - [x] `bun test tests/acceptance/review-workflow.integration.test.ts` — 1 pass, 75 assertions.
-- [x] `bun run typecheck` — pass in this worker.
+- [x] `bun run typecheck` — pass.
+- [x] `bun install --frozen-lockfile && bun run check` — pass: 137 tests, 0 failures, 801 expectations; typecheck passed.
 - [x] Real non-destructive `bun run start` smoke — process exited 0 after navigation, diff inspection, Command Log toggle, splitter drag input, and quit.
-- [ ] SSH+zellij 120×40 clipboard/paste run — Not tested in this worker; see compatibility record.
+- [ ] SSH+zellij 120×40 clipboard/paste run — Not tested; see compatibility record.
 - [ ] tmux clipboard/paste run — Not tested.
 - [ ] Local client clipboard paste result — Not tested.
-- [ ] Final full `bun install --frozen-lockfile && bun run check` — controller gate after integration.
+- [ ] Splitter geometry readback before/after terminal resize — Not tested.
 
-Before tagging, confirm the final controller gate, inspect `git diff --check`, and preserve unrelated user changes (including `.gitignore`).
+Before tagging, preserve unrelated user changes (including `.gitignore`).

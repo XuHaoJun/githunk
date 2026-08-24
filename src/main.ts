@@ -124,7 +124,7 @@ export async function startApp(): Promise<number> {
       try { await controller.inspectStash(ref) } finally { view.update(controller.state) }
     },
     onChooseUpstream: async (remote, branch) => {
-      try { await controller.push({ upstream: { remote, branch } }) } finally { view.update(controller.state) }
+      try { await controller.chooseUpstream(remote, branch) } finally { view.update(controller.state) }
     },
     onCancelUpstream: async () => {
       try { await controller.cancelUpstreamChoice() } finally { view.update(controller.state) }

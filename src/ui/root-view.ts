@@ -164,6 +164,8 @@ export class RootView {
       copyToClipboardOSC52: (text) => renderer.copyToClipboardOSC52(text),
     }
     this.clipboard = new ClipboardService(clipboardPort)
+    this.onStageFile = options.onStageFile
+    this.onApplyStash = options.onApplyStash
     this.onModeChange = options.onModeChange
     this.onQuit = options.onQuit
     this.onChooseBase = options.onChooseBase
@@ -452,9 +454,15 @@ export class RootView {
       this.moveMainCursor(key.name === "j" || key.name === "down" ? "next" : "previous")
       return true
     }
-    return false
   }
   private handleMutationKey(key: KeyEvent): boolean {
+    if (this.commitDialog !== undefined &&
+      this.commitDialog.state.mode !== "stash" &&
+      this.commitDialog.state.mode !== "branch-create" &&
+      this.commitDialog.state.mode !== "branch-rename") {
+      if (this.mutationInFlight) return true
+      return this.handleCommitDialogKey(key)
+    }
     if (this.commitDialog?.state.mode === "stash") {
       if (this.mutationInFlight) return true
       if (key.name === "u" && key.ctrl === true && !key.meta) {
@@ -1249,10 +1257,6 @@ export class RootView {
       event.stopPropagation()
       this.focusManager.focus("command-log")
     }
-    this.commandLog.box.onMouseScroll = (event: MouseEvent) => {
-      event.preventDefault()
-      event.stopPropagation()
-    }
   }
 
   private applyFocus(active: FocusId): void {
@@ -1297,6 +1301,7 @@ export class RootView {
     this.commandLog.box.width = Math.max(1, geometry.mainWidth)
     this.commandLog.box.height = Math.max(1, geometry.logHeight)
     this.commandLog.box.visible = geometry.logVisible && geometry.logHeight > 0 && geometry.mainWidth > 0
+    this.commandLog.resize(Math.max(1, geometry.mainWidth), Math.max(1, geometry.logHeight))
     this.commandLog.update(this.model.commandLog)
     updateMainPane(this.panes.main, this.model, geometry.tooSmall)
     this.root.requestRender()

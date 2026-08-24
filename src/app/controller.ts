@@ -17,7 +17,7 @@ import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
 import { CommitMutations } from "../git/commit-mutations"
 import { checkoutRemoteTracking, createBranch, deleteBranch, fetchRemote, listBranches, listRemoteBranches, renameBranch, switchLocal, type CheckoutRemoteTrackingOptions, type CheckoutRemoteTrackingResult, type DeleteBranchOptions, type RemoteBranchSelection } from "../git/branches"
 import { listStashes, loadStash, createStash as createGitStash, applyStash as applyGitStash, popStash as popGitStash, dropStash as dropGitStash } from "../git/stash"
-import { fetch as fetchSync, pull as pullSync, push as pushSync, type PushOptions, type PushResult } from "../git/sync"
+import { fetch as fetchSync, pull as pullSync, push as pushSync, type PullOptions, type PushOptions, type PushResult } from "../git/sync"
 import type { StashCreateOptions, StashDropOptions, StashEntry } from "../domain/stash"
 import { MutationQueue } from "./mutation-queue"
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
@@ -292,11 +292,11 @@ export class AppController {
     if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.requireRunnerOperation((runner) => fetchSync(runner, remote)))
   }
-  async pull(): Promise<void> {
+  async pull(options: PullOptions = {}): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
     await this.mutationQueue.run(async () => {
       try {
-        const result = await this.requireRunnerOperation((runner) => pullSync(runner))
+        const result = await this.requireRunnerOperation((runner) => pullSync(runner, options))
         if (result.kind === "upstream-required") {
           this.currentState = { ...this.currentState, upstreamChoice: result, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
           return
@@ -308,6 +308,17 @@ export class AppController {
         throw error
       }
     })
+  }
+
+  async chooseUpstream(remote: string, branch: string): Promise<void> {
+    const choice = this.currentState.upstreamChoice
+    if (choice === undefined) return
+    const upstream = { remote, branch }
+    if (choice.operation === "pull") {
+      await this.pull({ upstream })
+    } else {
+      await this.push({ upstream })
+    }
   }
   async push(options: PushOptions = {}): Promise<PushResult> {
     if (!this.ensureWorkingTreeMutation()) return { kind: "pushed" }

@@ -21,10 +21,17 @@ describe("synchronization operations", () => {
       await local.git(["add", "file.txt"])
       await local.git(["commit", "-m", "local"])
       const missingPull = await pull(runner)
-      expect(missingPull).toMatchObject({ kind: "upstream-required", branch })
+      expect(missingPull).toMatchObject({ kind: "upstream-required", branch, operation: "pull" })
+      if (missingPull.kind === "upstream-required") {
+        await pull(runner, { upstream: missingPull.candidates[0] ?? { remote: "origin", branch } })
+        expect(runner.log.records().at(-1)?.args).toEqual(["pull", "origin", branch])
+      }
       const missing = await push(runner)
       expect(missing.kind).toBe("upstream-required")
-      if (missing.kind === "upstream-required") expect(missing.branch).toBe(branch)
+      if (missing.kind === "upstream-required") {
+        expect(missing.branch).toBe(branch)
+        expect(missing.operation).toBe("push")
+      }
       await remote.git(["config", "receive.denyCurrentBranch", "updateInstead"])
       await push(runner, { upstream: { remote: "origin", branch } })
       await remote.git(["config", "receive.denyCurrentBranch", "updateInstead"])
