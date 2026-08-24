@@ -1877,7 +1877,9 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["@"], action: "command-log", description: "log", menuDescription: "show, focus or hide the command log" },
   { keys: ["l", "right", "tab"], action: "pane-next", description: "pane", displayKeys: "h/l", displayOnScreen: true, menuDescription: "focus the next pane" },
   { keys: ["h", "left", "shift+tab"], action: "pane-previous", description: "previous pane", menuDescription: "focus the previous pane" },
-  { keys: ["+"], action: "screen-mode-next", description: "zoom in", menuDescription: "enlarge the focused region" },
+  // Declared as an object, not the string "+": keymap.ts's parseKeyStroke splits
+  // a string on "+" as the modifier delimiter, so "+" parses to an empty name.
+  { keys: [{ name: "+" }], action: "screen-mode-next", description: "zoom in", menuDescription: "enlarge the focused region" },
   { keys: ["_"], action: "screen-mode-previous", description: "zoom out", menuDescription: "shrink the focused region" },
   { keys: ["?"], action: "keybinding-menu", description: "help", displayOnScreen: true, menuDescription: "show all keybindings" },
 
