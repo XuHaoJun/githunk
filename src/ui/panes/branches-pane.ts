@@ -1,11 +1,16 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
+import { filterItems } from "../../app/filter"
 import { createPane, type PaneHandle } from "./common"
 
 export type BranchPaneItem =
   | { readonly kind: "local"; readonly name: string }
   | { readonly kind: "remote"; readonly name: string }
+
   | { readonly kind: "remote-branch"; readonly remote: string; readonly name: string; readonly ref: string }
+export function branchItemId(item: BranchPaneItem): string {
+  return item.kind === "remote-branch" ? `${item.kind}:${item.remote}:${item.name}` : `${item.kind}:${item.name}`
+}
 
 export function branchPaneItems(model: AppModel, filter = ""): readonly BranchPaneItem[] {
   const listing = model.branches
@@ -17,8 +22,7 @@ export function branchPaneItems(model: AppModel, filter = ""): readonly BranchPa
       ...(remote.branches ?? []).map((branch) => ({ kind: "remote-branch" as const, remote: remote.name, name: branch.name, ref: branch.ref })),
     ]),
   ]
-  const query = filter.trim().toLowerCase()
-  return query.length === 0 ? all : all.filter((item) => item.name.toLowerCase().includes(query))
+  return filterItems(filter, all, (item) => item.name)
 }
 
 export function selectedBranchItem(model: AppModel, index: number, filter = ""): BranchPaneItem | undefined {

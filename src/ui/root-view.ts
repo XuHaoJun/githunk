@@ -12,7 +12,8 @@ import {
   type LayoutGeometry,
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
-import { createBranchesPane, moveBranchesCursor, selectedBranchItem, updateBranchesPane } from "./panes/branches-pane"
+import { indexForStableId } from "../app/filter"
+import { createBranchesPane, branchItemId, branchPaneItems, moveBranchesCursor, selectedBranchItem, updateBranchesPane } from "./panes/branches-pane"
 import { createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, filesPaneCommitAvailable, updateFilesPane } from "./panes/files-pane"
@@ -28,6 +29,8 @@ import { branchDeleteConfirmation, remoteTrackingMismatchConfirmation } from "./
 import { COPY_MENU_ITEMS } from "./copy-menu"
 import type { CheckoutRemoteTrackingResult, RemoteBranchSelection } from "../git/branches"
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
+import { FilterInput } from "./filter-input"
+import { CORE_KEYMAP, Keymap, normalizeKey } from "./keymap"
 export type RootViewOptions = {
   readonly leftWidth?: number
   readonly logHeight?: number
@@ -68,6 +71,7 @@ export type RootViewOptions = {
   readonly onInspectBranch?: (branch: string) => Promise<void>
   readonly onCheckoutRemoteTracking?: (selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>
   readonly onFilterBranches?: () => Promise<void>
+  readonly onQuit?: () => void
 }
 
 function stackedHeights(total: number, count: number): number[] {
@@ -141,6 +145,9 @@ export class RootView {
   private branchFilter = ""
   private branchFilterActive = false
   private branchCursorIndex = 0
+  private readonly keymap = new Keymap(CORE_KEYMAP)
+  private readonly onQuit: (() => void) | undefined
+  private readonly filterInput = new FilterInput()
   private readonly handleResize: () => void
   private readonly handleKey: (key: KeyEvent) => void
   private destroyed = false
@@ -152,6 +159,7 @@ export class RootView {
     }
     this.clipboard = new ClipboardService(clipboardPort)
     this.onModeChange = options.onModeChange
+    this.onQuit = options.onQuit
     this.onChooseBase = options.onChooseBase
     this.onStageFile = options.onStageFile
     this.onUnstageFile = options.onUnstageFile
@@ -241,6 +249,7 @@ export class RootView {
       this.panes.stash.box.bottomTitle = undefined
       this.panes.branches.box.bottomTitle = undefined
       this.branchFilterActive = false
+      this.filterInput.close()
       this.applyFocus(focus)
       this.geometry = computeLayout(
         { width: renderer.terminalWidth, height: renderer.terminalHeight },
@@ -264,17 +273,41 @@ export class RootView {
       this.applyLayout()
     }
     this.handleKey = (key: KeyEvent) => {
-      if (this.handleMutationKey(key)) {
+      const normalized = normalizeKey(key)
+      const routedKey = {
+        ...key,
+        name: normalized.name,
+        ctrl: normalized.ctrl,
+        shift: normalized.shift,
+        meta: normalized.meta,
+        option: normalized.option,
+      } as KeyEvent
+      const modal = this.modalInputActive()
+      const action = this.keymap.dispatch(routedKey, { context: this.focusManager.active, modal })
+      if (action === "quit") {
+        this.onQuit?.()
         key.preventDefault()
         key.stopPropagation()
         return
       }
-      if (this.handleCopyKey(key)) {
+      if (modal) {
+        this.handleModalKey(routedKey)
         key.preventDefault()
         key.stopPropagation()
         return
       }
-      if (this.focusManager.handleKey(key.name)) {
+      if (this.handleFilterKey(routedKey) || this.handleMutationKey(routedKey) || this.handleCopyKey(routedKey)) {
+        key.preventDefault()
+        key.stopPropagation()
+        return
+      }
+      if (action?.startsWith("focus:")) {
+        this.focusManager.handleKey(action.slice("focus:".length))
+        key.preventDefault()
+        key.stopPropagation()
+        return
+      }
+      if (this.focusManager.handleKey(routedKey.name)) {
         key.preventDefault()
         key.stopPropagation()
       }
@@ -293,6 +326,8 @@ export class RootView {
       this.panes.branches.box.bottomTitle = undefined
       this.branchFilterActive = false
       this.branchFilter = ""
+      this.filterInput.clear()
+      this.filterInput.close()
     }
     this.model = model
     if (this.pendingStashDrop !== undefined && !(model.stashes ?? []).some((stash) => stash.oid === this.pendingStashDrop?.oid)) {
@@ -308,7 +343,8 @@ export class RootView {
     }
     updateStatusPane(this.panes.status, model)
     updateFilesPane(this.panes.files, model)
-    this.branchCursorIndex = Math.min(this.branchCursorIndex, Math.max(0, model.branches === undefined ? 0 : model.branches.localBranches.length + model.branches.remotes.reduce((count, remote) => count + 1 + (remote.branches?.length ?? 0), 0) - 1))
+    const branchCount = branchPaneItems(model, this.branchFilter).length
+    this.branchCursorIndex = Math.min(this.branchCursorIndex, Math.max(0, branchCount - 1))
     updateBranchesPane(this.panes.branches, model, this.branchCursorIndex, this.branchFilter)
     const focusedIndex = model.focusId === undefined ? -1 : model.files.findIndex((file) => file.path === model.focusId)
     this.fileCursorIndex = focusedIndex >= 0
@@ -319,6 +355,59 @@ export class RootView {
     updateMainPane(this.panes.main, model, this.geometry.tooSmall)
     this.commandLog.update(model.commandLog)
     this.root.requestRender()
+  }
+  private modalInputActive(): boolean {
+    return this.branchFilterActive || this.commitDialog !== undefined || this.copyMenuOpen ||
+      this.model.upstreamChoice !== undefined || this.model.basePicker !== undefined ||
+      this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined ||
+      this.pendingStashDrop !== undefined || this.pendingFileDiscard !== undefined || this.discardPending
+  }
+
+  private handleModalKey(key: KeyEvent): void {
+    if (this.branchFilterActive) {
+      this.handleFilterKey(key)
+      return
+    }
+    if (this.commitDialog !== undefined) {
+      this.handleMutationKey(key)
+      return
+    }
+    if (this.copyMenuOpen) {
+      this.handleCopyKey(key)
+      return
+    }
+    const navigation = key.name === "j" || key.name === "k" || key.name === "up" || key.name === "down"
+    const numeric = /^[0-9]$/.test(key.name)
+    if (this.model.upstreamChoice !== undefined && (navigation || numeric || key.name === "enter" || key.name === "escape")) {
+      this.handleMutationKey(key)
+      return
+    }
+    if (this.model.basePicker !== undefined && (navigation || numeric || key.name === "enter" || key.name === "escape")) {
+      this.handleMutationKey(key)
+      return
+    }
+    if (key.name === "d" || key.name === "enter" || key.name === "escape") this.handleMutationKey(key)
+  }
+
+  private handleFilterKey(key: KeyEvent): boolean {
+    if (!this.branchFilterActive) return false
+    const previous = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+    const previousId = previous === undefined ? undefined : branchItemId(previous)
+    const result = this.filterInput.handleKey(key)
+    if (result.cancelled) {
+      this.pendingBranchDelete = undefined
+      this.invalidateRemoteCheckout()
+      this.panes.branches.box.bottomTitle = undefined
+      this.branchFilter = ""
+      this.filterInput.clear()
+    } else {
+      this.branchFilter = this.filterInput.state.query
+    }
+    this.branchFilterActive = this.filterInput.state.active
+    const filtered = branchPaneItems(this.model, this.branchFilter)
+    this.branchCursorIndex = indexForStableId(filtered, previousId, branchItemId, this.branchCursorIndex)
+    updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
+    return result.consumed
   }
   private handleCopyKey(key: KeyEvent): boolean {
     if (this.focusManager.active !== "main") return false
@@ -535,8 +624,8 @@ export class RootView {
         this.runUiMutation(this.onCreateBranch(selected?.kind === "local" ? selected.name : undefined))
         return true
       }
-      if ((key.name === "d" || key.name === "D") && selected?.kind === "local" && this.onDeleteBranch !== undefined) {
-        const force = key.name === "D"
+      if (key.name === "d" && selected?.kind === "local" && this.onDeleteBranch !== undefined) {
+        const force = key.shift === true
         const pending = this.pendingBranchDelete
         if (pending?.branch === selected.name && pending.force === force) {
           this.pendingBranchDelete = undefined
@@ -553,6 +642,8 @@ export class RootView {
         this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
         this.branchFilterActive = false
+        this.filterInput.clear()
+        this.filterInput.close()
         this.branchFilter = ""
         updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
         return true
@@ -593,11 +684,15 @@ export class RootView {
         return true
       }
       if (key.name === "/") {
+        this.pendingBranchDelete = undefined
         this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
+        const selectedBeforeFilter = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+        const selectedId = selectedBeforeFilter === undefined ? undefined : branchItemId(selectedBeforeFilter)
+        this.filterInput.open()
         this.branchFilterActive = true
         this.branchFilter = ""
-        this.branchCursorIndex = 0
+        this.branchCursorIndex = indexForStableId(branchPaneItems(this.model), selectedId, branchItemId, this.branchCursorIndex)
         updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
         return true
       }
@@ -1058,10 +1153,17 @@ export class RootView {
         event.stopPropagation()
         this.focusManager.focus(pane.id)
       }
+      pane.box.onMouseScroll = (event: MouseEvent) => {
+        event.stopPropagation()
+      }
     }
     this.commandLog.box.onMouseDown = (event: MouseEvent) => {
       event.stopPropagation()
       this.focusManager.focus("command-log")
+    }
+    this.commandLog.box.onMouseScroll = (event: MouseEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
     }
   }
 
@@ -1096,7 +1198,6 @@ export class RootView {
     this.verticalSplitter.width = Math.max(1, geometry.verticalSplitterWidth)
     this.verticalSplitter.height = Math.max(1, geometry.terminalHeight)
     this.verticalSplitter.visible = geometry.verticalSplitterWidth > 0
-
     this.horizontalSplitter.left = geometry.rightX
     this.horizontalSplitter.top = geometry.horizontalSplitterY
     this.horizontalSplitter.width = Math.max(1, geometry.mainWidth)
@@ -1108,6 +1209,7 @@ export class RootView {
     this.commandLog.box.width = Math.max(1, geometry.mainWidth)
     this.commandLog.box.height = Math.max(1, geometry.logHeight)
     this.commandLog.box.visible = geometry.logVisible && geometry.logHeight > 0 && geometry.mainWidth > 0
+    this.commandLog.update(this.model.commandLog)
     updateMainPane(this.panes.main, this.model, geometry.tooSmall)
     this.root.requestRender()
   }

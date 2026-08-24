@@ -139,6 +139,7 @@ export async function startApp(): Promise<number> {
       }
     },
     onFilterBranches: async () => undefined,
+    onQuit: () => renderer.destroy(),
   })
   renderer.once("destroy", () => view.destroy())
 
