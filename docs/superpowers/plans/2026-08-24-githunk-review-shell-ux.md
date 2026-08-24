@@ -769,7 +769,8 @@ describe("computeLayout side region", () => {
     const layout = computeLayout({ width: 200, height: 40 })
     expect(layout.sidePanelRatio).toBe(DEFAULT_SIDE_PANEL_RATIO)
     expect(layout.sideWidth).toBe(Math.round(200 * DEFAULT_SIDE_PANEL_RATIO))
-    expect(widthOf(layout.windows.side ?? layout.windows.files)).toBe(layout.sideWidth)
+    // Each side pane spans the full side width, so any of them measures it.
+    expect(widthOf(layout.windows.files)).toBe(layout.sideWidth)
   })
 
   test("honours an explicit ratio", () => {
