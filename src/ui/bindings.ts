@@ -179,38 +179,58 @@ export class BindingRegistry {
     return this.resolve(key, options)?.action
   }
 
-  /** Context bindings first, then global bindings whose keys the context has not overridden, each paired with its group. */
-  private groupedFor(context: BindingContext): readonly { readonly binding: Binding; readonly group: "context" | "global" }[] {
+  /**
+   * The single precedence-and-availability rule shared by `hintsFor` and `menuFor`, so the two
+   * display surfaces can never disagree with each other (or with `resolve`) about which binding
+   * governs a key. Candidates are ordered as the context's own bindings (declaration order),
+   * then the global bindings (declaration order) — the same priority `resolve` applies. A
+   * candidate is `enabled` per its own `available` predicate, and `superseded` when an earlier,
+   * `enabled` candidate in that order already claims one of its keys — mirroring the fall-through
+   * in `resolve`, where an unavailable binding is skipped rather than shadowing the next one.
+   */
+  private candidatesFor(
+    context: BindingContext,
+    model: AppModel,
+    ui: UiState,
+  ): readonly { readonly binding: Binding; readonly group: "context" | "global"; readonly enabled: boolean; readonly superseded: boolean }[] {
     const contextBindings = this.bindings.filter((binding) => (binding.contexts ?? []).includes(context))
-    const shadowed = new Set(contextBindings.flatMap((binding) => binding.keys.map((key) => strokeId(normalizeKey(key)))))
-    const globalBindings = this.bindings.filter((binding) =>
-      binding.contexts === undefined &&
-      !binding.keys.some((key) => shadowed.has(strokeId(normalizeKey(key)))),
-    )
-    return [
+    const globalBindings = this.bindings.filter((binding) => binding.contexts === undefined)
+    const ordered = [
       ...contextBindings.map((binding) => ({ binding, group: "context" as const })),
       ...globalBindings.map((binding) => ({ binding, group: "global" as const })),
     ]
+
+    const claimedByEnabled = new Set<string>()
+    return ordered.map(({ binding, group }) => {
+      const keys = binding.keys.map((key) => strokeId(normalizeKey(key)))
+      const superseded = keys.some((key) => claimedByEnabled.has(key))
+      const enabled = isAvailable(binding, model, ui)
+      if (enabled) for (const key of keys) claimedByEnabled.add(key)
+      return { binding, group, enabled, superseded }
+    })
   }
 
-  private orderedFor(context: BindingContext): readonly Binding[] {
-    return this.groupedFor(context).map((entry) => entry.binding)
+  /** The bindings the hints bar renders for a context, in display order, as structured data. */
+  hintRowsFor(context: BindingContext, model: AppModel, ui: UiState): readonly Binding[] {
+    return this.candidatesFor(context, model, ui)
+      .filter(({ binding, enabled, superseded }) => binding.displayOnScreen === true && enabled && !superseded)
+      .map(({ binding }) => binding)
   }
 
   hintsFor(context: BindingContext, model: AppModel, ui: UiState, width: number): string {
-    const entries = this.orderedFor(context)
-      .filter((binding) => binding.displayOnScreen === true && isAvailable(binding, model, ui))
-      .map((binding) => ({ description: binding.description, key: displayKeyFor(binding) }))
+    const entries = this.hintRowsFor(context, model, ui).map((binding) => ({ description: binding.description, key: displayKeyFor(binding) }))
     return formatHints(entries, width)
   }
 
   menuFor(context: BindingContext, model: AppModel, ui: UiState): readonly MenuEntry[] {
-    return this.groupedFor(context).map(({ binding, group }) => ({
-      group,
-      keys: displayKeyFor(binding),
-      description: binding.menuDescription ?? binding.description,
-      enabled: isAvailable(binding, model, ui),
-    }))
+    return this.candidatesFor(context, model, ui)
+      .filter(({ superseded }) => !superseded)
+      .map(({ binding, group, enabled }) => ({
+        group,
+        keys: displayKeyFor(binding),
+        description: binding.menuDescription ?? binding.description,
+        enabled,
+      }))
   }
 }
 

@@ -7,8 +7,10 @@ import {
   createRegistry,
   formatHints,
   type Binding,
+  type BindingContext,
   type UiState,
 } from "../../src/ui/bindings"
+import { normalizeKey } from "../../src/ui/keymap"
 import type { AppModel } from "../../src/app/model"
 
 function model(overrides: Partial<AppModel> = {}): AppModel {
@@ -379,4 +381,79 @@ describe("GITHUNK_BINDINGS", () => {
       expect(registry.hintsFor("stash", workingTree, unselected, 300)).not.toContain("inspect: enter")
     })
   })
+})
+
+describe("branches pane: f agrees between hints, menu and dispatch", () => {
+  const registry = createRegistry()
+  const workingTree = model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } })
+
+  test("local branch selected: fetch-remote is unavailable, so it supersedes nothing and global fetch shows through", () => {
+    const state = ui({ selectedBranchKind: "local" })
+
+    expect(registry.dispatch({ name: "f" }, { context: "branches", model: workingTree, ui: state })).toBe("fetch")
+
+    const rows = registry.hintRowsFor("branches", workingTree, state)
+    const fRow = rows.find((binding) => binding.keys.includes("f"))
+    expect(fRow?.action).toBe("fetch")
+    expect(registry.hintsFor("branches", workingTree, state, 300)).toContain("fetch: f")
+
+    const entries = registry.menuFor("branches", workingTree, state)
+    const fEntries = entries.filter((entry) => entry.keys === "f")
+    expect(fEntries).toHaveLength(2)
+    expect(fEntries).toContainEqual({ group: "context", keys: "f", description: "fetch", enabled: false })
+    expect(fEntries).toContainEqual({ group: "global", keys: "f", description: "fetch", enabled: true })
+  })
+
+  test("remote branch selected: fetch-remote is available, so it supersedes global fetch in both surfaces", () => {
+    const state = ui({ selectedBranchKind: "remote" })
+
+    expect(registry.dispatch({ name: "f" }, { context: "branches", model: workingTree, ui: state })).toBe("fetch-remote")
+
+    const rows = registry.hintRowsFor("branches", workingTree, state)
+    const fRows = rows.filter((binding) => binding.keys.includes("f"))
+    expect(fRows).toHaveLength(1)
+    expect(fRows[0]?.action).toBe("fetch-remote")
+
+    const entries = registry.menuFor("branches", workingTree, state)
+    const fEntries = entries.filter((entry) => entry.keys === "f")
+    expect(fEntries).toHaveLength(1)
+    expect(fEntries[0]).toEqual({ group: "context", keys: "f", description: "fetch", enabled: true })
+  })
+})
+
+describe("hints/dispatch agreement invariant", () => {
+  // Pins the property the `f` case above is one instance of: the hints bar must never advertise
+  // a key that `dispatch` would route to a different action. Covers every context, and a set of
+  // representative states spanning every review-target kind, both selectedBranchKind values and
+  // both hasSelectedStash values.
+  const registry = createRegistry()
+  const contexts: readonly BindingContext[] = ["main", "status", "files", "branches", "commits", "stash", "command-log"]
+
+  const targets: readonly { readonly label: string; readonly model: AppModel }[] = [
+    { label: "working-tree", model: model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } }) },
+    { label: "branch", model: model({ reviewTarget: { kind: "branch", baseRef: "origin/main", baseOid: "abc123", headOid: "def456" } }) },
+    { label: "commit", model: model({ reviewTarget: { kind: "commit", oid: "abc123" } }) },
+    { label: "stash", model: model({ reviewTarget: { kind: "stash", ref: "stash@{0}" } }) },
+  ]
+
+  const branchKinds: readonly NonNullable<UiState["selectedBranchKind"]>[] = ["local", "remote"]
+  const stashSelections: readonly boolean[] = [true, false]
+
+  for (const { label, model: stateModel } of targets) {
+    for (const branchKind of branchKinds) {
+      for (const hasSelectedStash of stashSelections) {
+        const state = ui({ selectedBranchKind: branchKind, hasSelectedStash })
+        for (const context of contexts) {
+          test(`hints never advertise a key dispatch routes elsewhere (target=${label}, branchKind=${branchKind}, stash=${hasSelectedStash}, context=${context})`, () => {
+            for (const binding of registry.hintRowsFor(context, stateModel, state)) {
+              const firstKey = binding.keys[0]
+              expect(firstKey).toBeDefined()
+              const stroke = normalizeKey(firstKey!)
+              expect(registry.dispatch(stroke, { context, model: stateModel, ui: state })).toBe(binding.action)
+            }
+          })
+        }
+      }
+    }
+  }
 })
