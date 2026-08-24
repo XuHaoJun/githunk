@@ -41,6 +41,8 @@ export type UiState = {
   readonly modal: boolean
   readonly mainScope: "all" | "staged" | "unstaged" | undefined
   readonly selectedBranchKind: "local" | "remote" | "remote-branch" | undefined
+  /** Whether the stash pane currently has an entry selected. */
+  readonly hasSelectedStash: boolean
 }
 
 export type Binding = {
@@ -223,6 +225,15 @@ const writable = (model: AppModel): boolean => model.reviewTarget.kind === "work
 const lineActions = (model: AppModel, ui: UiState): boolean => writable(model) && ui.mainScope !== "all"
 const inCommit = (model: AppModel): boolean => model.reviewTarget.kind === "commit"
 
+/**
+ * Mirrors lazygit, which gates stash actions only on having a stash selected, and
+ * AppController.ensureStashOperation, which permits them from a working-tree or a
+ * stash review target but refuses a branch or commit one.
+ */
+const stashOperation = (model: AppModel, ui: UiState): boolean =>
+  ui.hasSelectedStash &&
+  (model.reviewTarget.kind === "working-tree" || model.reviewTarget.kind === "stash")
+
 export const GITHUNK_BINDINGS: readonly Binding[] = [
   // ---- focus and layout ----
   { keys: ["0"], action: "focus-main", description: "main pane" },
@@ -315,10 +326,10 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["commits"] },
 
   // ---- stash pane ----
-  { keys: ["space"], action: "stash-apply", description: "apply", contexts: ["stash"], displayOnScreen: true, available: writable },
-  { keys: ["g"], action: "stash-pop", description: "pop", contexts: ["stash"], displayOnScreen: true, available: writable },
-  { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"], displayOnScreen: true, available: writable },
-  { keys: ["enter"], action: "stash-inspect", description: "inspect", contexts: ["stash"], displayOnScreen: true },
+  { keys: ["space"], action: "stash-apply", description: "apply", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
+  { keys: ["g"], action: "stash-pop", description: "pop", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
+  { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
+  { keys: ["enter"], action: "stash-inspect", description: "inspect", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["stash"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["stash"] },
 

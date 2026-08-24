@@ -36,6 +36,7 @@ function ui(overrides: Partial<UiState> = {}): UiState {
     modal: false,
     mainScope: "unstaged",
     selectedBranchKind: undefined,
+    hasSelectedStash: false,
     ...overrides,
   }
 }
@@ -332,5 +333,50 @@ describe("GITHUNK_BINDINGS", () => {
     const hints = registry.hintsFor("main", all, ui({ focus: "main", mainScope: "all" }), 300)
     expect(hints).not.toContain("stage: space")
     expect(hints).toContain("scope: ")
+  })
+
+  describe("stash pane gating", () => {
+    const workingTree = model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } })
+    const stashTarget = model({ reviewTarget: { kind: "stash", ref: "stash@{0}" } })
+    const branchReview = model({ reviewTarget: { kind: "branch", baseRef: "origin/main", baseOid: "abc123", headOid: "def456" } })
+
+    test("offers apply, pop and drop with a stash selected and a working-tree target", () => {
+      const hints = registry.hintsFor("stash", workingTree, ui({ hasSelectedStash: true }), 300)
+      expect(hints).toContain("apply: space")
+      expect(hints).toContain("pop: g")
+      expect(hints).toContain("drop: d")
+    })
+
+    test("still offers apply, pop and drop with a stash selected while reviewing that stash", () => {
+      const hints = registry.hintsFor("stash", stashTarget, ui({ hasSelectedStash: true }), 300)
+      expect(hints).toContain("apply: space")
+      expect(hints).toContain("pop: g")
+      expect(hints).toContain("drop: d")
+    })
+
+    test("withholds apply, pop and drop with a stash selected but a branch review target", () => {
+      const hints = registry.hintsFor("stash", branchReview, ui({ hasSelectedStash: true }), 300)
+      expect(hints).not.toContain("apply: space")
+      expect(hints).not.toContain("pop: g")
+      expect(hints).not.toContain("drop: d")
+    })
+
+    test("withholds apply, pop and drop when no stash is selected, regardless of review target", () => {
+      for (const target of [workingTree, stashTarget, branchReview]) {
+        const hints = registry.hintsFor("stash", target, ui({ hasSelectedStash: false }), 300)
+        expect(hints).not.toContain("apply: space")
+        expect(hints).not.toContain("pop: g")
+        expect(hints).not.toContain("drop: d")
+      }
+    })
+
+    test("gates stash-inspect the same way as apply, pop and drop", () => {
+      const selected = ui({ hasSelectedStash: true })
+      const unselected = ui({ hasSelectedStash: false })
+      expect(registry.hintsFor("stash", workingTree, selected, 300)).toContain("inspect: enter")
+      expect(registry.hintsFor("stash", stashTarget, selected, 300)).toContain("inspect: enter")
+      expect(registry.hintsFor("stash", branchReview, selected, 300)).not.toContain("inspect: enter")
+      expect(registry.hintsFor("stash", workingTree, unselected, 300)).not.toContain("inspect: enter")
+    })
   })
 })
