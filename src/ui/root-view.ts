@@ -128,7 +128,9 @@ export class RootView {
     this.onScopeChange = options.onScopeChange
     this.onApplySelection = options.onApplySelection
     this.onDiscardSelection = options.onDiscardSelection
+    this.onSelectFile = options.onSelectFile
     this.onRefresh = options.onRefresh
+    this.onFetchRemote = options.onFetchRemote
     this.onSwitchLocalBranch = options.onSwitchLocalBranch
     this.onCreateBranch = options.onCreateBranch
     this.onDeleteBranch = options.onDeleteBranch
@@ -139,9 +141,7 @@ export class RootView {
     this.onFilterBranches = options.onFilterBranches
     this.onSelectCommit = options.onSelectCommit
     this.onSelectCommitFile = options.onSelectCommitFile
-    this.onCommitBack = options.onCommitBack
     this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
-    this.onRefresh = options.onRefresh
     this.renderer = renderer
     this.model = model
     this.geometry = computeLayout(
