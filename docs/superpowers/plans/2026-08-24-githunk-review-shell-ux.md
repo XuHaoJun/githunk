@@ -2223,6 +2223,9 @@ describe("root view dispatch", () => {
     const before = harness.app.controller.state.title
     await harness.pressKey("TAB")
     expect(harness.app.controller.state.title).toBe(before)
+    // TAB moved focus off main, and ] is declared only in the main context,
+    // so re-focus main before checking that ] does change the scope.
+    await harness.pressKey("0")
     await harness.pressKey("]")
     expect(harness.app.controller.state.title).not.toBe(before)
   })
