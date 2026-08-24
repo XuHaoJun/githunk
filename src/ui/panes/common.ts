@@ -7,6 +7,12 @@ export type PaneHandle = {
   readonly text: TextRenderable
   update(content: string | StyledText): void
   setFocused(focused: boolean): void
+  /**
+   * Re-mirrors the text viewport into the pane's scrollbar. Internal plumbing for scroll
+   * paths that mutate `text.scrollY` without a content update (reveal and page scrolls);
+   * OpenTUI 0.5.6 emits no scroll-change event, so every mutation must sync explicitly.
+   */
+  syncScrollbar(): void
 }
 
 /**
@@ -26,11 +32,20 @@ export function scrollYToReveal(
 ): number {
   const viewport = Math.max(1, Math.floor(viewportLines))
   const first = Math.max(0, Math.floor(firstVisibleLine))
+
   const last = Math.max(first, Math.floor(lastVisibleLine))
   const current = Math.max(0, Math.floor(currentScrollY))
   if (first >= current && first <= current + viewport - 1) return current
   if (last >= current && last <= current + viewport - 1) return current
   return Math.max(0, last - viewport + 1)
+}
+
+/** Bars by their pane's text renderable; `paneScrollbar` is the test/debug read side. */
+const scrollbars = new WeakMap<TextRenderable, ScrollBarRenderable>()
+
+/** The vertical scrollbar attached to a pane's text, if any. Test and debug accessor. */
+export function paneScrollbar(text: TextRenderable): ScrollBarRenderable | undefined {
+  return scrollbars.get(text)
 }
 
 /**
@@ -57,6 +72,19 @@ export function attachVerticalScrollbar(box: BoxRenderable, text: TextRenderable
   const sync = (): void => syncVerticalScrollbar(bar, text)
   box.onSizeChange = sync
   text.onSizeChange = sync
+  // The bar is a passive indicator: panes are scrolled with the keyboard. Clearing the
+  // slider's built-in pointer handlers (installed unconditionally by ScrollBarRenderable)
+  // keeps two honest properties: clicks in the bar column still reach the pane box, so
+  // click-to-focus works across the whole pane, and no thumb can be dragged into a
+  // position nothing would follow. The arrows are already invisible; their handlers go too.
+  bar.slider.onMouseDown = undefined
+  bar.slider.onMouseDrag = undefined
+  bar.slider.onMouseUp = undefined
+  bar.startArrow.onMouseDown = undefined
+  bar.startArrow.onMouseUp = undefined
+  bar.endArrow.onMouseDown = undefined
+  bar.endArrow.onMouseUp = undefined
+  scrollbars.set(text, bar)
   box.add(bar)
   return bar
 }
@@ -110,6 +138,9 @@ export function createPane(
       box.borderColor = focused ? "#ffffff" : "#555555"
       box.titleColor = focused ? "#ffffff" : "#aaaaaa"
       box.requestRender()
+    },
+    syncScrollbar() {
+      syncVerticalScrollbar(bar, text)
     },
   }
 }

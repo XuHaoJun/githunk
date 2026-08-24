@@ -417,6 +417,11 @@ export class RootView {
   /** The commits pane's list cursor index. */
   get commitsCursorIndex(): number { return readCommitsCursorIndex(this.panes.commits) }
   get mainPane(): PaneHandle { return this.panes.main }
+  /** A pane handle by focus id (test/debug access to otherwise private pane state). */
+  paneFor(id: (typeof FOCUS_IDS)[number]): PaneHandle {
+    return this.panes[id]
+  }
+
 
   private uiState(): UiState {
     const target = this.model.reviewTarget
@@ -727,6 +732,9 @@ export class RootView {
   private revealListRow(name: SideWindow | "main", pane: PaneHandle, line: number): void {
     const visibleLines = Math.max(1, heightOf(this.geometry.windows[name]) - 2)
     pane.text.scrollY = scrollYToReveal(line, line, visibleLines, pane.text.scrollY)
+    // No scroll-change event exists in OpenTUI 0.5.6: without this the thumb freezes
+    // whenever a reveal mutates scrollY without a content update.
+    pane.syncScrollbar()
   }
 
   /** Half the main pane's visible rows, at least one. */

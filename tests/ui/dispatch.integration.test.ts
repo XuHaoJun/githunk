@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import { getMainCursorTarget } from "../../src/ui/panes/main-pane"
+import { paneScrollbar } from "../../src/ui/panes/common"
 import { branchPaneItems } from "../../src/ui/panes/branches-pane"
 import { createTempRepository } from "../helpers/temp-repository"
 
@@ -416,6 +417,7 @@ describe("screen modes and layout", () => {
     expect(harness.app.view!.geometry.sideWidth).toBe(Math.round(200 * 0.3333))
   })
 
+
   test("plus and underscore move through the screen modes", async () => {
     harness = await createShellHarness()
     const view = harness.app.view!
@@ -725,5 +727,56 @@ describe("overflow scrollbars and keyboard auto-scroll", () => {
     // A tall diff scrolled near its end: the revealed hunk header sits at the viewport bottom.
     expect(pane.text.scrollY).toBeGreaterThan(0)
     expect(harness.frame()).toContain("@@ -0,0 +1 @@")
+  })
+
+  test("the scrollbar thumb tracks hunk moves in the main pane", async () => {
+    harness = await createShellHarness({ height: 24 })
+    await harness.repository.write("big.txt", `${Array.from({ length: 120 }, (_v, i) => `line ${i}`).join("\n")}\n`)
+    const stage = Bun.spawn(["git", "add", "big.txt"], { cwd: harness.repository.path })
+    await stage.exited
+    await harness.app.refresh()
+
+    await harness.pressKey("0")
+    for (let moved = 0; moved < 8; moved += 1) await harness.pressKey("j")
+
+    // Hunk moves reveal without a content update, so the thumb only follows if every
+    // scrollY mutation re-syncs the bar.
+    const main = harness.app.view!.mainPane
+    const bar = paneScrollbar(main.text)!
+    expect(bar.visible).toBe(true)
+    expect(bar.scrollPosition).toBe(main.text.scrollY)
+    expect(bar.scrollPosition).toBeGreaterThan(0)
+  })
+
+  test("the scrollbar thumb tracks half-page scrolls in the main pane", async () => {
+    harness = await createShellHarness({ height: 24 })
+    await harness.repository.write("big.txt", `${Array.from({ length: 120 }, (_v, i) => `line ${i}`).join("\n")}\n`)
+    const stage = Bun.spawn(["git", "add", "big.txt"], { cwd: harness.repository.path })
+    await stage.exited
+    await harness.app.refresh()
+
+    await harness.pressKey("0")
+    await harness.pressKey("d", { ctrl: true })
+    await harness.pressKey("d", { ctrl: true })
+
+    const main = harness.app.view!.mainPane
+    const bar = paneScrollbar(main.text)!
+    expect(main.text.scrollY).toBeGreaterThan(0)
+    expect(bar.scrollPosition).toBe(main.text.scrollY)
+  })
+
+  test("the scrollbar thumb tracks list cursor moves in the commits pane", async () => {
+    const subjects = Array.from({ length: 60 }, (_v, i) => `commit number ${String(i).padStart(2, "0")}`)
+    harness = await createShellHarness({ commits: subjects, height: 40 })
+
+    await harness.pressKey("4")
+    for (let moved = 0; moved < 45; moved += 1) await harness.pressKey("j")
+
+    const view = harness.app.view!
+    const pane = view.paneFor("commits")
+    const bar = paneScrollbar(pane.text)!
+    expect(bar.visible).toBe(true)
+    expect(bar.scrollPosition).toBe(pane.text.scrollY)
+    expect(bar.scrollPosition).toBeGreaterThan(0)
   })
 })

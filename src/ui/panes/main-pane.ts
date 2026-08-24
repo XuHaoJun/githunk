@@ -166,6 +166,9 @@ export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: bool
 export function scrollMainPane(pane: PaneHandle, axis: "x" | "y", delta: number): void {
   if (axis === "y") {
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY + delta))
+    // OpenTUI 0.5.6 emits no scroll-change event, so the thumb must be re-synced after
+    // every scroll mutation or it freezes at the last content update.
+    pane.syncScrollbar()
     return
   }
   pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX + delta))
