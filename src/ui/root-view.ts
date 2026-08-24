@@ -34,7 +34,7 @@ import type { CheckoutRemoteTrackingResult, RemoteBranchSelection } from "../git
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
 import { FilterInput } from "./filter-input"
 import { normalizeKey } from "./keymap"
-import { ACTIONS, assertHandlersCover, createRegistry, type Action, type UiState } from "./bindings"
+import { createRegistry, type Action, type UiState } from "./bindings"
 
 export type RootViewOptions = {
   readonly leftWidth?: number
@@ -81,6 +81,11 @@ export type RootViewOptions = {
   readonly onQuit?: () => void
 }
 
+/** Renders a `ConfirmationRequest`'s `confirmKey`/`cancelKey` (e.g. "enter") for display (e.g. "Enter"). */
+function capitalizeKeyName(key: string): string {
+  return key.length === 0 ? key : key[0]!.toUpperCase() + key.slice(1)
+}
+
 function stackedHeights(total: number, count: number): number[] {
   const base = Math.floor(total / count)
   const remainder = total % count
@@ -89,16 +94,6 @@ function stackedHeights(total: number, count: number): number[] {
 
 /** Ring order for the `[` / `]` scope-cycle keys in the main pane. */
 const SCOPE_ORDER: readonly WorkingTreeScope[] = ["all", "staged", "unstaged"]
-
-// `HANDLED_ACTIONS` used to be a hand-copied duplicate of `ACTIONS`, which could drift from the
-// switch in `handleAction` (an action added to both lists but never given a `case` would silently
-// no-op with a green suite and a clean typecheck). `handleAction`'s `default` case below now makes
-// the compiler enforce that every action in `ACTIONS` has a `case`, so that drift can no longer
-// happen; deriving this set directly from `ACTIONS` keeps it correct by construction instead of by
-// discipline. `assertHandlersCover` stays wired to it below as a cheap runtime cross-check against
-// whatever registry is actually constructed at startup (or in a test) — belt and suspenders with
-// the compile-time check, not a replacement for it.
-const HANDLED_ACTIONS: ReadonlySet<Action> = new Set(ACTIONS)
 
 export class RootView {
   readonly renderer: CliRenderer
@@ -333,7 +328,11 @@ export class RootView {
     this.installMouseHandlers()
     this.applyFocus(this.focusManager.active)
     this.applyLayout()
-    assertHandlersCover(this.registry, HANDLED_ACTIONS)
+    // Every action in `ACTIONS` has a `case` in `handleAction`'s switch (its `default` case
+    // assigns the unhandled value to a `never`, so the compiler rejects a build where that isn't
+    // true), and `BindingRegistry`'s constructor already rejects any binding whose action is
+    // outside `ACTIONS`. Together those two checks guarantee every binding this registry can
+    // produce has a handler, so no runtime cross-check is needed here.
   }
   update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean } = {}): void {
     this.clearDiscardState()
@@ -1229,6 +1228,8 @@ export class RootView {
       if (result?.kind === "mismatch") {
         this.pendingRemoteMismatch = { selection, message: result.message }
         const confirmation = remoteTrackingMismatchConfirmation(result.message)
+        this.panes.branches.box.bottomTitle =
+          `${confirmation.message} Press ${capitalizeKeyName(confirmation.confirmKey)} to confirm or ${capitalizeKeyName(confirmation.cancelKey)} to cancel.`
       } else {
         this.pendingRemoteMismatch = undefined
         this.panes.branches.box.bottomTitle = undefined

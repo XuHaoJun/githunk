@@ -156,6 +156,50 @@ describe("root view dispatch", () => {
     }
   })
 
+  test("a remote-tracking mismatch shows a confirmation prompt on the branches pane", async () => {
+    // Regression for the mismatch branch of runRemoteCheckout leaving pendingRemoteMismatch set
+    // (which makes modalInputActive() swallow every key but escape/d/enter) with no bottomTitle
+    // ever set on the branches pane — a modal lockout with nothing on screen explaining it. Wide
+    // enough that the branches pane has room to show the message without truncating it away.
+    harness = await createShellHarness({ width: 600 })
+    const bare = await createTempRepository()
+    try {
+      await bare.git(["config", "core.bare", "true"])
+      await harness.repository.git(["remote", "add", "origin", bare.path])
+      await harness.repository.git(["push", "origin", "HEAD:refs/heads/feature"])
+      // Same setup as the exploit test above: a local branch of the same name that does NOT
+      // track origin/feature, which is exactly what makes checkoutRemoteTracking report a
+      // "mismatch" instead of switching cleanly.
+      await harness.repository.git(["branch", "feature"])
+      await harness.repository.git(["fetch", "origin"])
+      await harness.app.refresh()
+
+      await harness.app.controller.browseRemote("origin")
+      harness.app.view!.update(harness.app.controller.state)
+
+      await harness.pressKey("3") // focus branches
+      const items = branchPaneItems(harness.app.controller.state)
+      const targetIndex = items.findIndex((item) => item.kind === "remote-branch" && item.remote === "origin" && item.name === "feature")
+      expect(targetIndex).toBeGreaterThanOrEqual(0)
+      for (let i = 0; i < targetIndex; i++) await harness.pressKey("j")
+
+      // Starts the remote-tracking checkout; it reports a mismatch and leaves a pending
+      // confirmation modal open.
+      await harness.pressKey(" ")
+      await harness.settle()
+
+      const frame = harness.frame()
+      expect(frame).toContain("local branch feature has no upstream")
+      expect(frame).toContain("Press Enter to confirm or Escape to cancel.")
+
+      // Escape cancels the pending confirmation and clears the prompt from the pane.
+      await harness.pressKey("ESCAPE")
+      expect(harness.frame()).not.toContain("Press Enter to confirm or Escape to cancel.")
+    } finally {
+      await bare.cleanup()
+    }
+  })
+
   test("file discard requires two presses; the first does not mutate", async () => {
     harness = await createShellHarness()
     const path = `${harness.repository.path}/b.txt`
@@ -191,6 +235,70 @@ describe("root view dispatch", () => {
     expect(listing.stdout).not.toContain("throwaway")
   })
 
+  test("Shift+D force-deletes a branch, requiring two matching presses", async () => {
+    harness = await createShellHarness()
+    await harness.repository.git(["branch", "throwaway"])
+    await harness.app.refresh()
+
+    await harness.pressKey("3") // focus branches
+    const items = branchPaneItems(harness.app.controller.state)
+    const targetIndex = items.findIndex((item) => item.kind === "local" && item.name === "throwaway")
+    expect(targetIndex).toBeGreaterThanOrEqual(0)
+    for (let i = 0; i < targetIndex; i++) await harness.pressKey("j")
+
+    await harness.pressKey("D", { shift: true }) // first press: arms the force-delete confirmation only
+    let listing = await harness.repository.git(["branch", "--list", "throwaway"])
+    expect(listing.stdout).toContain("throwaway")
+
+    await harness.pressKey("D", { shift: true }) // second press: confirms
+    await harness.settle()
+    listing = await harness.repository.git(["branch", "--list", "throwaway"])
+    expect(listing.stdout).not.toContain("throwaway")
+  })
+
+  test("a d press followed by a Shift+D press does not complete a branch deletion", async () => {
+    // The important regression case: the two-press confirmation must require the *same* force
+    // flag on both presses. Before Shift+D had a binding, this scenario couldn't even be
+    // exercised through real keys; now that it can, `d` then `D` must re-arm (with the new force
+    // flag, per the existing mismatch-rearms-instead-of-deleting behaviour) rather than delete.
+    harness = await createShellHarness()
+    await harness.repository.git(["branch", "throwaway"])
+    await harness.app.refresh()
+
+    await harness.pressKey("3") // focus branches
+    const items = branchPaneItems(harness.app.controller.state)
+    const targetIndex = items.findIndex((item) => item.kind === "local" && item.name === "throwaway")
+    expect(targetIndex).toBeGreaterThanOrEqual(0)
+    for (let i = 0; i < targetIndex; i++) await harness.pressKey("j")
+
+    await harness.pressKey("d") // arms a non-force delete confirmation
+    await harness.pressKey("D", { shift: true }) // mismatched force flag: must not complete
+    await harness.settle()
+    const listing = await harness.repository.git(["branch", "--list", "throwaway"])
+    expect(listing.stdout).toContain("throwaway")
+  })
+
+  test("a Shift+D press followed by a d press does not complete a branch deletion", async () => {
+    // The reverse order of the case above, exercised independently (rather than chained onto it)
+    // so the second press's re-arming doesn't leave a matching pending state for a third press to
+    // walk into.
+    harness = await createShellHarness()
+    await harness.repository.git(["branch", "throwaway"])
+    await harness.app.refresh()
+
+    await harness.pressKey("3") // focus branches
+    const items = branchPaneItems(harness.app.controller.state)
+    const targetIndex = items.findIndex((item) => item.kind === "local" && item.name === "throwaway")
+    expect(targetIndex).toBeGreaterThanOrEqual(0)
+    for (let i = 0; i < targetIndex; i++) await harness.pressKey("j")
+
+    await harness.pressKey("D", { shift: true }) // arms a force-delete confirmation
+    await harness.pressKey("d") // mismatched force flag: must not complete
+    await harness.settle()
+    const listing = await harness.repository.git(["branch", "--list", "throwaway"])
+    expect(listing.stdout).toContain("throwaway")
+  })
+
   test("stash drop requires two presses; the first does not mutate", async () => {
     harness = await createShellHarness({ stash: true })
     await harness.pressKey("5") // focus stash
@@ -214,8 +322,11 @@ describe("root view dispatch", () => {
 
     await harness.pressKey("2") // focus files; b.txt is the only (untracked) entry
     await harness.pressKey("d") // arm the confirmation
-    await harness.pressKey("ESCAPE") // cancel it — files has no commit-back available, so this
-    // falls through from the (unavailable) context binding to the global "back" binding.
+    // Cancel it. With pendingFileDiscard set, modalInputActive() is true, so this escape never
+    // reaches the registry at all — handleModalKey's unconditional `key.name === "escape"` branch
+    // calls actionBack() directly, bypassing dispatch/resolve (and their availability predicates)
+    // entirely.
+    await harness.pressKey("ESCAPE")
 
     // If escape had not cancelled the pending discard, this single press would be the
     // *confirming* second press and would delete the file immediately.
@@ -228,6 +339,14 @@ describe("root view dispatch", () => {
   })
 
   test("ctrl+c quits even while a modal state is active", async () => {
+    // `quitCalled` is set by either of two independent mechanisms (see shell-harness.ts): the
+    // renderer's own `destroy` event (from OpenTUI's `exitOnCtrlC` handling, which fires
+    // regardless of RootView's key routing) and RootView's `onQuit` (reached only via the "quit"
+    // action). Because the harness folds both into one flag, this test cannot distinguish "quit
+    // fired because ctrl+c routed through RootView to the quit action" from "quit fired only
+    // because the renderer's own ctrl+c handling tore it down" — it would pass even against a
+    // RootView that swallowed ctrl+c entirely while a modal was open. It pins the user-visible
+    // property (the process quits) rather than RootView's routing of the key.
     harness = await createShellHarness()
     await harness.pressKey("3") // focus branches
     await harness.pressKey("/") // open the branch filter: a modal input state

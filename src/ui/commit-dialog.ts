@@ -63,6 +63,9 @@ export function commitDialogKey(state: CommitDialogState, key: CommitDialogKey):
 }
 
 const NON_PRINTABLE_KEY_NAMES: Record<string, true> = {
+  // `key.name === "enter"` above already covers the normalized case (see keymap.ts's
+  // return -> enter alias), so this dialog never sees a raw "return" today. Kept here as
+  // defense in depth in case an un-normalized key event ever reaches this function directly.
   tab: true, linefeed: true, left: true, right: true, up: true, down: true, home: true, end: true, insert: true, delete: true,
   pageup: true, pagedown: true, "page-up": true, "page-down": true, escape: true, enter: true, return: true, backspace: true,
   clear: true, shift: true, ctrl: true, alt: true, meta: true, capslock: true, numlock: true, printscreen: true, pause: true, menu: true,
