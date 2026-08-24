@@ -7,8 +7,10 @@ import {
 import type { AppModel } from "../app/model"
 import {
   computeLayout,
+  heightOf,
   resizeCommandLog,
   resizeLeftPane,
+  widthOf,
   type LayoutGeometry,
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
@@ -263,7 +265,7 @@ export class RootView {
       this.geometry = computeLayout(
         { width: renderer.terminalWidth, height: renderer.terminalHeight },
         {
-          leftWidth: this.geometry.leftWidth,
+          sidePanelRatio: this.geometry.sidePanelRatio,
           logHeight: this.geometry.logHeight,
           logVisible,
         },
@@ -274,7 +276,7 @@ export class RootView {
       this.geometry = computeLayout(
         { width: renderer.terminalWidth, height: renderer.terminalHeight },
         {
-          leftWidth: this.geometry.leftWidth,
+          sidePanelRatio: this.geometry.sidePanelRatio,
           logHeight: this.geometry.logHeight,
           logVisible: this.focusManager.logVisible,
         },
@@ -1267,44 +1269,64 @@ export class RootView {
 
   private applyLayout(): void {
     const geometry = this.geometry
-    const leftHeights = stackedHeights(geometry.terminalHeight, FOCUS_IDS.length - 1)
+    const main = geometry.windows.main
+    const log = geometry.windows.log
+    const legacy = {
+      leftX: 0,
+      leftWidth: geometry.sideWidth,
+      leftHeight: geometry.terminalHeight,
+      verticalSplitterX: geometry.sideWidth,
+      verticalSplitterWidth: geometry.windows.vsplit === undefined ? 0 : 1,
+      rightX: main?.x0 ?? 0,
+      mainY: main?.y0 ?? 0,
+      mainWidth: widthOf(main),
+      mainHeight: heightOf(main),
+      horizontalSplitterY: heightOf(main),
+      horizontalSplitterHeight: geometry.windows.hsplit === undefined ? 0 : 1,
+      logY: log?.y0 ?? 0,
+      logHeight: geometry.logHeight,
+      logVisible: geometry.logVisible,
+      terminalHeight: geometry.terminalHeight,
+      tooSmall: geometry.tooSmall,
+    }
+    const leftHeights = stackedHeights(legacy.terminalHeight, FOCUS_IDS.length - 1)
     let top = 0
     for (const id of FOCUS_IDS.slice(1)) {
       const pane = this.panes[id]
       const height = leftHeights[top === 0 ? 0 : FOCUS_IDS.indexOf(id) - 1] ?? 0
-      pane.box.left = geometry.leftX
+      pane.box.left = legacy.leftX
       pane.box.top = top
-      pane.box.width = Math.max(1, geometry.leftWidth)
+      pane.box.width = Math.max(1, legacy.leftWidth)
       pane.box.height = Math.max(1, height)
-      pane.box.visible = geometry.leftWidth > 0 && height > 0
+      pane.box.visible = legacy.leftWidth > 0 && height > 0
       top += height
     }
 
-    const main = this.panes.main.box
-    main.left = geometry.rightX
-    main.top = geometry.mainY
-    main.width = Math.max(1, geometry.mainWidth)
-    main.height = Math.max(1, geometry.mainHeight)
-    main.visible = geometry.mainWidth > 0 && geometry.mainHeight > 0
-    this.verticalSplitter.left = geometry.verticalSplitterX
+    const mainBox = this.panes.main.box
+    mainBox.left = legacy.rightX
+    mainBox.top = legacy.mainY
+    mainBox.width = Math.max(1, legacy.mainWidth)
+    mainBox.height = Math.max(1, legacy.mainHeight)
+    mainBox.visible = legacy.mainWidth > 0 && legacy.mainHeight > 0
+    this.verticalSplitter.left = legacy.verticalSplitterX
     this.verticalSplitter.top = 0
-    this.verticalSplitter.width = Math.max(1, geometry.verticalSplitterWidth)
-    this.verticalSplitter.height = Math.max(1, geometry.terminalHeight)
-    this.verticalSplitter.visible = geometry.verticalSplitterWidth > 0
-    this.horizontalSplitter.left = geometry.rightX
-    this.horizontalSplitter.top = geometry.horizontalSplitterY
-    this.horizontalSplitter.width = Math.max(1, geometry.mainWidth)
-    this.horizontalSplitter.height = Math.max(1, geometry.horizontalSplitterHeight)
-    this.horizontalSplitter.visible = geometry.logVisible && geometry.horizontalSplitterHeight > 0 && geometry.mainWidth > 0
+    this.verticalSplitter.width = Math.max(1, legacy.verticalSplitterWidth)
+    this.verticalSplitter.height = Math.max(1, legacy.terminalHeight)
+    this.verticalSplitter.visible = legacy.verticalSplitterWidth > 0
+    this.horizontalSplitter.left = legacy.rightX
+    this.horizontalSplitter.top = legacy.horizontalSplitterY
+    this.horizontalSplitter.width = Math.max(1, legacy.mainWidth)
+    this.horizontalSplitter.height = Math.max(1, legacy.horizontalSplitterHeight)
+    this.horizontalSplitter.visible = legacy.logVisible && legacy.horizontalSplitterHeight > 0 && legacy.mainWidth > 0
 
-    this.commandLog.box.left = geometry.rightX
-    this.commandLog.box.top = geometry.logY
-    this.commandLog.box.width = Math.max(1, geometry.mainWidth)
-    this.commandLog.box.height = Math.max(1, geometry.logHeight)
-    this.commandLog.box.visible = geometry.logVisible && geometry.logHeight > 0 && geometry.mainWidth > 0
-    this.commandLog.resize(Math.max(1, geometry.mainWidth), Math.max(1, geometry.logHeight))
+    this.commandLog.box.left = legacy.rightX
+    this.commandLog.box.top = legacy.logY
+    this.commandLog.box.width = Math.max(1, legacy.mainWidth)
+    this.commandLog.box.height = Math.max(1, legacy.logHeight)
+    this.commandLog.box.visible = legacy.logVisible && legacy.logHeight > 0 && legacy.mainWidth > 0
+    this.commandLog.resize(Math.max(1, legacy.mainWidth), Math.max(1, legacy.logHeight))
     this.commandLog.update(this.model.commandLog)
-    updateMainPane(this.panes.main, this.model, geometry.tooSmall)
+    updateMainPane(this.panes.main, this.model, legacy.tooSmall)
     this.root.requestRender()
   }
 }
