@@ -45,6 +45,8 @@ import { FilterInput } from "./filter-input"
 import { normalizeKey } from "./keymap"
 import { createHintsBar, reviewStatusText, type HintsBarHandle } from "./hints-bar"
 import { createKeybindingMenu, type KeybindingMenuHandle } from "./keybinding-menu"
+import { createSplitter, type SplitterAxis, type SplitterHandle } from "./splitter"
+import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
 
 
@@ -61,6 +63,7 @@ export type RootViewOptions = {
   readonly sidePanelRatio?: number
   readonly logHeight?: number
   readonly logVisible?: boolean
+  readonly onGeometryChange?: (state: PersistedUiState) => void
   readonly onStageFile?: (path: string) => Promise<void>
   readonly onUnstageFile?: (path: string) => Promise<void>
   readonly onDiscardFile?: (path: string, untracked: boolean) => Promise<void>
@@ -108,6 +111,8 @@ function capitalizeKeyName(key: string): string {
   return key.length === 0 ? key : key[0]!.toUpperCase() + key.slice(1)
 }
 
+const DOUBLE_CLICK_MS = 400
+
 
 /** Ring order for the `[` / `]` scope-cycle keys in the main pane. */
 const SCOPE_ORDER: readonly WorkingTreeScope[] = ["all", "staged", "unstaged"]
@@ -121,13 +126,16 @@ export class RootView {
   screenMode: ScreenMode = "normal"
   sidePanelRatio = DEFAULT_SIDE_PANEL_RATIO
   private logHeight: number
+  private focusBeforeCollapse: FocusId | undefined
+  private lastSplitterPress: { readonly axis: "vertical" | "horizontal"; readonly x: number; readonly y: number; readonly at: number } | undefined
+  private activeSplitterDrag: SplitterAxis | undefined
 
   private model: AppModel
   private readonly panes: Record<Exclude<FocusId, "command-log">, PaneHandle>
   private readonly commandLog: CommandLogPaneHandle
   private readonly clipboard: ClipboardService
-  private readonly verticalSplitter: BoxRenderable
-  private readonly horizontalSplitter: BoxRenderable
+  private readonly verticalSplitter: SplitterHandle
+  private readonly horizontalSplitter: SplitterHandle
   private readonly hintsBar: HintsBarHandle
   private readonly keybindingMenu: KeybindingMenuHandle
   private readonly onStageFile: ((path: string) => Promise<void>) | undefined
@@ -196,6 +204,7 @@ export class RootView {
   private branchCursorIndex = 0
   private readonly registry = createRegistry()
   private readonly onQuit: (() => void) | undefined
+  private readonly onGeometryChange: ((state: PersistedUiState) => void) | undefined
   private readonly filterInput = new FilterInput()
   private readonly handleResize: () => void
   private readonly handleKey: (key: KeyEvent) => void
@@ -211,6 +220,7 @@ export class RootView {
     this.onApplyStash = options.onApplyStash
     this.onModeChange = options.onModeChange
     this.onQuit = options.onQuit
+    this.onGeometryChange = options.onGeometryChange
     this.onChooseBase = options.onChooseBase
     this.onCancelBase = options.onCancelBase
     this.onUnstageFile = options.onUnstageFile
@@ -273,25 +283,12 @@ export class RootView {
       stash: createStashPane(renderer, model),
     }
     this.commandLog = createCommandLogPane(renderer, model.commandLog)
-    this.verticalSplitter = new BoxRenderable(renderer, {
-      id: "vertical-splitter",
-      position: "absolute",
-      width: 1,
-      height: "100%",
-      backgroundColor: "#333333",
-    })
-    this.verticalSplitter.selectable = false
-    this.horizontalSplitter = new BoxRenderable(renderer, {
-      id: "horizontal-splitter",
-      position: "absolute",
-      width: "100%",
-      height: 1,
-      backgroundColor: "#333333",
-    })
+    this.verticalSplitter = createSplitter(renderer, "vertical", "vertical-splitter")
+    this.horizontalSplitter = createSplitter(renderer, "horizontal", "horizontal-splitter")
     for (const id of FOCUS_IDS) this.root.add(this.panes[id].box)
     this.root.add(this.commandLog.box)
-    this.root.add(this.verticalSplitter)
-    this.root.add(this.horizontalSplitter)
+    this.root.add(this.verticalSplitter.box)
+    this.root.add(this.horizontalSplitter.box)
     this.hintsBar = createHintsBar(renderer)
     this.keybindingMenu = createKeybindingMenu(renderer)
     this.root.add(this.hintsBar.hints)
@@ -1504,35 +1501,65 @@ export class RootView {
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
-    this.verticalSplitter.onMouseDown = undefined
-    this.verticalSplitter.onMouseDrag = undefined
-    this.horizontalSplitter.onMouseDown = undefined
-    this.horizontalSplitter.onMouseDrag = undefined
+    this.root.onMouse = undefined
+    this.activeSplitterDrag = undefined
+    this.verticalSplitter.box.onMouseOver = undefined
+    this.verticalSplitter.box.onMouseOut = undefined
+    this.verticalSplitter.box.onMouseDown = undefined
+    this.verticalSplitter.box.onMouseDrag = undefined
+    this.horizontalSplitter.box.onMouseOver = undefined
+    this.horizontalSplitter.box.onMouseOut = undefined
+    this.horizontalSplitter.box.onMouseDown = undefined
+    this.horizontalSplitter.box.onMouseDrag = undefined
     this.renderer.off("resize", this.handleResize)
     this.renderer.keyInput.off("keypress", this.handleKey)
     this.root.destroyRecursively()
   }
 
   private installMouseHandlers(): void {
-    this.verticalSplitter.onMouseDown = (event: MouseEvent) => {
+    // OpenTUI only captures a drag once a drag event's own hit-test lands on a
+    // renderable, which a one-column divider never satisfies after the pointer
+    // leaves the rule. So after a press on a splitter, drags are handled here at
+    // the root: every drag event bubbles up from wherever the pointer currently is.
+    this.root.onMouse = (event: MouseEvent) => {
+      if (event.type === "up") {
+        this.activeSplitterDrag = undefined
+        return
+      }
+      if (event.type !== "drag" || this.activeSplitterDrag === undefined) return
       event.preventDefault()
       event.stopPropagation()
-    }
-    this.verticalSplitter.onMouseDrag = (event: MouseEvent) => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.sidePanelRatio = ratioForMouseX(this.geometry, event.x)
+      // A drag invalidates a first press, so drag-release-drag cannot read as a double click.
+      this.lastSplitterPress = undefined
+      if (this.activeSplitterDrag === "vertical") {
+        this.sidePanelRatio = ratioForMouseX(this.geometry, event.x)
+      } else {
+        this.logHeight = logHeightForMouseY(this.geometry, event.y)
+      }
       this.recomputeLayout()
+      this.notifyGeometry()
     }
-    this.horizontalSplitter.onMouseDown = (event: MouseEvent) => {
-      event.preventDefault()
-      event.stopPropagation()
-    }
-    this.horizontalSplitter.onMouseDrag = (event: MouseEvent) => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.logHeight = logHeightForMouseY(this.geometry, event.y)
-      this.recomputeLayout()
+    for (const [splitter, axis] of [[this.verticalSplitter, "vertical"], [this.horizontalSplitter, "horizontal"]] as const) {
+      splitter.box.onMouseOver = () => splitter.setHovered(true)
+      splitter.box.onMouseOut = () => splitter.setHovered(false)
+      splitter.box.onMouseDown = (event: MouseEvent) => {
+        event.preventDefault()
+        event.stopPropagation()
+        this.activeSplitterDrag = axis
+        const previous = this.lastSplitterPress
+        const now = Date.now()
+        this.lastSplitterPress = { axis, x: event.x, y: event.y, at: now }
+        const isDoubleClick = previous !== undefined &&
+          previous.axis === axis &&
+          now - previous.at <= DOUBLE_CLICK_MS &&
+          Math.abs(previous.x - event.x) <= 1 &&
+          Math.abs(previous.y - event.y) <= 1
+        if (!isDoubleClick) return
+        this.lastSplitterPress = undefined
+        this.activeSplitterDrag = undefined
+        if (axis === "vertical") this.toggleSideCollapsed()
+        else this.toggleCommandLog()
+      }
     }
     for (const pane of Object.values(this.panes)) {
       pane.box.onMouseDown = (event: MouseEvent) => {
@@ -1552,6 +1579,44 @@ export class RootView {
       this.focusManager.focus("command-log")
     }
   }
+  applyPersistedGeometry(state: PersistedUiState): void {
+    this.sidePanelRatio = state.sidePanelRatio
+    this.logHeight = state.commandLogHeight
+    this.focusManager.logVisible = state.commandLogVisible
+    this.recomputeLayout()
+  }
+
+  private notifyGeometry(): void {
+    this.onGeometryChange?.({
+      sidePanelRatio: this.sidePanelRatio,
+      commandLogHeight: this.logHeight,
+      commandLogVisible: this.focusManager.logVisible,
+    })
+  }
+
+  /** Collapse the left region and focus main; a second double click restores both. */
+  private toggleSideCollapsed(): void {
+    if (this.screenMode === "full" && this.focusManager.active === "main") {
+      this.screenMode = "normal"
+      const previous = this.focusBeforeCollapse
+      this.focusBeforeCollapse = undefined
+      if (previous !== undefined) {
+        this.focusManager.focus(previous)
+        return
+      }
+      this.recomputeLayout()
+      return
+    }
+    this.focusBeforeCollapse = this.focusManager.active
+    this.screenMode = "full"
+    this.focusManager.focus("main")
+  }
+
+  private toggleCommandLog(): void {
+    this.focusManager.handleKey("@")
+    this.notifyGeometry()
+  }
+
 
   private applyFocus(active: FocusId): void {
     for (const pane of Object.values(this.panes)) pane.setFocused(pane.id === active)
@@ -1610,8 +1675,12 @@ export class RootView {
     for (const name of SIDE_WINDOWS) place(this.panes[name].box, name)
     place(this.panes.main.box, "main")
     place(this.commandLog.box, "log")
-    place(this.verticalSplitter, "vsplit")
-    place(this.horizontalSplitter, "hsplit")
+    place(this.verticalSplitter.box, "vsplit")
+    place(this.horizontalSplitter.box, "hsplit")
+    const vsplit = windows.vsplit
+    if (vsplit !== undefined) this.verticalSplitter.render(widthOf(vsplit), heightOf(vsplit))
+    const hsplit = windows.hsplit
+    if (hsplit !== undefined) this.horizontalSplitter.render(widthOf(hsplit), heightOf(hsplit))
 
     const log = windows.log
     if (log !== undefined) {

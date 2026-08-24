@@ -9,6 +9,8 @@ export type ShellHarnessOptions = {
   /** Commit subjects to create, oldest first. */
   readonly commits?: readonly string[]
   readonly stash?: boolean
+  /** Reuse an existing repository, e.g. to test that geometry survives a restart. */
+  readonly repository?: TempRepository
 }
 
 export type ShellHarness = {
@@ -28,16 +30,19 @@ export type ShellHarness = {
 }
 
 export async function createShellHarness(options: ShellHarnessOptions = {}): Promise<ShellHarness> {
-  const repository = await createTempRepository()
-  const subjects = options.commits ?? ["first commit", "second commit", "third commit"]
-  for (const [index, subject] of subjects.entries()) {
-    await repository.write("a.txt", `revision ${index}\n`)
-    await repository.git(["add", "a.txt"])
-    await repository.git(["commit", "-m", subject])
-  }
-  if (options.stash === true) {
-    await repository.write("a.txt", "stashed\n")
-    await repository.git(["stash", "push", "-m", "wip"])
+  const reused = options.repository !== undefined
+  const repository = options.repository ?? await createTempRepository()
+  if (!reused) {
+    const subjects = options.commits ?? ["first commit", "second commit", "third commit"]
+    for (const [index, subject] of subjects.entries()) {
+      await repository.write("a.txt", `revision ${index}\n`)
+      await repository.git(["add", "a.txt"])
+      await repository.git(["commit", "-m", subject])
+    }
+    if (options.stash === true) {
+      await repository.write("a.txt", "stashed\n")
+      await repository.git(["stash", "push", "-m", "wip"])
+    }
   }
   // Leave one unstaged change so the working-tree target is never empty.
   await repository.write("b.txt", "unstaged\n")
@@ -114,6 +119,7 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     },
     frame: () => setup.captureCharFrame(),
     async cleanup() {
+      if (!reused) await repository.cleanup()
       app.destroy()
       setup.renderer.destroy()
       await repository.cleanup()

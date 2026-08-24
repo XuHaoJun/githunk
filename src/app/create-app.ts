@@ -1,6 +1,7 @@
 import type { CliRenderer } from "@opentui/core"
 import { AppController } from "./controller"
 import type { GitRunner } from "../git/runner"
+import { UiStateStore, type UiState as PersistedUiState } from "../ui/ui-state-store"
 import { RootView } from "../ui/root-view"
 
 export type CreateAppOptions = {
@@ -14,6 +15,7 @@ export type App = {
   readonly controller: AppController
   readonly view: RootView | undefined
   refresh(): Promise<void>
+  saveUiState(): Promise<void>
   destroy(): void
 }
 
@@ -28,10 +30,17 @@ export function createApp(options: CreateAppOptions): App {
       controller,
       view: undefined,
       refresh: () => controller.refresh(),
+      saveUiState: async () => undefined,
       destroy: () => undefined,
     }
   }
 
+  const uiStateStore = new UiStateStore(options.runner)
+  let latestGeometry: PersistedUiState | undefined
+  let persistedGeometryApplied = false
+  const saveUiState = async (): Promise<void> => {
+    if (latestGeometry !== undefined) await uiStateStore.save(latestGeometry)
+  }
   let view: RootView
   view = new RootView(renderer, controller.state, {
     onStageFile: async (path) => {
@@ -158,15 +167,25 @@ export function createApp(options: CreateAppOptions): App {
     },
     onFilterBranches: async () => undefined,
     onQuit: () => options.onQuit?.(),
+    onGeometryChange: (state) => { latestGeometry = state },
   })
 
   return {
     controller,
     view,
     refresh: async () => {
+      if (!persistedGeometryApplied) {
+        persistedGeometryApplied = true
+        view.applyPersistedGeometry(await uiStateStore.load())
+      }
       await controller.refresh()
       view.update(controller.state)
     },
-    destroy: () => view.destroy(),
+    saveUiState,
+    destroy: () => {
+      // Geometry is a convenience: a failed final write must never mask a clean shutdown.
+      void saveUiState().catch(() => undefined)
+      view.destroy()
+    },
   }
 }

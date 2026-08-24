@@ -609,3 +609,42 @@ describe("navigation keys", () => {
     expect(getMainCursorTarget(view.mainPane)).not.toEqual(before)
   })
 })
+
+describe("dividers", () => {
+  let harness: ShellHarness | undefined
+  afterEach(async () => { await harness?.cleanup() })
+
+  test("dragging the vertical divider changes the side width", async () => {
+    harness = await createShellHarness({ width: 160, height: 40 })
+    const view = harness.app.view!
+    const before = view.geometry.sideWidth
+
+    await harness.drag(before, 10, 90, 10)
+    expect(view.geometry.sideWidth).toBeGreaterThan(before)
+    expect(view.geometry.sideWidth).toBeLessThanOrEqual(160 - 1 - 40)
+  })
+
+  test("the drag is clamped to the main pane's minimum width", async () => {
+    harness = await createShellHarness({ width: 160, height: 40 })
+    const view = harness.app.view!
+
+    await harness.drag(view.geometry.sideWidth, 10, 159, 10)
+    expect(view.geometry.windows.main).toBeDefined()
+    const main = view.geometry.windows.main!
+    expect(main.x1 - main.x0 + 1).toBe(40)
+  })
+
+  test("the dragged width survives a restart in the same repository", async () => {
+    const first = await createShellHarness({ width: 160, height: 40 })
+    const ratioBefore = first.app.view!.geometry.sidePanelRatio
+    await first.drag(first.app.view!.geometry.sideWidth, 10, 90, 10)
+    const ratioAfter = first.app.view!.geometry.sidePanelRatio
+    expect(ratioAfter).not.toBe(ratioBefore)
+    await first.app.saveUiState()
+    first.app.destroy()
+
+    harness = await createShellHarness({ width: 160, height: 40, repository: first.repository })
+    expect(harness.app.view!.geometry.sidePanelRatio).toBeCloseTo(ratioAfter, 3)
+    await first.repository.cleanup()
+  })
+})
