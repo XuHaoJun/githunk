@@ -30,6 +30,20 @@ Evidence is split between deterministic automated coverage and the recorded TUI 
 | Reviewed files visibly invalidate after changes | Acceptance asserts `changed-after-review` and invalidation count | Automated |
 | Remote branches browse and switch to tracking branches | Acceptance checks out `origin/main`, asserts created local tracking branch and current branch | Automated |
 
+## Review shell UX manual checks
+
+Introduced by the 2026-08 review-shell work (proportional layout, navigation keys,
+hints bar, screen modes, draggable dividers). Automated coverage lives in
+`tests/ui/acceptance/shell.integration.test.ts`; the following still need eyes on the real TUI:
+
+- [ ] The hints bar in the bottom row changes with pane focus (`2` shows `stage: space`, `3` shows `checkout: space`, `5` shows `apply: space`).
+- [ ] `?` opens the keybinding menu and `Esc` closes it.
+- [ ] The vertical divider shows its hover affordance under the pointer and drags to resize the side region.
+- [ ] Double-clicking the vertical divider collapses the side region; double-clicking again restores it.
+- [ ] Side-region ratio and command-log geometry survive quitting and restarting githunk on the same repository.
+- [ ] With `.git/githunk/ui-state-v1.json` present, `git status` stays clean (the state file lives under `.git/`, never in the worktree).
+- [ ] On a branch with commits, the Commits pane (`4`) lists them instead of showing an empty pane.
+
 ## Release gates
 
 - [x] `bun test tests/acceptance/review-workflow.integration.test.ts` — 1 pass, 75 assertions.

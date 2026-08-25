@@ -40,6 +40,12 @@ describe("AppController", () => {
       },
     })
     const first = controller.refresh()
+    // refresh() now unconditionally awaits stash/branch listing before it
+    // reaches the generation-incrementing load call; wait for that call to
+    // actually start (and claim its generation number) before starting the
+    // second, newer operation, so the two operations claim generations in
+    // call order rather than in whichever happens to reach refreshTarget first.
+    while (resolveFirst === undefined) await Promise.resolve()
     const second = controller.setWorkingTreeScope("staged")
     await second
     resolveFirst?.(snapshot("all", "old"))
@@ -110,6 +116,9 @@ describe("AppController", () => {
         }
         throw error
       },
+      loadCommits: async () => [],
+      loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
+      loadStashes: async () => [],
     })
 
     await controller.refresh()
@@ -147,6 +156,9 @@ describe("AppController", () => {
           patches: [],
         }
       },
+      loadCommits: async () => [],
+      loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
+      loadStashes: async () => [],
     })
     await controller.refresh()
     await expect(controller.toggleAllFiles()).rejects.toThrow("second failed")

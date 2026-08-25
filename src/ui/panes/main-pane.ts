@@ -14,6 +14,12 @@ export type MainCursorTarget = {
   readonly hunkKey?: string
 }
 
+/** When set, main renders this patch instead of the model's own sections (commits-pane preview). */
+export type MainPaneOverride = {
+  readonly label: string
+  readonly raw: string
+}
+
 export function createMainPane(renderer: CliRenderer, model: AppModel): PaneHandle {
   const pane = createPane(renderer, "main", "0 Main", "", true)
   updateMainPane(pane, model, false)
@@ -57,6 +63,19 @@ export function moveMainCursor(document: DiffDocument, current: MainCursorTarget
   return targets[nextIndex]
 }
 
+/**
+ * First rendered row of a main cursor target: the hunk's `@@` header for hunk targets, or
+ * the file's `diff --git` header for files without hunks (binary/conflicted). renderDiff
+ * emits exactly one display row per document line, so the document-lines index is directly
+ * the on-screen row to reveal.
+ */
+export function mainCursorTargetLine(document: DiffDocument, target: MainCursorTarget): number | undefined {
+  const index = document.lines.findIndex((line) =>
+    line.fileIndex === target.fileIndex
+    && (target.hunkIndex === undefined || line.hunkIndex === target.hunkIndex))
+  return index < 0 ? undefined : index
+}
+
 export type MainActionAvailability = {
   readonly canStageLines: boolean
   readonly canDiscardLines: boolean
@@ -81,18 +100,22 @@ export function changeLineIndexes(document: DiffDocument, startUtf16: number, en
   })
 }
 
-export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: boolean): void {
-  pane.box.title = model.reviewTarget.kind === "commit"
-    ? `0 Main — ${model.reviewTarget.oid.slice(0, 7)}${model.branchReviewTarget === undefined ? "" : ` · ${model.branchReviewTarget.baseRef}..HEAD`}`
-    : "0 Main"
+export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: boolean, override?: MainPaneOverride): void {
+  pane.box.title = override !== undefined
+    ? `0 Main — ${override.label}`
+    : model.reviewTarget.kind === "commit"
+      ? `0 Main — ${model.reviewTarget.oid.slice(0, 7)}${model.branchReviewTarget === undefined ? "" : ` · ${model.branchReviewTarget.baseRef}..HEAD`}`
+      : "0 Main"
   if (tooSmall) {
     pane.update("Terminal too small")
     documents.delete(pane)
     cursorTargets.delete(pane)
     return
   }
-  const sections = model.rawPatchSections.length > 0 ? model.rawPatchSections : model.patches
-  const raw = sections.map((patch) => patch.text).filter(Boolean).join("")
+  const raw = override !== undefined ? override.raw : (() => {
+    const sections = model.rawPatchSections.length > 0 ? model.rawPatchSections : model.patches
+    return sections.map((patch) => patch.text).filter(Boolean).join("")
+  })()
   if (raw.length === 0) {
     pane.update(model.loading ? "Loading…" : model.banner ? `! ${model.banner}` : "No patch loaded")
     documents.delete(pane)
@@ -137,4 +160,16 @@ export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: bool
   else cursorTargets.delete(pane)
   pane.text.wrapMode = "char"
   pane.update(renderDiff(document).styledText)
+}
+
+/** Scrolls the main pane's text viewport, clamped to its content. */
+export function scrollMainPane(pane: PaneHandle, axis: "x" | "y", delta: number): void {
+  if (axis === "y") {
+    pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY + delta))
+    // OpenTUI 0.5.6 emits no scroll-change event, so the thumb must be re-synced after
+    // every scroll mutation or it freezes at the last content update.
+    pane.syncScrollbar()
+    return
+  }
+  pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX + delta))
 }

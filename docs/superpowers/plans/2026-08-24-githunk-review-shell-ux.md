@@ -24,6 +24,70 @@
 
 ---
 
+## Implementation deltas — READ BEFORE RESUMING
+
+Tasks 1-5 are complete and reviewed. Review found real defects in this plan's own
+code; the fixes landed in the repository and this section records every place the
+shipped code intentionally differs from the task text below. **Where they
+conflict, the repository is correct and this plan's task text is stale.**
+
+- **`normalizeKey` aliases `return` to `enter`** (`src/ui/keymap.ts`). OpenTUI reports a
+  carriage return as `key.name === "return"`, so every `"enter"` binding and the nine
+  pre-existing `key.name === "enter"` comparisons in v0.1 were dead — open file, inspect
+  branch, inspect stash, commit drill-down and modal confirm all did nothing on a real
+  Enter press. Verified empirically: CR is `return`, LF is `linefeed` (deliberately NOT
+  aliased). Every other key name this plan guessed was correct: `pageup`, `pagedown`,
+  `home`, `end`, `tab`, `escape`, `space`, `backspace`, `+`, `_`, `ctrl+d`, `ctrl+u`,
+  and `shift+tab` (which arrives as name `tab` with shift set).
+- **`resolve`/`dispatch` are availability-aware** and MUST be passed `model` and `ui`.
+  An unavailable context binding falls through to the global binding for the same key;
+  a modal never falls through. Without this the global `escape` -> `back` is unreachable
+  from the main, files and commits panes.
+- **`hintsFor`/`menuFor` derive from the same precedence rule as `resolve`**, via one
+  shared `candidatesFor` helper. Computing precedence twice let the hints bar hide a key
+  that dispatch would still route (the `f` key in the branches pane). An invariant test
+  pins the agreement across 7 contexts x 4 review targets x 2 branch kinds x 2 stash
+  selections, with a non-triviality floor derived from the declarations.
+- **`handleModalKey`'s confirm tail routes through `resolveModalAction`**, which consults
+  the registry with `model` and `ui`, instead of calling `action*` methods directly.
+  Calling them directly bypassed every `available` predicate the extraction table traded
+  inline guards for, and allowed deleting a local branch the user never selected from the
+  remote-mismatch confirmation state.
+- **`handleAction` ends with a `never` exhaustiveness default.** This plan claimed the
+  switch was already exhaustive; it was not. `HANDLED_ACTIONS` and its
+  `assertHandlersCover` call were removed as vacuous once the compile-time check existed
+  (`BindingRegistry`'s constructor already rejects an unknown action).
+  **Tasks 6-8 each add cases to this switch — the `never` default will now flag a miss.**
+- **`UiState` carries `hasSelectedStash`**, and stash apply/pop/drop/inspect are gated by
+  `stashOperation` (a stash is selected AND the review target is `working-tree` or
+  `stash`), not by `writable`. Owner decision: match lazygit, which gates only on a
+  selection; the old predicate was stricter than lazygit AND than githunk's own
+  `AppController.ensureStashOperation`.
+- **`{ name: "+" }` is declared as an object, not the string `"+"`**, because
+  `parseKeyStroke` splits a key string on `"+"` as the modifier delimiter.
+- **Shift+D is declared for force branch delete** (`{ keys: ["D"], action: "branch-delete" }`),
+  reusing the action since `handleAction` already forwards `key.shift`. It was lost in the
+  Task 5 migration. The `pendingBranchDelete` identity check requires the same force flag
+  on both presses, so `d` then `D` does not complete a deletion.
+- **The layout's width decision uses mutually exclusive `sideHidden`/`mainHidden`.** Testing
+  `widthTooSmall` before `mainCollapsed` emptied the entire body on a terminal under 59
+  columns with an enlarged focused side pane. Zero-extent windows are also filtered from
+  the returned map, so "absent from `windows` means hidden" is literally true.
+- **`tests/helpers/shell-harness.ts` exposes `settle()`**, which waits on
+  `RootView.isMutating` rather than a fixed delay. `flush()` drains render passes, not the
+  promise a mutation fires, so any test asserting a git-mutation outcome must `settle()`
+  first. Task 10's acceptance tests must use it.
+
+### Known gotcha for Task 7
+
+OpenTUI **silently omits** a box `bottomTitle` that overflows the pane width — it does not
+truncate it. Several refusal messages in `root-view.ts` are long enough to vanish on a
+narrow pane. The hints bar is its own window rather than a box title, so it is not affected,
+but Task 7 should not assume a `bottomTitle` assertion is observable at a normal terminal
+width.
+
+---
+
 ## File Structure
 
 **Created**
@@ -769,7 +833,8 @@ describe("computeLayout side region", () => {
     const layout = computeLayout({ width: 200, height: 40 })
     expect(layout.sidePanelRatio).toBe(DEFAULT_SIDE_PANEL_RATIO)
     expect(layout.sideWidth).toBe(Math.round(200 * DEFAULT_SIDE_PANEL_RATIO))
-    expect(widthOf(layout.windows.side ?? layout.windows.files)).toBe(layout.sideWidth)
+    // Each side pane spans the full side width, so any of them measures it.
+    expect(widthOf(layout.windows.files)).toBe(layout.sideWidth)
   })
 
   test("honours an explicit ratio", () => {
@@ -1058,14 +1123,14 @@ export function previousScreenMode(current: ScreenMode): ScreenMode {
 function sideChildren(
   focusedSide: SideWindow | undefined,
   accordion: boolean,
-  enlarged: boolean,
+  enlargedSide: boolean,
 ): (width: number, height: number) => readonly Box[] {
   const absorber = focusedSide ?? "files"
   return (_width, height) => {
-    if (enlarged) {
-      return SIDE_WINDOWS.map((window) =>
-        window === absorber ? { window, weight: 1 } : { window, weight: 0 },
-      )
+    if (enlargedSide) {
+      // Only the focused pane, so the documented "absent means hidden" contract
+      // stays literally true rather than emitting zero-extent entries.
+      return [{ window: absorber, weight: 1 }]
     }
     if (height >= MIN_HEIGHT_FOR_NORMAL_LAYOUT) {
       return SIDE_WINDOWS.map((window): Box => {
@@ -1107,19 +1172,27 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
   const tooSmall = widthTooSmall || heightTooSmall
 
   const focusedSide = isSideWindow(focus) ? focus : undefined
-  const enlarged = screenMode !== "normal" && focusedSide !== undefined
+  const enlargedSide = screenMode !== "normal" && focusedSide !== undefined
   const sideCollapsed = screenMode !== "normal" && focusedSide === undefined
   const mainCollapsed = screenMode === "full" && focusedSide !== undefined
 
+  // A terminal too narrow to host both regions hides whichever one the user did
+  // not just ask to enlarge, rather than hiding both. sideHidden and mainHidden
+  // are mutually exclusive: sideCollapsed requires no focused side pane, while
+  // mainCollapsed and enlargedSide require one, and the two widthTooSmall terms
+  // are negations of each other.
+  const sideHidden = sideCollapsed || (widthTooSmall && !enlargedSide)
+  const mainHidden = mainCollapsed || (widthTooSmall && enlargedSide)
+
   let sideWidth: number
-  if (widthTooSmall || sideCollapsed) sideWidth = 0
-  else if (mainCollapsed) sideWidth = terminalWidth
+  if (sideHidden) sideWidth = 0
+  else if (mainHidden) sideWidth = terminalWidth
   else {
     const target = screenMode === "half" ? Math.floor(terminalWidth / 2) : Math.round(terminalWidth * requestedRatio)
     sideWidth = clamp(target, MIN_LEFT_WIDTH, terminalWidth - SPLITTER_SIZE - MIN_MAIN_WIDTH)
   }
-  const splitterWidth = sideWidth > 0 && !mainCollapsed ? SPLITTER_SIZE : 0
-  const mainWidth = mainCollapsed ? 0 : terminalWidth - sideWidth - splitterWidth
+  const splitterWidth = sideWidth > 0 && !mainHidden ? SPLITTER_SIZE : 0
+  const mainWidth = mainHidden ? 0 : terminalWidth - sideWidth - splitterWidth
 
   const logCapacity = bodyHeight - SPLITTER_SIZE - MIN_MAIN_HEIGHT
   const logHeight = !logVisible || mainWidth === 0 || logCapacity < MIN_LOG_HEIGHT
@@ -1138,26 +1211,35 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
     bodyChildren.push({
       direction: "row",
       ...(mainWidth === 0 ? { weight: 1 } : { size: sideWidth }),
-      conditionalChildren: sideChildren(focusedSide, accordion, enlarged),
+      conditionalChildren: sideChildren(focusedSide, accordion, enlargedSide),
     })
   }
   if (splitterWidth > 0) bodyChildren.push({ window: "vsplit", size: splitterWidth })
   if (mainWidth > 0) bodyChildren.push({ direction: "row", weight: 1, children: mainSectionChildren })
 
-  const statusWidth = clamp(Math.floor(requested.statusWidth ?? 0), 0, terminalWidth)
+  const statusWidth = Number.isFinite(requested.statusWidth ?? Number.NaN)
+    ? clamp(Math.floor(requested.statusWidth as number), 0, terminalWidth)
+    : 0
   const infoChildren: Box[] = [{ window: "hints", weight: 1 }]
   if (statusWidth > 0) infoChildren.push({ window: "info", size: statusWidth })
 
   const rootChildren: Box[] = [{ direction: "column", weight: 1, children: bodyChildren }]
   if (infoHeight > 0) rootChildren.push({ direction: "column", size: infoHeight, children: infoChildren })
 
-  const windows = arrangeWindows(
+  const rawWindows = arrangeWindows(
     { direction: "row", children: rootChildren },
     0,
     0,
     terminalWidth,
     terminalHeight,
-  ) as Readonly<Partial<Record<WindowName, Dimensions>>>
+  )
+  // Drop zero-extent entries so "absent from this map means hidden" is literally
+  // true for every consumer, including a pane squeezed to nothing by a degenerate
+  // terminal size.
+  const windows: Partial<Record<WindowName, Dimensions>> = {}
+  for (const [name, dimensions] of Object.entries(rawWindows)) {
+    if (widthOf(dimensions) > 0 && heightOf(dimensions) > 0) windows[name as WindowName] = dimensions
+  }
 
   return {
     terminalWidth,
@@ -1304,6 +1386,7 @@ Task 5 deletes it.
     readonly modal: boolean
     readonly mainScope: "all" | "staged" | "unstaged" | undefined
     readonly selectedBranchKind: "local" | "remote" | "remote-branch" | undefined
+    readonly hasSelectedStash: boolean
   }
 
   export type Binding = {
@@ -1328,8 +1411,13 @@ Task 5 deletes it.
   export class BindingRegistry {
     constructor(bindings: readonly Binding[])
     readonly bindings: readonly Binding[]
-    resolve(key: KeyLike, options?: { readonly context?: BindingContext; readonly modal?: boolean }): Binding | undefined
-    dispatch(key: KeyLike, options?: { readonly context?: BindingContext; readonly modal?: boolean }): Action | undefined
+    // When both model and ui are supplied, a binding whose `available` predicate is
+    // false is skipped and resolution falls through to the next priority level, so an
+    // unavailable context binding does not shadow a global one (e.g. `escape` declared
+    // as commit-back in `main` must not hide the global `back`). A modal never falls
+    // through. Omitting model/ui skips availability filtering entirely.
+    resolve(key: KeyLike, options?: { readonly context?: BindingContext; readonly modal?: boolean; readonly model?: AppModel; readonly ui?: UiState }): Binding | undefined
+    dispatch(key: KeyLike, options?: { readonly context?: BindingContext; readonly modal?: boolean; readonly model?: AppModel; readonly ui?: UiState }): Action | undefined
     hintsFor(context: BindingContext, model: AppModel, ui: UiState, width: number): string
     menuFor(context: BindingContext, model: AppModel, ui: UiState): readonly MenuEntry[]
   }
@@ -1688,6 +1776,8 @@ export type UiState = {
   readonly modal: boolean
   readonly mainScope: "all" | "staged" | "unstaged" | undefined
   readonly selectedBranchKind: "local" | "remote" | "remote-branch" | undefined
+  /** Whether the stash pane currently has an entry selected. */
+  readonly hasSelectedStash: boolean
 }
 
 export type Binding = {
@@ -1847,6 +1937,14 @@ inline checks.
 const writable = (model: AppModel): boolean => model.reviewTarget.kind === "working-tree"
 const lineActions = (model: AppModel, ui: UiState): boolean => writable(model) && ui.mainScope !== "all"
 const inCommit = (model: AppModel): boolean => model.reviewTarget.kind === "commit"
+/**
+ * Mirrors lazygit, which gates stash actions only on having a stash selected, and
+ * AppController.ensureStashOperation, which permits them from a working-tree or a
+ * stash review target but refuses a branch or commit one.
+ */
+const stashOperation = (model: AppModel, ui: UiState): boolean =>
+  ui.hasSelectedStash &&
+  (model.reviewTarget.kind === "working-tree" || model.reviewTarget.kind === "stash")
 
 export const GITHUNK_BINDINGS: readonly Binding[] = [
   // ---- focus and layout ----
@@ -1859,7 +1957,9 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["@"], action: "command-log", description: "log", menuDescription: "show, focus or hide the command log" },
   { keys: ["l", "right", "tab"], action: "pane-next", description: "pane", displayKeys: "h/l", displayOnScreen: true, menuDescription: "focus the next pane" },
   { keys: ["h", "left", "shift+tab"], action: "pane-previous", description: "previous pane", menuDescription: "focus the previous pane" },
-  { keys: ["+"], action: "screen-mode-next", description: "zoom in", menuDescription: "enlarge the focused region" },
+  // Declared as an object, not the string "+": keymap.ts's parseKeyStroke splits
+  // a string on "+" as the modifier delimiter, so "+" parses to an empty name.
+  { keys: [{ name: "+" }], action: "screen-mode-next", description: "zoom in", menuDescription: "enlarge the focused region" },
   { keys: ["_"], action: "screen-mode-previous", description: "zoom out", menuDescription: "shrink the focused region" },
   { keys: ["?"], action: "keybinding-menu", description: "help", displayOnScreen: true, menuDescription: "show all keybindings" },
 
@@ -1940,10 +2040,10 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["commits"] },
 
   // ---- stash pane ----
-  { keys: ["space"], action: "stash-apply", description: "apply", contexts: ["stash"], displayOnScreen: true, available: writable },
-  { keys: ["g"], action: "stash-pop", description: "pop", contexts: ["stash"], displayOnScreen: true, available: writable },
-  { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"], displayOnScreen: true, available: writable },
-  { keys: ["enter"], action: "stash-inspect", description: "inspect", contexts: ["stash"], displayOnScreen: true },
+  { keys: ["space"], action: "stash-apply", description: "apply", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
+  { keys: ["g"], action: "stash-pop", description: "pop", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
+  { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
+  { keys: ["enter"], action: "stash-inspect", description: "inspect", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["stash"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["stash"] },
 
@@ -2187,6 +2287,9 @@ describe("root view dispatch", () => {
     const before = harness.app.controller.state.title
     await harness.pressKey("TAB")
     expect(harness.app.controller.state.title).toBe(before)
+    // TAB moved focus off main, and ] is declared only in the main context,
+    // so re-focus main before checking that ] does change the scope.
+    await harness.pressKey("0")
     await harness.pressKey("]")
     expect(harness.app.controller.state.title).not.toBe(before)
   })
@@ -2348,7 +2451,11 @@ Replace `this.handleKey` with:
         return
       }
 
-      const action = this.registry.dispatch(routedKey, { context: this.focusManager.active })
+      const action = this.registry.dispatch(routedKey, {
+        context: this.focusManager.active,
+        model: this.model,
+        ui: this.uiState(),
+      })
       if (action === undefined) return
       this.handleAction(action, routedKey)
       key.preventDefault()
@@ -2368,6 +2475,7 @@ Add the UI state accessor and the action switch:
       modal: this.modalInputActive(),
       mainScope: target.kind === "working-tree" ? target.scope : undefined,
       selectedBranchKind: selected?.kind,
+      hasSelectedStash: selectedStashEntry(this.panes.stash, this.model) !== undefined,
     }
   }
 
@@ -4148,3 +4256,149 @@ One suite asserts each symptom that prompted this work: an empty commits
 pane, no keybinding hints, a fixed-width side region, a stash pane that
 never folds, missing hjkl, and a right region that could not be adjusted."
 ```
+
+---
+
+## Task 11: Overflow scrollbars and keyboard auto-scroll
+
+Owner request (2026-08-25): panes whose content overflows show a scrollbar, and keyboard
+navigation keeps the selected line visible automatically — behavior every lazygit list has.
+
+**OpenTUI ground truth (verified against node_modules/@opentui/core 0.5.6 source):**
+- `TextBufferRenderable` (base of `TextRenderable`) exposes `scrollY/scrollX/maxScrollY/maxScrollX/scrollHeight`
+  (`renderables/TextBufferRenderable.d.ts:59-66`); the `scrollY` setter clamps. No scrollTo/scrollBy.
+- `ScrollBarRenderable` (`renderables/ScrollBar.d.ts`) draws track+thumb natively with
+  `orientation`, `trackOptions: { backgroundColor, foregroundColor }` (defaults #252527/#9a9ea3),
+  sub-cell thumb positioning, built-in auto-hide whenever `viewportSize >= scrollSize`
+  (index.node.js ~13506), and its own mouse handling. Do NOT migrate panes to ScrollBoxRenderable.
+- Nothing built-in keeps a selection visible on a bare TextRenderable; githunk must set `scrollY`
+  itself. (command-log-pane.ts:73,77 already does this pattern for sticky-bottom.)
+- Paint order: a child added after the pane's `text` draws above it; `overflow: hidden` scissors
+  it to the pane. Place the bar at `top: 1, bottom: 1, right: 0` so it stays inside the border ring.
+- Never read `width/height` synchronously after constructing/resizing (yoga layout is async);
+  hook `onSizeChange` instead. Reading `text.scrollHeight` immediately after `pane.update()` is valid.
+
+**Files:**
+- Modify: `src/ui/panes/common.ts` — `createPane` attaches a vertical `ScrollBarRenderable`
+  (width 1, absolute, top 1 / bottom 1 / right 0, default colors, no arrows) and `PaneHandle.update()`
+  syncs `bar.scrollSize = text.scrollHeight`, `bar.viewportSize = text.height`,
+  `bar.scrollPosition = text.scrollY` after setting content.
+- Modify: `src/ui/panes/common.ts` — add and export the pure function
+  `scrollYToReveal(firstVisibleLine: number, lastVisibleLine: number, viewportLines: number): number`
+  returning the new scrollY that makes `[firstVisibleLine, lastVisibleLine]` visible with minimal
+  movement, clamped to `[0, max]`. All panes use this one function; no per-pane clamping variants.
+- Modify: `src/ui/panes/{files-pane,branches-pane,commits-pane,stash-pane}.ts` — after a cursor move,
+  set `pane.text.scrollY = scrollYToReveal(cursorIndex, cursorIndex, visibleLines)` where
+  `visibleLines` is the pane's inner height minus borders (read once per call from geometry-independent
+  `text.height` is NOT reliable pre-layout; pass the value RootView already knows or derive from
+  `Math.max(1, ...)` of the pane box height when available — implementer picks the reading that is
+  correct under the timing pitfall above and documents it).
+- Modify: `src/ui/root-view.ts` — nothing structural; only if a pane needs the arranged window
+  height at cursor-move time, read it from `this.geometry.windows[name]`.
+
+**Interfaces:**
+```ts
+// src/ui/panes/common.ts (additions)
+export function scrollYToReveal(top: number, bottom: number, viewportLines: number): number
+// PaneHandle gains nothing public beyond what createPane already returns; the bar is internal.
+```
+
+- [ ] **Step 1: Failing unit tests for scrollYToReveal**
+
+Create `tests/ui/scroll-reveal.test.ts`: below viewport (top < scrollY) scrolls up to `top`;
+above viewport scrolls down to `bottom - viewportLines + 1`; inside viewport returns current;
+clamps at 0 and at max; single-line viewport edge cases.
+
+- [ ] **Step 2: Failing integration tests**
+
+Append to `tests/ui/dispatch.integration.test.ts`:
+
+```ts
+  test("moving down a long commit list scrolls the pane to keep the cursor visible", async () => {
+    const subjects = Array.from({ length: 30 }, (_v, i) => `commit number ${String(i).padStart(2, "0")}`)
+    harness = await createShellHarness({ commits: subjects, height: 24 })
+    await harness.pressKey("4")
+    expect(harness.frame()).toContain("commit number 00")
+    for (let moved = 0; moved < 15; moved += 1) await harness.pressKey("j")
+    const frame = harness.frame()
+    expect(frame).toContain("commit number 15") // cursor row revealed
+    expect(frame).toContain("commit number 02") // earliest rows scrolled away is fine; presence proves scroll
+  })
+```
+Adjust the exact assertions to the pane's real inner height; the property under test is "the newly
+selected row is on screen after the move", not specific line numbers.
+
+- [ ] **Step 3: Implement per Files above; every pane gets the bar for free via createPane**
+
+Command Log keeps its existing sticky-bottom behavior; its bar appears through the shared path.
+
+- [ ] **Step 4: Main pane auto-scroll (attempt, bounded)**
+
+`j/k`/hunk moves in main should reveal the cursor target's hunk. Derive the hunk's first rendered
+line from the DiffDocument (files before it, their hunks, header/context lines) as a pure function
+next to `changeLineIndexes`; reuse `scrollYToReveal`. If the derivation turns out ambiguous for
+renames/binary sections, ship the lists-only scope and record exactly which cases stay unscrolled
+rather than guessing.
+
+- [ ] **Step 5: Verify and commit**
+
+Run: `bun run check`; probe by hand (`bun run start`, resize terminal, navigate all panes).
+Commit: `feat: overflow scrollbars and keyboard auto-scroll in every pane`
+
+---
+
+## Task 12: Stop repeating the commit subject under the commits pane
+
+The commits pane's bottomTitle renders `${index + 1}/${count}: ${subject}` while the selected
+row directly above already ends with the same subject — the title appears twice, stacked.
+Lazygit renders nothing beneath a list; the cursor marks the selection. Owner request
+(2026-08-25): drop the repetition entirely, counter included.
+
+**Files:**
+
+- Modify: `src/ui/panes/commits-pane.ts:47` (bottomTitle assignment)
+- Test: `tests/ui/dispatch.integration.test.ts`
+
+**Interfaces:** none change. `createPane(renderer, "commits", "4 Commits", "No commit selected")`
+keeps its placeholder for the empty case; once commits exist the bottomTitle is cleared.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `tests/ui/dispatch.integration.test.ts` inside the existing describe:
+
+```ts
+  test("the commits pane does not echo the selected commit's subject beneath the list", async () => {
+    harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
+
+    await harness.pressKey("4")
+    const frame = harness.frame()
+    expect(frame).toContain("gamma commit") // the row itself stays
+    expect(frame).not.toContain("1/3") // no counter/title strip below the border
+    expect(frame).toContain("revision 2") // the preview from the commits-preview suite keeps passing
+  })
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `bun test tests/ui/dispatch.integration.test.ts -t "echo the selected"`
+Expected: FAIL — `1/3` appears via the current bottomTitle.
+
+- [ ] **Step 3: Implement**
+
+Replace the bottomTitle assignment at `src/ui/panes/commits-pane.ts:47` with clearing it:
+
+```ts
+  // lazygit shows nothing beneath a list; the selected row already carries the subject.
+  pane.box.bottomTitle = undefined
+```
+
+- [ ] **Step 4: Sweep for siblings, report only**
+
+Grep `src/ui/panes/` for other bottomTitle assignments that embed a selected item's own label
+(files pane path, stash ref, branch name). Do NOT change them; list them in the report so the
+controller can rule whether they get the same treatment.
+
+- [ ] **Step 5: Verify and commit**
+
+Run: `bun run check`
+Then commit: `fix: stop echoing the selected commit subject under the commits pane`

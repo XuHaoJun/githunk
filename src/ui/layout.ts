@@ -1,9 +1,25 @@
+import { arrangeWindows, type Box, type Dimensions } from "./boxlayout"
+import type { FocusId } from "./focus"
+
 export const MIN_LEFT_WIDTH = 18
 export const MIN_MAIN_WIDTH = 40
 export const MIN_MAIN_HEIGHT = 8
 export const MIN_LOG_HEIGHT = 3
-export const VERTICAL_SPLITTER_WIDTH = 1
-export const HORIZONTAL_SPLITTER_HEIGHT = 1
+export const SPLITTER_SIZE = 1
+export const DEFAULT_SIDE_PANEL_RATIO = 0.3333
+export const DEFAULT_LOG_HEIGHT = 8
+export const STATUS_PANE_HEIGHT = 3
+export const FOLDED_PANE_HEIGHT = 3
+export const MIN_HEIGHT_FOR_NORMAL_LAYOUT = 28
+export const MIN_HEIGHT_FOR_TALL_SQUASHED = 21
+
+export type ScreenMode = "normal" | "half" | "full"
+export const SCREEN_MODES: readonly ScreenMode[] = ["normal", "half", "full"]
+
+export type SideWindow = "status" | "files" | "branches" | "commits" | "stash"
+export const SIDE_WINDOWS: readonly SideWindow[] = ["status", "files", "branches", "commits", "stash"]
+
+export type WindowName = SideWindow | "vsplit" | "main" | "hsplit" | "log" | "hints" | "info"
 
 export type TerminalSize = {
   readonly width: number
@@ -11,29 +27,35 @@ export type TerminalSize = {
 }
 
 export type LayoutRequest = {
-  readonly leftWidth?: number
+  readonly sidePanelRatio?: number
   readonly logHeight?: number
   readonly logVisible?: boolean
+  readonly focus?: FocusId
+  readonly screenMode?: ScreenMode
+  readonly hintsVisible?: boolean
+  readonly statusWidth?: number
 }
 
 export type LayoutGeometry = {
   readonly terminalWidth: number
   readonly terminalHeight: number
-  readonly leftWidth: number
-  readonly leftX: number
-  readonly leftHeight: number
-  readonly verticalSplitterX: number
-  readonly verticalSplitterWidth: number
-  readonly rightX: number
-  readonly mainWidth: number
-  readonly mainY: number
-  readonly mainHeight: number
-  readonly horizontalSplitterY: number
-  readonly horizontalSplitterHeight: number
-  readonly logY: number
+  /** A window absent from this map is hidden. */
+  readonly windows: Readonly<Partial<Record<WindowName, Dimensions>>>
+  readonly sidePanelRatio: number
+  readonly sideWidth: number
   readonly logHeight: number
   readonly logVisible: boolean
+  readonly screenMode: ScreenMode
+  readonly hintsVisible: boolean
   readonly tooSmall: boolean
+}
+
+export function widthOf(dimensions: Dimensions | undefined): number {
+  return dimensions === undefined ? 0 : Math.max(0, dimensions.x1 - dimensions.x0 + 1)
+}
+
+export function heightOf(dimensions: Dimensions | undefined): number {
+  return dimensions === undefined ? 0 : Math.max(0, dimensions.y1 - dimensions.y0 + 1)
 }
 
 function safeDimension(value: number): number {
@@ -44,78 +66,157 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
+function isSideWindow(focus: FocusId): focus is FocusId & SideWindow {
+  return (SIDE_WINDOWS as readonly string[]).includes(focus)
+}
+
+export function nextScreenMode(current: ScreenMode): ScreenMode {
+  const index = SCREEN_MODES.indexOf(current)
+  return SCREEN_MODES[Math.min(SCREEN_MODES.length - 1, index + 1)] ?? current
+}
+
+export function previousScreenMode(current: ScreenMode): ScreenMode {
+  const index = SCREEN_MODES.indexOf(current)
+  return SCREEN_MODES[Math.max(0, index - 1)] ?? current
+}
+
+/**
+ * The five left panes. Their geometry is independent of focus so moving
+ * between panes does not make the stack jump. In compact layouts, files is
+ * the fixed absorber that takes the remaining rows.
+ */
+function sideChildren(
+  focusedSide: SideWindow | undefined,
+  enlarged: boolean,
+): (width: number, height: number) => readonly Box[] {
+  return (_width, height) => {
+    if (enlarged) {
+      return [{ window: focusedSide ?? "files", weight: 1 }]
+    }
+    if (height >= MIN_HEIGHT_FOR_NORMAL_LAYOUT) {
+      return SIDE_WINDOWS.map((window): Box =>
+        window === "status" ? { window, size: STATUS_PANE_HEIGHT } : { window, weight: 1 },
+      )
+    }
+    const squashed = height >= MIN_HEIGHT_FOR_TALL_SQUASHED ? FOLDED_PANE_HEIGHT : 1
+    return SIDE_WINDOWS.map((window) =>
+      window === "files" ? { window, weight: 1 } : { window, size: squashed },
+    )
+  }
+}
+
 export function computeLayout(terminal: TerminalSize, requested: LayoutRequest = {}): LayoutGeometry {
   const terminalWidth = safeDimension(terminal.width)
   const terminalHeight = safeDimension(terminal.height)
-  const requestedLeft = Number.isFinite(requested.leftWidth ?? NaN)
-    ? Math.floor(requested.leftWidth as number)
-    : 30
-  const requestedLog = Number.isFinite(requested.logHeight ?? NaN)
+  const focus: FocusId = requested.focus ?? "main"
+  const screenMode = requested.screenMode ?? "normal"
+  const hintsVisible = requested.hintsVisible !== false
+  const logVisible = requested.logVisible === true
+  const requestedRatio = Number.isFinite(requested.sidePanelRatio ?? Number.NaN)
+    ? clamp(requested.sidePanelRatio as number, 0, 1)
+    : DEFAULT_SIDE_PANEL_RATIO
+  const requestedLog = Number.isFinite(requested.logHeight ?? Number.NaN)
     ? Math.floor(requested.logHeight as number)
-    : 8
-  const logVisible = requested.logVisible !== false
+    : DEFAULT_LOG_HEIGHT
 
-  // Leave one cell for the divider whenever both content regions can retain a cell.
-  const verticalSplitterWidth = terminalWidth >= 3 ? VERTICAL_SPLITTER_WIDTH : 0
-  const leftCapacity = Math.max(0, terminalWidth - verticalSplitterWidth - 1)
-  const leftMaximum = terminalWidth >= MIN_LEFT_WIDTH + VERTICAL_SPLITTER_WIDTH + MIN_MAIN_WIDTH
-    ? terminalWidth - VERTICAL_SPLITTER_WIDTH - MIN_MAIN_WIDTH
-    : leftCapacity
-  const leftWidth = leftCapacity === 0
-    ? 0
-    : clamp(requestedLeft, terminalWidth >= MIN_LEFT_WIDTH + VERTICAL_SPLITTER_WIDTH + MIN_MAIN_WIDTH ? MIN_LEFT_WIDTH : 1, leftMaximum)
-  const mainWidth = terminalWidth - leftWidth - verticalSplitterWidth
+  const infoHeight = hintsVisible && terminalHeight >= 2 ? 1 : 0
+  const bodyHeight = terminalHeight - infoHeight
 
-  const canShowHorizontalSplitter = logVisible && terminalHeight >= 3
-  const horizontalSplitterHeight = canShowHorizontalSplitter ? HORIZONTAL_SPLITTER_HEIGHT : 0
-  const verticalContentHeight = terminalHeight - horizontalSplitterHeight
-  const logCapacity = Math.max(0, verticalContentHeight - 1)
-  const logMinimum = terminalHeight >= MIN_MAIN_HEIGHT + HORIZONTAL_SPLITTER_HEIGHT + MIN_LOG_HEIGHT ? MIN_LOG_HEIGHT : 1
-  const logMaximum = terminalHeight >= MIN_MAIN_HEIGHT + HORIZONTAL_SPLITTER_HEIGHT + MIN_LOG_HEIGHT
-    ? terminalHeight - HORIZONTAL_SPLITTER_HEIGHT - MIN_MAIN_HEIGHT
-    : logCapacity
-  const logHeight = !logVisible || logCapacity === 0
-    ? 0
-    : clamp(requestedLog, logMinimum, logMaximum)
-  const mainHeight = terminalHeight - horizontalSplitterHeight - logHeight
-  const logY = mainHeight + horizontalSplitterHeight
-  const widthTooSmall = terminalWidth < MIN_LEFT_WIDTH + VERTICAL_SPLITTER_WIDTH + MIN_MAIN_WIDTH
+  const widthTooSmall = terminalWidth < MIN_LEFT_WIDTH + SPLITTER_SIZE + MIN_MAIN_WIDTH
   const heightTooSmall = logVisible
-    ? terminalHeight < MIN_MAIN_HEIGHT + HORIZONTAL_SPLITTER_HEIGHT + MIN_LOG_HEIGHT
-    : terminalHeight < MIN_MAIN_HEIGHT
-  const tooSmall = widthTooSmall || heightTooSmall || mainWidth < MIN_MAIN_WIDTH || mainHeight < MIN_MAIN_HEIGHT
+    ? bodyHeight < MIN_MAIN_HEIGHT + SPLITTER_SIZE + MIN_LOG_HEIGHT
+    : bodyHeight < MIN_MAIN_HEIGHT
+  const tooSmall = widthTooSmall || heightTooSmall
+
+  const focusedSide = isSideWindow(focus) ? focus : undefined
+  const enlargedSide = screenMode !== "normal" && focusedSide !== undefined
+  const sideCollapsed = screenMode !== "normal" && focusedSide === undefined
+  const mainCollapsed = screenMode === "full" && focusedSide !== undefined
+
+  // A terminal too narrow to host both regions hides whichever one the user did
+  // not just ask to enlarge, rather than hiding both.
+  const sideHidden = sideCollapsed || (widthTooSmall && !enlargedSide)
+  const mainHidden = mainCollapsed || (widthTooSmall && enlargedSide)
+
+  let sideWidth: number
+  if (sideHidden) sideWidth = 0
+  else if (mainHidden) sideWidth = terminalWidth
+  else {
+    const target = screenMode === "half" ? Math.floor(terminalWidth / 2) : Math.round(terminalWidth * requestedRatio)
+    sideWidth = clamp(target, MIN_LEFT_WIDTH, terminalWidth - SPLITTER_SIZE - MIN_MAIN_WIDTH)
+  }
+  const splitterWidth = sideWidth > 0 && !mainHidden ? SPLITTER_SIZE : 0
+  const mainWidth = mainHidden ? 0 : terminalWidth - sideWidth - splitterWidth
+
+  const logCapacity = bodyHeight - SPLITTER_SIZE - MIN_MAIN_HEIGHT
+  const logHeight = !logVisible || mainWidth === 0 || logCapacity < MIN_LOG_HEIGHT
+    ? 0
+    : clamp(requestedLog, MIN_LOG_HEIGHT, logCapacity)
+  const logSplitterHeight = logHeight > 0 ? SPLITTER_SIZE : 0
+
+  const mainSectionChildren: Box[] = [{ window: "main", weight: 1 }]
+  if (logHeight > 0) {
+    mainSectionChildren.push({ window: "hsplit", size: logSplitterHeight })
+    mainSectionChildren.push({ window: "log", size: logHeight })
+  }
+
+  const bodyChildren: Box[] = []
+  if (sideWidth > 0) {
+    bodyChildren.push({
+      direction: "row",
+      ...(mainWidth === 0 ? { weight: 1 } : { size: sideWidth }),
+      conditionalChildren: sideChildren(focusedSide, enlargedSide),
+    })
+  }
+  if (splitterWidth > 0) bodyChildren.push({ window: "vsplit", size: splitterWidth })
+  if (mainWidth > 0) bodyChildren.push({ direction: "row", weight: 1, children: mainSectionChildren })
+
+  const statusWidth = Number.isFinite(requested.statusWidth ?? Number.NaN)
+    ? clamp(Math.floor(requested.statusWidth as number), 0, terminalWidth)
+    : 0
+  const infoChildren: Box[] = [{ window: "hints", weight: 1 }]
+  if (statusWidth > 0) infoChildren.push({ window: "info", size: statusWidth })
+
+  const rootChildren: Box[] = [{ direction: "column", weight: 1, children: bodyChildren }]
+  if (infoHeight > 0) rootChildren.push({ direction: "column", size: infoHeight, children: infoChildren })
+
+  const rawWindows = arrangeWindows(
+    { direction: "row", children: rootChildren },
+    0,
+    0,
+    terminalWidth,
+    terminalHeight,
+  ) as Readonly<Partial<Record<WindowName, Dimensions>>>
+
+  // A window absent from this map is hidden, per the documented contract, so a
+  // pane squeezed to zero width or height by the engine must not linger here.
+  const windows: Partial<Record<WindowName, Dimensions>> = {}
+  for (const [name, dimensions] of Object.entries(rawWindows) as [WindowName, Dimensions][]) {
+    if (widthOf(dimensions) > 0 && heightOf(dimensions) > 0) windows[name] = dimensions
+  }
+
   return {
     terminalWidth,
     terminalHeight,
-    leftWidth,
-    leftX: 0,
-    leftHeight: terminalHeight,
-    verticalSplitterX: leftWidth,
-    verticalSplitterWidth,
-    rightX: leftWidth + verticalSplitterWidth,
-    mainWidth,
-    mainY: 0,
-    mainHeight,
-    horizontalSplitterY: mainHeight,
-    horizontalSplitterHeight,
-    logY,
+    windows,
+    sidePanelRatio: requestedRatio,
+    sideWidth,
     logHeight,
     logVisible,
+    screenMode,
+    hintsVisible: infoHeight > 0,
     tooSmall,
   }
 }
 
-export function resizeLeftPane(current: LayoutGeometry, mouseX: number): LayoutGeometry {
-  return computeLayout(
-    { width: current.terminalWidth, height: current.terminalHeight },
-    { leftWidth: mouseX, logHeight: current.logHeight, logVisible: current.logVisible },
-  )
+export function ratioForMouseX(geometry: LayoutGeometry, mouseX: number): number {
+  if (!Number.isFinite(mouseX) || geometry.terminalWidth <= 0) return geometry.sidePanelRatio
+  return clamp(mouseX / geometry.terminalWidth, 0, 1)
 }
 
-export function resizeCommandLog(current: LayoutGeometry, mouseY: number): LayoutGeometry {
-  const requestedLogHeight = current.terminalHeight - Math.floor(mouseY) - current.horizontalSplitterHeight
-  return computeLayout(
-    { width: current.terminalWidth, height: current.terminalHeight },
-    { leftWidth: current.leftWidth, logHeight: requestedLogHeight, logVisible: current.logVisible },
-  )
+export function logHeightForMouseY(geometry: LayoutGeometry, mouseY: number): number {
+  if (!Number.isFinite(mouseY)) return geometry.logHeight
+  const bodyHeight = geometry.terminalHeight - (geometry.hintsVisible ? 1 : 0)
+  return Math.max(0, bodyHeight - Math.floor(mouseY) - SPLITTER_SIZE)
 }
+

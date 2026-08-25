@@ -29,6 +29,10 @@ export function moveStashCursor(pane: PaneHandle, model: AppModel, direction: "n
   updateStashPane(pane, model, cursors.get(pane) ?? 0)
 }
 
+export function stashCursorIndex(pane: PaneHandle): number {
+  return cursors.get(pane) ?? 0
+}
+
 export function updateStashPane(pane: PaneHandle, model: AppModel, selectedIndex = cursors.get(pane) ?? 0): void {
   const stashes = model.stashes ?? []
   if (stashes.length === 0) {

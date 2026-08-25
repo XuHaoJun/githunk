@@ -20,6 +20,13 @@ export class FocusManager {
     this.onChange?.(this.active, this.logVisible)
   }
 
+  cycle(direction: "next" | "previous"): void {
+    const next = direction === "next"
+      ? nextFocus(this.active, this.logVisible)
+      : previousFocus(this.active, this.logVisible)
+    this.focus(next)
+  }
+
   handleKey(key: string): boolean {
     const numbered = focusIdForKey(key)
     if (numbered !== undefined) {
@@ -40,4 +47,21 @@ export class FocusManager {
     this.onChange?.(this.active, this.logVisible)
     return true
   }
+}
+
+/** Cycle order for h/l and tab: the main pane, then the five left panes, then the log when it is shown. */
+function cycleOrder(logVisible: boolean): readonly FocusId[] {
+  return logVisible ? [...FOCUS_IDS, COMMAND_LOG_FOCUS_ID] : FOCUS_IDS
+}
+
+export function nextFocus(current: FocusId, logVisible: boolean): FocusId {
+  const order = cycleOrder(logVisible)
+  const index = order.indexOf(current)
+  return order[(index + 1) % order.length] ?? current
+}
+
+export function previousFocus(current: FocusId, logVisible: boolean): FocusId {
+  const order = cycleOrder(logVisible)
+  const index = order.indexOf(current)
+  return order[(index - 1 + order.length) % order.length] ?? current
 }
