@@ -58,8 +58,26 @@ import { createSplitter, type SplitterAxis, type SplitterHandle } from "./splitt
 import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
 import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, type PanelState } from "./panel-state"
-import { createListState, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRows, type ListState } from "./list-view"
+import { createListState, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRows, type ListState, type ListRow } from "./list-view"
 import { MainPreviewGate } from "./main-preview"
+import { commitGraphRows } from "./commit-graph"
+import type { CommitSummary } from "../domain/commit"
+
+function buildCommitRows(commits: readonly CommitSummary[]): readonly ListRow[] {
+  const graphs = commitGraphRows(commits)
+  return commits.map((commit, index) => {
+    const graph = graphs[index] ?? ""
+    return {
+      id: commit.oid,
+      columns: [
+        { text: graph, priority: 0, style: "dim" as const },
+        { text: commit.shortOid, priority: 1, style: "yellow" as const },
+        { text: commit.subject, priority: 2 },
+        { text: commit.authorName, priority: 3, style: "cyan" as const },
+      ],
+    }
+  })
+}
 
 const PANE_TITLES: Readonly<Record<FocusId, string>> = {
   main: "Main", status: "Review", files: "Files",
@@ -314,7 +332,7 @@ export class RootView {
     // Initialize PanelState for window 4 (commits + transient commit-files)
     {
       const commits = model.commits ?? []
-      const rows = commits.map((c) => ({ id: c.oid, columns: [{ text: c.subject, priority: 2 }] }))
+      const rows = buildCommitRows(commits)
       const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: model.loading ? "Loading…" : "No commits" }] : undefined
       this.commitsPanel = createPanelState(["commits"] as const, "commits", { commits: createListState(rows, displayRows) })
       this.renderCommitsPane()
@@ -1894,7 +1912,7 @@ export class RootView {
 
   private refreshCommitsPanel(model: AppModel): void {
     const commits = model.commits ?? []
-    const rows = commits.map((c) => ({ id: c.oid, columns: [{ text: c.subject, priority: 2 }] }))
+    const rows = buildCommitRows(commits)
     const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: model.loading ? "Loading…" : "No commits" }] : undefined
     let panel = this.commitsPanel
     panel = { ...panel, views: { ...panel.views, commits: setListRows(panel.views.commits, rows, displayRows) } }

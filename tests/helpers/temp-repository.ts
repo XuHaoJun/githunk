@@ -23,10 +23,6 @@ export async function createTempRepository(): Promise<TempRepository> {
       cwd: path,
       env: {
         ...process.env,
-        GIT_AUTHOR_NAME: "Githunk Test",
-        GIT_AUTHOR_EMAIL: "githunk-test@example.invalid",
-        GIT_COMMITTER_NAME: "Githunk Test",
-        GIT_COMMITTER_EMAIL: "githunk-test@example.invalid",
         GIT_TERMINAL_PROMPT: "0",
       },
       stdin: "pipe",
@@ -47,12 +43,21 @@ export async function createTempRepository(): Promise<TempRepository> {
     return { exitCode, stdout, stderr }
   }
 
-  const initialized = await git(["init", "--quiet"])
+  const initialized = await git(["init", "--quiet", "--initial-branch=master"])
   if (initialized.exitCode !== 0) {
-    await rm(path, { recursive: true, force: true })
-    throw new Error(`git init failed: ${initialized.stderr}`)
+    const fallback = await git(["init", "--quiet"])
+    if (fallback.exitCode !== 0) {
+      await rm(path, { recursive: true, force: true })
+      throw new Error(`git init failed: ${fallback.stderr} / ${initialized.stderr}`)
+    }
+    const renamed = await git(["branch", "-M", "master"])
+    if (renamed.exitCode !== 0) {
+      await rm(path, { recursive: true, force: true })
+      throw new Error(`git branch -M master failed: ${renamed.stderr}`)
+    }
+  } else {
+    // init succeeded with --initial-branch=master; nothing else needed
   }
-
   for (const [key, value] of [
     ["user.name", "Githunk Test"],
     ["user.email", "githunk-test@example.invalid"],
