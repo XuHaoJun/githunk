@@ -186,6 +186,6 @@ describe("AppController branch mode", () => {
     const loaded = await controller.loadCommitInspection("commit-1")
     expect(loaded.oid).toBe("commit-1")
     expect(controller.state.reviewTarget.kind).not.toBe("commit")
-    expect(seenBases).toContain("feature/local")
+    expect(seenBases).toContain("origin/main")
   })
 })
