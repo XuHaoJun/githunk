@@ -44,7 +44,8 @@ export function updateCommitsPane(pane: PaneHandle, model: AppModel): void {
   cursors.set(pane, index)
   const lines = commits.map((commit, commitIndex) => `${commitIndex === index ? "▸" : " "} ${commit.shortOid} ${commit.subject}`)
   pane.update(lines.join("\n"))
-  pane.box.bottomTitle = `${index + 1}/${commits.length}: ${commits[index]?.subject ?? "No commit selected"}`
+  // lazygit shows nothing beneath a list; the selected row already carries the subject.
+  pane.box.bottomTitle = undefined
 }
 
 export function commitsCursorIndex(pane: PaneHandle): number {

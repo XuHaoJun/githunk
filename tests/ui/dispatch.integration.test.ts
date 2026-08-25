@@ -356,6 +356,16 @@ describe("root view dispatch", () => {
     await harness.pressKey("c", { ctrl: true })
     expect(harness.quitCalled).toBe(true)
   })
+
+  test("the commits pane does not echo the selected commit's subject beneath the list", async () => {
+    harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
+
+    await harness.pressKey("4")
+    const frame = harness.frame()
+    expect(frame).toContain("gamma commit") // the row itself stays
+    expect(frame).not.toContain("1/3") // no counter/title strip below the border
+    expect(frame).toContain("revision 2") // the preview from the commits-preview suite keeps passing
+  })
 })
 
 describe("commits pane drives the main pane like lazygit", () => {
