@@ -136,8 +136,15 @@ describe("panel 3 tabs and RemoteBranches child", () => {
     harness = await createShellHarness()
     await harness.pressKey("3")
     const pane = harness.app.view!.paneFor("branches")
-    expect(pane.box.title).toBe("3 Local Branches | Remotes | Tags")
-    expect(pane.box.title).toContain("|")
+    const title = pane.box.title as unknown
+    let plainTitle: string
+    if (typeof title === "string") plainTitle = title
+    else if (title !== null && typeof title === "object" && "chunks" in title) {
+      const styledTitle = title as { chunks: readonly { text: string }[] }
+      plainTitle = styledTitle.chunks.map((c) => c.text).join("")
+    } else plainTitle = String(title)
+    expect(plainTitle).toBe("3 Local Branches | Remotes | Tags")
+    expect(plainTitle).toContain("|")
     const styled = harness.app.view!.branchesTitleStyled
     expect(styled.chunks.map((c) => c.text).join("")).toBe("3 Local Branches | Remotes | Tags")
     const localChunk = styled.chunks.find((c) => c.text === "Local Branches")!

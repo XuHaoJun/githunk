@@ -489,7 +489,7 @@ export class RootView {
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i]!
       const isActive = part.tab === active
-      const chunk = isActive ? (cyan(part.text) as unknown as TextChunk) : this.plainChunk(part.text)
+      const chunk = isActive ? (cyan(part.text) as unknown as TextChunk) : (dim(part.text) as unknown as TextChunk)
       chunks.push(chunk)
       if (i < parts.length - 1) chunks.push(this.plainChunk(" | "))
     }
@@ -515,7 +515,9 @@ export class RootView {
 
   private renderBranchesPane(): void {
     const pane = this.panes.branches
-    pane.box.title = "3 Local Branches | Remotes | Tags"
+    const styledTitle = this.branchesTitleStyled
+    const boxTitleTarget = pane.box as unknown as { title: unknown }
+    boxTitleTarget.title = styledTitle as unknown as string
     const focused = this.focusManager.active === "branches"
     const state = this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab]
     if (state === undefined) {
