@@ -4,7 +4,9 @@ import type { GitRunner } from "../git/runner"
 import { createGhRunner, loadPullRequests } from "../git/github"
 import { UiStateStore, type UiState as PersistedUiState } from "../ui/ui-state-store"
 import { RootView } from "../ui/root-view"
-import { BackgroundRefresher, DEFAULT_FETCH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from "./background"
+import { BackgroundRefresher, DEFAULT_EXTERNAL_CHANGE_INTERVAL_MS, DEFAULT_FETCH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from "./background"
+import { RefsWatcher } from "./refs-watcher"
+import { loadRefsSnapshot } from "../git/refs-snapshot"
 
 export type CreateAppOptions = {
   readonly repositoryRoot: string
@@ -23,8 +25,10 @@ export type BackgroundOptions = {
   readonly enabled: boolean
   readonly autoFetch?: boolean
   readonly autoRefresh?: boolean
+  readonly autoDetectExternalChanges?: boolean
   readonly fetchIntervalMs?: number
   readonly refreshIntervalMs?: number
+  readonly externalChangeIntervalMs?: number
 }
 
 export type App = {
@@ -54,8 +58,10 @@ export function backgroundOptionsFromEnv(env: Record<string, string | undefined>
     enabled: flag("GITHUNK_BACKGROUND") ?? true,
     autoFetch: flag("GITHUNK_AUTO_FETCH") ?? true,
     autoRefresh: flag("GITHUNK_AUTO_REFRESH") ?? true,
+    autoDetectExternalChanges: flag("GITHUNK_DETECT_EXTERNAL_CHANGES") ?? true,
     fetchIntervalMs: seconds("GITHUNK_FETCH_INTERVAL", DEFAULT_FETCH_INTERVAL_MS),
     refreshIntervalMs: seconds("GITHUNK_REFRESH_INTERVAL", DEFAULT_REFRESH_INTERVAL_MS),
+    externalChangeIntervalMs: seconds("GITHUNK_EXTERNAL_CHANGE_INTERVAL", DEFAULT_EXTERNAL_CHANGE_INTERVAL_MS),
   }
 }
 
@@ -85,6 +91,20 @@ export function createApp(options: CreateAppOptions): App {
   const saveUiState = async (): Promise<void> => {
     if (latestGeometry !== undefined) await uiStateStore.save(latestGeometry)
   }
+  /**
+   * Notices refs moving underneath the app. Declared ahead of the view because the view's
+   * `onMutationSettled` re-seeds it; created unconditionally (it is inert until polled) so that
+   * hook needs no branch.
+   */
+  const refsWatcher = new RefsWatcher({
+    snapshot: () => loadRefsSnapshot(options.runner),
+    onExternalChange: async () => {
+      await controller.refresh()
+      view.update(controller.state)
+    },
+    isBusy: () => view.isMutating,
+  })
+
   let view: RootView
   view = new RootView(renderer, controller.state, {
     onStageFile: async (path) => {
@@ -204,6 +224,9 @@ export function createApp(options: CreateAppOptions): App {
     onFilterBranches: async () => undefined,
     onQuit: () => options.onQuit?.(),
     onGeometryChange: (state) => { latestGeometry = state },
+    // Whatever githunk just did to the repository is now the baseline, so the poller does not
+    // report it back as an external change.
+    onMutationSettled: () => { void refsWatcher.resync() },
   })
 
   const backgroundOptions = options.background
@@ -225,15 +248,19 @@ export function createApp(options: CreateAppOptions): App {
           view.update(controller.state)
           await controller.refreshPullRequests()
           view.update(controller.state)
+          await refsWatcher.resync()
         },
         refresh: async () => {
           await controller.refreshFiles()
           view.update(controller.state)
         },
+        detectExternalChanges: () => refsWatcher.check().then(() => undefined),
         ...(backgroundOptions.autoFetch === undefined ? {} : { autoFetch: backgroundOptions.autoFetch }),
         ...(backgroundOptions.autoRefresh === undefined ? {} : { autoRefresh: backgroundOptions.autoRefresh }),
+        ...(backgroundOptions.autoDetectExternalChanges === undefined ? {} : { autoDetectExternalChanges: backgroundOptions.autoDetectExternalChanges }),
         ...(backgroundOptions.fetchIntervalMs === undefined ? {} : { fetchIntervalMs: backgroundOptions.fetchIntervalMs }),
         ...(backgroundOptions.refreshIntervalMs === undefined ? {} : { refreshIntervalMs: backgroundOptions.refreshIntervalMs }),
+        ...(backgroundOptions.externalChangeIntervalMs === undefined ? {} : { externalChangeIntervalMs: backgroundOptions.externalChangeIntervalMs }),
         // Everything the UI drives goes through `runUiMutation`, so this is lazygit's
         // `backgroundRefreshesPaused()` for githunk: no background git while the user's own runs.
         isBusy: () => view.isMutating,
@@ -253,6 +280,7 @@ export function createApp(options: CreateAppOptions): App {
       }
       await controller.refresh()
       view.update(controller.state)
+      await refsWatcher.resync()
       if (background !== undefined) {
         background.start()
         // lazygit fetches once immediately, because `goEvery` starts by waiting out the interval

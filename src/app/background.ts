@@ -3,6 +3,8 @@
  *
  *   - a `git fetch` every `refresher.fetchInterval` seconds, gated on `git.autoFetch`
  *   - a working-tree refresh every `refresher.refreshInterval` seconds, gated on `git.autoRefresh`
+ *   - a refs-snapshot poll every `refresher.externalChangeCheckInterval` seconds, gated on
+ *     `git.autoDetectExternalChanges`, which refreshes when refs moved outside the app
  *
  * and the two properties that make them safe:
  *
@@ -12,9 +14,6 @@
  *   - **never bunched.** `goEvery` waits for each run to finish before the next one starts
  *     (background.go:230-236), so a fetch slower than the interval does not queue more fetches
  *     behind it. Timers here are one-shot and rescheduled on completion, which has the same effect.
- *
- * lazygit's third routine — external-change detection, polling a refs snapshot every 2s — is not
- * reproduced; `refresh` is the manual escape hatch for that until it is.
  */
 
 export type Timers = {
@@ -27,29 +26,41 @@ export type BackgroundRefresherOptions = {
   readonly fetch: () => Promise<void>
   /** The working-tree refresh; lazygit's `RefreshOptions{Scope: []{FILES}}`. */
   readonly refresh: () => Promise<void>
+  /**
+   * One refs-snapshot poll; see ./refs-watcher, which owns the comparison. lazygit's
+   * `checkForExternalChanges` (pkg/gui/background.go:169-208).
+   */
+  readonly detectExternalChanges?: () => Promise<void>
   /** `git.autoFetch` — pkg/config/user_config.go:958. */
   readonly autoFetch?: boolean
   /** `git.autoRefresh` — pkg/config/user_config.go:959. */
   readonly autoRefresh?: boolean
   /** `refresher.fetchInterval`, in milliseconds. Default 60s. */
   readonly fetchIntervalMs?: number
+  /** `git.autoDetectExternalChanges` — pkg/config/user_config.go:960. */
+  readonly autoDetectExternalChanges?: boolean
   /** `refresher.refreshInterval`, in milliseconds. Default 10s. */
   readonly refreshIntervalMs?: number
+  /** `refresher.externalChangeCheckInterval`, in milliseconds. Default 2s. */
+  readonly externalChangeIntervalMs?: number
   /**
    * Checked at each tick alongside the pause count, for the callers whose "busy" is a flag they
    * already own rather than a scope they can wrap. Same effect as a pause: the tick is skipped.
    */
   readonly isBusy?: () => boolean
   /** Reported rather than thrown: a background routine must never take the app down. */
-  readonly onError?: (error: unknown, routine: "fetch" | "refresh") => void
+  readonly onError?: (error: unknown, routine: RoutineName) => void
   readonly timers?: Timers
 }
 
 export const DEFAULT_FETCH_INTERVAL_MS = 60_000
 export const DEFAULT_REFRESH_INTERVAL_MS = 10_000
+export const DEFAULT_EXTERNAL_CHANGE_INTERVAL_MS = 2_000
+
+export type RoutineName = "fetch" | "refresh" | "external-change"
 
 type Routine = {
-  readonly name: "fetch" | "refresh"
+  readonly name: RoutineName
   readonly run: () => Promise<void>
   readonly intervalMs: number
   handle: unknown
@@ -59,7 +70,7 @@ type Routine = {
 export class BackgroundRefresher {
   private readonly timers: Timers
   private readonly routines: Routine[] = []
-  private readonly onError: ((error: unknown, routine: "fetch" | "refresh") => void) | undefined
+  private readonly onError: ((error: unknown, routine: RoutineName) => void) | undefined
   private started = false
   private stopped = false
   /**
@@ -88,6 +99,15 @@ export class BackgroundRefresher {
         name: "refresh",
         run: options.refresh,
         intervalMs: options.refreshIntervalMs ?? DEFAULT_REFRESH_INTERVAL_MS,
+        handle: undefined,
+        running: false,
+      })
+    }
+    if (options.autoDetectExternalChanges !== false && options.detectExternalChanges !== undefined) {
+      this.routines.push({
+        name: "external-change",
+        run: options.detectExternalChanges,
+        intervalMs: options.externalChangeIntervalMs ?? DEFAULT_EXTERNAL_CHANGE_INTERVAL_MS,
         handle: undefined,
         running: false,
       })

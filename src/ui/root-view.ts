@@ -105,6 +105,12 @@ export type RootViewOptions = {
   readonly logHeight?: number
   readonly logVisible?: boolean
   readonly onGeometryChange?: (state: PersistedUiState) => void
+  /**
+   * Fired whenever a git operation this view started has settled, however it settled. The single
+   * choke point for "githunk just touched the repository": the refs watcher re-seeds its baseline
+   * here, so githunk's own commits and checkouts are never mistaken for external ones.
+   */
+  readonly onMutationSettled?: () => void
   readonly onStageFile?: (path: string) => Promise<void>
   readonly onUnstageFile?: (path: string) => Promise<void>
   readonly onDiscardFile?: (path: string, untracked: boolean) => Promise<void>
@@ -283,6 +289,7 @@ export class RootView {
   private readonly registry = createRegistry()
   private readonly onQuit: (() => void) | undefined
   private readonly onGeometryChange: ((state: PersistedUiState) => void) | undefined
+  private readonly onMutationSettled: (() => void) | undefined
   private readonly filterInput = new FilterInput()
   private readonly handleResize: () => void
   private readonly handleKey: (key: KeyEvent) => void
@@ -299,6 +306,7 @@ export class RootView {
     this.onModeChange = options.onModeChange
     this.onQuit = options.onQuit
     this.onGeometryChange = options.onGeometryChange
+    this.onMutationSettled = options.onMutationSettled
     this.onChooseBase = options.onChooseBase
     this.onCancelBase = options.onCancelBase
     this.onUnstageFile = options.onUnstageFile
@@ -2305,6 +2313,7 @@ export class RootView {
       this.mutationInFlight = false
       this.clearDiscardState()
       if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
+      this.onMutationSettled?.()
     })
   }
 

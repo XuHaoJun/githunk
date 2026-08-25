@@ -78,6 +78,63 @@ describe("background auto-fetch", () => {
     expect(setup.captureCharFrame()).toContain("↓1")
   }, 20_000)
 
+  test("a commit made outside the app shows up on its own, with no keypress", async () => {
+    // lazygit's `git.autoDetectExternalChanges`: poll a refs fingerprint and refresh when it moves
+    // (pkg/gui/background.go:169-208).
+    repository = await createTempRepository()
+    await repository.write("a.txt", "one\n")
+    await repository.git(["add", "a.txt"])
+    await repository.git(["commit", "-m", "first commit"])
+
+    const setup = await createTestRenderer({ width: 120, height: 40, useMouse: true })
+    renderer = setup.renderer
+    app = createApp({
+      repositoryRoot: repository.path,
+      runner: new GitRunner(repository.path),
+      renderer: setup.renderer,
+      background: { enabled: true, autoFetch: false, autoRefresh: false, autoDetectExternalChanges: true, externalChangeIntervalMs: 30 },
+    })
+    await app.refresh()
+    await setup.flush()
+    expect(setup.captureCharFrame()).not.toContain("made in another terminal")
+
+    // Somebody else — another terminal, an editor's git integration — commits.
+    await repository.write("a.txt", "two\n")
+    await repository.git(["add", "a.txt"])
+    await repository.git(["commit", "-m", "made in another terminal"])
+
+    for (let attempt = 0; attempt < 200 && !setup.captureCharFrame().includes("made in another terminal"); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await setup.flush()
+    }
+    expect(setup.captureCharFrame()).toContain("made in another terminal")
+  }, 20_000)
+
+  test("detection off means the outside commit stays invisible", async () => {
+    repository = await createTempRepository()
+    await repository.write("a.txt", "one\n")
+    await repository.git(["add", "a.txt"])
+    await repository.git(["commit", "-m", "first commit"])
+
+    const setup = await createTestRenderer({ width: 120, height: 40, useMouse: true })
+    renderer = setup.renderer
+    app = createApp({
+      repositoryRoot: repository.path,
+      runner: new GitRunner(repository.path),
+      renderer: setup.renderer,
+      background: { enabled: true, autoFetch: false, autoRefresh: false, autoDetectExternalChanges: false, externalChangeIntervalMs: 30 },
+    })
+    await app.refresh()
+    await setup.flush()
+
+    await repository.write("a.txt", "two\n")
+    await repository.git(["add", "a.txt"])
+    await repository.git(["commit", "-m", "made in another terminal"])
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    await setup.flush()
+    expect(setup.captureCharFrame()).not.toContain("made in another terminal")
+  }, 20_000)
+
   test("no background options means no timers at all", async () => {
     repository = await createTempRepository()
     await repository.write("a.txt", "one\n")
@@ -99,11 +156,15 @@ describe("backgroundOptionsFromEnv", () => {
       enabled: true,
       autoFetch: true,
       autoRefresh: true,
+      autoDetectExternalChanges: true,
       fetchIntervalMs: 60_000,
       refreshIntervalMs: 10_000,
+      externalChangeIntervalMs: 2_000,
     })
     expect(backgroundOptionsFromEnv({ GITHUNK_AUTO_FETCH: "0" }).autoFetch).toBe(false)
     expect(backgroundOptionsFromEnv({ GITHUNK_AUTO_REFRESH: "false" }).autoRefresh).toBe(false)
+    expect(backgroundOptionsFromEnv({ GITHUNK_DETECT_EXTERNAL_CHANGES: "0" }).autoDetectExternalChanges).toBe(false)
+    expect(backgroundOptionsFromEnv({ GITHUNK_EXTERNAL_CHANGE_INTERVAL: "3" }).externalChangeIntervalMs).toBe(3_000)
     expect(backgroundOptionsFromEnv({ GITHUNK_BACKGROUND: "0" }).enabled).toBe(false)
     expect(backgroundOptionsFromEnv({ GITHUNK_FETCH_INTERVAL: "5" }).fetchIntervalMs).toBe(5_000)
     // Nonsense falls back rather than disabling the routine outright.
