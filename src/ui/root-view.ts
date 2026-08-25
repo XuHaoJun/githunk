@@ -1798,7 +1798,7 @@ export class RootView {
         const filePath = selectedId.split("\u0000")[0]!
         const oid = child.value.oid
         if (this.loadCommitFileInspection !== undefined) {
-          const stableId = selectedId
+          const stableId = `${oid}\0${selectedId}`
           const load = (): Promise<DiffDocument> => this.loadCommitFileInspection!(oid, filePath)
           const present = (doc: DiffDocument): MainPaneContent => this.presentCommitFileContent(oid, selectedId, doc)
           const promise = this.mainGate.request("commit-file", stableId, load, present)
