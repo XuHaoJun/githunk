@@ -21,6 +21,7 @@ import { fetch as fetchSync, pull as pullSync, push as pushSync, type PullOption
 import type { StashCreateOptions, StashDropOptions, StashEntry } from "../domain/stash"
 import type { TagPreview, TagSummary } from "../domain/tag"
 import { listTags, loadTagPreview } from "../git/tags"
+import { loadRefLog, refLogFullName, type RefLogTarget } from "../git/ref-log"
 import type { ReflogEntry } from "../domain/reflog"
 import { listReflog } from "../git/reflog"
 import type { Worktree } from "../domain/worktree"
@@ -648,6 +649,16 @@ export class AppController {
   async loadTagInspection(tag: TagSummary): Promise<TagPreview> {
     if (this.runner === undefined) throw new Error("Tag inspection requires a GitRunner")
     return loadTagPreview(this.runner, tag)
+  }
+
+  /**
+   * A ref's commit graph, still carrying git's own SGR sequences. What panel 3 renders into the
+   * main pane for every selection it has, the way lazygit does
+   * (branches_controller.go:207 `GetGraphCmdObj`).
+   */
+  async loadRefLogInspection(target: RefLogTarget): Promise<string> {
+    if (this.runner === undefined) throw new Error("Ref log inspection requires a GitRunner")
+    return loadRefLog(this.runner, refLogFullName(target))
   }
 
   recordInspectionError(error: unknown): void {

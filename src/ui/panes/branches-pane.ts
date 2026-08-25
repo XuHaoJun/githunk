@@ -76,6 +76,9 @@ export function localBranchRows(model: AppModel, filter = ""): ListRow[] {
   return [...filterItems(filter, rows, (row) => row.columns[1]?.text ?? row.id)]
 }
 
+/** branches_controller.go:205 `self.c.Tr.NoBranchesThisRepo` — pkg/i18n/english.go:1315. */
+export const NO_BRANCHES_THIS_REPO = "No branches for this repo"
+
 /** Panel 3's tab labels and jump label, in lazygit's order (pkg/gui/views.go side-panel groups). */
 export const BRANCHES_TABS = ["Local Branches", "Remotes", "Tags"] as const
 export const BRANCHES_JUMP_KEY = "3"

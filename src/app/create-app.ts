@@ -77,6 +77,7 @@ export function createApp(options: CreateAppOptions): App {
     loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
     loadCommitFileInspection: (oid, path) => controller.loadCommitFileInspection(oid, path),
     loadTagInspection: (tag) => controller.loadTagInspection(tag),
+    loadRefLogInspection: (target) => controller.loadRefLogInspection(target),
     onPreviewError: (error) => controller.recordInspectionError(error),
     onCommitMessage: async (message) => {
       try { await controller.commit(message) } finally { view.update(controller.state) }

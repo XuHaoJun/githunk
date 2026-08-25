@@ -410,11 +410,12 @@ describe("lazygit core UI acceptance", () => {
     expect(view.selectedListId("branches")).toBe("tag:refs/tags/light")
     await view.whenPreviewSettled().catch(() => {})
     await harness.flush()
+    // tags_controller.go:101-123: the tag's own info, a `---` rule, then its commit graph.
     expect(view.mainContent?.source).toBe("tag")
-    let tagPlain = view.mainContent?.plainText ?? ""
-    expect(tagPlain).toContain("light")
-    expect(tagPlain).toContain("lightweight")
-    expect(tagPlain).toMatch(/[0-9a-f]{7}/)
+    let tagPreamble = view.mainContent?.preamble ?? ""
+    expect(tagPreamble).toContain("Lightweight tag: light")
+    expect(tagPreamble).toContain("---")
+    expect(view.mainContent?.ansi?.text ?? "").toMatch(/[0-9a-f]{7}/)
     attemptsTag = 0
     while (view.selectedListId("branches") !== "tag:refs/tags/v1" && attemptsTag < 8) {
       await harness.pressKey("j")
@@ -433,11 +434,10 @@ describe("lazygit core UI acceptance", () => {
     await view.whenPreviewSettled().catch(() => {})
     await harness.flush()
     expect(view.mainContent?.source).toBe("tag")
-    tagPlain = view.mainContent?.plainText ?? ""
-    expect(tagPlain).toContain("v1")
-    expect(tagPlain).toContain("annotated")
-    expect(tagPlain).toMatch(/[0-9a-f]{7}/)
-    expect(tagPlain).toContain("release one")
+    tagPreamble = view.mainContent?.preamble ?? ""
+    expect(tagPreamble).toContain("Annotated tag: v1")
+    expect(tagPreamble).toContain("release one")
+    expect(view.mainContent?.ansi?.text ?? "").toMatch(/[0-9a-f]{7}/)
 
     // 7. Main and Files do not consume [/]
     await harness.pressKey("0")

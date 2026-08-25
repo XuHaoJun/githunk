@@ -1,8 +1,32 @@
 import type { AppModel } from "../../app/model"
+import type { Remote } from "../../domain/branch"
 import { filterItems } from "../../app/filter"
 import type { ListRow } from "../list-view"
 import { createListState, renderListRows, setListRows, type ListState } from "../list-view"
 import type { PaneHandle } from "./common"
+
+/** remotes_controller.go:107. */
+export const NO_REMOTES = "No remotes"
+
+/** remote_branches_controller.go:120. */
+export const NO_BRANCHES_FOR_REMOTE = "No branches for this remote"
+
+/**
+ * remotes_controller.go:109-112:
+ *
+ *     content := fmt.Sprintf("%s\nUrls:\n%s", style.FgGreen.Sprint(remote.Name), strings.Join(remote.Urls, "\n"))
+ *     if len(remote.PushUrls) > 0 { content += fmt.Sprintf("\nPush Urls:\n%s", …) }
+ *
+ * lazygit's model keeps `Urls` and `PushUrls` as lists (a remote may configure several of each);
+ * githunk's `Remote` keeps one of each, so each block holds a single line. The `Push Urls:` block
+ * is omitted when the push URL is the fetch URL, which is the case git reports whenever no
+ * `remote.<name>.pushurl` is set.
+ */
+export function remotePreviewText(remote: Remote): string {
+  let content = `${remote.name}\nUrls:\n${remote.fetchUrl ?? ""}`
+  if (remote.pushUrl !== undefined && remote.pushUrl !== remote.fetchUrl) content += `\nPush Urls:\n${remote.pushUrl}`
+  return content
+}
 
 export function remoteRows(model: AppModel, filter = ""): ListRow[] {
   const listing = model.branches

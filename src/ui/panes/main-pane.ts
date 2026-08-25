@@ -2,7 +2,9 @@ import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import type { DiffDocument, DiffFile } from "../../domain/diff/document"
 import { renderDiff } from "../../domain/diff/render"
+import type { AnsiText } from "../ansi"
 import { createPane, type PaneHandle } from "./common"
+import { installAnsiText, releaseAnsiText } from "./ansi-text"
 import { installDiffText, releaseDiffText } from "./diff-text"
 
 // Main generation has no patch threshold — all patches go through preview gate (Task 7)
@@ -26,8 +28,26 @@ export type MainPaneContent = {
   readonly label: string
   readonly preamble?: string
   readonly document?: DiffDocument
+  /**
+   * A git command's own coloured output, already parsed by ../ansi. lazygit renders a ref's
+   * `git log --graph` this way for every panel-3 selection — branches_controller.go:207,
+   * remote_branches_controller.go:122, tags_controller.go:109.
+   */
+  readonly ansi?: AnsiText
   readonly plainText?: string
 }
+
+/**
+ * The titles lazygit gives the main view per panel-3 selection. The panel, not the selected ref,
+ * names the view: `self.c.Tr.LogTitle` for a local branch (branches_controller.go:221,
+ * pkg/i18n/english.go:1183), then the literals `"Remote Branch"`
+ * (remote_branches_controller.go:129), `"Remote"` (remotes_controller.go:119) and `"Tag"`
+ * (tags_controller.go:117).
+ */
+export const MAIN_TITLE_LOG = "Log"
+export const MAIN_TITLE_REMOTE_BRANCH = "Remote Branch"
+export const MAIN_TITLE_REMOTE = "Remote"
+export const MAIN_TITLE_TAG = "Tag"
 
 export function createMainPane(renderer: CliRenderer, _model: AppModel): PaneHandle {
   const pane = createPane(renderer, "main", "0 Main", "", true)
@@ -127,6 +147,7 @@ function renderedTextFor(content: MainPaneContent): string {
   if (content.document !== undefined) {
     return `${content.preamble ?? ""}${content.document.text}`
   }
+  if (content.ansi !== undefined) return `${content.preamble ?? ""}${content.ansi.text}`
   if (content.plainText !== undefined) return content.plainText
   return content.preamble ?? ""
 }
@@ -147,9 +168,10 @@ export function clampMainScroll(pane: PaneHandle): void {
   pane.syncScrollbar()
 }
 
-/** Replaces whatever a diff left behind, so plain content never inherits its highlights. */
+/** Replaces whatever a diff or a log left behind, so plain content never inherits its highlights. */
 function updatePlain(pane: PaneHandle, value: string): void {
   releaseDiffText(pane.text)
+  releaseAnsiText(pane.text)
   pane.update(value)
 }
 export function installMainContent(pane: PaneHandle, content: MainPaneContent, tooSmall: boolean): void {
@@ -237,9 +259,25 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
       cursorTargets.delete(pane)
     }
     pane.text.wrapMode = "char"
+    releaseAnsiText(pane.text)
     const rendered = renderDiff(doc)
     installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })
     // clamp again after content size known
+    pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
+    pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
+    pane.syncScrollbar()
+    return
+  }
+
+  if (content.ansi !== undefined) {
+    documents.delete(pane)
+    clearSelection()
+    // A log graph is pre-wrapped by git around the terminal it thinks it has; letting OpenTUI
+    // wrap it too would fold the graph lanes into the message text. lazygit's main view does not
+    // wrap either (pkg/gui/views.go: the Normal view leaves `Wrap` false for command output).
+    pane.text.wrapMode = "none"
+    releaseDiffText(pane.text)
+    installAnsiText(pane.text, { preamble: content.preamble ?? "", body: content.ansi.text, spans: content.ansi.spans })
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
     pane.syncScrollbar()

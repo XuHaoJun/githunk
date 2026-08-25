@@ -143,6 +143,18 @@ const BRIGHT_ANSI_BY_BASE_ANSI: Readonly<Record<string, string>> = {
 }
 
 /**
+ * ANSI colours 0-15 as hex, in palette order.
+ *
+ * The dark half is `BRIGHT_ANSI_BY_BASE_ANSI`'s keys and the bright half its values, so the three
+ * places that need a 16-colour palette — the pinned constants above, the highlight promotion below
+ * and `parseAnsi` (./ansi) resolving git's own SGR output — cannot drift apart.
+ */
+export const ANSI_PALETTE: readonly string[] = [
+  ...Object.keys(BRIGHT_ANSI_BY_BASE_ANSI),
+  ...Object.values(BRIGHT_ANSI_BY_BASE_ANSI),
+]
+
+/**
  * The bright variant of `color` when it is one of the 8 base ANSI colours, otherwise `color`
  * itself — lazygit's `fgColor += 8` on a highlighted line (pkg/gocui/view.go:665-670).
  * Bold, the other half of that branch, is the caller's job.

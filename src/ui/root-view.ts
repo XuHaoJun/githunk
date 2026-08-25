@@ -27,13 +27,17 @@ import {
   type WindowName,
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
-import { createBranchesPane, BRANCHES_JUMP_KEY, BRANCHES_TABS } from "./panes/branches-pane"
+import { createBranchesPane, BRANCHES_JUMP_KEY, BRANCHES_TABS, NO_BRANCHES_THIS_REPO } from "./panes/branches-pane"
 import { localBranchRows } from "./panes/branches-pane"
 import { buildPaneTabsStrip, paneTabAtOffset } from "./pane-tabs"
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
 import { tagRows } from "./panes/tags-pane"
 import { buildCommitRows, createCommitsPane } from "./panes/commits-pane"
 import { COMMITS_JUMP_KEY, COMMITS_TABS, NO_REFLOG_HISTORY, reflogRows } from "./panes/reflog-pane"
+import type { RefLogTarget } from "../git/ref-log"
+import { parseAnsi } from "./ansi"
+import { NO_BRANCHES_FOR_REMOTE, NO_REMOTES, remotePreviewText } from "./panes/remotes-pane"
+import { NO_TAGS, tagPreamble } from "./panes/tags-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, createFilesPane, createFilesTreeState, fileHasUnstagedChanges, filesPaneCommitAvailable, filesTreeRows } from "./panes/files-pane"
 import { NO_WORKTREES_THIS_REPO, selectedWorktreeFrom, worktreePreviewText, worktreeRows } from "./panes/worktrees-pane"
@@ -53,7 +57,7 @@ import {
 } from "./file-tree"
 import { submoduleFullName } from "../domain/submodule"
 import type { ChangedFile } from "../domain/review-target"
-import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, type MainPaneContent } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainPaneContent } from "./panes/main-pane"
 import { commitFileRows } from "./panes/commit-files-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
@@ -112,6 +116,7 @@ export type RootViewOptions = {
   readonly loadCommitInspection?: (oid: string) => Promise<CommitDetails>
   readonly loadCommitFileInspection?: (oid: string, path: string) => Promise<DiffDocument>
   readonly loadTagInspection?: (tag: TagSummary) => Promise<import("../domain/tag").TagPreview>
+  readonly loadRefLogInspection?: (target: RefLogTarget) => Promise<string>
   readonly onPreviewError?: (error: unknown) => void
   readonly onMarkFocusedFileReviewed?: (path?: string) => Promise<void>
   readonly onCommitMessage?: (message: string) => Promise<void>
@@ -190,6 +195,7 @@ export class RootView {
   private readonly loadCommitInspection: ((oid: string) => Promise<CommitDetails>) | undefined
   private readonly loadCommitFileInspection: ((oid: string, path: string) => Promise<DiffDocument>) | undefined
   private readonly loadTagInspection: ((tag: TagSummary) => Promise<import("../domain/tag").TagPreview>) | undefined
+  private readonly loadRefLogInspection: ((target: RefLogTarget) => Promise<string>) | undefined
   private readonly onPreviewError: ((error: unknown) => void) | undefined
   private readonly onCommitMessage: ((message: string) => Promise<void>) | undefined
   private readonly onAmendMessage: ((message: string) => Promise<void>) | undefined
@@ -299,6 +305,7 @@ export class RootView {
     this.loadCommitInspection = options.loadCommitInspection
     this.loadCommitFileInspection = options.loadCommitFileInspection
     this.loadTagInspection = options.loadTagInspection
+    this.loadRefLogInspection = options.loadRefLogInspection
     this.onPreviewError = options.onPreviewError
     this.onCommitMessage = options.onCommitMessage
     this.onAmendMessage = options.onAmendMessage
@@ -1578,6 +1585,8 @@ export class RootView {
     if (this.focusManager.active === "branches") {
       this.branchesPanel = cyclePanelTab(this.branchesPanel, direction)
       this.renderBranchesPane()
+      // Activating a context renders it to main (pkg/gui/context.go `Activate` -> HandleFocus).
+      this.syncPreviewForFocus("branches")
       this.root.requestRender()
       return
     }
@@ -1708,6 +1717,9 @@ export class RootView {
       const childView = createListState(rows)
       this.branchesPanel = enterPanelChild(this.branchesPanel, { kind: "remote-branches", remote }, childView)
       this.renderBranchesPane()
+      // Pushing the child context activates it, and activation renders to main
+      // (pkg/gui/context.go `Activate` -> HandleFocus).
+      this.syncPreviewForFocus("branches")
       if (this.onBrowseRemote !== undefined) {
         this.runUiMutation(() => this.onBrowseRemote!(remote))
       }
@@ -2314,6 +2326,24 @@ export class RootView {
       document: details.document,
     }
   }
+  /**
+   * lazygit's `GetGraphCmdObj(ref.FullRefName())` render-to-main: the selected ref's commit graph,
+   * coloured by git itself. All three panel-3 tabs and the RemoteBranches drill-down share it,
+   * because lazygit shares it too — branches_controller.go:207, remote_branches_controller.go:122
+   * and tags_controller.go:109 all call the one command.
+   */
+  private requestRefLog(source: RefLogTarget["kind"], name: string, label: string, preamble?: string): void {
+    const preambleField = preamble === undefined ? {} : { preamble }
+    if (this.loadRefLogInspection === undefined) {
+      // No git behind the view (unit harnesses): the ref is still named, so the pane says what it
+      // is showing rather than going blank.
+      this.mainGate.installSynchronous({ source, stableId: name, label, ...preambleField, plainText: `${preamble ?? ""}${name}` })
+      return
+    }
+    const load = (): Promise<string> => this.loadRefLogInspection!({ kind: source, name })
+    const present = (raw: string): MainPaneContent => ({ source, stableId: name, label, ...preambleField, ansi: parseAnsi(raw) })
+    this.previewInflight = this.mainGate.request(source, name, load, present).catch(() => {})
+  }
   private presentCommitFileContent(oid: string, selectedId: string, doc: DiffDocument): MainPaneContent {
     const label = selectedId.split("\u0000")[0]!
     return { source: "commit-file", stableId: `${oid}\0${selectedId}`, label, document: doc }
@@ -2396,35 +2426,46 @@ export class RootView {
     }
     if (focus === "branches") {
       const panel = this.branchesPanel
+      // The RemoteBranches drill-down: remote_branches_controller.go:114-135, the same graph as a
+      // local branch under the title `Remote Branch`.
       if (panel.child !== undefined) {
-        const content: MainPaneContent = { source: "remote-branch", stableId: panel.child.view.selectedId ?? panel.child.value.remote, label: panel.child.value.remote, plainText: `Remote ${panel.child.value.remote}` }
-        this.mainGate.installSynchronous(content)
+        const selectedId = panel.child.view.selectedId
+        const ref = selectedId !== undefined && selectedId.startsWith("remote-branch:") ? selectedId.slice("remote-branch:".length) : undefined
+        if (ref === undefined) {
+          this.mainGate.installSynchronous({ source: "remote-branch", stableId: `${panel.child.value.remote}:empty`, label: MAIN_TITLE_REMOTE_BRANCH, plainText: NO_BRANCHES_FOR_REMOTE })
+          return
+        }
+        this.requestRefLog("remote-branch", ref, MAIN_TITLE_REMOTE_BRANCH)
         return
       }
       const active = panel.activeTab
-      const view = panel.views[active]
-      const selectedId = view?.selectedId ?? active
-      let source: MainPaneContent["source"] = "local-branch"
-      if (active === "remotes") source = "remote"
-      else if (active === "tags") source = "tag"
-      if (active === "tags" && selectedId.startsWith("tag:") && this.loadTagInspection !== undefined) {
-        const ref = selectedId.slice("tag:".length)
-        const tag = this.model.tags?.find((t) => t.ref === ref)
-        if (tag !== undefined) {
-          const load = (): Promise<import("../domain/tag").TagPreview> => this.loadTagInspection!(tag)
-          const present = (preview: import("../domain/tag").TagPreview): MainPaneContent => ({
-            source: "tag",
-            stableId: ref,
-            label: preview.name,
-            plainText: `${preview.name} ${preview.kind} ${preview.targetOid.slice(0, 7)} ${preview.subject ?? ""}`,
-          })
-          const promise = this.mainGate.request("tag", ref, load, present)
-          this.previewInflight = promise.catch(() => {})
+      const selectedId = panel.views[active]?.selectedId
+      if (active === "remotes") {
+        // remotes_controller.go:101-125: the only panel-3 tab that renders text, not a graph.
+        const name = selectedId !== undefined && selectedId.startsWith("remote:") ? selectedId.slice("remote:".length) : undefined
+        const remote = name === undefined ? undefined : this.model.branches?.remotes.find((candidate) => candidate.name === name)
+        this.mainGate.installSynchronous(remote === undefined
+          ? { source: "remote", stableId: "remote-empty", label: MAIN_TITLE_REMOTE, plainText: NO_REMOTES }
+          : { source: "remote", stableId: remote.name, label: MAIN_TITLE_REMOTE, plainText: remotePreviewText(remote) })
+        return
+      }
+      if (active === "tags") {
+        // tags_controller.go:101-123: the tag's own info, a `---` rule, then the graph.
+        const ref = selectedId !== undefined && selectedId.startsWith("tag:") ? selectedId.slice("tag:".length) : undefined
+        const tag = ref === undefined ? undefined : this.model.tags?.find((candidate) => candidate.ref === ref)
+        if (tag === undefined) {
+          this.mainGate.installSynchronous({ source: "tag", stableId: "tag-empty", label: MAIN_TITLE_TAG, plainText: NO_TAGS })
           return
         }
+        this.requestRefLog("tag", tag.ref, MAIN_TITLE_TAG, tagPreamble(tag))
+        return
       }
-      const content: MainPaneContent = { source, stableId: selectedId, label: selectedId, plainText: `${source} ${selectedId}` }
-      this.mainGate.installSynchronous(content)
+      const branch = selectedId !== undefined && selectedId.startsWith("local:") ? selectedId.slice("local:".length) : undefined
+      if (branch === undefined) {
+        this.mainGate.installSynchronous({ source: "local-branch", stableId: "branch-empty", label: MAIN_TITLE_LOG, plainText: NO_BRANCHES_THIS_REPO })
+        return
+      }
+      this.requestRefLog("local-branch", branch, MAIN_TITLE_LOG)
       return
     }
     if (focus === "stash") {

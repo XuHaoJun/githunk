@@ -1,8 +1,42 @@
 import type { AppModel } from "../../app/model"
+import type { TagSummary } from "../../domain/tag"
 import { filterItems } from "../../app/filter"
 import type { ListRow } from "../list-view"
 import { createListState, renderListRows, setListRows, type ListState } from "../list-view"
 import type { PaneHandle } from "./common"
+
+/** tags_controller.go:107. */
+export const NO_TAGS = "No tags"
+
+/**
+ * tags_controller.go:142-156 `filterOutPgpSignature`: an annotated tag's signature block is
+ * dropped from the info shown above the graph, terminator line included.
+ */
+function withoutPgpSignature(message: string): string {
+  let inSignature = false
+  return message.split("\n").filter((line) => {
+    if (line === "-----END PGP SIGNATURE-----") {
+      inSignature = false
+      return false
+    }
+    if (line === "-----BEGIN PGP SIGNATURE-----") inSignature = true
+    return !inSignature
+  }).join("\n")
+}
+
+/**
+ * What lazygit renders above a tag's commit graph: `getTagInfo(tag) + "\n\n---\n\n"`
+ * (tags_controller.go:110,125-141). An annotated tag adds its own annotation
+ * (`git tag -n99 --list <name>`, here already carried on the summary as `message`); a lightweight
+ * one is just the header line.
+ */
+export function tagPreamble(tag: TagSummary): string {
+  const header = `${tag.kind === "annotated" ? "Annotated tag" : "Lightweight tag"}: ${tag.name}`
+  const annotation = tag.kind === "annotated" && tag.message !== undefined
+    ? withoutPgpSignature(tag.message).replace(/\n+$/, "")
+    : ""
+  return `${annotation.length === 0 ? header : `${header}\n\n${annotation}`}\n\n---\n\n`
+}
 
 export function tagRows(model: AppModel, filter = ""): ListRow[] {
   const tags = model.tags ?? []
