@@ -62,11 +62,36 @@ import { createListState, listRowAtPoint, moveListSelection, renderListRows, sel
 import { MainPreviewGate } from "./main-preview"
 import { commitGraphRows } from "./commit-graph"
 import type { CommitSummary } from "../domain/commit"
+function formatRelativeTime(authoredAt: string, now: Date): string {
+  const then = new Date(authoredAt).getTime()
+  if (Number.isNaN(then)) return ""
+  const diffMs = now.getTime() - then
+  const diffSec = Math.round(diffMs / 1000)
+  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" })
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ["year", 365 * 24 * 60 * 60],
+    ["month", 30 * 24 * 60 * 60],
+    ["week", 7 * 24 * 60 * 60],
+    ["day", 24 * 60 * 60],
+    ["hour", 60 * 60],
+    ["minute", 60],
+    ["second", 1],
+  ]
+  for (const [unit, secs] of units) {
+    if (Math.abs(diffSec) >= secs || unit === "second") {
+      const value = Math.round(diffSec / secs)
+      return rtf.format(-value, unit)
+    }
+  }
+  return rtf.format(0, "second")
+}
 
 function buildCommitRows(commits: readonly CommitSummary[]): readonly ListRow[] {
+  const now = new Date()
   const graphs = commitGraphRows(commits)
   return commits.map((commit, index) => {
     const graph = graphs[index] ?? ""
+    const relative = formatRelativeTime(commit.authoredAt, now)
     return {
       id: commit.oid,
       columns: [
@@ -74,6 +99,7 @@ function buildCommitRows(commits: readonly CommitSummary[]): readonly ListRow[] 
         { text: commit.shortOid, priority: 1, style: "yellow" as const },
         { text: commit.subject, priority: 2 },
         { text: commit.authorName, priority: 3, style: "cyan" as const },
+        { text: relative, priority: 4, style: "dim" as const },
       ],
     }
   })

@@ -192,12 +192,11 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
       return app.view?.paneTextGeometry(id)
     },
     async cleanup() {
-      if (!reused) await repository.cleanup().catch(() => {})
       await fetchBare?.cleanup().catch(() => {})
       await pushBare?.cleanup().catch(() => {})
       app.destroy()
       setup.renderer.destroy()
-      await repository.cleanup().catch(() => {})
+      if (!reused) await repository.cleanup().catch(() => {})
     },
   }
 }

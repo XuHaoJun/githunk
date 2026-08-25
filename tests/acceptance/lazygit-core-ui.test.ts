@@ -251,11 +251,11 @@ describe("lazygit core UI acceptance", () => {
     }
     const oidForDrill = view.commitsSelectedOid!
     const targetBeforeDrill = JSON.stringify(app.controller.state.reviewTarget)
+    const branchTargetBefore = JSON.stringify((app.controller.state as unknown as { branchReviewTarget?: unknown }).branchReviewTarget)
+    const generationBefore = (app.controller as unknown as { generation?: number }).generation
     await harness.pressKey("4")
     await harness.flush()
     await harness.pressKey("RETURN")
-    await harness.flush()
-    await new Promise((r) => setTimeout(r, 25))
     await harness.flush()
     await view.whenPreviewSettled().catch(() => {})
     await harness.flush()
@@ -263,6 +263,8 @@ describe("lazygit core UI acceptance", () => {
     expect(view.commitsPanel.child?.value.kind).toBe("commit-files")
     expect(view.commitsPanel.child?.value.oid).toBe(oidForDrill)
     expect(JSON.stringify(app.controller.state.reviewTarget)).toBe(targetBeforeDrill)
+    expect(JSON.stringify((app.controller.state as unknown as { branchReviewTarget?: unknown }).branchReviewTarget)).toBe(branchTargetBefore)
+    if (generationBefore !== undefined) expect((app.controller as unknown as { generation?: number }).generation).toBe(generationBefore)
     const beforeFileSel = view.mainContent?.stableId
     await harness.pressKey("j")
     await harness.flush()
@@ -290,22 +292,20 @@ describe("lazygit core UI acceptance", () => {
     expect(view.commitsSelectedOid).toBe(oidForDrill)
     expect(view.mainContent?.source).toBe("commit")
     expect(view.mainContent?.stableId).toBe(oidForDrill)
+    expect(JSON.stringify((app.controller.state as unknown as { branchReviewTarget?: unknown }).branchReviewTarget)).toBe(branchTargetBefore)
     // double-click path
     const commitsBox2 = harness.paneTextGeometry("commits")!
     await mouse.doubleClick(commitsBox2.screenX + 2, commitsBox2.screenY + 1)
     await harness.flush()
-    await new Promise((r) => setTimeout(r, 35))
     await view.whenPreviewSettled().catch(() => {})
     await harness.flush()
     if (view.commitsPanel.child === undefined) {
       await harness.pressKey("RETURN")
       await harness.flush()
-      await new Promise((r) => setTimeout(r, 25))
-      await view.whenPreviewSettled().catch(() => {})
-      await harness.flush()
     }
     expect(view.commitsPanel.child?.value.kind).toBe("commit-files")
     expect(JSON.stringify(app.controller.state.reviewTarget)).toBe(targetBeforeDrill)
+    expect(JSON.stringify((app.controller.state as unknown as { branchReviewTarget?: unknown }).branchReviewTarget)).toBe(branchTargetBefore)
     const oidInChild = view.commitsPanel.child!.value.oid
     await harness.pressKey("ESCAPE")
     await harness.flush()
@@ -314,6 +314,7 @@ describe("lazygit core UI acceptance", () => {
     expect(view.commitsPanel.child).toBeUndefined()
     expect(view.commitsSelectedOid).toBe(oidInChild)
     expect(view.mainContent?.stableId).toBe(oidInChild)
+    expect(JSON.stringify((app.controller.state as unknown as { branchReviewTarget?: unknown }).branchReviewTarget)).toBe(branchTargetBefore)
 
     // 5. Panel 3 [/] wraps Branches/Remotes/Tags and preserves each selection
     await harness.pressKey("3")
@@ -486,25 +487,31 @@ describe("lazygit core UI acceptance", () => {
     const commitsScrollBefore = view.paneScrollY("commits")
     const mainScrollBefore = view.mainScrollY
     const focusBeforeWheel = view.focusManager.active
+    const commitsMaxBefore = view.commitsPane.text.maxScrollY
     await mouse.scroll(commitsBoxSmall.screenX + 1, commitsBoxSmall.screenY + 1, "down")
     await harness.flush()
     expect(view.mainScrollY).toBe(mainScrollBefore)
     expect(view.focusManager.active).toBe(focusBeforeWheel)
-    // wheels are 2 rows per delta, so check delta
-    const deltaCommits = view.paneScrollY("commits") - commitsScrollBefore
-    expect(deltaCommits === 0 || deltaCommits === 2 || deltaCommits > 0).toBe(true)
+    const expectedCommitsAfter = Math.min(commitsMaxBefore, commitsScrollBefore + 2)
+    expect(view.paneScrollY("commits")).toBe(expectedCommitsAfter)
     const mainBefore2 = view.mainScrollY
     const commitsBefore2 = view.paneScrollY("commits")
+    const mainMaxBefore2 = view.mainPane.text.maxScrollY
     await mouse.scroll(mainBoxSmall.screenX + 1, mainBoxSmall.screenY + 1, "down")
     await harness.flush()
     expect(view.paneScrollY("commits")).toBe(commitsBefore2)
-    // wheel over border still routes
+    const expectedMainAfter = Math.min(mainMaxBefore2, mainBefore2 + 2)
+    expect(view.mainScrollY).toBe(expectedMainAfter)
+    // wheel over border still routes to commits, not main
     const winCommits = view.geometry.windows.commits!
     const commitsBeforeBorderWheel = view.paneScrollY("commits")
+    const commitsMaxBorder = view.commitsPane.text.maxScrollY
+    const mainBeforeBorder = view.mainScrollY
     await mouse.scroll(winCommits.x0, winCommits.y0, "down")
     await harness.flush()
-    // may have scrolled or stayed, but main unchanged
-    expect(view.mainScrollY).toBe(mainBefore2 + 2 > view.mainPane.text.maxScrollY ? view.mainPane.text.maxScrollY : mainBefore2 + 2 > mainBefore2 ? view.mainScrollY : view.mainScrollY)
+    const expectedBorderCommits = Math.min(commitsMaxBorder, commitsBeforeBorderWheel + 2)
+    expect(view.paneScrollY("commits")).toBe(expectedBorderCommits)
+    expect(view.mainScrollY).toBe(mainBeforeBorder)
     // wheel over scrollbar does not focus
     const bar = paneScrollbar(view.commitsPane.text)
     if (bar?.visible) {
