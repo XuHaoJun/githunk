@@ -63,14 +63,17 @@ async function listRemoteNames(runner: CommandRunner): Promise<readonly string[]
 export async function listLocalBranches(runner: CommandRunner): Promise<readonly LocalBranch[]> {
   const result = await runner.run([
     "for-each-ref",
-    "--format=%(refname:short)%00%(upstream:short)%00%(objectname)%00%(HEAD)%00",
+    "--format=%(refname:short)%00%(upstream:short)%00%(objectname)%00%(HEAD)%00%(committerdate:unix)%00%(subject)%00%(upstream:track)%00",
     "refs/heads",
   ], { readOnly: true })
-  return parseNulFields(result.stdout, 4).map(([name, upstream, oid, head]) => ({
+  return parseNulFields(result.stdout, 7).map(([name, upstream, oid, head, committedAt, subject, upstreamTrack]) => ({
     name: name ?? "",
     ...(oid === undefined || oid.length === 0 ? {} : { oid }),
     ...(upstream === undefined || upstream.length === 0 ? {} : { upstream }),
     isCurrent: head === "*",
+    committedAt: committedAt ?? "",
+    subject: subject ?? "",
+    upstreamTrack: upstreamTrack ?? "",
   }))
 }
 
@@ -97,9 +100,31 @@ export async function listRemoteBranches(runner: CommandRunner, remote: string):
 
 export async function listRemotes(runner: CommandRunner, includeBranches = false): Promise<readonly Remote[]> {
   const names = await listRemoteNames(runner)
-  return Promise.all(names.map(async (name) => includeBranches
-    ? { name, branches: await listRemoteBranches(runner, name) }
-    : { name }))
+  return Promise.all(
+    names.map(async (name) => {
+      let fetchUrl: string | undefined
+      let pushUrl: string | undefined
+      try {
+        const result = await runner.run(["remote", "get-url", "--", name], { readOnly: true })
+        const trimmed = result.stdout.trim()
+        if (trimmed.length > 0) fetchUrl = trimmed
+      } catch {}
+      try {
+        const result = await runner.run(["remote", "get-url", "--push", "--", name], { readOnly: true })
+        const trimmed = result.stdout.trim()
+        if (trimmed.length > 0) pushUrl = trimmed
+      } catch {}
+      if (pushUrl === undefined && fetchUrl !== undefined) pushUrl = fetchUrl
+      if (fetchUrl === undefined && pushUrl !== undefined) fetchUrl = pushUrl
+      const branches = includeBranches ? await listRemoteBranches(runner, name) : undefined
+      return {
+        name,
+        ...(fetchUrl === undefined ? {} : { fetchUrl }),
+        ...(pushUrl === undefined ? {} : { pushUrl }),
+        ...(branches === undefined ? {} : { branches }),
+      }
+    }),
+  )
 }
 
 export async function listBranches(runner: CommandRunner): Promise<BranchListing> {

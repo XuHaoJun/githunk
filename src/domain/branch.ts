@@ -3,6 +3,9 @@ export type LocalBranch = {
   readonly oid?: string
   readonly upstream?: string
   readonly isCurrent: boolean
+  readonly committedAt?: string
+  readonly subject?: string
+  readonly upstreamTrack?: string
 }
 
 export type RemoteBranch = {
@@ -14,6 +17,8 @@ export type RemoteBranch = {
 export type Remote = {
   readonly name: string
   readonly branches?: readonly RemoteBranch[]
+  readonly fetchUrl?: string
+  readonly pushUrl?: string
 }
 
 export type BranchListing = {

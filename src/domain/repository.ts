@@ -3,6 +3,7 @@ import type { UpstreamRequired } from "../git/sync"
 import type { CommandRecord } from "./command"
 import type { CommitDetails, CommitSummary } from "./commit"
 import type { BranchListing } from "./branch"
+import type { TagSummary } from "./tag"
 import type { ChangedFile, ReviewTarget, WorkingTreeScope } from "./review-target"
 import type { ReviewFileState } from "./review-progress"
 export type PatchSection = {
@@ -23,6 +24,7 @@ export type AppModel = {
   readonly branch: string
   readonly upstream?: string
   readonly branches?: BranchListing
+  readonly tags?: readonly TagSummary[]
   readonly upstreamChoice?: UpstreamRequired
   readonly stashes?: readonly StashEntry[]
   readonly reviewTarget: ReviewTarget

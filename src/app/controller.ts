@@ -19,6 +19,8 @@ import { checkoutRemoteTracking, createBranch, deleteBranch, fetchRemote, listBr
 import { listStashes, loadStash, createStash as createGitStash, applyStash as applyGitStash, popStash as popGitStash, dropStash as dropGitStash } from "../git/stash"
 import { fetch as fetchSync, pull as pullSync, push as pushSync, type PullOptions, type PushOptions, type PushResult } from "../git/sync"
 import type { StashCreateOptions, StashDropOptions, StashEntry } from "../domain/stash"
+import type { TagPreview, TagSummary } from "../domain/tag"
+import { listTags, loadTagPreview } from "../git/tags"
 import { MutationQueue } from "./mutation-queue"
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
 export type BranchReviewLoader = (baseRef: string) => Promise<BranchReviewSnapshot>
@@ -27,6 +29,8 @@ export type CommitListLoader = (range: string, filter?: string) => Promise<reado
 export type CommitLoader = (oid: string) => Promise<CommitDetails>
 export type CommitFilePatchLoader = (oid: string, path: string) => Promise<DiffDocument>
 export type BaseInferenceLoader = () => Promise<BaseInference>
+export type TagListLoader = () => Promise<readonly TagSummary[]>
+
 
 export type AppControllerOptions = {
   readonly repositoryRoot?: string
@@ -45,11 +49,12 @@ export type AppControllerOptions = {
   readonly commitFilePatchLoader?: CommitFilePatchLoader
   readonly inferBase?: BaseInferenceLoader
   readonly loadStashes?: () => Promise<readonly StashEntry[]>
+  readonly loadTags?: TagListLoader
+  readonly tagsLoader?: TagListLoader
   readonly mutations?: GitMutations
   readonly commitMutations?: CommitMutations
   readonly reviewStore?: ReviewStore
 }
-
 function titleFor(target: ReviewTarget, branch = ""): string {
   if (target.kind === "working-tree") {
     return `Working Tree — ${target.scope[0]?.toUpperCase() ?? "A"}${target.scope.slice(1)}`
@@ -101,6 +106,7 @@ export class AppController {
   private readonly loadBranchSnapshot: BranchReviewLoader
   private readonly loadBranchesListing: BranchListingLoader
   private readonly loadStashesListing: () => Promise<readonly StashEntry[]>
+  private readonly loadTagsListing: TagListLoader
   private readonly loadCommitList: CommitListLoader
   private readonly loadCommitDetails: CommitLoader
   private readonly loadCommitFile: CommitFilePatchLoader
@@ -158,6 +164,11 @@ export class AppController {
     this.loadStashesListing = options instanceof GitRunner
       ? () => listStashes(options)
       : options.loadStashes ?? (runner === undefined ? async () => [] : () => listStashes(runner))
+    this.loadTagsListing = options instanceof GitRunner
+      ? () => listTags(options)
+      : options.loadTags ??
+        options.tagsLoader ??
+        (load === undefined && runner !== undefined ? () => listTags(runner) : async () => [] as readonly TagSummary[])
     const target: ReviewTarget = { kind: "working-tree", scope: "all" }
     this.currentState = {
       repositoryRoot: repositoryRoot ?? "",
@@ -179,8 +190,72 @@ export class AppController {
   }
 
   async refresh(): Promise<void> {
-    const stashWarning = await this.refreshStashes()
-    const branchWarning = await this.refreshBranches()
+    const generation = ++this.generation
+    const branchesPromise = this.loadBranchesListing().then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason) => ({ status: "rejected" as const, reason }),
+    )
+    const stashesPromise = this.loadStashesListing().then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason) => ({ status: "rejected" as const, reason }),
+    )
+    const tagsPromise = this.loadTagsListing().then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason) => ({ status: "rejected" as const, reason }),
+    )
+    const [branchesResult, stashesResult, tagsResult] = await Promise.all([branchesPromise, stashesPromise, tagsPromise])
+    if (generation !== this.generation) return
+    let branchWarning: string | undefined
+    let stashWarning: string | undefined
+    let tagWarning: string | undefined
+    if (branchesResult.status === "fulfilled") {
+      this.currentState = {
+        ...this.currentState,
+        branches: branchesResult.value,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    } else {
+      const error = branchesResult.reason
+      branchWarning =
+        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
+      this.currentState = {
+        ...this.currentState,
+        banner: branchWarning,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    }
+    if (stashesResult.status === "fulfilled") {
+      this.currentState = {
+        ...this.currentState,
+        stashes: stashesResult.value,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    } else {
+      const error = stashesResult.reason
+      stashWarning =
+        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
+      this.currentState = {
+        ...this.currentState,
+        banner: stashWarning,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    }
+    if (tagsResult.status === "fulfilled") {
+      this.currentState = {
+        ...this.currentState,
+        tags: tagsResult.value,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    } else {
+      const error = tagsResult.reason
+      tagWarning =
+        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
+      this.currentState = {
+        ...this.currentState,
+        banner: tagWarning,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    }
     const target = this.currentState.reviewTarget
     if (target.kind === "working-tree") {
       await this.refreshTarget(target)
@@ -198,6 +273,9 @@ export class AppController {
     }
     if (stashWarning !== undefined) {
       this.currentState = { ...this.currentState, banner: stashWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+    }
+    if (tagWarning !== undefined) {
+      this.currentState = { ...this.currentState, banner: tagWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
     }
   }
   private async refreshStashes(): Promise<string | undefined> {
@@ -540,6 +618,19 @@ export class AppController {
   async commitPatchPreview(oid: string): Promise<string> {
     const details = await this.loadCommitDetails(oid)
     return details.document.text
+  }
+
+  async loadCommitInspection(oid: string): Promise<CommitDetails> {
+    return this.loadCommitDetails(oid)
+  }
+
+  async loadCommitFileInspection(oid: string, path: string): Promise<DiffDocument> {
+    return this.loadCommitFile(oid, path)
+  }
+
+  async loadTagInspection(tag: TagSummary): Promise<TagPreview> {
+    if (this.runner === undefined) throw new Error("Tag inspection requires a GitRunner")
+    return loadTagPreview(this.runner, tag)
   }
 
   async selectCommitFile(path: string): Promise<void> {

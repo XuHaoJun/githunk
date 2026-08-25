@@ -166,4 +166,14 @@ describe("AppController", () => {
     expect(controller.state.banner).toBe("second failed")
   })
 
+  test("refresh publishes the real tag list", async () => {
+    const tags = [{ name: "v1", ref: "refs/tags/v1", kind: "lightweight", objectOid: "a", targetOid: "a", subject: "release" }] as const
+    const controller = new AppController({
+      load: async (target) => snapshot(target.scope, ""),
+      loadTags: async () => tags,
+    })
+    await controller.refresh()
+    expect(controller.state.tags).toEqual(tags)
+  })
 })
+

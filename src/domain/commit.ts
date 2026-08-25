@@ -14,4 +14,5 @@ export type CommitDetails = CommitSummary & {
   readonly document: DiffDocument
   readonly patch: DiffDocument
   readonly raw: string
+  readonly preamble?: string
 }

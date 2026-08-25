@@ -55,7 +55,9 @@ function detailsFromShow(raw: string, oid: string, parentOids: readonly string[]
   const messageStart = headerEnd < 0 ? raw.length : headerEnd + 2
   const patchText = patchFromShow(raw)
   const patchOffset = patchText.length === 0 ? raw.length : raw.indexOf(patchText, messageStart)
-  const messageLines = raw.slice(messageStart, patchOffset < 0 ? raw.length : patchOffset).replace(/\n+$/, "").split(/\r?\n/)
+  const preambleEnd = patchOffset < 0 ? raw.length : patchOffset
+  const preamble = raw.slice(0, preambleEnd)
+  const messageLines = raw.slice(messageStart, preambleEnd < 0 ? raw.length : preambleEnd).replace(/\n+$/, "").split(/\r?\n/)
   const lines = messageLines.map((line) => line.startsWith("    ") ? line.slice(4) : line)
   const subject = lines.shift() ?? ""
   const body = lines.join("\n").replace(/^\n+/, "").replace(/\n+$/, "")
@@ -74,6 +76,7 @@ function detailsFromShow(raw: string, oid: string, parentOids: readonly string[]
     document,
     patch: document,
     raw,
+    preamble,
   }
 }
 
@@ -84,7 +87,7 @@ async function parentOidsFor(runner: CommandRunner, oid: string): Promise<readon
 }
 
 export async function loadCommit(runner: CommandRunner, oid: string): Promise<CommitDetails> {
-  const result = await runner.run(["show", "--format=fuller", "--no-ext-diff", "--no-color", "--find-renames", "--binary", "-m", oid, "--"], { readOnly: true })
+  const result = await runner.run(["show", "--format=fuller", "--no-ext-diff", "--no-color", "--find-renames", "--binary", "--stat", "-m", oid, "--"], { readOnly: true })
   const parents = await parentOidsFor(runner, oid)
   return detailsFromShow(result.stdout, oid, parents)
 }
