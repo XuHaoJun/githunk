@@ -40,7 +40,7 @@ import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument
 import { commitFileRows } from "./panes/commit-files-pane"
 import { createStashPane, moveStashCursor, selectedStashEntry, selectedStashItem, stashCursorIndex, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
-import { scrollYToReveal, type PaneHandle } from "./panes/common"
+import { paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
 import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
@@ -58,7 +58,7 @@ import { createSplitter, type SplitterAxis, type SplitterHandle } from "./splitt
 import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
 import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, type PanelState } from "./panel-state"
-import { createListState, moveListSelection, renderListRows, selectListRow, setListRows, type ListState } from "./list-view"
+import { createListState, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRows, type ListState } from "./list-view"
 import { MainPreviewGate } from "./main-preview"
 
 const PANE_TITLES: Readonly<Record<FocusId, string>> = {
@@ -123,6 +123,12 @@ function capitalizeKeyName(key: string): string {
 
 const DOUBLE_CLICK_MS = 400
 
+export type GestureOwner =
+  | { readonly kind: "vertical-splitter" }
+  | { readonly kind: "horizontal-splitter" }
+  | { readonly kind: "scrollbar"; readonly paneId: FocusId }
+  | { readonly kind: "main-selection" }
+
 
 export class RootView {
   readonly renderer: CliRenderer
@@ -136,7 +142,8 @@ export class RootView {
   private focusBeforeCollapse: FocusId | undefined
   private lastSplitterPress: { readonly axis: "vertical" | "horizontal"; readonly x: number; readonly y: number; readonly at: number } | undefined
   private activeSplitterDrag: SplitterAxis | undefined
-
+  gestureOwner: GestureOwner | undefined
+  private pendingClick: { readonly viewId: string; readonly stableId: string; readonly x: number; readonly y: number; readonly at: number } | undefined
   private model: AppModel
   private readonly panes: Record<Exclude<FocusId, "command-log">, PaneHandle>
   private readonly commandLog: CommandLogPaneHandle
@@ -348,6 +355,8 @@ export class RootView {
     renderer.root.add(this.root)
 
     this.focusManager.onChange = (focus, _logVisible) => {
+      this.pendingClick = undefined
+      this.cancelGesture()
       this.clearDiscardState()
       this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
@@ -376,13 +385,16 @@ export class RootView {
         option: normalized.option,
       } as KeyEvent
 
+      if (routedKey.name === "escape") {
+        this.pendingClick = undefined
+        this.cancelGesture()
+      }
       if (routedKey.name === "escape" && this.commitsPanel.child !== undefined) {
         this.actionBack()
         key.preventDefault()
         key.stopPropagation()
         return
       }
-
 
       // Dialogs consume raw characters, so modal input keeps its own path.
       if (this.modalInputActive()) {
@@ -478,10 +490,39 @@ export class RootView {
     return panel.views.commits?.selectedIndex ?? 0
   }
   get mainPane(): PaneHandle { return this.panes.main }
+  get commitsPane(): PaneHandle { return this.panes.commits }
+  get filesPane(): PaneHandle { return this.panes.files }
+  get branchesPane(): PaneHandle { return this.panes.branches }
+  get stashPane(): PaneHandle { return this.panes.stash }
+  get statusPane(): PaneHandle { return this.panes.status }
   paneFor(id: (typeof FOCUS_IDS)[number]): PaneHandle {
     return this.panes[id]
   }
-
+  get commitsSelectedOid(): string | undefined {
+    const panel = this.commitsPanel
+    if (panel.child !== undefined) return panel.child.view.selectedId?.split("\u0000")[0] ?? panel.child.value.oid
+    return panel.views.commits?.selectedId
+  }
+  paneScrollY(id: FocusId): number {
+    if (id === "command-log") return this.commandLog.text.scrollY
+    const pane = (this.panes as Record<string, PaneHandle>)[id]
+    return pane?.text.scrollY ?? 0
+  }
+  paneTextGeometry(id: FocusId): { readonly screenX: number; readonly screenY: number; readonly width: number; readonly height: number } | undefined {
+    const name = id === "command-log" ? "log" : id
+    const win = (this.geometry.windows as Record<string, { x0: number; y0: number; x1: number; y1: number } | undefined>)[name]
+    if (win === undefined) return undefined
+    return {
+      screenX: win.x0 + 1,
+      screenY: win.y0 + 1,
+      width: Math.max(1, widthOf(win as unknown as never) - 2),
+      height: Math.max(1, heightOf(win as unknown as never) - 2),
+    }
+  }
+  cancelGesture(): void {
+    this.gestureOwner = undefined
+    this.activeSplitterDrag = undefined
+  }
   get activeBranchesTab(): "branches" | "remotes" | "tags" {
     return this.branchesPanel.activeTab
   }
@@ -1930,11 +1971,139 @@ export class RootView {
     this.root.requestRender()
   }
 
+  private isOverVerticalSplitter(x: number, y: number): boolean {
+    const win = this.geometry.windows.vsplit
+    if (win === undefined) return false
+    return x >= win.x0 && x <= win.x1 && y >= win.y0 && y <= win.y1
+  }
+  private isOverHorizontalSplitter(x: number, y: number): boolean {
+    const win = this.geometry.windows.hsplit
+    if (win === undefined) return false
+    return x >= win.x0 && x <= win.x1 && y >= win.y0 && y <= win.y1
+  }
+  private hitTestScrollbar(x: number, y: number): FocusId | undefined {
+    const check = (id: FocusId, winName: WindowName): boolean => {
+      const win = this.geometry.windows[winName]
+      if (win === undefined) return false
+      const pane: PaneHandle | CommandLogPaneHandle | undefined = id === "command-log" ? this.commandLog : (this.panes as Record<string, PaneHandle>)[id]
+      if (!pane) return false
+      const bar = paneScrollbar(pane.text)
+      if (!bar || !bar.visible) return false
+      const barX = win.x1 - 1
+      const barY0 = win.y0 + 1
+      const barY1 = win.y1 - 1
+      return x === barX && y >= barY0 && y <= barY1
+    }
+    const candidates: Array<[FocusId, WindowName]> = [
+      ["main", "main"],
+      ["status", "status"],
+      ["files", "files"],
+      ["branches", "branches"],
+      ["commits", "commits"],
+      ["stash", "stash"],
+      ["command-log", "log"],
+    ]
+    for (const [id, winName] of candidates) {
+      if (check(id, winName)) return id
+    }
+    return undefined
+  }
+  private findPaneAtPoint(x: number, y: number): { id: FocusId; winName: WindowName } | undefined {
+    const windows = this.geometry.windows as unknown as Record<string, { x0: number; y0: number; x1: number; y1: number } | undefined>
+    const order: Array<[FocusId, WindowName]> = [
+      ["main", "main"],
+      ["status", "status"],
+      ["files", "files"],
+      ["branches", "branches"],
+      ["commits", "commits"],
+      ["stash", "stash"],
+      ["command-log", "log"],
+    ]
+    for (const [id, winName] of order) {
+      const win = windows[winName]
+      if (win === undefined) continue
+      if (x >= win.x0 && x <= win.x1 && y >= win.y0 && y <= win.y1) return { id, winName }
+    }
+    return undefined
+  }
+  private selectRowForPane(paneId: FocusId, stableId: string): void {
+    if (paneId === "commits") {
+      const panel = this.commitsPanel
+      if (panel.child !== undefined) {
+        const nextView = selectListRow(panel.child.view, stableId)
+        if (nextView !== panel.child.view) {
+          this.commitsPanel = { ...panel, child: { ...panel.child, view: nextView } }
+          this.renderCommitsPane()
+          this.revealListRow("commits", this.panes.commits, nextView.selectedIndex)
+          this.syncPreviewForFocus("commits")
+        }
+      } else {
+        const view = panel.views.commits
+        if (!view) return
+        const nextView = selectListRow(view, stableId)
+        if (nextView !== view) {
+          this.commitsPanel = { ...panel, views: { ...panel.views, commits: nextView } }
+          this.renderCommitsPane()
+          this.revealListRow("commits", this.panes.commits, nextView.selectedIndex)
+          this.syncPreviewForFocus("commits")
+        }
+      }
+      this.root.requestRender()
+      return
+    }
+    if (paneId === "branches") {
+      const panel = this.branchesPanel
+      if (panel.child !== undefined) {
+        const nextView = selectListRow(panel.child.view, stableId)
+        if (nextView !== panel.child.view) {
+          this.branchesPanel = { ...panel, child: { ...panel.child, view: nextView } }
+          this.renderBranchesPane()
+          this.revealListRow("branches", this.panes.branches, nextView.selectedIndex)
+          this.syncPreviewForFocus("branches")
+        }
+      } else {
+        const active = panel.activeTab
+        const view = panel.views[active]
+        if (!view) return
+        const nextView = selectListRow(view, stableId)
+        if (nextView !== view) {
+          this.branchesPanel = { ...panel, views: { ...panel.views, [active]: nextView } }
+          this.renderBranchesPane()
+          this.revealListRow("branches", this.panes.branches, nextView.selectedIndex)
+          this.syncPreviewForFocus("branches")
+        }
+      }
+      this.root.requestRender()
+      return
+    }
+  }
+  private handleDoubleClick(paneId: FocusId): void {
+    if (paneId === "commits") {
+      if (this.commitsPanel.child !== undefined) {
+        this.syncPreviewForFocus("commits")
+      } else {
+        this.actionCommitDrilldown()
+      }
+      return
+    }
+    if (paneId === "branches") {
+      this.actionBranchInspect()
+      return
+    }
+    if (paneId === "files") {
+      this.actionOpenFile()
+      return
+    }
+    if (paneId === "stash") {
+      this.actionStashInspect()
+      return
+    }
+  }
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
+    this.cancelGesture()
     this.root.onMouse = undefined
-    this.activeSplitterDrag = undefined
     this.verticalSplitter.box.onMouseOver = undefined
     this.verticalSplitter.box.onMouseOut = undefined
     this.verticalSplitter.box.onMouseDown = undefined
@@ -1943,72 +2112,468 @@ export class RootView {
     this.horizontalSplitter.box.onMouseOut = undefined
     this.horizontalSplitter.box.onMouseDown = undefined
     this.horizontalSplitter.box.onMouseDrag = undefined
+    for (const pane of Object.values(this.panes)) {
+      pane.box.onMouseDown = undefined
+      pane.box.onMouseScroll = undefined
+    }
+    this.panes.main.text.onMouseDown = undefined
+    this.commandLog.box.onMouseDown = undefined
+    this.commandLog.box.onMouseScroll = undefined
+    for (const pane of [...Object.values(this.panes), this.commandLog as unknown as PaneHandle]) {
+      const bar = paneScrollbar(pane.text)
+      if (bar) {
+        bar.slider.onMouseDown = undefined
+        bar.slider.onMouseDrag = undefined
+        bar.slider.onMouseUp = undefined
+      }
+    }
     this.renderer.off("resize", this.handleResize)
     this.renderer.keyInput.off("keypress", this.handleKey)
     this.root.destroyRecursively()
   }
 
   private installMouseHandlers(): void {
-    // OpenTUI only captures a drag once a drag event's own hit-test lands on a
-    // renderable, which a one-column divider never satisfies after the pointer
-    // leaves the rule. So after a press on a splitter, drags are handled here at
-    // the root: every drag event bubbles up from wherever the pointer currently is.
-    this.root.onMouse = (event: MouseEvent) => {
-      if (event.type === "up") {
-        this.activeSplitterDrag = undefined
-        return
-      }
-      if (event.type !== "drag" || this.activeSplitterDrag === undefined) return
-      event.preventDefault()
-      event.stopPropagation()
-      // A drag invalidates a first press, so drag-release-drag cannot read as a double click.
-      this.lastSplitterPress = undefined
-      if (this.activeSplitterDrag === "vertical") {
-        this.sidePanelRatio = ratioForMouseX(this.geometry, event.x)
-      } else {
-        this.logHeight = logHeightForMouseY(this.geometry, event.y)
-      }
-      this.recomputeLayout()
-      this.notifyGeometry()
-    }
-    for (const [splitter, axis] of [[this.verticalSplitter, "vertical"], [this.horizontalSplitter, "horizontal"]] as const) {
+    for (const [splitter] of [[this.verticalSplitter, "vertical"], [this.horizontalSplitter, "horizontal"]] as const) {
       splitter.box.onMouseOver = () => splitter.setHovered(true)
       splitter.box.onMouseOut = () => splitter.setHovered(false)
-      splitter.box.onMouseDown = (event: MouseEvent) => {
-        event.preventDefault()
-        event.stopPropagation()
-        this.activeSplitterDrag = axis
-        const previous = this.lastSplitterPress
-        const now = Date.now()
-        this.lastSplitterPress = { axis, x: event.x, y: event.y, at: now }
-        const isDoubleClick = previous !== undefined &&
-          previous.axis === axis &&
-          now - previous.at <= DOUBLE_CLICK_MS &&
-          Math.abs(previous.x - event.x) <= 1 &&
-          Math.abs(previous.y - event.y) <= 1
-        if (!isDoubleClick) return
-        this.lastSplitterPress = undefined
-        this.activeSplitterDrag = undefined
-        if (axis === "vertical") this.toggleSideCollapsed()
-        else this.toggleCommandLog()
-      }
+      splitter.box.onMouseDown = undefined
+      splitter.box.onMouseDrag = undefined
     }
     for (const pane of Object.values(this.panes)) {
-      pane.box.onMouseDown = (event: MouseEvent) => {
-        event.stopPropagation()
-        this.focusManager.focus(pane.id)
-      }
-      pane.box.onMouseScroll = (event: MouseEvent) => {
-        event.stopPropagation()
-      }
+      pane.box.onMouseDown = undefined
+      pane.box.onMouseScroll = undefined
     }
-    this.panes.main.text.onMouseDown = (event: MouseEvent) => {
-      event.stopPropagation()
-      this.clearDiscardState()
+    this.panes.main.text.onMouseDown = undefined
+    this.commandLog.box.onMouseDown = undefined
+    this.commandLog.box.onMouseScroll = undefined
+    const allPanes: Array<PaneHandle | CommandLogPaneHandle> = [...Object.values(this.panes), this.commandLog]
+    for (const pane of allPanes) {
+      const typedPane = pane as PaneHandle
+      const bar = paneScrollbar(typedPane.text)
+      if (!bar) continue
+      bar.slider.onMouseDown = undefined
+      bar.slider.onMouseDrag = undefined
+      bar.slider.onMouseUp = undefined
     }
-    this.commandLog.box.onMouseDown = (event: MouseEvent) => {
-      event.stopPropagation()
-      this.focusManager.focus("command-log")
+    this.root.onMouse = (event: MouseEvent) => {
+      const scrollInfo = (event as unknown as { scroll?: { direction: string; delta: number } }).scroll
+      if ((event.type as string) === "scroll") {
+        this.pendingClick = undefined
+        this.lastSplitterPress = undefined
+        if (this.isOverVerticalSplitter(event.x, event.y) || this.isOverHorizontalSplitter(event.x, event.y)) {
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+        const hit = this.findPaneAtPoint(event.x, event.y)
+        if (hit) {
+          const pane = hit.id === "command-log" ? this.commandLog as unknown as PaneHandle : (this.panes as Record<string, PaneHandle>)[hit.id]
+          if (pane) {
+            const direction = scrollInfo?.direction
+            const signed = direction === "up" ? -1 : direction === "down" ? 1 : 0
+            if (signed !== 0) {
+              const delta = Math.max(1, scrollInfo?.delta ?? 1)
+              pane.scrollBy(signed * 2 * delta)
+            }
+          }
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        return
+      }
+      if (this.gestureOwner !== undefined) {
+        const owner = this.gestureOwner
+        if (owner.kind === "vertical-splitter") {
+          if (event.type === "drag") {
+            this.pendingClick = undefined
+            this.lastSplitterPress = undefined
+            this.sidePanelRatio = ratioForMouseX(this.geometry, event.x)
+            this.recomputeLayout()
+            this.notifyGeometry()
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          if (event.type === "up") {
+            this.gestureOwner = undefined
+            this.activeSplitterDrag = undefined
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          event.stopPropagation()
+          return
+        }
+        if (owner.kind === "horizontal-splitter") {
+          if (event.type === "drag") {
+            this.pendingClick = undefined
+            this.lastSplitterPress = undefined
+            this.logHeight = logHeightForMouseY(this.geometry, event.y)
+            this.recomputeLayout()
+            this.notifyGeometry()
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          if (event.type === "up") {
+            this.gestureOwner = undefined
+            this.activeSplitterDrag = undefined
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          event.stopPropagation()
+          return
+        }
+        if (owner.kind === "scrollbar") {
+          const barPane = owner.paneId === "command-log" ? this.commandLog as unknown as PaneHandle : (this.panes as Record<string, PaneHandle>)[owner.paneId]
+          const bar = barPane ? paneScrollbar(barPane.text) : undefined
+          const win = (this.geometry.windows as Record<string, { x0:number; y0:number; x1:number; y1:number } | undefined>)[owner.paneId === "command-log" ? "log" : owner.paneId]
+          if (event.type === "drag") {
+            this.pendingClick = undefined
+            this.lastSplitterPress = undefined
+            if (bar && win && barPane) {
+              const barScreenY = (bar as unknown as { screenY:number }).screenY
+              const barHeight = (bar as unknown as { height:number }).height as number
+              const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
+              const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
+              const relative = event.y - trackStart
+              const clamped = Math.max(0, Math.min(trackSize, relative))
+              const ratio = trackSize === 0 ? 0 : clamped / trackSize
+              const range = Math.max(0, bar.scrollSize - bar.viewportSize)
+              const newPos = Math.round(ratio * range)
+              barPane.scrollTo(newPos)
+            }
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          if (event.type === "up") {
+            if (bar && win && barPane) {
+              const barScreenY = (bar as unknown as { screenY:number }).screenY
+              const barHeight = (bar as unknown as { height:number }).height as number
+              const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
+              const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
+              const relative = event.y - trackStart
+              const clamped = Math.max(0, Math.min(trackSize, relative))
+              const ratio = trackSize === 0 ? 0 : clamped / trackSize
+              const range = Math.max(0, bar.scrollSize - bar.viewportSize)
+              const newPos = Math.round(ratio * range)
+              barPane.scrollTo(newPos)
+            }
+            this.gestureOwner = undefined
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          event.stopPropagation()
+          return
+        }
+        if (owner.kind === "main-selection") {
+          if (event.type === "drag") {
+            this.pendingClick = undefined
+            this.lastSplitterPress = undefined
+            event.stopPropagation()
+            return
+          }
+          if (event.type === "up") {
+            this.gestureOwner = undefined
+            event.stopPropagation()
+            return
+          }
+          event.stopPropagation()
+          return
+        }
+      }
+      if (event.type === "down") {
+        if (this.modalInputActive()) {
+          this.cancelGesture()
+          return
+        }
+        const scrollbarHit = this.hitTestScrollbar(event.x, event.y)
+        if (scrollbarHit !== undefined) {
+          this.pendingClick = undefined
+          this.lastSplitterPress = undefined
+          this.gestureOwner = { kind: "scrollbar", paneId: scrollbarHit }
+          const barPane = scrollbarHit === "command-log" ? this.commandLog as unknown as PaneHandle : (this.panes as Record<string, PaneHandle>)[scrollbarHit]
+          const bar = barPane ? paneScrollbar(barPane.text) : undefined
+          const win = (this.geometry.windows as Record<string, { x0:number; y0:number; x1:number; y1:number } | undefined>)[scrollbarHit === "command-log" ? "log" : scrollbarHit]
+          if (bar && win && barPane) {
+            const barScreenY = (bar as unknown as { screenY:number }).screenY
+            const barHeight = (bar as unknown as { height:number }).height as number
+            const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
+            const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
+            const relative = event.y - trackStart
+            const clamped = Math.max(0, Math.min(trackSize, relative))
+            const ratio = trackSize === 0 ? 0 : clamped / trackSize
+            const range = Math.max(0, bar.scrollSize - bar.viewportSize)
+            const newPos = Math.round(ratio * range)
+            barPane.scrollTo(newPos)
+          }
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+        if (this.isOverVerticalSplitter(event.x, event.y)) {
+          this.pendingClick = undefined
+          this.gestureOwner = { kind: "vertical-splitter" }
+          this.activeSplitterDrag = "vertical"
+          const previous = this.lastSplitterPress
+          const now = Date.now()
+          this.lastSplitterPress = { axis: "vertical", x: event.x, y: event.y, at: now }
+          const isDouble = previous !== undefined && previous.axis === "vertical" && now - previous.at <= DOUBLE_CLICK_MS && Math.abs(previous.x - event.x) <= 1 && Math.abs(previous.y - event.y) <= 1
+          if (isDouble) {
+            this.lastSplitterPress = undefined
+            this.gestureOwner = undefined
+            this.activeSplitterDrag = undefined
+            this.toggleSideCollapsed()
+          }
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+        if (this.isOverHorizontalSplitter(event.x, event.y)) {
+          this.pendingClick = undefined
+          this.gestureOwner = { kind: "horizontal-splitter" }
+          this.activeSplitterDrag = "horizontal"
+          const previous = this.lastSplitterPress
+          const now = Date.now()
+          this.lastSplitterPress = { axis: "horizontal", x: event.x, y: event.y, at: now }
+          const isDouble = previous !== undefined && previous.axis === "horizontal" && now - previous.at <= DOUBLE_CLICK_MS && Math.abs(previous.x - event.x) <= 1 && Math.abs(previous.y - event.y) <= 1
+          if (isDouble) {
+            this.lastSplitterPress = undefined
+            this.gestureOwner = undefined
+            this.activeSplitterDrag = undefined
+            this.toggleCommandLog()
+          }
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+        const hit = this.findPaneAtPoint(event.x, event.y)
+        if (!hit) {
+          this.pendingClick = undefined
+          return
+        }
+        const paneId = hit.id
+        if (paneId === "main") {
+          this.pendingClick = undefined
+          this.lastSplitterPress = undefined
+          this.gestureOwner = { kind: "main-selection" }
+          if (this.focusManager.active !== "main") this.focusManager.focus("main")
+          this.clearDiscardState()
+          event.stopPropagation()
+          return
+        }
+        if (paneId === "command-log") {
+          this.pendingClick = undefined
+          this.lastSplitterPress = undefined
+          if (this.focusManager.active !== "command-log") this.focusManager.focus("command-log")
+          event.stopPropagation()
+          event.preventDefault()
+          return
+        }
+        const geometry = this.paneTextGeometry(paneId)
+        if (!geometry) {
+          this.pendingClick = undefined
+          if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+          event.stopPropagation()
+          event.preventDefault()
+          return
+        }
+        let listState: ListState | undefined
+        let viewIdForDouble: string = paneId as string
+        if (paneId === "commits") {
+          const panel = this.commitsPanel
+          if (panel.child !== undefined) {
+            listState = panel.child.view
+            viewIdForDouble = "commit-files"
+          } else {
+            listState = panel.views.commits
+            viewIdForDouble = "commits"
+          }
+        } else if (paneId === "branches") {
+          const panel = this.branchesPanel
+          if (panel.child !== undefined) {
+            listState = panel.child.view
+            viewIdForDouble = `branches-child:${panel.child.value.remote}`
+          } else {
+            listState = panel.views[panel.activeTab]
+            viewIdForDouble = `branches:${panel.activeTab}`
+          }
+        }
+        if (listState) {
+          const pane = (this.panes as Record<string, PaneHandle>)[paneId]
+          if (!pane) {
+            this.pendingClick = undefined
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          const viewport = { screenX: geometry.screenX, screenY: geometry.screenY, width: geometry.width, height: geometry.height, scrollY: pane.text.scrollY }
+          let row = listRowAtPoint(listState, viewport, event.x, event.y)
+          if (!row) {
+            const clampedX = Math.max(viewport.screenX, Math.min(viewport.screenX + viewport.width - 1, event.x))
+            let clampedY = event.y
+            if (clampedY < viewport.screenY) clampedY = viewport.screenY
+            if (clampedY >= viewport.screenY + viewport.height) clampedY = viewport.screenY + viewport.height - 1
+            if (clampedX !== event.x || clampedY !== event.y) row = listRowAtPoint(listState, viewport, clampedX, clampedY)
+          }
+          if (row) {
+            const stableId = row.id
+            const now = Date.now()
+            const pending = this.pendingClick
+            const isDouble = pending !== undefined && pending.viewId === viewIdForDouble && pending.stableId === stableId && now - pending.at <= DOUBLE_CLICK_MS && Math.abs(pending.x - event.x) <= 1 && Math.abs(pending.y - event.y) <= 1
+            if (isDouble) {
+              this.pendingClick = undefined
+              this.lastSplitterPress = undefined
+              if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+              this.selectRowForPane(paneId, stableId)
+              event.preventDefault()
+              event.stopPropagation()
+              this.handleDoubleClick(paneId)
+              return
+            }
+            this.pendingClick = { viewId: viewIdForDouble, stableId, x: event.x, y: event.y, at: now }
+            this.lastSplitterPress = undefined
+            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+            this.selectRowForPane(paneId, stableId)
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          } else {
+            this.pendingClick = undefined
+            this.lastSplitterPress = undefined
+            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+        }
+        if (paneId === "files") {
+          const pane = this.panes.files
+          const offset = event.y - geometry.screenY
+          const clampedOffset = Math.max(0, Math.min(geometry.height - 1, offset))
+          const rowIndex = pane.text.scrollY + clampedOffset
+          const withinY = event.y >= geometry.screenY && event.y < geometry.screenY + geometry.height
+          if (withinY && rowIndex >= 0 && rowIndex < this.model.files.length) {
+            const file = this.model.files[rowIndex]
+            if (!file) {
+              this.pendingClick = undefined
+              if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+              event.preventDefault()
+              event.stopPropagation()
+              return
+            }
+            const stableId = file.path
+            const now = Date.now()
+            const pending = this.pendingClick
+            const isDouble = pending !== undefined && pending.viewId === "files" && pending.stableId === stableId && now - pending.at <= DOUBLE_CLICK_MS && Math.abs(pending.x - event.x) <= 1 && Math.abs(pending.y - event.y) <= 1
+            if (isDouble) {
+              this.pendingClick = undefined
+              this.lastSplitterPress = undefined
+              if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+              this.fileCursorIndex = rowIndex
+              this.revealListRow("files", pane, rowIndex)
+              this.panes.files.box.bottomTitle = file.path
+              this.onSelectFile?.(file.path)
+              const content = this.presentFilesContent(this.model)
+              this.mainGate.installSynchronous(content)
+              this.root.requestRender()
+              event.preventDefault()
+              event.stopPropagation()
+              this.actionOpenFile()
+              return
+            }
+            this.pendingClick = { viewId: "files", stableId, x: event.x, y: event.y, at: now }
+            this.lastSplitterPress = undefined
+            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+            this.fileCursorIndex = rowIndex
+            this.panes.files.box.bottomTitle = file.path
+            this.onSelectFile?.(file.path)
+            this.revealListRow("files", pane, rowIndex)
+            const content = this.presentFilesContent(this.model)
+            this.mainGate.installSynchronous(content)
+            this.root.requestRender()
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          } else {
+            this.pendingClick = undefined
+            this.lastSplitterPress = undefined
+            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+        }
+        if (paneId === "stash") {
+          const pane = this.panes.stash
+          const offset = event.y - geometry.screenY
+          const clampedOffset = Math.max(0, Math.min(geometry.height - 1, offset))
+          const rowIndex = pane.text.scrollY + clampedOffset
+          const stashes = this.model.stashes ?? []
+          const withinY = event.y >= geometry.screenY && event.y < geometry.screenY + geometry.height
+          if (withinY && rowIndex >= 0 && rowIndex < stashes.length) {
+            const stash = stashes[rowIndex]
+            if (!stash) {
+              this.pendingClick = undefined
+              if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+              event.preventDefault()
+              event.stopPropagation()
+              return
+            }
+            const stableId = stash.oid
+            const now = Date.now()
+            const pending = this.pendingClick
+            const isDouble = pending !== undefined && pending.viewId === "stash" && pending.stableId === stableId && now - pending.at <= DOUBLE_CLICK_MS && Math.abs(pending.x - event.x) <= 1 && Math.abs(pending.y - event.y) <= 1
+            if (isDouble) {
+              this.pendingClick = undefined
+              this.lastSplitterPress = undefined
+              if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+              updateStashPane(pane, this.model, rowIndex)
+              this.revealListRow("stash", pane, rowIndex)
+              this.syncPreviewForFocus("stash")
+              this.root.requestRender()
+              event.preventDefault()
+              event.stopPropagation()
+              this.actionStashInspect()
+              return
+            }
+            this.pendingClick = { viewId: "stash", stableId, x: event.x, y: event.y, at: now }
+            this.lastSplitterPress = undefined
+            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+            updateStashPane(pane, this.model, rowIndex)
+            this.revealListRow("stash", pane, rowIndex)
+            this.syncPreviewForFocus("stash")
+            this.root.requestRender()
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          } else {
+            this.pendingClick = undefined
+            this.lastSplitterPress = undefined
+            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+        }
+        this.pendingClick = undefined
+        this.lastSplitterPress = undefined
+        if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
+      if (event.type === "drag") {
+        this.pendingClick = undefined
+        this.lastSplitterPress = undefined
+        return
+      }
+      if (event.type === "up") {
+        return
+      }
     }
   }
   applyPersistedGeometry(state: PersistedUiState): void {
@@ -2060,6 +2625,17 @@ export class RootView {
       { width: this.renderer.terminalWidth, height: this.renderer.terminalHeight },
       this.layoutOptions(),
     )
+    if (this.gestureOwner?.kind === "vertical-splitter" && this.geometry.windows.vsplit === undefined) this.cancelGesture()
+    if (this.gestureOwner?.kind === "horizontal-splitter" && this.geometry.windows.hsplit === undefined) this.cancelGesture()
+    if (this.gestureOwner?.kind === "scrollbar") {
+      const winName = this.gestureOwner.paneId === "command-log" ? "log" : this.gestureOwner.paneId
+      if ((this.geometry.windows as Record<string, unknown>)[winName] === undefined) this.cancelGesture()
+      else {
+        const pane = this.gestureOwner.paneId === "command-log" ? this.commandLog as unknown as PaneHandle : (this.panes as Record<string, PaneHandle>)[this.gestureOwner.paneId]
+        const bar = pane ? paneScrollbar(pane.text) : undefined
+        if (!bar || !bar.visible) this.cancelGesture()
+      }
+    }
     this.applyLayout()
   }
 

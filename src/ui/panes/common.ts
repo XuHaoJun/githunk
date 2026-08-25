@@ -13,6 +13,9 @@ export type PaneHandle = {
    * OpenTUI 0.5.6 emits no scroll-change event, so every mutation must sync explicitly.
    */
   syncScrollbar(): void
+  scrollBy(delta: number): void
+  scrollTo(position: number): void
+  maxScrollY(): number
 }
 
 /**
@@ -64,6 +67,11 @@ export function attachVerticalScrollbar(box: BoxRenderable, text: TextRenderable
     bottom: 1,
     right: 0,
     width: 1,
+    onChange: (position) => {
+      text.scrollY = Math.max(0, Math.min(text.maxScrollY, position))
+      syncVerticalScrollbar(bar, text)
+      box.requestRender()
+    },
   })
   // Yoga lays out asynchronously: reading text.height straight after constructing or
   // resizing is unreliable, but the size-change hooks fire once real dimensions exist.
@@ -72,14 +80,8 @@ export function attachVerticalScrollbar(box: BoxRenderable, text: TextRenderable
   const sync = (): void => syncVerticalScrollbar(bar, text)
   box.onSizeChange = sync
   text.onSizeChange = sync
-  // The bar is a passive indicator: panes are scrolled with the keyboard. Clearing the
-  // slider's built-in pointer handlers (installed unconditionally by ScrollBarRenderable)
-  // keeps two honest properties: clicks in the bar column still reach the pane box, so
-  // click-to-focus works across the whole pane, and no thumb can be dragged into a
-  // position nothing would follow. The arrows are already invisible; their handlers go too.
-  bar.slider.onMouseDown = undefined
-  bar.slider.onMouseDrag = undefined
-  bar.slider.onMouseUp = undefined
+  // Keep slider's built-in pointer handlers: they drive onChange and thumb/track interaction.
+  // Arrow handlers are irrelevant (arrows invisible) and stay disabled.
   bar.startArrow.onMouseDown = undefined
   bar.startArrow.onMouseUp = undefined
   bar.endArrow.onMouseDown = undefined
@@ -123,6 +125,14 @@ export function createPane(
     height: "100%",
   })
   box.add(text)
+  const originalTextMouseEvent = (text as unknown as { onMouseEvent?: (event: MouseEvent) => void }).onMouseEvent?.bind(text)
+  ;(text as unknown as { onMouseEvent: (event: MouseEvent) => void }).onMouseEvent = (event: MouseEvent) => {
+    if ((event as unknown as { type: string }).type === "scroll") {
+      event.preventDefault()
+      return
+    }
+    originalTextMouseEvent?.(event)
+  }
   const bar = attachVerticalScrollbar(box, text, id)
   return {
     id,
@@ -141,6 +151,19 @@ export function createPane(
     },
     syncScrollbar() {
       syncVerticalScrollbar(bar, text)
+    },
+    scrollBy(delta: number) {
+      text.scrollY = Math.max(0, Math.min(text.maxScrollY, text.scrollY + delta))
+      syncVerticalScrollbar(bar, text)
+      box.requestRender()
+    },
+    scrollTo(position: number) {
+      text.scrollY = Math.max(0, Math.min(text.maxScrollY, position))
+      syncVerticalScrollbar(bar, text)
+      box.requestRender()
+    },
+    maxScrollY() {
+      return text.maxScrollY
     },
   }
 }

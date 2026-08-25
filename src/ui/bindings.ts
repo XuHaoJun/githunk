@@ -1,6 +1,6 @@
 import type { AppModel } from "../app/model"
 import type { FocusId } from "./focus"
-import type { ScreenMode } from "./layout"
+import type { ScreenMode, SideWindow } from "./layout"
 import { normalizeKey, type KeyLike, type KeyStroke } from "./keymap"
 
 export const ACTIONS = [
@@ -37,6 +37,7 @@ export type BindingContext = FocusId | "global" | "modal"
 
 export type UiState = {
   readonly focus: FocusId
+  readonly currentSideWindow?: SideWindow
   readonly screenMode: ScreenMode
   readonly modal: boolean
   readonly mainScope: "all" | "staged" | "unstaged" | undefined

@@ -10,6 +10,9 @@ export type CommandLogPaneHandle = {
   resize(width: number, height: number): void
   update(records: readonly CommandRecord[]): void
   setFocused(focused: boolean): void
+  scrollBy(delta: number): void
+  scrollTo(position: number): void
+  maxScrollY(): number
 }
 
 function escapeArg(value: string): string {
@@ -64,6 +67,14 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
     width: "100%",
   })
   box.add(text)
+  const originalLogMouseEvent = (text as unknown as { onMouseEvent?: (event: import("@opentui/core").MouseEvent) => void }).onMouseEvent?.bind(text)
+  ;(text as unknown as { onMouseEvent: (event: import("@opentui/core").MouseEvent) => void }).onMouseEvent = (event: import("@opentui/core").MouseEvent) => {
+    if ((event as unknown as { type: string }).type === "scroll") {
+      event.preventDefault()
+      return
+    }
+    originalLogMouseEvent?.(event as unknown as never)
+  }
   const bar = attachVerticalScrollbar(box, text, "command-log")
   const pane: CommandLogPaneHandle = {
     id: "command-log",
@@ -84,6 +95,19 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
       box.borderColor = focused ? "#ffffff" : "#555555"
       box.titleColor = focused ? "#ffffff" : "#aaaaaa"
       box.requestRender()
+    },
+    scrollBy(delta: number) {
+      text.scrollY = Math.max(0, Math.min(text.maxScrollY, text.scrollY + delta))
+      syncVerticalScrollbar(bar, text)
+      box.requestRender()
+    },
+    scrollTo(position: number) {
+      text.scrollY = Math.max(0, Math.min(text.maxScrollY, position))
+      syncVerticalScrollbar(bar, text)
+      box.requestRender()
+    },
+    maxScrollY() {
+      return text.maxScrollY
     },
   }
   pane.update(records)

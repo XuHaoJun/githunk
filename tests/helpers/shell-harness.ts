@@ -1,8 +1,8 @@
-import { createTestRenderer, type KeyInput } from "@opentui/core/testing"
+import { createTestRenderer, type KeyInput, type MockMouse } from "@opentui/core/testing"
+import type { CliRenderer } from "@opentui/core"
 import { createApp, type App } from "../../src/app/create-app"
 import { GitRunner } from "../../src/git/runner"
 import { createTempRepository, type TempRepository } from "./temp-repository"
-
 export type ShellHarnessOptions = {
   readonly width?: number
   readonly height?: number
@@ -16,6 +16,8 @@ export type ShellHarnessOptions = {
 export type ShellHarness = {
   readonly app: App
   readonly repository: TempRepository
+  readonly renderer: CliRenderer
+  readonly mockMouse: MockMouse
   /** Whether RootView's `onQuit` callback (the "quit" action) has fired. */
   readonly quitCalled: boolean
   pressKey(key: KeyInput, modifiers?: { shift?: boolean; ctrl?: boolean }): Promise<void>
@@ -26,6 +28,7 @@ export type ShellHarness = {
    *  key press that triggers an async git operation and before asserting on its outcome. */
   settle(): Promise<void>
   frame(): string
+  flush(): Promise<void>
   cleanup(): Promise<void>
 }
 
@@ -77,6 +80,8 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
   return {
     app,
     repository,
+    renderer: setup.renderer,
+    mockMouse: setup.mockMouse,
     get quitCalled() {
       return quitCalled
     },
@@ -118,6 +123,7 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
       await setup.flush()
     },
     frame: () => setup.captureCharFrame(),
+    flush: () => setup.flush(),
     async cleanup() {
       if (!reused) await repository.cleanup()
       app.destroy()
