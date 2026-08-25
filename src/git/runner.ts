@@ -4,7 +4,20 @@ import { CommandLog } from "../app/command-log"
 export type GitRunOptions = {
   readonly stdin?: string
   readonly signal?: AbortSignal
+  /**
+   * Suppresses `index.lock` via `GIT_OPTIONAL_LOCKS=0`, so a read can never contend with a write.
+   * lazygit sets this on *every* git command by default
+   * (pkg/commands/git_cmd_obj_builder.go:35-38).
+   */
   readonly readOnly?: boolean
+  /**
+   * Lets a read take the lock anyway, so git can persist the stat-cache it just refreshed and keep
+   * later status calls fast. lazygit's one exception to the rule above: a *foreground* files
+   * refresh removes the variable (pkg/commands/git_commands/file_loader.go:228-236), while a
+   * background one leaves it, because not persisting the cache is the right trade-off for
+   * unattended work. Ignored unless `readOnly` is set.
+   */
+  readonly optionalLocks?: boolean
   readonly acceptedExitCodes?: readonly number[]
 }
 
@@ -63,7 +76,7 @@ export class GitRunner {
       }
       env.LC_ALL = "C"
       env.GIT_TERMINAL_PROMPT = "0"
-      if (options.readOnly === true) {
+      if (options.readOnly === true && options.optionalLocks !== true) {
         env.GIT_OPTIONAL_LOCKS = "0"
       }
 

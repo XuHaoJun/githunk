@@ -77,3 +77,52 @@ describe("GitRunner", () => {
     }
   })
 })
+
+/**
+ * lazygit suppresses `index.lock` on every git command by default
+ * (pkg/commands/git_cmd_obj_builder.go:35-38), with exactly one exception: a foreground files
+ * refresh lets git take the lock so it persists the stat-cache it just refreshed, keeping later
+ * status calls fast (pkg/commands/git_commands/file_loader.go:228-236).
+ *
+ * The observable difference is whether `git status` writes `.git/index` back after re-stat'ing a
+ * file whose mtime moved: with the lock suppressed it cannot, so the next status re-stats the file
+ * all over again.
+ */
+describe("GIT_OPTIONAL_LOCKS", () => {
+  let repository: TempRepository | undefined
+  afterEach(async () => {
+    await repository?.cleanup()
+    repository = undefined
+  })
+
+  /** A tracked file whose content matches the index but whose mtime does not. */
+  async function repositoryWithStaleStatCache(): Promise<TempRepository> {
+    const created = await createTempRepository()
+    await created.write("a.txt", "one\n")
+    await created.git(["add", "a.txt"])
+    await created.git(["commit", "-m", "first"])
+    // Settle the cache, then move the mtime without changing the bytes.
+    await created.git(["status", "--porcelain"])
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    await created.write("a.txt", "one\n")
+    return created
+  }
+
+  const indexMtime = async (path: string): Promise<number> => (await Bun.file(`${path}/.git/index`).stat()).mtimeMs
+
+  test("a read cannot persist the refreshed stat-cache", async () => {
+    repository = await repositoryWithStaleStatCache()
+    const runner = new GitRunner(repository.path)
+    const before = await indexMtime(repository.path)
+    await runner.run(["status", "--porcelain=v2", "-z"], { readOnly: true })
+    expect(await indexMtime(repository.path)).toBe(before)
+  })
+
+  test("optionalLocks lets that one read persist it", async () => {
+    repository = await repositoryWithStaleStatCache()
+    const runner = new GitRunner(repository.path)
+    const before = await indexMtime(repository.path)
+    await runner.run(["status", "--porcelain=v2", "-z"], { readOnly: true, optionalLocks: true })
+    expect(await indexMtime(repository.path)).toBeGreaterThan(before)
+  })
+})

@@ -49,6 +49,11 @@ describe("inline item operations", () => {
 
   test("push labels the current branch's row", async () => {
     harness = await harnessWithUpstream()
+    // Something actually to push, so the operation has work to do rather than exiting immediately.
+    await harness.repository.write("b.txt", "to push\n")
+    await harness.repository.git(["add", "b.txt"])
+    await harness.repository.git(["commit", "-m", "second commit"])
+    await harness.app.refresh()
     const view = harness.app.view!
     const current = harness.app.controller.state.branches!.localBranches.find((branch) => branch.isCurrent)!
 

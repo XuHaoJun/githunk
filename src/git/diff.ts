@@ -82,46 +82,84 @@ async function runPatch(runner: GitRunner, args: readonly string[]): Promise<str
   return (await runner.run(args, { readOnly: true })).stdout
 }
 
+/**
+ * Ceiling on concurrent `git` processes for the per-untracked-file work below. High enough that a
+ * handful of untracked files cost one round trip rather than one each, low enough that a repo with
+ * thousands of them cannot fork-bomb the machine.
+ */
+const UNTRACKED_CONCURRENCY = 8
+
+/** `Promise.all` with a ceiling, preserving input order. */
+async function mapWithLimit<T, R>(items: readonly T[], limit: number, run: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const index = next++
+      if (index >= items.length) return
+      results[index] = await run(items[index]!)
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
 async function untrackedPatches(runner: GitRunner, files: readonly ChangedFile[]): Promise<string> {
-  let text = ""
-  for (const file of files) {
+  const texts = await mapWithLimit(files, UNTRACKED_CONCURRENCY, async (file) => {
     const result = await runner.run(
       ["diff", "--no-index", "--no-ext-diff", "--no-color", "--binary", "--", "/dev/null", file.path],
       { readOnly: true, acceptedExitCodes: [0, 1] },
     )
-    text += result.stdout
-  }
-  return text
+    return result.stdout
+  })
+  return texts.join("")
 }
 async function untrackedNumstats(runner: GitRunner, files: readonly ChangedFile[]): Promise<readonly NumstatEntry[]> {
-  const stats: NumstatEntry[] = []
-  for (const file of files) {
+  const entries = await mapWithLimit(files, UNTRACKED_CONCURRENCY, async (file) => {
     const result = await runner.run(
       ["diff", "--no-index", "--no-ext-diff", "--no-color", "--numstat", "--", "/dev/null", file.path],
       { readOnly: true, acceptedExitCodes: [0, 1] },
     )
     const entry = parseNumstat(result.stdout)[0]
-    if (entry !== undefined) stats.push({ ...entry, path: file.path })
-  }
-  return stats
+    return entry === undefined ? undefined : { ...entry, path: file.path }
+  })
+  return entries.filter((entry): entry is NumstatEntry => entry !== undefined)
+}
+
+export type WorkingTreeLoadOptions = {
+  /**
+   * A refresh nobody asked for. It leaves `GIT_OPTIONAL_LOCKS=0` on the status call so it cannot
+   * contend for `index.lock`; a foreground refresh drops the suppression instead, letting git
+   * persist the stat-cache it just refreshed — lazygit's one exception to suppressing locks
+   * everywhere (pkg/commands/git_commands/file_loader.go:228-236,
+   * pkg/gui/types/refresh.go:89-96).
+   */
+  readonly background?: boolean
 }
 
 /** Load a stable working-tree status, statistics, and raw patches. */
-export async function loadWorkingTree(runner: GitRunner, scope: WorkingTreeScope): Promise<WorkingTreeSnapshot> {
-  const status = parsePorcelainV2((await runner.run(statusArgs, { readOnly: true })).stdout)
+export async function loadWorkingTree(runner: GitRunner, scope: WorkingTreeScope, options: WorkingTreeLoadOptions = {}): Promise<WorkingTreeSnapshot> {
   const includeUnstaged = scope === "all" || scope === "unstaged"
   const includeStaged = scope === "all" || scope === "staged"
-  const unstagedStats = includeUnstaged ? parseNumstat((await runner.run(unstagedNumstatArgs, { readOnly: true })).stdout) : []
-  const stagedStats = includeStaged ? parseNumstat((await runner.run(stagedNumstatArgs, { readOnly: true })).stdout) : []
+  // Every one of these reads is independent of the others: only the *untracked* work below needs
+  // the status output, so nothing is gained by waiting for it first. They all suppress
+  // `index.lock` (the status call excepted, see above), so running them together cannot contend.
+  const [statusOutput, unstagedStats, stagedStats, unstagedDiffText, stagedDiffText] = await Promise.all([
+    runner.run(statusArgs, { readOnly: true, ...(options.background === true ? {} : { optionalLocks: true }) }).then((result) => result.stdout),
+    includeUnstaged ? runner.run(unstagedNumstatArgs, { readOnly: true }).then((result) => parseNumstat(result.stdout)) : Promise.resolve([] as readonly NumstatEntry[]),
+    includeStaged ? runner.run(stagedNumstatArgs, { readOnly: true }).then((result) => parseNumstat(result.stdout)) : Promise.resolve([] as readonly NumstatEntry[]),
+    includeUnstaged ? runPatch(runner, unstagedPatchArgs) : Promise.resolve(""),
+    includeStaged ? runPatch(runner, stagedPatchArgs) : Promise.resolve(""),
+  ])
+  const status = parsePorcelainV2(statusOutput)
   const files = scopeFiles(status.files, scope)
   const untracked = includeUnstaged ? files.filter((file) => file.untracked) : []
-  const untrackedStats = untracked.length > 0 ? await untrackedNumstats(runner, untracked) : []
-  const stats = [...(includeUnstaged ? unstagedStats : []), ...(includeStaged ? stagedStats : []), ...untrackedStats]
-  let unstagedText = ""
-  let stagedText = ""
-  if (includeUnstaged) unstagedText = await runPatch(runner, unstagedPatchArgs)
-  if (includeStaged) stagedText = await runPatch(runner, stagedPatchArgs)
-  if (untracked.length > 0) unstagedText += await untrackedPatches(runner, untracked)
+  const [untrackedStats, untrackedText] = untracked.length === 0
+    ? [[] as readonly NumstatEntry[], ""]
+    : await Promise.all([untrackedNumstats(runner, untracked), untrackedPatches(runner, untracked)])
+  const stats = [...unstagedStats, ...stagedStats, ...untrackedStats]
+  const unstagedText = `${unstagedDiffText}${untrackedText}`
+  const stagedText = stagedDiffText
   const patches: PatchSection[] = []
   if (includeStaged) patches.push({ label: "STAGED", text: stagedText })
   if (includeUnstaged) patches.push({ label: "UNSTAGED", text: unstagedText })

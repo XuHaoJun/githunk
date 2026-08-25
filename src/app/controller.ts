@@ -30,7 +30,10 @@ import { listWorktrees } from "../git/worktrees"
 import type { SubmoduleConfig } from "../domain/submodule"
 import { listSubmodules } from "../git/submodules"
 import { MutationQueue } from "./mutation-queue"
-export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
+export type WorkingTreeLoader = (
+  target: Extract<ReviewTarget, { readonly kind: "working-tree" }>,
+  options?: { readonly background?: boolean },
+) => Promise<WorkingTreeSnapshot>
 export type BranchReviewLoader = (baseRef: string) => Promise<BranchReviewSnapshot>
 export type BranchListingLoader = () => Promise<BranchListing>
 export type CommitListLoader = (range: string, filter?: string) => Promise<readonly CommitSummary[]>
@@ -178,9 +181,9 @@ export class AppController {
       : options instanceof GitRunner
         ? new CommitMutations(runner)
         : options.commitMutations ?? new CommitMutations(runner)
-    this.loadSnapshot = load ?? ((target) => {
+    this.loadSnapshot = load ?? ((target, snapshotOptions) => {
       if (runner === undefined) throw new Error("AppController requires a GitRunner or loader")
-      return loadWorkingTree(runner, target.scope)
+      return loadWorkingTree(runner, target.scope, snapshotOptions ?? {})
     })
     this.loadBranchSnapshot = options instanceof GitRunner
       ? (baseRef) => loadBranchReview(options, baseRef)
@@ -459,7 +462,7 @@ export class AppController {
   async refreshFiles(): Promise<void> {
     const target = this.currentState.reviewTarget
     if (target.kind !== "working-tree") return
-    await this.mutationQueue.run(() => this.refreshTarget(target))
+    await this.mutationQueue.run(() => this.refreshTarget(target, { background: true }))
   }
 
   async refreshBranches(): Promise<string | undefined> {
@@ -1018,12 +1021,15 @@ export class AppController {
       return { commits: this.currentState.commits ?? [], warning }
     }
   }
-  private async refreshTarget(target: Extract<ReviewTarget, { readonly kind: "working-tree" }>): Promise<void> {
+  private async refreshTarget(
+    target: Extract<ReviewTarget, { readonly kind: "working-tree" }>,
+    options: { readonly background?: boolean } = {},
+  ): Promise<void> {
     const previousState = this.priorStashStateForRefresh ?? this.currentState
     const generation = ++this.generation
     this.publishIfCurrent(generation, { loading: true })
     try {
-      const snapshot = await this.loadSnapshot(target)
+      const snapshot = await this.loadSnapshot(target, options)
       if (generation !== this.generation) return
       const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
       if (generation !== this.generation) return
