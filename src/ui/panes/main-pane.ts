@@ -6,6 +6,8 @@ import type { DiffDocument, DiffFile } from "../../domain/diff/document"
 import { renderDiff } from "../../domain/diff/render"
 import { createPane, type PaneHandle } from "./common"
 
+// Main generation has no patch threshold — all patches go through preview gate (Task 7)
+
 const documents = new WeakMap<PaneHandle, DiffDocument>()
 const cursorTargets = new WeakMap<PaneHandle, MainCursorTarget>()
 const installedContents = new WeakMap<PaneHandle, MainPaneContent>()

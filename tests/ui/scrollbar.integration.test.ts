@@ -69,11 +69,22 @@ describe("scrollbar and gesture capture", () => {
     const vsplit = view.geometry.windows.vsplit
     const hsplit = view.geometry.windows.hsplit
     if (!vsplit || !hsplit) return
-    await harness.mockMouse.drag(vsplit.x0, vsplit.y0, vsplit.x0 + 5, vsplit.y0)
+    const overlapX = Math.max(vsplit.x0, hsplit.x0)
+    const overlapY = Math.max(vsplit.y0, hsplit.y0)
+    const overlap = overlapX <= Math.min(vsplit.x1, hsplit.x1) && overlapY <= Math.min(vsplit.y1, hsplit.y1)
+    if (!overlap) {
+      await harness.mockMouse.drag(vsplit.x0, vsplit.y0, vsplit.x0 + 5, vsplit.y0)
+      await harness.flush()
+      expect(typeof view.geometry.sidePanelRatio).toBe("number")
+      return
+    }
+    await harness.mockMouse.pressDown(overlapX, overlapY)
     await harness.flush()
-    expect(typeof view.geometry.sidePanelRatio).toBe("number")
+    expect(view.gestureOwner?.kind).toBe("vertical-splitter")
+    await harness.mockMouse.release(overlapX, overlapY)
+    await harness.flush()
+    expect(view.gestureOwner).toBeUndefined()
   })
-
   test("hide/destroy cancels captured gesture", async () => {
     const subjects = Array.from({ length: 40 }, (_, i) => `hide ${i}`)
     harness = await createShellHarness({ commits: subjects, width: 120, height: 40 })
@@ -98,6 +109,26 @@ describe("scrollbar and gesture capture", () => {
       }
     }
     await harness.mockMouse.release(barX, startY)
+    await harness.flush()
+    expect(view.gestureOwner).toBeUndefined()
+  })
+  test("cancelGesture clears after bar becomes invisible", async () => {
+    const subjects = Array.from({ length: 40 }, (_, i) => `cancel ${i}`)
+    harness = await createShellHarness({ commits: subjects, width: 120, height: 40 })
+    const view = harness.app.view!
+    await harness.pressKey("4")
+    await harness.flush()
+    const bar = paneScrollbar(view.commitsPane.text)!
+    expect(bar.visible).toBe(true)
+    const win = view.geometry.windows.commits!
+    const barX = win.x1 - 1
+    await harness.mockMouse.pressDown(barX, win.y0 + 2)
+    await harness.flush()
+    expect(view.gestureOwner?.kind).toBe("scrollbar")
+    bar.visible = false
+    view.cancelGesture()
+    expect(view.gestureOwner).toBeUndefined()
+    await harness.mockMouse.release(barX, win.y0 + 2)
     await harness.flush()
     expect(view.gestureOwner).toBeUndefined()
   })

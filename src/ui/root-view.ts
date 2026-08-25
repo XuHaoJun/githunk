@@ -2122,9 +2122,9 @@ export class RootView {
     for (const pane of [...Object.values(this.panes), this.commandLog as unknown as PaneHandle]) {
       const bar = paneScrollbar(pane.text)
       if (bar) {
-        bar.slider.onMouseDown = undefined
-        bar.slider.onMouseDrag = undefined
-        bar.slider.onMouseUp = undefined
+        bar.onMouseDown = undefined
+        bar.onMouseDrag = undefined
+        bar.onMouseUp = undefined
       }
     }
     this.renderer.off("resize", this.handleResize)
@@ -2151,9 +2151,18 @@ export class RootView {
       const typedPane = pane as PaneHandle
       const bar = paneScrollbar(typedPane.text)
       if (!bar) continue
-      bar.slider.onMouseDown = undefined
-      bar.slider.onMouseDrag = undefined
-      bar.slider.onMouseUp = undefined
+      bar.onMouseDown = (event: MouseEvent) => {
+        this.pendingClick = undefined
+        this.lastSplitterPress = undefined
+        this.gestureOwner = { kind: "scrollbar", paneId: typedPane.id }
+        event.stopPropagation()
+      }
+      bar.onMouseDrag = (event: MouseEvent) => {
+        if (this.gestureOwner?.kind === "scrollbar" && this.gestureOwner.paneId === typedPane.id) event.stopPropagation()
+      }
+      bar.onMouseUp = (event: MouseEvent) => {
+        if (this.gestureOwner?.kind === "scrollbar" && this.gestureOwner.paneId === typedPane.id) event.stopPropagation()
+      }
     }
     this.root.onMouse = (event: MouseEvent) => {
       const scrollInfo = (event as unknown as { scroll?: { direction: string; delta: number } }).scroll
