@@ -9,6 +9,8 @@ import {
   type TextChunk,
 } from "@opentui/core"
 import type { AppModel } from "../app/model"
+import type { CommitDetails } from "../domain/commit"
+import type { TagSummary } from "../domain/tag"
 import {
   DEFAULT_LOG_HEIGHT,
   DEFAULT_SIDE_PANEL_RATIO,
@@ -34,12 +36,14 @@ import { tagRows } from "./panes/tags-pane"
 import { commitsCursorIndex as readCommitsCursorIndex, createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, filesPaneCommitAvailable, updateFilesPane } from "./panes/files-pane"
-import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, updateMainPane, type MainPaneOverride } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, type MainPaneContent } from "./panes/main-pane"
+import { commitFileRows } from "./panes/commit-files-pane"
 import { createStashPane, moveStashCursor, selectedStashEntry, selectedStashItem, stashCursorIndex, updateStashPane } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { scrollYToReveal, type PaneHandle } from "./panes/common"
 import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
+import { parseDiff } from "../domain/diff/parse"
 import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
 import { discardConfirmation } from "./confirm-dialog"
 import { branchDeleteConfirmation, remoteTrackingMismatchConfirmation } from "./branch-dialogs"
@@ -55,7 +59,7 @@ import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
 import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, type PanelState } from "./panel-state"
 import { createListState, moveListSelection, renderListRows, selectListRow, setListRows, type ListState } from "./list-view"
-
+import { MainPreviewGate } from "./main-preview"
 
 const PANE_TITLES: Readonly<Record<FocusId, string>> = {
   main: "Main", status: "Review", files: "Files",
@@ -81,10 +85,10 @@ export type RootViewOptions = {
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
-  readonly onSelectCommit?: (oid: string) => Promise<void>
-  readonly loadCommitPreview?: (oid: string) => Promise<string>
-  readonly onSelectCommitFile?: (path: string) => Promise<void>
-  readonly onCommitBack?: () => Promise<void>
+  readonly loadCommitInspection?: (oid: string) => Promise<CommitDetails>
+  readonly loadCommitFileInspection?: (oid: string, path: string) => Promise<DiffDocument>
+  readonly loadTagInspection?: (tag: TagSummary) => Promise<import("../domain/tag").TagPreview>
+  readonly onPreviewError?: (error: unknown) => void
   readonly onMarkFocusedFileReviewed?: (path?: string) => Promise<void>
   readonly onCommitMessage?: (message: string) => Promise<void>
   readonly onAmendMessage?: (message: string) => Promise<void>
@@ -152,10 +156,10 @@ export class RootView {
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
   private basePickerIndex = 0
   private readonly onSelectFile: ((path: string) => void) | undefined
-  private readonly onSelectCommit: ((oid: string) => Promise<void>) | undefined
-  private readonly loadCommitPreview: ((oid: string) => Promise<string>) | undefined
-  private readonly onSelectCommitFile: ((path: string) => Promise<void>) | undefined
-  private readonly onCommitBack: (() => Promise<void>) | undefined
+  private readonly loadCommitInspection: ((oid: string) => Promise<CommitDetails>) | undefined
+  private readonly loadCommitFileInspection: ((oid: string, path: string) => Promise<DiffDocument>) | undefined
+  private readonly loadTagInspection: ((tag: TagSummary) => Promise<import("../domain/tag").TagPreview>) | undefined
+  private readonly onPreviewError: ((error: unknown) => void) | undefined
   private readonly onCommitMessage: ((message: string) => Promise<void>) | undefined
   private readonly onAmendMessage: ((message: string) => Promise<void>) | undefined
   private readonly onCurrentCommitMessage: (() => Promise<string>) | undefined
@@ -183,11 +187,6 @@ export class RootView {
   private readonly onFilterBranches: (() => Promise<void>) | undefined
   private copyMenuOpen = false
   private menuOpen = false
-  // lazygit parity: browsing the commits pane previews the selected commit in main without
-  // switching the review target; leaving the pane reverts main to the model's own patch.
-  private commitPreview: { readonly oid: string; readonly label: string; readonly raw: string } | undefined
-  private previewToken = 0
-  private previewInflight: Promise<void> = Promise.resolve()
   private upstreamCursorIndex = 0
   private stashIncludeUntracked = false
   private pendingDiscardPaths: readonly string[] = []
@@ -204,6 +203,11 @@ export class RootView {
   private branchFilter = ""
   private branchFilterActive = false
   branchesPanel: PanelState<"branches" | "remotes" | "tags", { kind: "remote-branches"; remote: string }>
+  commitsPanel: PanelState<"commits", { kind: "commit-files"; oid: string; details: CommitDetails }>
+  private mainGate!: MainPreviewGate
+  private installedMainContent: MainPaneContent | undefined
+  private mainLoading = false
+  private previewInflight: Promise<void> = Promise.resolve()
   private readonly registry = createRegistry()
   private readonly onQuit: (() => void) | undefined
   private readonly onGeometryChange: ((state: PersistedUiState) => void) | undefined
@@ -250,13 +254,13 @@ export class RootView {
     this.onBrowseRemote = options.onBrowseRemote
     this.onCheckoutRemoteTracking = options.onCheckoutRemoteTracking
     this.onFilterBranches = options.onFilterBranches
-    this.onSelectCommitFile = options.onSelectCommitFile
-    this.onSelectCommit = options.onSelectCommit
-    this.loadCommitPreview = options.loadCommitPreview
+    this.loadCommitInspection = options.loadCommitInspection
+    this.loadCommitFileInspection = options.loadCommitFileInspection
+    this.loadTagInspection = options.loadTagInspection
+    this.onPreviewError = options.onPreviewError
     this.onCommitMessage = options.onCommitMessage
     this.onAmendMessage = options.onAmendMessage
     this.onCurrentCommitMessage = options.onCurrentCommitMessage
-    this.onCommitBack = options.onCommitBack
     this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
     this.renderer = renderer
     this.model = model
@@ -299,6 +303,36 @@ export class RootView {
       )
       this.renderBranchesPane()
     }
+    // Initialize PanelState for window 4 (commits + transient commit-files)
+    {
+      const commits = model.commits ?? []
+      const rows = commits.map((c) => {
+        const id = c.oid
+        // minimal columns for ListState; rendering handled by commits-pane via updateCommitsPane
+        return { id, columns: [{ text: c.subject, priority: 2 }] }
+      })
+      this.commitsPanel = createPanelState(["commits"] as const, "commits", { commits: createListState(rows) })
+      this.renderCommitsPane()
+    }
+    this.mainGate = new MainPreviewGate({
+      install: (content) => {
+        this.installedMainContent = content
+        installMainPaneContent(this.panes.main, content, this.geometry.tooSmall)
+        this.root.requestRender()
+      },
+      setLoading: (loading) => {
+        this.mainLoading = loading
+        setMainLoading(this.panes.main, loading, this.geometry.tooSmall)
+        this.root.requestRender()
+      },
+      reportError: (error) => {
+        this.onPreviewError?.(error)
+        this.mainLoading = false
+        setMainLoading(this.panes.main, false, this.geometry.tooSmall)
+        this.root.requestRender()
+      },
+    })
+    this.installInitialMainContent(model)
     this.commandLog = createCommandLogPane(renderer, model.commandLog)
     this.verticalSplitter = createSplitter(renderer, "vertical", "vertical-splitter")
     this.horizontalSplitter = createSplitter(renderer, "horizontal", "horizontal-splitter")
@@ -324,8 +358,9 @@ export class RootView {
       this.filterInput.close()
       this.applyFocus(focus)
       this.renderBranchesPane()
+      this.renderCommitsPane()
       this.recomputeLayout()
-      this.syncCommitPreview()
+      this.syncPreviewForFocus(focus)
     }
     this.handleResize = () => {
       this.recomputeLayout()
@@ -341,6 +376,14 @@ export class RootView {
         option: normalized.option,
       } as KeyEvent
 
+      if (routedKey.name === "escape" && this.commitsPanel.child !== undefined) {
+        this.actionBack()
+        key.preventDefault()
+        key.stopPropagation()
+        return
+      }
+
+
       // Dialogs consume raw characters, so modal input keeps its own path.
       if (this.modalInputActive()) {
         this.handleModalKey(routedKey)
@@ -348,13 +391,19 @@ export class RootView {
         key.stopPropagation()
         return
       }
-
       const action = this.registry.dispatch(routedKey, {
         context: this.focusManager.active,
         model: this.model,
         ui: this.uiState(),
       })
-      if (action === undefined) return
+      if (action === undefined) {
+        if (routedKey.name === "escape" && this.commitsPanel.child !== undefined) {
+          this.actionBack()
+          key.preventDefault()
+          key.stopPropagation()
+        }
+        return
+      }
       this.handleAction(action, routedKey)
       key.preventDefault()
       key.stopPropagation()
@@ -401,13 +450,11 @@ export class RootView {
     this.fileCursorIndex = focusedIndex >= 0
       ? focusedIndex
       : model.files.length === 0 ? 0 : Math.min(this.fileCursorIndex, model.files.length - 1)
-    updateCommitsPane(this.panes.commits, model)
+    this.refreshCommitsPanel(model)
+    this.renderCommitsPane()
     updateStashPane(this.panes.stash, model)
-    updateMainPane(this.panes.main, model, this.geometry.tooSmall, this.activeMainOverride())
-    this.syncCommitPreview()
+    this.syncPreviewForFocus(this.focusManager.active)
     this.commandLog.update(model.commandLog)
-    // A model change can widen the status segment (or set a banner), so the bottom
-    // row is re-arranged rather than merely redrawn.
     this.recomputeLayout()
   }
   private clearDiscardState(): void {
@@ -432,9 +479,12 @@ export class RootView {
   get mainScrollY(): number { return this.panes.main.text.scrollY }
   get mainScrollX(): number { return this.panes.main.text.scrollX }
   /** The commits pane's list cursor index. */
-  get commitsCursorIndex(): number { return readCommitsCursorIndex(this.panes.commits) }
+  get commitsCursorIndex(): number {
+    const panel = this.commitsPanel
+    if (panel.child !== undefined) return panel.child.view.selectedIndex
+    return panel.views.commits?.selectedIndex ?? 0
+  }
   get mainPane(): PaneHandle { return this.panes.main }
-  /** A pane handle by focus id (test/debug access to otherwise private pane state). */
   paneFor(id: (typeof FOCUS_IDS)[number]): PaneHandle {
     return this.panes[id]
   }
@@ -810,12 +860,28 @@ export class RootView {
         }
         return
       }
-      case "commits":
-        moveCommitsCursor(this.panes.commits, this.model, direction)
-        this.revealListRow("commits", this.panes.commits, readCommitsCursorIndex(this.panes.commits))
-        this.syncCommitPreview()
+      case "commits": {
+        const panel = this.commitsPanel
+        if (panel.child !== undefined) {
+          const nextView = moveListSelection(panel.child.view, direction)
+          if (nextView !== panel.child.view) {
+            this.commitsPanel = { ...panel, child: { ...panel.child, view: nextView } }
+            this.renderCommitsPane()
+            this.revealListRow("commits", this.panes.commits, nextView.selectedIndex)
+            this.syncPreviewForFocus("commits")
+          }
+        } else {
+          const currentView = panel.views.commits!
+          const nextView = moveListSelection(currentView, direction)
+          if (nextView !== currentView) {
+            this.commitsPanel = { ...panel, views: { ...panel.views, commits: nextView } }
+            this.renderCommitsPane()
+            this.revealListRow("commits", this.panes.commits, nextView.selectedIndex)
+            this.syncPreviewForFocus("commits")
+          }
+        }
         return
-      case "stash":
+      }
         this.pendingStashDrop = undefined
         this.panes.stash.box.bottomTitle = undefined
         moveStashCursor(this.panes.stash, this.model, direction)
@@ -900,11 +966,7 @@ export class RootView {
     if (this.mutationInFlight) return
     const selected = this.model.files[this.fileCursorIndex]
     if (selected !== undefined) {
-      if (this.model.reviewTarget.kind === "commit" && this.onSelectCommitFile !== undefined) {
-        this.runUiMutation(() => this.onSelectCommitFile!(selected.path))
-      } else {
-        this.onSelectFile?.(selected.path)
-      }
+      this.onSelectFile?.(selected.path)
     }
     this.focusManager.focus("main")
   }
@@ -1191,24 +1253,62 @@ export class RootView {
 
   private actionCommitDrilldown(): void {
     if (this.mutationInFlight) return
-    if (this.onSelectCommit === undefined) return
-    const selected = getSelectedCommit(this.panes.commits, this.model)
-    if (selected === undefined) return
-    this.invalidateRemoteCheckout()
-    this.runUiMutation(() => this.onSelectCommit!(selected.oid))
-    this.focusManager.focus("files")
+    if (this.commitsPanel.child !== undefined) return
+    const selectedId = this.commitsPanel.views.commits?.selectedId
+    if (selectedId === undefined || this.loadCommitInspection === undefined) return
+    const oid = selectedId
+    this.previewInflight = this.loadCommitInspection(oid).then((details) => {
+      const fileRows = commitFileRows(details)
+      if (fileRows.length === 0) {
+        const emptyView = createListState([], [{ kind: "message", text: "No files" }])
+        this.commitsPanel = enterPanelChild(this.commitsPanel, { kind: "commit-files", oid, details }, emptyView)
+        this.renderCommitsPane()
+        const content = this.presentCommitContent(details)
+        this.mainGate.installSynchronous(content)
+        this.root.requestRender()
+        return
+      }
+      const view = createListState(fileRows)
+      this.commitsPanel = enterPanelChild(this.commitsPanel, { kind: "commit-files", oid, details }, view)
+      this.renderCommitsPane()
+      this.syncPreviewForFocus("commits")
+      this.root.requestRender()
+    }).catch((error: unknown) => {
+      this.onPreviewError?.(error)
+      this.root.requestRender()
+    })
   }
 
   private actionCommitBack(): void {
-    if (this.onCommitBack === undefined) return
-    this.invalidateRemoteCheckout()
-    this.runUiMutation(() => this.onCommitBack!())
-    if (this.focusManager.active === "main") this.focusManager.focus("commits")
+    if (this.commitsPanel.child !== undefined) {
+      const oid = this.commitsPanel.child.value.oid
+      this.commitsPanel = leavePanelChild(this.commitsPanel)
+      this.renderCommitsPane()
+      if (this.loadCommitInspection !== undefined) {
+        const load = (): Promise<CommitDetails> => this.loadCommitInspection!(oid)
+        const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
+        const promise = this.mainGate.request("commit", oid, load, present)
+        this.previewInflight = promise.catch(() => {})
+      }
+      this.root.requestRender()
+    }
   }
 
   private actionBack(): void {
+    if (this.commitsPanel.child !== undefined) {
+      const oid = this.commitsPanel.child.value.oid
+      this.commitsPanel = leavePanelChild(this.commitsPanel)
+      this.renderCommitsPane()
+      if (this.loadCommitInspection !== undefined) {
+        const load = (): Promise<CommitDetails> => this.loadCommitInspection!(oid)
+        const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
+        const promise = this.mainGate.request("commit", oid, load, present)
+        this.previewInflight = promise.catch(() => {})
+      }
+      this.root.requestRender()
+      return
+    }
     if (this.pendingStashDrop !== undefined) {
-      this.pendingStashDrop = undefined
       this.panes.stash.box.bottomTitle = undefined
     }
     if (this.branchesPanel.child !== undefined) {
@@ -1601,35 +1701,180 @@ export class RootView {
     return this.previewInflight
   }
 
-  private activeMainOverride(): MainPaneOverride | undefined {
-    return this.focusManager.active === "commits" ? this.commitPreview : undefined
+  get commitsContextKind(): "commits" | "commit-files" {
+    return this.commitsPanel.child !== undefined ? "commit-files" : "commits"
   }
 
-  private syncCommitPreview(): void {
-    if (this.focusManager.active !== "commits") {
-      if (this.commitPreview === undefined) return
-      this.previewToken += 1
-      this.commitPreview = undefined
-      updateMainPane(this.panes.main, this.model, this.geometry.tooSmall)
-      this.root.requestRender()
+  get mainContent(): MainPaneContent | undefined {
+    return this.installedMainContent
+  }
+
+  get hasMainSelection(): boolean {
+    const view = this.panes.main.text as unknown as { hasSelection?: () => boolean }
+    return typeof view.hasSelection === "function" ? view.hasSelection() : false
+  }
+
+  installMainContent(content: MainPaneContent): void {
+    this.installedMainContent = content
+    installMainPaneContent(this.panes.main, content, this.geometry.tooSmall)
+    this.root.requestRender()
+  }
+
+  private refreshCommitsPanel(model: AppModel): void {
+    const commits = model.commits ?? []
+    const rows = commits.map((c) => ({ id: c.oid, columns: [{ text: c.subject, priority: 2 }] }))
+    let panel = this.commitsPanel
+    panel = { ...panel, views: { ...panel.views, commits: setListRows(panel.views.commits, rows) } }
+    if (panel.child !== undefined) {
+      const details = panel.child.value.details
+      const fileRows = commitFileRows(details)
+      const displayRows = fileRows.length === 0 ? [{ kind: "message" as const, text: "No files" }] : undefined
+      const listRows = fileRows.length === 0 ? [] : fileRows
+      const nextView = setListRows(panel.child.view, listRows, displayRows)
+      panel = { ...panel, child: { ...panel.child, view: nextView } }
+    }
+    this.commitsPanel = panel
+  }
+
+  private renderCommitsPane(): void {
+    const pane = this.panes.commits
+    const state = this.commitsPanel.child?.view ?? this.commitsPanel.views.commits
+    if (state === undefined) {
+      pane.update("")
       return
     }
-    const selected = getSelectedCommit(this.panes.commits, this.model)
-    if (selected === undefined || selected.oid === this.commitPreview?.oid || this.loadCommitPreview === undefined) return
-    const token = this.previewToken + 1
-    this.previewToken = token
-    this.previewInflight = this.loadCommitPreview(selected.oid).then((raw) => {
-      if (token !== this.previewToken) return
-      this.commitPreview = { oid: selected.oid, label: selected.shortOid, raw }
-      updateMainPane(this.panes.main, this.model, this.geometry.tooSmall, this.activeMainOverride())
-      this.root.requestRender()
-    }).catch((error: unknown) => {
-      if (token !== this.previewToken) return
-      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
-      this.root.requestRender()
-    })
+    const width = this.geometry.windows.commits !== undefined ? Math.max(10, widthOf(this.geometry.windows.commits) - 2) : 80
+    const focused = this.focusManager.active === "commits"
+    const content = renderListRows(state, focused, width)
+    pane.update(content)
+    pane.syncScrollbar()
   }
 
+  private installInitialMainContent(model: AppModel): void {
+    const content = this.presentFilesContent(model)
+    this.mainGate.installSynchronous(content)
+  }
+
+  private presentFilesContent(model: AppModel): MainPaneContent {
+    const selected = model.files[this.fileCursorIndex]
+    const stableId = selected?.path ?? "empty"
+    const label = selected?.path ?? "Files"
+    const text = model.rawPatchSections.length > 0 ? model.rawPatchSections.map((p) => p.text).join("") : model.patches.map((p) => p.text).join("")
+    if (text.length > 0) {
+      try {
+        const doc = parseDiff(text)
+        return { source: "files", stableId, label, document: doc }
+      } catch {}
+    }
+    return { source: "files", stableId, label, plainText: text.length > 0 ? text : "No patch loaded" }
+  }
+
+  private presentCommitContent(details: CommitDetails): MainPaneContent {
+    return {
+      source: "commit",
+      stableId: details.oid,
+      label: details.shortOid,
+      ...(details.preamble === undefined ? {} : { preamble: details.preamble }),
+      document: details.document,
+    }
+  }
+  private presentCommitFileContent(oid: string, filePath: string, doc: DiffDocument): MainPaneContent {
+    const id = filePath
+    return { source: "commit-file", stableId: id, label: filePath, document: doc }
+  }
+
+  private syncPreviewForFocus(focus: FocusId): void {
+    if (focus === "commits") {
+      if (this.commitsPanel.child !== undefined) {
+        const child = this.commitsPanel.child
+        const view = child.view
+        const selectedId = view.selectedId
+        if (selectedId === undefined) {
+          // empty commit: retain parent commit preview
+          const details = child.value.details
+          const content = this.presentCommitContent(details)
+          this.mainGate.installSynchronous(content)
+          return
+        }
+        const filePath = selectedId.split("\u0000")[0]!
+        const oid = child.value.oid
+        if (this.loadCommitFileInspection !== undefined) {
+          const stableId = selectedId
+          const load = (): Promise<DiffDocument> => this.loadCommitFileInspection!(oid, filePath)
+          const present = (doc: DiffDocument): MainPaneContent => this.presentCommitFileContent(oid, filePath, doc)
+          const promise = this.mainGate.request("commit-file", stableId, load, present)
+          this.previewInflight = promise.catch(() => {})
+        }
+        return
+      }
+      const state = this.commitsPanel.views.commits
+      if (state === undefined || state.selectedId === undefined) {
+        this.installInitialMainContent(this.model)
+        return
+      }
+      const oid = state.selectedId
+      if (this.loadCommitInspection !== undefined) {
+        const load = (): Promise<CommitDetails> => this.loadCommitInspection!(oid)
+        const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
+        const promise = this.mainGate.request("commit", oid, load, present)
+        this.previewInflight = promise.catch(() => {})
+      }
+      return
+    }
+    if (focus === "files") {
+      const content = this.presentFilesContent(this.model)
+      this.mainGate.installSynchronous(content)
+      return
+    }
+    if (focus === "branches") {
+      const panel = this.branchesPanel
+      if (panel.child !== undefined) {
+        const content: MainPaneContent = { source: "remote-branch", stableId: panel.child.view.selectedId ?? panel.child.value.remote, label: panel.child.value.remote, plainText: `Remote ${panel.child.value.remote}` }
+        this.mainGate.installSynchronous(content)
+        return
+      }
+      const active = panel.activeTab
+      const view = panel.views[active]
+      const selectedId = view?.selectedId ?? active
+      let source: MainPaneContent["source"] = "local-branch"
+      if (active === "remotes") source = "remote"
+      else if (active === "tags") source = "tag"
+      if (active === "tags" && selectedId.startsWith("tag:") && this.loadTagInspection !== undefined) {
+        const ref = selectedId.slice("tag:".length)
+        const tag = this.model.tags?.find((t) => t.ref === ref)
+        if (tag !== undefined) {
+          const load = (): Promise<import("../domain/tag").TagPreview> => this.loadTagInspection!(tag)
+          const present = (preview: import("../domain/tag").TagPreview): MainPaneContent => ({
+            source: "tag",
+            stableId: ref,
+            label: preview.name,
+            plainText: `${preview.name} ${preview.kind} ${preview.targetOid.slice(0, 7)} ${preview.subject ?? ""}`,
+          })
+          const promise = this.mainGate.request("tag", ref, load, present)
+          this.previewInflight = promise.catch(() => {})
+          return
+        }
+      }
+      const content: MainPaneContent = { source, stableId: selectedId, label: selectedId, plainText: `${source} ${selectedId}` }
+      this.mainGate.installSynchronous(content)
+      return
+    }
+    if (focus === "stash") {
+      const stashes = this.model.stashes ?? []
+      const idx = stashCursorIndex(this.panes.stash)
+      const entry = stashes[idx]
+      const stableId = entry?.ref ?? "stash-empty"
+      const content: MainPaneContent = { source: "stash", stableId, label: entry?.ref ?? "Stash", plainText: entry !== undefined ? `${entry.ref} ${entry.message}` : "No stashes" }
+      this.mainGate.installSynchronous(content)
+      return
+    }
+    if (focus === "main") {
+      const content = this.presentFilesContent(this.model)
+      this.mainGate.installSynchronous(content)
+      return
+    }
+    // for status, etc., keep current
+  }
   private moveMainCursor(direction: "next" | "previous"): void {
     const pane = this.panes.main
     const document = getMainDocument(pane)
@@ -1874,7 +2119,9 @@ export class RootView {
       this.commandLog.resize(Math.max(1, widthOf(log)), Math.max(1, heightOf(log)))
       this.commandLog.update(this.model.commandLog)
     }
-    updateMainPane(this.panes.main, this.model, this.geometry.tooSmall, this.activeMainOverride())
+    if (this.installedMainContent !== undefined) {
+      installMainPaneContent(this.panes.main, this.installedMainContent, this.geometry.tooSmall)
+    }
 
     place(this.hintsBar.hints, "hints")
     place(this.hintsBar.status, "info")

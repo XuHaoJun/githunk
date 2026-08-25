@@ -1,7 +1,7 @@
 import type { StashEntry } from "./stash"
 import type { UpstreamRequired } from "../git/sync"
 import type { CommandRecord } from "./command"
-import type { CommitDetails, CommitSummary } from "./commit"
+import type { CommitSummary } from "./commit"
 import type { BranchListing } from "./branch"
 import type { TagSummary } from "./tag"
 import type { ChangedFile, ReviewTarget, WorkingTreeScope } from "./review-target"
@@ -43,8 +43,6 @@ export type AppModel = {
     readonly deletions: number
   }
   readonly commits?: readonly CommitSummary[]
-  readonly commitDetails?: CommitDetails
-  readonly commitFilePath?: string
   readonly selectionId?: string
   readonly focusId?: string
   readonly loading: boolean

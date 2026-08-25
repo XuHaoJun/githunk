@@ -119,7 +119,6 @@ export class AppController {
   private branchCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
   private priorStashStateForRefresh: AppModel | undefined
   private pendingBranchWarning: string | undefined
-  private commitOriginTarget: { readonly kind: "branch"; readonly baseRef: string } | { readonly kind: "working-tree"; readonly scope: WorkingTreeScope } | undefined
 
   constructor(options: AppControllerOptions | GitRunner, loader?: WorkingTreeLoader) {
     const runner = options instanceof GitRunner ? options : options.runner
@@ -434,7 +433,6 @@ export class AppController {
   async inspectBranch(branchRef: string): Promise<void> {
     await this.mutationQueue.run(async () => {
       const history = await this.loadCommitHistory(branchRef)
-      if (history.warning === undefined) this.commitOriginTarget = { kind: "branch", baseRef: branchRef }
       const { banner: _previousBanner, ...previousState } = this.currentState
       this.currentState = {
         ...previousState,
@@ -471,53 +469,6 @@ export class AppController {
           }
           return result
         }
-        const wasCommit = this.currentState.reviewTarget.kind === "commit"
-        const origin = wasCommit ? this.commitOriginTarget : undefined
-        if (wasCommit) {
-          this.commitOriginTarget = undefined
-          const {
-            banner: _previousBanner,
-            basePicker: _previousPicker,
-            commitDetails: _previousCommitDetails,
-            commitFilePath: _previousCommitFilePath,
-            branchReviewTarget: _previousBranchReviewTarget,
-            selectionId: _previousSelectionId,
-            focusId: _previousFocusId,
-            ...previousState
-          } = this.currentState
-          const target: Extract<ReviewTarget, { readonly kind: "working-tree" }> = {
-            kind: "working-tree",
-            scope: origin?.kind === "working-tree" ? origin.scope : "all",
-          }
-          this.currentState = {
-            ...previousState,
-            reviewTarget: target,
-            title: titleFor(target, this.currentState.branch),
-            files: [],
-            patches: [],
-            rawPatchSections: [],
-            commits: [],
-            loading: false,
-          }
-          const branchWarning = await this.refreshBranches()
-          const inferred = await this.inferBase().catch(() => undefined)
-          if (origin?.kind === "branch" && inferred?.kind === "choose") {
-            await this.refreshTarget(target)
-            this.currentState = { ...this.currentState, basePicker: inferred, loading: false }
-          } else if (origin?.kind === "branch" && inferred?.kind === "confident") {
-            const loaded = await this.refreshBranchTarget(inferred.ref)
-            if (loaded) await this.rememberBase(inferred.ref)
-          } else if (origin?.kind === "branch") {
-            await this.openBranchReview()
-          } else {
-            await this.refreshTarget(target)
-          }
-          if (branchWarning !== undefined) {
-            this.currentState = { ...this.currentState, banner: branchWarning }
-          }
-          return result
-        }
-        this.commitOriginTarget = undefined
         await this.inferBase().catch(() => undefined)
         await this.refresh()
         return result
@@ -534,7 +485,6 @@ export class AppController {
       }
     })
   }
-
   async setWorkingTreeScope(scope: WorkingTreeScope): Promise<void> {
     await this.switchMode("working-tree", scope)
   }
@@ -565,47 +515,6 @@ export class AppController {
     this.currentState = state
   }
 
-  async selectCommit(oid: string): Promise<void> {
-    this.rememberCursor()
-    let details: CommitDetails
-    try {
-      details = await this.loadCommitDetails(oid)
-    } catch (error) {
-      this.currentState = { ...this.currentState, banner: error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error), commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
-      return
-    }
-    if (this.commitOriginTarget === undefined) {
-      const origin = this.currentState.branchReviewTarget ?? this.currentState.reviewTarget
-      this.commitOriginTarget = origin.kind === "branch"
-        ? { kind: "branch", baseRef: origin.baseRef }
-        : origin.kind === "working-tree"
-          ? { kind: "working-tree", scope: origin.scope }
-          : undefined
-    }
-    const files = changedFilesFromDocument(details.document)
-    const patch = { label: "BRANCH" as const, text: details.document.text }
-    const { banner: _previousBanner, commitFilePath: _previousCommitFilePath, ...previousState } = this.currentState
-    this.currentState = {
-      ...previousState,
-      reviewTarget: { kind: "commit", oid },
-      commitDetails: details,
-      files,
-      patches: [patch],
-      rawPatchSections: [patch],
-      ...(files[0] === undefined ? {} : { selectionId: files[0].path, focusId: files[0].path }),
-      title: titleFor({ kind: "commit", oid }, this.currentState.branch),
-      loading: false,
-      commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
-    }
-  }
-
-  /** Read-only preview of a commit's full patch. Unlike {@link selectCommit} it never touches
-   *  state, the review target or the cursor: browsing the commits pane must not switch modes. */
-  async commitPatchPreview(oid: string): Promise<string> {
-    const details = await this.loadCommitDetails(oid)
-    return details.document.text
-  }
-
   async loadCommitInspection(oid: string): Promise<CommitDetails> {
     return this.loadCommitDetails(oid)
   }
@@ -619,57 +528,16 @@ export class AppController {
     return loadTagPreview(this.runner, tag)
   }
 
-  async selectCommitFile(path: string): Promise<void> {
-    const details = this.currentState.commitDetails
-    if (this.currentState.reviewTarget.kind !== "commit" || details === undefined) return
-    let document: DiffDocument
-    try {
-      document = await this.loadCommitFile(this.currentState.reviewTarget.oid, path)
-    } catch (error) {
-      this.currentState = { ...this.currentState, banner: error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error), commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
-      return
-    }
-    const files = changedFilesFromDocument(document)
-    const patch = { label: "BRANCH" as const, text: document.text }
-    const { banner: _previousBanner, ...previousState } = this.currentState
+  recordInspectionError(error: unknown): void {
+    const banner = error instanceof GitCommandError
+      ? error.record.stderr || error.message
+      : error instanceof Error
+        ? error.message
+        : String(error)
     this.currentState = {
-      ...previousState,
-      commitFilePath: path,
-      files: files.length > 0 ? files : this.currentState.files.filter((file) => file.path === path),
-      patches: [patch],
-      rawPatchSections: [patch],
-      selectionId: path,
-      focusId: path,
-      loading: false,
+      ...this.currentState,
+      banner,
       commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
-    }
-  }
-
-  async navigateBack(): Promise<void> {
-    if (this.currentState.reviewTarget.kind !== "commit") return
-    if (this.currentState.commitFilePath !== undefined) {
-      const details = this.currentState.commitDetails
-      if (details === undefined) return
-      const patch = { label: "BRANCH" as const, text: details.document.text }
-      const files = changedFilesFromDocument(details.document)
-      const { commitFilePath: _previousCommitFilePath, ...previousState } = this.currentState
-      this.currentState = {
-        ...previousState,
-        files,
-        patches: [patch],
-        rawPatchSections: [patch],
-        ...(files[0] === undefined ? {} : { selectionId: files[0].path, focusId: files[0].path }),
-      }
-      return
-    }
-    const target = this.commitOriginTarget
-    this.commitOriginTarget = undefined
-    if (target?.kind === "branch") {
-      await this.refreshBranchTarget(target.baseRef)
-      return
-    }
-    if (target?.kind === "working-tree") {
-      await this.refreshTarget({ kind: "working-tree", scope: target.scope })
     }
   }
 
@@ -979,8 +847,6 @@ export class AppController {
         basePicker: _previousPicker,
         selectionId: _previousSelectionId,
         focusId: _previousFocusId,
-        commitDetails: _previousCommitDetails,
-        commitFilePath: _previousCommitFilePath,
         branchReviewTarget: _previousBranchReviewTarget,
         ...previousState
       } = this.currentState
@@ -1002,7 +868,6 @@ export class AppController {
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
       }
-      this.commitOriginTarget = undefined
       this.priorStashStateForRefresh = undefined
     } catch (error) {
       if (generation !== this.generation) return
@@ -1029,8 +894,6 @@ export class AppController {
       const {
         banner: _previousBanner,
         branchReviewTarget: _previousBranchReviewTarget,
-        commitDetails: _previousCommitDetails,
-        commitFilePath: _previousCommitFilePath,
         ...previousState
       } = this.currentState
       this.currentState = {
@@ -1075,8 +938,6 @@ export class AppController {
         basePicker: _previousPicker,
         selectionId: _previousSelectionId,
         focusId: _previousFocusId,
-        commitDetails: _previousCommitDetails,
-        commitFilePath: _previousCommitFilePath,
         ...previousState
       } = this.currentState
       this.currentState = {
@@ -1097,7 +958,6 @@ export class AppController {
         ...(selectionId === undefined ? {} : { selectionId }),
         ...(focusId === undefined ? {} : { focusId }),
       }
-      this.commitOriginTarget = undefined
       return true
     } catch (error) {
       if (generation !== this.generation) return false

@@ -74,16 +74,10 @@ export function createApp(options: CreateAppOptions): App {
       controller.selectFile(path)
       view.update(controller.state)
     },
-    onSelectCommit: async (oid) => {
-      try { await controller.selectCommit(oid) } finally { view.update(controller.state) }
-    },
-    loadCommitPreview: (oid) => controller.commitPatchPreview(oid),
-    onSelectCommitFile: async (path) => {
-      try { await controller.selectCommitFile(path) } finally { view.update(controller.state) }
-    },
-    onCommitBack: async () => {
-      try { await controller.navigateBack() } finally { view.update(controller.state) }
-    },
+    loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
+    loadCommitFileInspection: (oid, path) => controller.loadCommitFileInspection(oid, path),
+    loadTagInspection: (tag) => controller.loadTagInspection(tag),
+    onPreviewError: (error) => controller.recordInspectionError(error),
     onCommitMessage: async (message) => {
       try { await controller.commit(message) } finally { view.update(controller.state) }
     },

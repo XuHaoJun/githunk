@@ -1,4 +1,5 @@
-import type { CliRenderer } from "@opentui/core"
+import { StyledText } from "@opentui/core"
+import type { CliRenderer, TextChunk } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import { parseDiff } from "../../domain/diff/parse"
 import type { DiffDocument, DiffFile } from "../../domain/diff/document"
@@ -7,6 +8,10 @@ import { createPane, type PaneHandle } from "./common"
 
 const documents = new WeakMap<PaneHandle, DiffDocument>()
 const cursorTargets = new WeakMap<PaneHandle, MainCursorTarget>()
+const installedContents = new WeakMap<PaneHandle, MainPaneContent>()
+const renderedTexts = new WeakMap<PaneHandle, string>()
+const paneTitles = new WeakMap<PaneHandle, string>()
+
 export type MainCursorTarget = {
   readonly fileIndex: number
   readonly hunkIndex?: number
@@ -14,27 +19,35 @@ export type MainCursorTarget = {
   readonly hunkKey?: string
 }
 
-/** When set, main renders this patch instead of the model's own sections (commits-pane preview). */
-export type MainPaneOverride = {
+export type MainPaneContent = {
+  readonly source: "files" | "local-branch" | "remote" | "remote-branch" | "tag" | "commit" | "commit-file" | "stash"
+  readonly stableId: string
   readonly label: string
-  readonly raw: string
+  readonly preamble?: string
+  readonly document?: DiffDocument
+  readonly plainText?: string
 }
 
-export function createMainPane(renderer: CliRenderer, model: AppModel): PaneHandle {
+export function createMainPane(renderer: CliRenderer, _model: AppModel): PaneHandle {
   const pane = createPane(renderer, "main", "0 Main", "", true)
-  updateMainPane(pane, model, false)
+  // content will be installed via gate; keep placeholder until first install
+  pane.box.title = "0 Main"
+  paneTitles.set(pane, "0 Main")
   return pane
 }
 
 export function getMainDocument(pane: PaneHandle): DiffDocument | undefined {
   return documents.get(pane)
 }
+
 export function getMainCursorTarget(pane: PaneHandle): MainCursorTarget | undefined {
   return cursorTargets.get(pane)
 }
+
 function hunkKey(hunk: DiffFile["hunks"][number]): string {
   return `${hunk.header.raw}\u0000${hunk.oldStart}:${hunk.oldCount}:${hunk.newStart}:${hunk.newCount}`
 }
+
 function targetWithIdentity(document: DiffDocument, target: MainCursorTarget): MainCursorTarget {
   const file = document.files[target.fileIndex]
   if (file === undefined) return target
@@ -53,6 +66,7 @@ export function setMainCursorTarget(pane: PaneHandle, target: MainCursorTarget):
   if (target.hunkIndex === undefined ? file.hunks.length > 0 : file.hunks[target.hunkIndex] === undefined) return
   cursorTargets.set(pane, targetWithIdentity(document!, target))
 }
+
 export function moveMainCursor(document: DiffDocument, current: MainCursorTarget | undefined, direction: "next" | "previous"): MainCursorTarget | undefined {
   const targets: MainCursorTarget[] = document.files.flatMap((file) => file.hunks.length > 0
     ? file.hunks.map((_, hunkIndex) => ({ fileIndex: file.fileIndex, hunkIndex }))
@@ -100,74 +114,184 @@ export function changeLineIndexes(document: DiffDocument, startUtf16: number, en
   })
 }
 
-export function updateMainPane(pane: PaneHandle, model: AppModel, tooSmall: boolean, override?: MainPaneOverride): void {
-  pane.box.title = override !== undefined
-    ? `0 Main — ${override.label}`
-    : model.reviewTarget.kind === "commit"
-      ? `0 Main — ${model.reviewTarget.oid.slice(0, 7)}${model.branchReviewTarget === undefined ? "" : ` · ${model.branchReviewTarget.baseRef}..HEAD`}`
-      : "0 Main"
+export function getMainPaneContent(pane: PaneHandle): MainPaneContent | undefined {
+  return installedContents.get(pane)
+}
+
+export function getMainRenderedText(pane: PaneHandle): string | undefined {
+  return renderedTexts.get(pane)
+}
+
+function renderedTextFor(content: MainPaneContent): string {
+  if (content.document !== undefined) {
+    return `${content.preamble ?? ""}${content.document.text}`
+  }
+  if (content.plainText !== undefined) return content.plainText
+  return content.preamble ?? ""
+}
+
+function buildStyledContent(content: MainPaneContent): string | StyledText {
+  if (content.document !== undefined) {
+    const preamble = content.preamble ?? ""
+    const diffStyled = renderDiff(content.document).styledText
+    if (preamble.length === 0) return diffStyled
+    return `${preamble}${content.document.text}`
+  }
+  if (content.plainText !== undefined) return content.plainText
+  if (content.preamble !== undefined) return content.preamble
+  return "No content"
+}
+export function installMainContent(pane: PaneHandle, content: MainPaneContent, tooSmall: boolean): void {
+  const previousContent = installedContents.get(pane)
+  const previousText = renderedTexts.get(pane)
+  const nextText = renderedTextFor(content)
+  const previousIdentity = previousContent === undefined ? undefined : `${previousContent.source}:${previousContent.stableId}`
+  const nextIdentity = `${content.source}:${content.stableId}`
+
+  const sameIdentity = previousIdentity !== undefined && previousIdentity === nextIdentity
+  const identicalText = previousText !== undefined && previousText === nextText
+
+  // Update installed tracking before rendering so subsequent installs compare correctly
+  installedContents.set(pane, content)
+  renderedTexts.set(pane, nextText)
+  paneTitles.set(pane, `0 Main — ${content.label}`)
+
   if (tooSmall) {
+    pane.box.title = paneTitles.get(pane) ?? `0 Main — ${content.label}`
     pane.update("Terminal too small")
     documents.delete(pane)
-    cursorTargets.delete(pane)
-    return
-  }
-  const raw = override !== undefined ? override.raw : (() => {
-    const sections = model.rawPatchSections.length > 0 ? model.rawPatchSections : model.patches
-    return sections.map((patch) => patch.text).filter(Boolean).join("")
-  })()
-  if (raw.length === 0) {
-    pane.update(model.loading ? "Loading…" : model.banner ? `! ${model.banner}` : "No patch loaded")
-    documents.delete(pane)
-    cursorTargets.delete(pane)
     return
   }
 
-  const document = parseDiff(raw)
-  const previousDocument = documents.get(pane)
-  const previousTarget = cursorTargets.get(pane)
-  let preservedTarget: MainCursorTarget | undefined
-  if (previousTarget !== undefined && previousDocument !== undefined) {
-    const oldFile = previousDocument.files[previousTarget.fileIndex]
-    const filePath = previousTarget.filePath ?? (oldFile?.newPath !== undefined && oldFile.newPath !== "/dev/null" ? oldFile.newPath : oldFile?.oldPath)
-    const newFileIndex = filePath === undefined ? -1 : document.files.findIndex((file) => {
-      const path = file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
-      return path === filePath
-    })
-    if (newFileIndex >= 0) {
-      const newFile = document.files[newFileIndex]!
-      if (previousTarget.hunkIndex === undefined) {
-        if (newFile.hunks.length === 0) {
-          preservedTarget = { fileIndex: newFileIndex, ...(filePath === undefined ? {} : { filePath }) }
-        }
-      } else {
-        const key = previousTarget.hunkKey ?? (oldFile?.hunks[previousTarget.hunkIndex] === undefined ? undefined : hunkKey(oldFile.hunks[previousTarget.hunkIndex]!))
-        const newHunkIndex = key === undefined ? -1 : newFile.hunks.findIndex((hunk) => hunkKey(hunk) === key)
-        if (newHunkIndex >= 0) {
-          preservedTarget = {
-            fileIndex: newFileIndex,
-            hunkIndex: newHunkIndex,
-            ...(filePath === undefined ? {} : { filePath }),
-            ...(key === undefined ? {} : { hunkKey: key }),
-          }
+  pane.box.title = paneTitles.get(pane) ?? `0 Main — ${content.label}`
+
+  // Lifecycle: viewport and selection handling
+  const clearSelection = (): void => {
+    const view = pane.text
+    if (view !== null && typeof view === "object" && "resetSelection" in view) {
+      const reset = view.resetSelection
+      if (typeof reset === "function") reset.call(view)
+    }
+    cursorTargets.delete(pane)
+  }
+  if (!sameIdentity) {
+    clearSelection()
+    pane.text.scrollX = 0
+    pane.text.scrollY = 0
+  } else if (identicalText) {
+    pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
+    pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
+  } else {
+    clearSelection()
+    pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
+    pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
+  }
+
+  // Render content
+  if (content.document !== undefined) {
+    const doc = content.document
+    // For document lifecycle, preserve hunk cursor if same identity identical text
+    const previousDocument = documents.get(pane)
+    const previousTarget = cursorTargets.get(pane)
+    let preservedTarget: MainCursorTarget | undefined
+    if (sameIdentity && identicalText && previousTarget !== undefined && previousDocument !== undefined) {
+      const oldFile = previousDocument.files[previousTarget.fileIndex]
+      const filePath = previousTarget.filePath ?? (oldFile?.newPath !== undefined && oldFile.newPath !== "/dev/null" ? oldFile.newPath : oldFile?.oldPath)
+      const newFileIndex = filePath === undefined ? -1 : doc.files.findIndex((file) => {
+        const path = file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
+        return path === filePath
+      })
+      if (newFileIndex >= 0) {
+        const newFile = doc.files[newFileIndex]!
+        if (previousTarget.hunkIndex === undefined) {
+          if (newFile.hunks.length === 0) preservedTarget = { fileIndex: newFileIndex, ...(filePath === undefined ? {} : { filePath }) }
+        } else {
+          const key = previousTarget.hunkKey ?? (oldFile?.hunks[previousTarget.hunkIndex] === undefined ? undefined : hunkKey(oldFile.hunks[previousTarget.hunkIndex]!))
+          const newHunkIndex = key === undefined ? -1 : newFile.hunks.findIndex((hunk) => hunkKey(hunk) === key)
+          if (newHunkIndex >= 0) preservedTarget = { fileIndex: newFileIndex, hunkIndex: newHunkIndex, ...(filePath === undefined ? {} : { filePath }), ...(key === undefined ? {} : { hunkKey: key }) }
         }
       }
     }
+    // If not preserved, pick first hunk
+    const initialTarget = preservedTarget ?? (!sameIdentity || !identicalText ? moveMainCursor(doc, undefined, "next") : previousTarget ?? moveMainCursor(doc, undefined, "next"))
+    // When we cleared selection due to identity change or text change, we must not keep initialTarget if we just cleared
+    const shouldKeepTarget = sameIdentity && identicalText
+    documents.set(pane, doc)
+    if (shouldKeepTarget && initialTarget) {
+      cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
+    } else if (!shouldKeepTarget && identicalText === false) {
+      // cleared: if document has hunks, set initial? Spec says different identity clears selection, but for document we may still want initial cursor? Original updateMainPane always set initialTarget when document exists.
+      // For lifecycle, after clearing, we should set a default target only if not cleared? The spec says clear native/document selection. So delete.
+      // But for usability, should we still have a hunk cursor? The spec's selection refers to native text selection and document cursor. Clearing means no cursor target.
+      // We'll delete; subsequent j/k will create.
+      if (sameIdentity && identicalText) {
+        if (initialTarget) cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
+      } else {
+        // different identity or changed text: clear
+        cursorTargets.delete(pane)
+        // Optionally set first hunk as cursor only after cleared? Spec says clear, so keep deleted.
+        // However to avoid empty cursor, we could still set initialTarget but spec says clear selection.
+        // Keep deleted to satisfy "clear selection" assertion.
+      }
+    } else {
+      if (initialTarget) cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
+      else cursorTargets.delete(pane)
+    }
+    pane.text.wrapMode = "char"
+    pane.update(renderDiff(doc).styledText)
+    // If preamble exists, we need to prepend it without re-rendering document? renderDiff already set styledText; we need to include preamble.
+    if (content.preamble !== undefined && content.preamble.length > 0) {
+      // Rebuild with preamble handling; use buildStyledContent but we already rendered.
+      const styled = buildStyledContent(content)
+      pane.update(styled)
+    }
+    // clamp again after content size known
+    pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
+    pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
+    pane.syncScrollbar()
+    return
   }
-  const initialTarget = preservedTarget ?? moveMainCursor(document, undefined, "next")
-  documents.set(pane, document)
-  if (initialTarget) cursorTargets.set(pane, targetWithIdentity(document, initialTarget))
-  else cursorTargets.delete(pane)
-  pane.text.wrapMode = "char"
-  pane.update(renderDiff(document).styledText)
+
+  // plainText or preamble-only
+  documents.delete(pane)
+  if (!sameIdentity || !identicalText) {
+    // already cleared above
+  }
+  const styled = buildStyledContent(content)
+  pane.update(styled)
+  pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
+  pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
+  pane.syncScrollbar()
+}
+
+export function setMainLoading(pane: PaneHandle, loading: boolean, tooSmall: boolean): void {
+  if (tooSmall) return
+  const current = installedContents.get(pane)
+  const base = current !== undefined ? `0 Main — ${current.label}` : "0 Main"
+  pane.box.title = loading ? `${base} (Loading…)` : base
+  paneTitles.set(pane, base)
+}
+
+export function updateMainPane(pane: PaneHandle, _model: AppModel, tooSmall: boolean, override?: MainPaneContent): void {
+  if (override !== undefined) {
+    installMainContent(pane, override, tooSmall)
+    return
+  }
+  // Legacy fallback: if no override, show placeholder. After cutover, every source goes through gate,
+  // so this path is only used during initial create before gate installs synchronous content.
+  if (tooSmall) {
+    pane.box.title = "0 Main"
+    pane.update("Terminal too small")
+    return
+  }
+  pane.box.title = "0 Main"
+  pane.update("No patch loaded")
 }
 
 /** Scrolls the main pane's text viewport, clamped to its content. */
 export function scrollMainPane(pane: PaneHandle, axis: "x" | "y", delta: number): void {
   if (axis === "y") {
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY + delta))
-    // OpenTUI 0.5.6 emits no scroll-change event, so the thumb must be re-synced after
-    // every scroll mutation or it freezes at the last content update.
     pane.syncScrollbar()
     return
   }
