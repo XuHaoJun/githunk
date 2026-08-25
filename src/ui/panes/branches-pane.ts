@@ -33,7 +33,18 @@ function formatBranchTime(committedAt: string, now: Date = new Date()): string {
 export function localBranchRows(model: AppModel, filter = ""): ListRow[] {
   const listing = model.branches
   if (listing === undefined) return []
-  const rows: ListRow[] = listing.localBranches.map((branch) => {
+  // Lazygit orders branches by committer date descending (default `localBranchSortOrder: "date"` → `-committerdate`),
+  // with the current branch (`Recency: "  *"`) pinned to the top regardless of date. Recency ordering
+  // (`"recency"` mode merges reflog recency) is not replicated here, but date ordering matches the
+  // default vendored config (`pkg/config/user_config.go:954`).
+  const sortedBranches = [...listing.localBranches].sort((a, b) => {
+    if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
+    const aTime = Number(a.committedAt ?? "0")
+    const bTime = Number(b.committedAt ?? "0")
+    if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return bTime - aTime
+    return a.name.localeCompare(b.name)
+  })
+  const rows: ListRow[] = sortedBranches.map((branch) => {
     const id = `local:${branch.name}`
     const columns: ListColumn[] = []
     columns.push({

@@ -82,14 +82,14 @@ describe("lazygit core UI acceptance", () => {
     expect(commitsGeom).toBeDefined()
     expect(view.paneTextGeometry("commits")).toEqual(commitsGeom)
 
-    // 1. Commits rows contain Noah Reviewer, short hash, graph glyphs, no arrow cursor
+    // 1. Commits rows contain author initials (lazygit CommitAuthorShortLength=2 → "Noah Reviewer"→"NR"), short hash (8), graph glyphs, no arrow cursor
     await harness.pressKey("4")
     await harness.flush()
     await view.whenPreviewSettled().catch(() => {})
     await harness.flush()
     const commitsText = view.renderedListText("commits")
-    expect(commitsText).toContain("Noah Reviewer")
-    expect(commitsText).toMatch(/\b[0-9a-f]{7}\b/)
+    expect(commitsText).toContain("NR")
+    expect(commitsText).toMatch(/\b[0-9a-f]{8}\b/)
     expect(commitsText).toMatch(/[●│┬]/)
     expect(commitsText).not.toContain("▸")
     expect(commitsText).not.toContain(">")

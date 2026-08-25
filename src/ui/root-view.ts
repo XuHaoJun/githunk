@@ -86,19 +86,35 @@ function formatRelativeTime(authoredAt: string, now: Date): string {
   return rtf.format(0, "second")
 }
 
+function getCommitAuthorInitials(authorName: string): string {
+  if (authorName.length === 0) return ""
+  const firstGrapheme = [...authorName][0] ?? ""
+  if (firstGrapheme.length === 0) return ""
+  // If single word, take first 2 graphemes (e.g., "Jesse" → "Je"); if multiple words, take initials of first two words (e.g., "Noah Reviewer" → "NR").
+  const parts = authorName.trim().split(/\s+/)
+  if (parts.length === 1) return parts[0]!.slice(0, 2)
+  const first = parts[0]![0] ?? ""
+  const second = parts[1]![0] ?? ""
+  return `${first}${second}`
+}
+
 function buildCommitRows(commits: readonly CommitSummary[]): readonly ListRow[] {
   const now = new Date()
   const graphs = commitGraphRows(commits)
   return commits.map((commit, index) => {
     const graph = graphs[index] ?? ""
+    const shortHash = commit.oid.length >= 8 ? commit.oid.slice(0, 8) : commit.shortOid
+    const authorInitials = getCommitAuthorInitials(commit.authorName)
     const relative = formatRelativeTime(commit.authoredAt, now)
+    // Lazygit order: hash → author (2-letter initials) → graph → subject → (time)
+    // See `pkg/gui/presentation/commits.go:displayCommit` cols: hash, author (CommitAuthorShortLength=2), graph+mark+tag+name.
     return {
       id: commit.oid,
       columns: [
+        { text: shortHash, priority: 1, style: "yellow" as const },
+        { text: authorInitials, priority: 3, style: "cyan" as const },
         { text: graph, priority: 0, style: "dim" as const },
-        { text: commit.shortOid, priority: 1, style: "yellow" as const },
         { text: commit.subject, priority: 2 },
-        { text: commit.authorName, priority: 3, style: "cyan" as const },
         { text: relative, priority: 4, style: "dim" as const },
       ],
     }
@@ -719,9 +735,8 @@ export class RootView {
 
   private renderBranchesPane(): void {
     const pane = this.panes.branches
-    const styledTitle = this.branchesTitleStyled
-    const boxTitleTarget = pane.box as unknown as { title: unknown }
-    boxTitleTarget.title = styledTitle as unknown as string
+    // Box title must remain a plain string — OpenTUI Box.title stringifies StyledText to `[object Object]`.
+    pane.box.title = "3 Local Branches | Remotes | Tags"
     const focused = this.focusManager.active === "branches"
     const state = this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab]
     if (state === undefined) {
@@ -1955,6 +1970,12 @@ export class RootView {
 
   private renderCommitsPane(): void {
     const pane = this.panes.commits
+    if (this.commitsPanel.child !== undefined) {
+      const short = this.commitsPanel.child.value.details.shortOid ?? this.commitsPanel.child.value.details.oid.slice(0, 8)
+      pane.box.title = `4 Diff files (${short})`
+    } else {
+      pane.box.title = "4 Commits"
+    }
     const state = this.commitsPanel.child?.view ?? this.commitsPanel.views.commits
     if (state === undefined) {
       pane.update("")

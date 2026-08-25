@@ -31,18 +31,27 @@ function formatRelativeTime(authoredAt: string, now: Date): string {
   return rtf.format(0, "second")
 }
 
+function getCommitAuthorInitials(authorName: string): string {
+  if (authorName.length === 0) return ""
+  const parts = authorName.trim().split(/\s+/)
+  if (parts.length === 1) return parts[0]!.slice(0, 2)
+  return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`
+}
+
 function buildRows(commits: readonly CommitSummary[], now: Date): ListRow[] {
   const graphs = commitGraphRows(commits)
   return commits.map((commit, index) => {
     const graph = graphs[index] ?? ""
+    const shortHash = commit.oid.length >= 8 ? commit.oid.slice(0, 8) : commit.shortOid
+    const authorInitials = getCommitAuthorInitials(commit.authorName)
     const relative = formatRelativeTime(commit.authoredAt, now)
     return {
       id: commit.oid,
       columns: [
+        { text: shortHash, priority: 1, style: "yellow" },
+        { text: authorInitials, priority: 3, style: "cyan" },
         { text: graph, priority: 0, style: "dim" },
-        { text: commit.shortOid, priority: 1, style: "yellow" },
         { text: commit.subject, priority: 2 },
-        { text: commit.authorName, priority: 3, style: "cyan" },
         { text: relative, priority: 4, style: "dim" },
       ],
     }

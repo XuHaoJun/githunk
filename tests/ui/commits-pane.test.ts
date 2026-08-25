@@ -25,7 +25,9 @@ const commits: readonly CommitSummary[] = [
 describe("commits pane rows", () => {
   test("includes author and omits arrow glyph", () => {
     const result = renderCommitRows(commits, { selectedId: commits[0]!.oid, focused: true, width: 80, now })
-    expect(result.plainText).toContain("Author Name")
+    // Lazygit shows author as 2-letter initials (CommitAuthorShortLength=2): "Author Name" → "AN", "Other" → "Ot".
+    expect(result.plainText).toContain("AN")
+    expect(result.plainText).toContain("Ot")
     expect(result.plainText).not.toContain("▸")
   })
 
