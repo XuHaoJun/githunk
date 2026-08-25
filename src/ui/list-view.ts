@@ -142,6 +142,10 @@ export function listRowAtPoint(state: ListState, viewport: ListViewport, x: numb
 
 // --- rendering ---
 
+function plainChunk(text: string): TextChunk {
+  return { __isChunk: true as const, text }
+}
+
 function styleToChunk(text: string, style: ListColumn["style"]): TextChunk {
   switch (style) {
     case "dim":
@@ -156,9 +160,9 @@ function styleToChunk(text: string, style: ListColumn["style"]): TextChunk {
       return magenta(text)
     case "default":
     case undefined:
-      return { __isChunk: true as const, text }
+      return plainChunk(text)
     default:
-      return { __isChunk: true as const, text }
+      return plainChunk(text)
   }
 }
 
@@ -228,8 +232,7 @@ function renderColumns(columns: readonly ListColumn[], width: number): TextChunk
       continue
     }
     if (!first) {
-      // Add separator if we have emitted before
-      chunks.push({ __isChunk: true as const, text: " " })
+      chunks.push(plainChunk(" "))
     }
     first = false
     chunks.push(styleToChunk(txt, styles[i]) as TextChunk)
@@ -282,7 +285,7 @@ export function renderListRows(state: ListState, focused: boolean, width: number
     } else {
       const truncated = truncateToWidth(dr.text, safeWidth)
       if (truncated.length > 0) {
-        lineChunks = [{ __isChunk: true as const, text: truncated } as TextChunk]
+        lineChunks = [plainChunk(truncated)]
       } else {
         lineChunks = []
       }
@@ -303,7 +306,7 @@ export function renderListRows(state: ListState, focused: boolean, width: number
 
     for (const c of lineChunks) allChunks.push(c)
     if (i < displayRows.length - 1) {
-      allChunks.push({ __isChunk: true as const, text: "\n" } as TextChunk)
+      allChunks.push(plainChunk("\n"))
     }
   }
 

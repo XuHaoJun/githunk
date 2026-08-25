@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, updatePanelView } from "../../src/ui/panel-state"
+import type { PanelState } from "../../src/ui/panel-state"
 import { createListState, selectListRow } from "../../src/ui/list-view"
 
 const panelRows = [
@@ -20,7 +21,11 @@ describe("panel state", () => {
   })
 
   test("bracket navigation leaves a transient child before changing parent tab", () => {
-    let panel = createPanelState(["branches", "remotes", "tags"] as const, "remotes", { branches: createListState([]), remotes: createListState([]), tags: createListState([]) })
+    let panel: PanelState<"branches" | "remotes" | "tags", { kind: string; remote: string }> = createPanelState(
+      ["branches", "remotes", "tags"] as const,
+      "remotes",
+      { branches: createListState([]), remotes: createListState([]), tags: createListState([]) },
+    )
     panel = enterPanelChild(panel, { kind: "remote-branches", remote: "origin" }, createListState([]))
     panel = cyclePanelTab(panel, "next")
     expect(panel.activeTab).toBe("tags")
@@ -28,7 +33,11 @@ describe("panel state", () => {
   })
 
   test("escape restores the parent tab without changing it", () => {
-    let panel = createPanelState(["branches", "remotes", "tags"] as const, "remotes", { branches: createListState([]), remotes: createListState([]), tags: createListState([]) })
+    let panel: PanelState<"branches" | "remotes" | "tags", { kind: string; remote: string }> = createPanelState(
+      ["branches", "remotes", "tags"] as const,
+      "remotes",
+      { branches: createListState([]), remotes: createListState([]), tags: createListState([]) },
+    )
     panel = leavePanelChild(enterPanelChild(panel, { kind: "remote-branches", remote: "origin" }, createListState([])))
     expect(panel.activeTab).toBe("remotes")
   })
