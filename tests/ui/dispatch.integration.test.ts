@@ -445,20 +445,19 @@ describe("screen modes and layout", () => {
     expect(view.geometry.sideWidth).toBeGreaterThan(0)
   })
 
-  test("the focused left pane is taller than its siblings and stash folds when unfocused", async () => {
+  test("left pane heights stay fixed when focus changes", async () => {
     harness = await createShellHarness({ height: 40 })
     const view = harness.app.view!
 
     await harness.pressKey("4")
-    const commits = view.geometry.windows.commits
-    const branches = view.geometry.windows.branches
-    const stash = view.geometry.windows.stash
-    expect((commits!.y1 - commits!.y0 + 1)).toBeGreaterThan(branches!.y1 - branches!.y0 + 1)
-    expect((stash!.y1 - stash!.y0 + 1)).toBe(3)
+    const commitsHeight = view.geometry.windows.commits!.y1 - view.geometry.windows.commits!.y0 + 1
+    const branchesHeight = view.geometry.windows.branches!.y1 - view.geometry.windows.branches!.y0 + 1
+    const stashHeight = view.geometry.windows.stash!.y1 - view.geometry.windows.stash!.y0 + 1
+    expect(commitsHeight).toBe(branchesHeight)
 
     await harness.pressKey("5")
     const focusedStash = view.geometry.windows.stash!
-    expect(focusedStash.y1 - focusedStash.y0 + 1).toBeGreaterThan(3)
+    expect(focusedStash.y1 - focusedStash.y0 + 1).toBe(stashHeight)
   })
 
   test("a terminal resize keeps the layout consistent", async () => {
@@ -594,7 +593,7 @@ describe("navigation keys", () => {
   })
 
   test("comma and period page a list", async () => {
-    harness = await createShellHarness({ commits: ["c1", "c2", "c3", "c4", "c5", "c6"], height: 24 })
+    harness = await createShellHarness({ commits: ["c1", "c2", "c3", "c4", "c5", "c6"], height: 40 })
     const view = harness.app.view!
 
     await harness.pressKey("4")

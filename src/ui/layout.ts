@@ -8,8 +8,6 @@ export const MIN_LOG_HEIGHT = 3
 export const SPLITTER_SIZE = 1
 export const DEFAULT_SIDE_PANEL_RATIO = 0.3333
 export const DEFAULT_LOG_HEIGHT = 8
-/** Focused side pane height relative to its siblings. lazygit's expandedSidePanelWeight. */
-export const EXPANDED_SIDE_PANEL_WEIGHT = 2
 export const STATUS_PANE_HEIGHT = 3
 export const FOLDED_PANE_HEIGHT = 3
 export const MIN_HEIGHT_FOR_NORMAL_LAYOUT = 28
@@ -36,7 +34,6 @@ export type LayoutRequest = {
   readonly screenMode?: ScreenMode
   readonly hintsVisible?: boolean
   readonly statusWidth?: number
-  readonly accordion?: boolean
 }
 
 export type LayoutGeometry = {
@@ -84,32 +81,26 @@ export function previousScreenMode(current: ScreenMode): ScreenMode {
 }
 
 /**
- * The five left panes. `focusedSide` is undefined when focus is on the main
- * pane or the command log; `absorber` is the pane that takes a weight in the
- * layouts where every other pane is statically sized, because boxlayout needs
- * at least one weighted box to soak up the remaining rows.
+ * The five left panes. Their geometry is independent of focus so moving
+ * between panes does not make the stack jump. In compact layouts, files is
+ * the fixed absorber that takes the remaining rows.
  */
 function sideChildren(
   focusedSide: SideWindow | undefined,
-  accordion: boolean,
   enlarged: boolean,
 ): (width: number, height: number) => readonly Box[] {
-  const absorber = focusedSide ?? "files"
   return (_width, height) => {
     if (enlarged) {
-      return [{ window: absorber, weight: 1 }]
+      return [{ window: focusedSide ?? "files", weight: 1 }]
     }
     if (height >= MIN_HEIGHT_FOR_NORMAL_LAYOUT) {
-      return SIDE_WINDOWS.map((window): Box => {
-        if (window === "status") return { window, size: STATUS_PANE_HEIGHT }
-        const focused = window === focusedSide
-        if (window === "stash" && !focused) return { window, size: FOLDED_PANE_HEIGHT }
-        return { window, weight: accordion && focused ? EXPANDED_SIDE_PANEL_WEIGHT : 1 }
-      })
+      return SIDE_WINDOWS.map((window): Box =>
+        window === "status" ? { window, size: STATUS_PANE_HEIGHT } : { window, weight: 1 },
+      )
     }
     const squashed = height >= MIN_HEIGHT_FOR_TALL_SQUASHED ? FOLDED_PANE_HEIGHT : 1
     return SIDE_WINDOWS.map((window) =>
-      window === absorber ? { window, weight: 1 } : { window, size: squashed },
+      window === "files" ? { window, weight: 1 } : { window, size: squashed },
     )
   }
 }
@@ -119,7 +110,6 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
   const terminalHeight = safeDimension(terminal.height)
   const focus: FocusId = requested.focus ?? "main"
   const screenMode = requested.screenMode ?? "normal"
-  const accordion = requested.accordion !== false
   const hintsVisible = requested.hintsVisible !== false
   const logVisible = requested.logVisible === true
   const requestedRatio = Number.isFinite(requested.sidePanelRatio ?? Number.NaN)
@@ -175,7 +165,7 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
     bodyChildren.push({
       direction: "row",
       ...(mainWidth === 0 ? { weight: 1 } : { size: sideWidth }),
-      conditionalChildren: sideChildren(focusedSide, accordion, enlargedSide),
+      conditionalChildren: sideChildren(focusedSide, enlargedSide),
     })
   }
   if (splitterWidth > 0) bodyChildren.push({ window: "vsplit", size: splitterWidth })

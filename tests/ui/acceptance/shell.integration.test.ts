@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createShellHarness, type ShellHarness } from "../../helpers/shell-harness"
-import { FOLDED_PANE_HEIGHT, MIN_LEFT_WIDTH } from "../../../src/ui/layout"
+import { MIN_LEFT_WIDTH } from "../../../src/ui/layout"
 
 describe("review shell acceptance", () => {
   let harness: ShellHarness | undefined
@@ -33,14 +33,14 @@ describe("review shell acceptance", () => {
     expect(harness.app.view!.geometry.sideWidth).toBeLessThan(60)
   })
 
-  test("the stash pane stays folded until it is focused", async () => {
+  test("the stash pane keeps its height when it is focused", async () => {
     harness = await createShellHarness({ stash: true, height: 40 })
     await harness.pressKey("2")
-    const folded = harness.app.view!.geometry.windows.stash!
-    expect(folded.y1 - folded.y0 + 1).toBe(FOLDED_PANE_HEIGHT)
+    const before = harness.app.view!.geometry.windows.stash!
+    const heightBeforeFocus = before.y1 - before.y0 + 1
     await harness.pressKey("5")
-    const expanded = harness.app.view!.geometry.windows.stash!
-    expect(expanded.y1 - expanded.y0 + 1).toBeGreaterThan(FOLDED_PANE_HEIGHT)
+    const focused = harness.app.view!.geometry.windows.stash!
+    expect(focused.y1 - focused.y0 + 1).toBe(heightBeforeFocus)
   })
 
   test("hjkl navigates: h and l between panes, j and k within one", async () => {

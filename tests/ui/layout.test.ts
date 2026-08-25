@@ -42,27 +42,21 @@ describe("computeLayout side region", () => {
 })
 
 describe("computeLayout left stack", () => {
-  test("pins the status pane and folds an unfocused stash", () => {
+  test("pins the status pane", () => {
     const layout = computeLayout({ width: 120, height: 40 }, { focus: "files" })
     expect(heightOf(layout.windows.status)).toBe(STATUS_PANE_HEIGHT)
-    expect(heightOf(layout.windows.stash)).toBe(FOLDED_PANE_HEIGHT)
   })
 
-  test("expands the focused pane and never the status pane", () => {
-    const focused = computeLayout({ width: 120, height: 40 }, { focus: "commits" })
-    expect(heightOf(focused.windows.commits)).toBeGreaterThan(heightOf(focused.windows.files))
-    expect(heightOf(focused.windows.status)).toBe(STATUS_PANE_HEIGHT)
+  test("keeps every left pane at the same height when focus changes", () => {
+    for (const terminalHeight of [40, 24, 18]) {
+      const heightsByFocus = SIDE_WINDOWS.map((focus) => {
+        const layout = computeLayout({ width: 120, height: terminalHeight }, { focus })
+        return SIDE_WINDOWS.map((window) => heightOf(layout.windows[window]))
+      })
+      expect(new Set(heightsByFocus.map((heights) => heights.join(","))).size).toBe(1)
+    }
   })
 
-  test("expands the stash pane when it is focused", () => {
-    const layout = computeLayout({ width: 120, height: 40 }, { focus: "stash" })
-    expect(heightOf(layout.windows.stash)).toBeGreaterThan(FOLDED_PANE_HEIGHT)
-  })
-
-  test("gives every pane an equal share when the accordion is disabled", () => {
-    const layout = computeLayout({ width: 120, height: 40 }, { focus: "commits", accordion: false })
-    expect(heightOf(layout.windows.commits)).toBe(heightOf(layout.windows.files))
-  })
 
   test("partitions the side height exactly across the five panes", () => {
     for (const height of [40, 33, 26, 19, 12]) {
@@ -72,7 +66,7 @@ describe("computeLayout left stack", () => {
     }
   })
 
-  test("squashes unfocused panes on a short terminal and keeps the focused one usable", () => {
+  test("squashes compact panes and keeps the files pane usable on a short terminal", () => {
     const short = computeLayout({ width: 120, height: 24 }, { focus: "files" })
     expect(heightOf(short.windows.branches)).toBe(FOLDED_PANE_HEIGHT)
     expect(heightOf(short.windows.files)).toBeGreaterThan(FOLDED_PANE_HEIGHT)
