@@ -156,6 +156,17 @@ Commit rows contain:
 
 The graph is computed from ordered commits and `parentOids`. It supports straight ancestry, branch lanes, merges, and lane convergence. Graph color may be simpler than lazygit in this slice, but graph topology and row alignment are required.
 
+### 6.4 Mouse selection
+
+- a single left click whose press point is inside the clipped text-content rectangle captures the visible row's stable ID before any focus/layout change, then focuses the owning window, resolves that ID against the current model, selects it, reveals its full-row highlight, and runs the same Main-preview update as keyboard selection;
+- local row lookup uses the pre-focus geometry and `text.scrollY + event.y - text.screenY`; it is valid only when the point lies within `[text.screenX, text.screenX + text.width)` and `[text.screenY, text.screenY + text.height)`, the display row exists, and that display row maps to a selectable model item;
+- border/title rows, clipped rows, section headers, loading/error rows, and blank rows are not selectable;
+- a click on nonselectable list space focuses the window without changing selection;
+- two left-button presses invoke Enter/GoInto on the second press when they target the same view and stable ID within 400 ms and within one terminal cell. The first press may establish the selection. Any intervening drag, wheel event, different target, scrollbar gesture, splitter gesture, or timeout cancels the pair;
+- a click never prints or persists a cursor glyph in row content.
+
+Mouse selection and keyboard selection use the same reducer and stable item ID. There is no second mouse-only cursor state.
+
 ## 7. Panel 3: Branches, Remotes, and Tags
 
 The panel title renders a tab strip. `[` and `]` cycle tabs with wraparound only when a multi-tab side window is focused.
@@ -222,6 +233,36 @@ The vertical splitter between side windows and Main remains draggable. The horiz
 - Main selection must not resize a splitter;
 - mouse release clears the active drag owner.
 
+All mouse gestures use explicit capture owned by one of: vertical splitter, horizontal splitter, one pane scrollbar, Main text selection, or no drag owner. Hit-test precedence is scrollbar, vertical splitter, horizontal splitter, then pane content. Splitter geometries must not overlap; if a degenerate layout reports overlap, vertical splitter wins. After press, root-level drag and release routing stays with that owner even when the pointer leaves its original renderable. Release or cancellation clears ownership. Other handlers must not mutate gesture state while an owner is active.
+
+### 9.4 Pane scrolling and scrollbars
+
+Mouse wheel events are handled by the pane under the pointer even when that pane is not focused. They do not move focus or list selection:
+
+- wheel up/down over pane content, its border/title, or its scrollbar scrolls that pane's vertical viewport by lazygit's default two rows per wheel delta;
+- wheel over a scrollbar is a pane-wheel gesture, not a scrollbar press, and does not focus the pane;
+- wheel over a splitter is consumed as a no-op;
+- list scrolling moves the viewport only; it does not select another item or update Main;
+- Main and Command Log wheel scrolling moves their document viewport;
+- an event is consumed by exactly one pane and cannot also resize a splitter or alter Main text selection.
+
+The existing scrollbar becomes an interactive viewport control rather than a passive indicator:
+
+- it is hidden when content fits and visible only when `scrollHeight > viewport height`;
+- pressing or dragging a scrollbar does not change focus, so an unfocused compact pane cannot relayout underneath the gesture;
+- dragging the thumb changes the owning text viewport;
+- clicking the track jumps the viewport to the corresponding position;
+- keyboard scroll, wheel scroll, cursor reveal, content refresh, resize, track click, and thumb drag synchronize thumb size and position in the same render cycle;
+- scrollbar press/drag consumes the mouse event and cannot fall through to row selection, Main text selection, or splitter drag.
+
+OpenTUI 0.5.6 provides the required primitives: `onMouseScroll` exposes direction and delta, and `ScrollBarRenderable` exposes `onChange` backed by a draggable `SliderRenderable`. It does not automatically connect a `TextRenderable` to either primitive. Githunk must wire both directions explicitly; it must not retain the current handlers that only stop wheel propagation or disable the slider without a replacement.
+
+### 9.5 Main text selection lifecycle
+
+Main selection continues to use OpenTUI's native selectable-text range, which already resolves terminal cells, clipping, wide characters, and combining characters. Githunk maps that native display range through `DiffDocument.rendered.displayToRaw` and `segments` to canonical UTF-16 patch offsets; it must not derive document offsets directly from mouse `x/y`.
+
+When an accepted preview changes source view or stable item ID, Main clears the old native/document selection and resets vertical and horizontal viewport origins to zero. A loading request retains the prior preview and selection until its result is accepted. Refreshing the same preview identity preserves and clamps its viewport; it preserves selection only when rendered document text is byte-for-byte unchanged, otherwise it clears selection before installing the new document.
+
 ## 10. Large Patch Behavior
 
 This slice matches lazygit's observable presentation: commit metadata, stat, then patch. It does not invent a large-patch fallback to a file list.
@@ -264,6 +305,14 @@ An allow-empty commit opens CommitFiles with no selection and an explicit `No fi
 - Global stale preview result suppression across source-window changes.
 - Stash three-row invariant, focused expansion, and compact thresholds.
 - Full-row highlight with no arrow marker.
+- Mouse click selection and double-click Enter use the keyboard reducer and account for nonzero `scrollY`.
+- Wheel events scroll only the pane under the pointer by two rows per delta without changing focus or selection.
+- Scrollbar track click and thumb drag update the viewport; every scroll path keeps the thumb synchronized.
+- Scrollbar interaction cannot start row selection, Main text selection, or splitter drag.
+- List presses validate the pre-focus clipped text rectangle, so borders and compact-layout relayout cannot select an off-screen row.
+- Double-click recognition requires the same view/stable ID, 400 ms timeout, one-cell tolerance, and cancellation on intervening gestures.
+- Root gesture capture retains exactly one splitter, scrollbar, or Main-selection owner through drag and release outside the original hit target.
+- Main Unicode/wide-character selection maps through the rendered display-offset map; preview replacement follows the defined clear/preserve lifecycle.
 
 ### 12.2 Repository-backed UI scenario
 
@@ -280,20 +329,22 @@ Create a temporary repository containing:
 Launch the real TUI and exercise:
 
 1. focus Commits and move with `j`/`k`;
-2. observe graph/author/time and metadata/stat/patch updates;
-3. press Enter, move through CommitFiles, and observe single-file patch updates;
+2. click different visible commits, including after scrolling, and observe full-row selection plus metadata/stat/patch updates;
+3. double-click a commit or press Enter, move through CommitFiles by keyboard and mouse, and observe single-file patch updates;
 4. press Escape and verify the original commit selection and preview;
 5. focus panel 3 and cycle Local Branches/Remotes/Tags with `[`/`]`;
 6. enter and leave remote branches;
 7. verify `[`/`]` are unhandled in the single-view Files window and do not change working-tree scope;
-8. focus and unfocus Stash and observe its height;
-9. drag both splitters and select/copy Main text.
+8. wheel-scroll focused and unfocused list/Main/Command Log panes, including over pane borders and scrollbars, and verify only the pane under the pointer moves while wheel-over-splitter is a no-op;
+9. click a scrollbar track and drag its thumb in an unfocused compact pane; verify focus and layout do not change, the viewport and thumb remain synchronized, and list selection is unchanged;
+10. focus and unfocus Stash and observe its height;
+11. drag both splitters beyond their original one-cell hit areas and select/copy Unicode Main text; verify gesture capture, offset mapping, and preview replacement lifecycle.
 
 Behavioral verification must use the actual TUI surface through a PTY. Formatter-only or source-text assertions do not satisfy this acceptance scenario.
 
 ## 13. Compatibility Documentation
 
-Update `docs/lazygit-compatibility-v0.1.md` with a status matrix. Tabs, Tags, commit-file drill-down, commit graph, author display, highlighted selection, and Stash folding must no longer be documented as intentional divergences.
+Update `docs/lazygit-compatibility-v0.1.md` with a status matrix. Tabs, Tags, commit-file drill-down, commit graph, author display, highlighted selection, mouse row selection, pointer-local wheel scrolling, interactive scrollbars, and Stash folding must no longer be documented as intentional divergences.
 
 The matrix may use only these statuses:
 
