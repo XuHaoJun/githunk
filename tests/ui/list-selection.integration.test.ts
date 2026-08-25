@@ -1,0 +1,195 @@
+import { afterEach, describe, expect, test } from "bun:test"
+import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
+import { createListState, selectListRow, setListRows } from "../../src/ui/list-view"
+import { fileRows } from "../../src/ui/panes/files-pane"
+import { localBranchRows } from "../../src/ui/panes/branches-pane"
+import { tagRows } from "../../src/ui/panes/tags-pane"
+import { stashRows } from "../../src/ui/panes/stash-pane"
+import { commitFileRows } from "../../src/ui/panes/commit-files-pane"
+import type { AppModel } from "../../src/app/model"
+import type { CommitDetails } from "../../src/domain/commit"
+
+type ListViewProbe = {
+  selectedListId(pane: string): string | undefined
+  renderedListText(pane: string): string
+  selectedRowHasBackground(pane: string): boolean
+}
+
+describe("full-row list selection", () => {
+  let harness: ShellHarness | undefined
+  afterEach(async () => {
+    await harness?.cleanup()
+    harness = undefined
+  })
+
+  for (const pane of ["files", "branches", "commits", "stash"] as const) {
+    test(`${pane} j moves selectedId, no arrow marker, bgBlue focused else unfocused`, async () => {
+      harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"], stash: true })
+      const view = harness.app.view
+      expect(view).toBeDefined()
+      const typed = view as unknown as ListViewProbe
+      expect(typeof typed.selectedListId).toBe("function")
+      expect(typeof typed.renderedListText).toBe("function")
+      expect(typeof typed.selectedRowHasBackground).toBe("function")
+
+      await harness.pressKey(String({ files: 2, branches: 3, commits: 4, stash: 5 }[pane]))
+      await harness.flush()
+      await harness.pressKey("j")
+      await harness.flush()
+      expect(typed.selectedListId(pane)).toBeDefined()
+      expect(typed.renderedListText(pane)).not.toMatch(/^[>▸]/m)
+      expect(typed.selectedRowHasBackground(pane)).toBe(true)
+      await harness.pressKey("0")
+      await harness.flush()
+      expect(typed.selectedRowHasBackground(pane)).toBe(false)
+    })
+  }
+
+  test("empty has no selection", async () => {
+    const stashHarness = await createShellHarness({ stash: false })
+    const stashView = stashHarness.app.view as unknown as ListViewProbe
+    const emptyState = createListState([])
+    expect(emptyState.selectedId).toBeUndefined()
+    expect(stashView.selectedListId("stash")).toBeUndefined()
+    expect(stashView.renderedListText("stash")).not.toMatch(/^[>▸]/m)
+    await stashHarness.cleanup()
+    const emptyFilesModel = { files: [], reviewStatuses: {}, reviewTarget: { kind: "working-tree", scope: "all" } } as unknown as AppModel
+    const rows = fileRows(emptyFilesModel)
+    expect(rows.length).toBe(0)
+    const state = createListState(rows, rows.length === 0 ? [{ kind: "message", text: "No changed files" }] : undefined)
+    expect(state.selectedId).toBeUndefined()
+  })
+
+  test("refresh removes selected item retains numeric index clamping for files", () => {
+    const base: AppModel = {
+      repositoryRoot: "/tmp",
+      branch: "main",
+      reviewTarget: { kind: "working-tree", scope: "all" } as const,
+      files: [
+        { path: "a.txt", indexStatus: "M", worktreeStatus: "M", untracked: false, additions: 1, deletions: 0, conflicted: false },
+        { path: "b.txt", indexStatus: "M", worktreeStatus: "M", untracked: false, additions: 1, deletions: 0, conflicted: false },
+        { path: "c.txt", indexStatus: "M", worktreeStatus: "M", untracked: false, additions: 1, deletions: 0, conflicted: false },
+      ],
+      patches: [],
+      rawPatchSections: [],
+      reviewStatuses: {},
+      loading: false,
+      commandLog: [],
+      title: "t",
+    } as unknown as AppModel
+    const rows = fileRows(base)
+    expect(rows.map((r) => r.id)).toEqual(["a.txt", "b.txt", "c.txt"])
+    let state = createListState(rows)
+    state = selectListRow(state, "b.txt")
+    expect(state.selectedIndex).toBe(1)
+    const nextModel = { ...base, files: [base.files[0]!, base.files[2]!] } as AppModel
+    const nextRows = fileRows(nextModel)
+    state = setListRows(state, nextRows, nextRows.length === 0 ? [{ kind: "message", text: "No changed files" }] : undefined)
+    expect(state.selectedId).toBe("c.txt")
+    expect(state.selectedIndex).toBe(1)
+    const finalModel = { ...base, files: [base.files[0]!] } as AppModel
+    const finalRows = fileRows(finalModel)
+    state = setListRows(state, finalRows, finalRows.length === 0 ? [{ kind: "message", text: "No changed files" }] : undefined)
+    expect(state.selectedId).toBe("a.txt")
+    expect(state.selectedIndex).toBe(0)
+  })
+
+  test("refresh retains index for branches", () => {
+    const model = {
+      branches: {
+        current: "main",
+        detached: false,
+        localBranches: [{ name: "main", isCurrent: true }, { name: "feature", isCurrent: false }, { name: "side", isCurrent: false }],
+        remotes: [],
+      },
+    } as unknown as AppModel
+    const rows = localBranchRows(model)
+    let state = createListState(rows)
+    state = selectListRow(state, "local:feature")
+    expect(state.selectedIndex).toBe(1)
+    const nextModel = {
+      branches: {
+        current: "main",
+        detached: false,
+        localBranches: [{ name: "main", isCurrent: true }, { name: "side", isCurrent: false }],
+        remotes: [],
+      },
+    } as unknown as AppModel
+    const nextRows = localBranchRows(nextModel)
+    state = setListRows(state, nextRows)
+    expect(state.selectedId).toBe("local:side")
+    expect(state.selectedIndex).toBe(1)
+  })
+
+  test("refresh retains index for tags", () => {
+    const model = {
+      tags: [
+        { name: "v1", ref: "refs/tags/v1", targetOid: "abc", kind: "lightweight" },
+        { name: "v2", ref: "refs/tags/v2", targetOid: "def", kind: "lightweight" },
+        { name: "v3", ref: "refs/tags/v3", targetOid: "ghi", kind: "lightweight" },
+      ],
+    } as unknown as AppModel
+    const rows = tagRows(model)
+    let state = createListState(rows)
+    state = selectListRow(state, "tag:refs/tags/v2")
+    const nextModel = {
+      tags: [
+        { name: "v1", ref: "refs/tags/v1", targetOid: "abc", kind: "lightweight" },
+        { name: "v3", ref: "refs/tags/v3", targetOid: "ghi", kind: "lightweight" },
+      ],
+    } as unknown as AppModel
+    const nextRows = tagRows(nextModel)
+    state = setListRows(state, nextRows)
+    expect(state.selectedId).toBe("tag:refs/tags/v3")
+  })
+
+  test("refresh retains index for commits", () => {
+    const rows = [{ id: "a", columns: [{ text: "a", priority: 2 }] }, { id: "b", columns: [{ text: "b", priority: 2 }] }, { id: "c", columns: [{ text: "c", priority: 2 }] }]
+    let state = createListState(rows)
+    state = selectListRow(state, "b")
+    const nextRows = [{ id: "a", columns: [{ text: "a", priority: 2 }] }, { id: "c", columns: [{ text: "c", priority: 2 }] }]
+    state = setListRows(state, nextRows)
+    expect(state.selectedId).toBe("c")
+    expect(state.selectedIndex).toBe(1)
+  })
+
+  test("refresh retains index for stashes", () => {
+    const model = {
+      stashes: [{ oid: "s1", ref: "stash@{0}", message: "m1" }, { oid: "s2", ref: "stash@{1}", message: "m2" }, { oid: "s3", ref: "stash@{2}", message: "m3" }],
+    } as unknown as AppModel
+    const rows = stashRows(model)
+    let state = createListState(rows)
+    state = selectListRow(state, "s2")
+    const nextModel = {
+      stashes: [{ oid: "s1", ref: "stash@{0}", message: "m1" }, { oid: "s3", ref: "stash@{2}", message: "m3" }],
+    } as unknown as AppModel
+    const nextRows = stashRows(nextModel)
+    state = setListRows(state, nextRows, nextRows.length === 0 ? [{ kind: "message", text: "No stashes" }] : undefined)
+    expect(state.selectedId).toBe("s3")
+  })
+
+  test("refresh retains index for commit files", () => {
+    const details = {
+      oid: "abc",
+      document: {
+        files: [{ newPath: "a.txt", oldPath: "a.txt", hunks: [], lines: [] }, { newPath: "b.txt", oldPath: "b.txt", hunks: [], lines: [] }, { newPath: "c.txt", oldPath: "c.txt", hunks: [], lines: [] }],
+        lines: [],
+        text: "",
+      },
+    } as unknown as CommitDetails
+    const rows = commitFileRows(details)
+    let state = createListState(rows)
+    state = selectListRow(state, rows[1]!.id)
+    const nextDetails = {
+      oid: "abc",
+      document: {
+        files: [{ newPath: "a.txt", oldPath: "a.txt", hunks: [], lines: [] }, { newPath: "c.txt", oldPath: "c.txt", hunks: [], lines: [] }],
+        lines: [],
+        text: "",
+      },
+    } as unknown as CommitDetails
+    const nextRows = commitFileRows(nextDetails)
+    state = setListRows(state, nextRows, nextRows.length === 0 ? [{ kind: "message", text: "No files" }] : undefined)
+    expect(state.selectedId).toBe(rows[2]!.id)
+  })
+})

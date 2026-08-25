@@ -1,45 +1,48 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import { createPane, type PaneHandle } from "./common"
+import { createListState, renderListRows, setListRows, type ListRow, type ListState } from "../list-view"
 
-const cursors = new WeakMap<PaneHandle, number>()
+export function stashRows(model: AppModel): ListRow[] {
+  const stashes = model.stashes ?? []
+  return stashes.map((stash) => {
+    const columns: ListRow["columns"] = [
+      { text: stash.ref, priority: 1 },
+      { text: stash.message, priority: 2 },
+    ]
+    return { id: stash.oid, columns }
+  })
+}
+
+function stashDisplayRows(model: AppModel, rows: readonly ListRow[]): readonly { readonly kind: "message"; readonly text: string }[] | undefined {
+  if (rows.length !== 0) return undefined
+  const text = model.reviewTarget.kind === "stash" ? `* ${model.reviewTarget.ref}` : "No stashes"
+  return [{ kind: "message", text }]
+}
 
 export function createStashPane(renderer: CliRenderer, model: AppModel): PaneHandle {
-  const pane = createPane(renderer, "stash", "5 Stash", "No stashes")
-  updateStashPane(pane, model, 0)
+  const pane = createPane(renderer, "stash", "5 Stash", "")
+  const rows = stashRows(model)
+  const displayRows = stashDisplayRows(model, rows)
+  const state = createListState(rows, displayRows)
+  const content = renderListRows(state, false, 80)
+  pane.update(content)
   return pane
 }
 
-export function selectedStashEntry(pane: PaneHandle, model: AppModel): { readonly ref: string; readonly oid: string } | undefined {
+export function updateStashPane(pane: PaneHandle, model: AppModel, state: ListState, focused: boolean): ListState {
+  const rows = stashRows(model)
+  const displayRows = stashDisplayRows(model, rows)
+  const next = setListRows(state, rows, displayRows)
+  const content = renderListRows(next, focused, 80)
+  pane.update(content)
+  pane.syncScrollbar()
+  return next
+}
+
+export function selectedStashEntryFromState(state: ListState, model: AppModel): { readonly ref: string; readonly oid: string } | undefined {
   const stashes = model.stashes ?? []
-  const index = Math.max(0, Math.min(cursors.get(pane) ?? 0, stashes.length - 1))
-  const entry = stashes[index]
+  if (state.selectedId === undefined) return undefined
+  const entry = stashes.find((s) => s.oid === state.selectedId)
   return entry === undefined ? undefined : { ref: entry.ref, oid: entry.oid }
-}
-
-export function selectedStashItem(pane: PaneHandle, model: AppModel): string | undefined {
-  return selectedStashEntry(pane, model)?.ref
-}
-
-export function moveStashCursor(pane: PaneHandle, model: AppModel, direction: "next" | "previous"): void {
-  const count = model.stashes?.length ?? 0
-  if (count === 0) return
-  const current = cursors.get(pane) ?? 0
-  cursors.set(pane, Math.max(0, Math.min(count - 1, current + (direction === "next" ? 1 : -1))))
-  updateStashPane(pane, model, cursors.get(pane) ?? 0)
-}
-
-export function stashCursorIndex(pane: PaneHandle): number {
-  return cursors.get(pane) ?? 0
-}
-
-export function updateStashPane(pane: PaneHandle, model: AppModel, selectedIndex = cursors.get(pane) ?? 0): void {
-  const stashes = model.stashes ?? []
-  if (stashes.length === 0) {
-    pane.update(model.reviewTarget.kind === "stash" ? `* ${model.reviewTarget.ref}` : "No stashes")
-    return
-  }
-  const index = Math.max(0, Math.min(selectedIndex, stashes.length - 1))
-  cursors.set(pane, index)
-  pane.update(stashes.map((stash, itemIndex) => `${itemIndex === index ? ">" : " "} ${stash.ref} ${stash.message}`).join("\n"))
 }

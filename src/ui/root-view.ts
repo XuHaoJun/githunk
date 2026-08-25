@@ -33,12 +33,12 @@ import { createBranchesPane } from "./panes/branches-pane"
 import { localBranchRows } from "./panes/branches-pane"
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
 import { tagRows } from "./panes/tags-pane"
-import { commitsCursorIndex as readCommitsCursorIndex, createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
+import { createCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
-import { createFilesPane, filesPaneCommitAvailable, updateFilesPane } from "./panes/files-pane"
+import { createFilesPane, fileRows, filesPaneCommitAvailable } from "./panes/files-pane"
 import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, type MainPaneContent } from "./panes/main-pane"
 import { commitFileRows } from "./panes/commit-files-pane"
-import { createStashPane, moveStashCursor, selectedStashEntry, selectedStashItem, stashCursorIndex, updateStashPane } from "./panes/stash-pane"
+import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
 import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
@@ -202,7 +202,6 @@ export class RootView {
   private pendingFileDiscard: { readonly path: string; readonly untracked: boolean } | undefined
   private branchDialogContext: { readonly mode: "branch-create"; readonly startPoint?: string } | { readonly mode: "branch-rename"; readonly branch: string } | undefined
   private mutationInFlight = false
-  private fileCursorIndex = 0
   private pendingBranchDelete: { readonly branch: string; readonly force: boolean } | undefined
   private pendingRemoteMismatch: { readonly selection: RemoteBranchSelection; readonly message: string } | undefined
   private remoteCheckoutGeneration = 0
@@ -211,6 +210,8 @@ export class RootView {
   private branchFilterActive = false
   branchesPanel: PanelState<"branches" | "remotes" | "tags", { kind: "remote-branches"; remote: string }>
   commitsPanel: PanelState<"commits", { kind: "commit-files"; oid: string; details: CommitDetails }>
+  filesState: ListState
+  stashState: ListState
   private mainGate!: MainPreviewGate
   private installedMainContent: MainPaneContent | undefined
   private mainLoading = false
@@ -303,9 +304,9 @@ export class RootView {
         ["branches", "remotes", "tags"] as const,
         "branches",
         {
-          branches: createListState(branchesRows),
-          remotes: createListState(remotesRowsData),
-          tags: createListState(tagsRowsData),
+          branches: createListState(branchesRows, branchesRows.length === 0 ? [{ kind: "message", text: "No branches" }] : undefined),
+          remotes: createListState(remotesRowsData, remotesRowsData.length === 0 ? [{ kind: "message", text: "No remotes" }] : undefined),
+          tags: createListState(tagsRowsData, tagsRowsData.length === 0 ? [{ kind: "message", text: "No tags" }] : undefined),
         },
       )
       this.renderBranchesPane()
@@ -313,13 +314,23 @@ export class RootView {
     // Initialize PanelState for window 4 (commits + transient commit-files)
     {
       const commits = model.commits ?? []
-      const rows = commits.map((c) => {
-        const id = c.oid
-        // minimal columns for ListState; rendering handled by commits-pane via updateCommitsPane
-        return { id, columns: [{ text: c.subject, priority: 2 }] }
-      })
-      this.commitsPanel = createPanelState(["commits"] as const, "commits", { commits: createListState(rows) })
+      const rows = commits.map((c) => ({ id: c.oid, columns: [{ text: c.subject, priority: 2 }] }))
+      const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: model.loading ? "Loading…" : "No commits" }] : undefined
+      this.commitsPanel = createPanelState(["commits"] as const, "commits", { commits: createListState(rows, displayRows) })
       this.renderCommitsPane()
+    }
+    {
+      const rows = fileRows(model)
+      const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No changed files" }] : undefined
+      this.filesState = createListState(rows, displayRows)
+      this.renderFilesPane()
+    }
+    {
+      const rows = stashRows(model)
+      const text = model.reviewTarget.kind === "stash" ? `* ${model.reviewTarget.ref}` : "No stashes"
+      const displayRows = rows.length === 0 ? [{ kind: "message" as const, text }] : undefined
+      this.stashState = createListState(rows, displayRows)
+      this.renderStashPane()
     }
     this.mainGate = new MainPreviewGate({
       install: (content) => {
@@ -368,6 +379,8 @@ export class RootView {
       this.applyFocus(focus)
       this.renderBranchesPane()
       this.renderCommitsPane()
+      this.renderFilesPane()
+      this.renderStashPane()
       this.recomputeLayout()
       this.syncPreviewForFocus(focus)
     }
@@ -448,16 +461,14 @@ export class RootView {
       this.panes.main.box.bottomTitle = `Upstream required for ${model.upstreamChoice.branch}: ${choices || "no candidates"} — choose a number`
     }
     updateStatusPane(this.panes.status, model)
-    updateFilesPane(this.panes.files, model)
+    this.refreshFilesState(model)
+    this.renderFilesPane()
     this.refreshBranchesPanel(model)
     this.renderBranchesPane()
-    const focusedIndex = model.focusId === undefined ? -1 : model.files.findIndex((file) => file.path === model.focusId)
-    this.fileCursorIndex = focusedIndex >= 0
-      ? focusedIndex
-      : model.files.length === 0 ? 0 : Math.min(this.fileCursorIndex, model.files.length - 1)
     this.refreshCommitsPanel(model)
     this.renderCommitsPane()
-    updateStashPane(this.panes.stash, model)
+    this.refreshStashState(model)
+    this.renderStashPane()
     this.syncPreviewForFocus(this.focusManager.active)
     this.commandLog.update(model.commandLog)
     this.recomputeLayout()
@@ -527,6 +538,70 @@ export class RootView {
     return this.branchesPanel.activeTab
   }
 
+  selectedListId(pane: "files" | "branches" | "commits" | "stash" | string): string | undefined {
+    if (pane === "files") return this.filesState?.selectedId
+    if (pane === "stash") return this.stashState?.selectedId
+    if (pane === "commits") {
+      const panel = this.commitsPanel
+      if (panel.child !== undefined) return panel.child.view.selectedId
+      return panel.views.commits?.selectedId
+    }
+    if (pane === "branches") {
+      const panel = this.branchesPanel
+      if (panel.child !== undefined) return panel.child.view.selectedId
+      return panel.views[panel.activeTab]?.selectedId
+    }
+    return undefined
+  }
+
+  renderedListText(pane: "files" | "branches" | "commits" | "stash" | string): string {
+    const getState = (): ListState | undefined => {
+      if (pane === "files") return this.filesState
+      if (pane === "stash") return this.stashState
+      if (pane === "commits") {
+        const p = this.commitsPanel
+        if (p.child !== undefined) return p.child.view
+        return p.views.commits
+      }
+      if (pane === "branches") {
+        const p = this.branchesPanel
+        if (p.child !== undefined) return p.child.view
+        return p.views[p.activeTab]
+      }
+      return undefined
+    }
+    const state = getState()
+    if (!state) return ""
+    if (state.rows.length === 0) {
+      const msg = state.displayRows.find((r) => r.kind === "message")
+      return msg ? (msg as { text: string }).text : ""
+    }
+    return state.rows.map((r) => r.columns.map((c) => c.text).join(" ")).join("\n")
+  }
+
+  selectedRowHasBackground(pane: "files" | "branches" | "commits" | "stash" | string): boolean {
+    const focused = this.focusManager.active === pane
+    if (!focused) return false
+    const id = this.selectedListId(pane)
+    if (id === undefined) return false
+    const state = pane === "files"
+      ? this.filesState
+      : pane === "stash"
+        ? this.stashState
+        : pane === "commits"
+          ? (this.commitsPanel.child?.view ?? this.commitsPanel.views.commits)
+          : (this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab as "branches" | "remotes" | "tags"])
+    if (!state || state.rows.length === 0) return false
+    const winName = pane === "files" ? "files" : pane === "stash" ? "stash" : pane === "commits" ? "commits" : "branches"
+    const win = (this.geometry.windows as Record<string, { x0: number; y0: number; x1: number; y1: number } | undefined>)[winName]
+    const width = win !== undefined ? Math.max(10, widthOf(win) - 2) : 80
+    const content = renderListRows(state, true, width)
+    const chunks = (content as unknown as { chunks: readonly unknown[] }).chunks
+    return chunks.some((chunk) => {
+      if (chunk === null || typeof chunk !== "object") return false
+      return "bg" in chunk && (chunk as { bg?: unknown }).bg !== undefined
+    })
+  }
   private uiState(): UiState {
     const target = this.model.reviewTarget
     const selected = this.selectedBranchesItem()
@@ -546,7 +621,7 @@ export class RootView {
       modal: this.modalInputActive(),
       mainScope: target.kind === "working-tree" ? target.scope : undefined,
       selectedBranchKind: kind,
-      hasSelectedStash: selectedStashEntry(this.panes.stash, this.model) !== undefined,
+      hasSelectedStash: this.stashState?.selectedId !== undefined && (this.model.stashes ?? []).some((s) => s.oid === this.stashState.selectedId),
     }
   }
 
@@ -586,13 +661,13 @@ export class RootView {
     const remotesRowsData = remoteRows(model, this.branchFilter)
     const tagsRowsData = tagRows(model, this.branchFilter)
     let panel = this.branchesPanel
-    panel = { ...panel, views: { ...panel.views, branches: setListRows(panel.views.branches, branchesRows) } }
-    panel = { ...panel, views: { ...panel.views, remotes: setListRows(panel.views.remotes, remotesRowsData) } }
-    panel = { ...panel, views: { ...panel.views, tags: setListRows(panel.views.tags, tagsRowsData) } }
+    panel = { ...panel, views: { ...panel.views, branches: setListRows(panel.views.branches, branchesRows, branchesRows.length === 0 ? [{ kind: "message", text: "No branches" }] : undefined) } }
+    panel = { ...panel, views: { ...panel.views, remotes: setListRows(panel.views.remotes, remotesRowsData, remotesRowsData.length === 0 ? [{ kind: "message", text: "No remotes" }] : undefined) } }
+    panel = { ...panel, views: { ...panel.views, tags: setListRows(panel.views.tags, tagsRowsData, tagsRowsData.length === 0 ? [{ kind: "message", text: "No tags" }] : undefined) } }
     if (panel.child !== undefined && panel.child.value.kind === "remote-branches") {
       const remote = panel.child.value.remote
       const remoteBranchRowsData = remoteBranchRows(model, remote, this.branchFilter)
-      const nextChildView = setListRows(panel.child.view, remoteBranchRowsData)
+      const nextChildView = setListRows(panel.child.view, remoteBranchRowsData, remoteBranchRowsData.length === 0 ? [{ kind: "message", text: "No branches" }] : undefined)
       panel = { ...panel, child: { ...panel.child, view: nextChildView } }
     }
     this.branchesPanel = panel
@@ -612,6 +687,47 @@ export class RootView {
     const win = this.geometry.windows.branches
     const width = win !== undefined ? Math.max(10, widthOf(win) - 2) : 80
     const content = renderListRows(state, focused, width)
+    pane.update(content)
+    pane.syncScrollbar()
+  }
+
+  private refreshFilesState(model: AppModel): void {
+    const rows = fileRows(model)
+    const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No changed files" }] : undefined
+    let next = setListRows(this.filesState, rows, displayRows)
+    if (model.focusId !== undefined) {
+      const idx = rows.findIndex((r) => r.id === model.focusId)
+      if (idx !== -1) {
+        const withFocus = selectListRow(next, model.focusId)
+        if (withFocus.selectedId === model.focusId) next = withFocus
+      }
+    }
+    this.filesState = next
+  }
+
+  private renderFilesPane(): void {
+    const pane = this.panes.files
+    const focused = this.focusManager.active === "files"
+    const win = this.geometry.windows.files
+    const width = win !== undefined ? Math.max(10, widthOf(win) - 2) : 80
+    const content = renderListRows(this.filesState, focused, width)
+    pane.update(content)
+    pane.syncScrollbar()
+  }
+
+  private refreshStashState(model: AppModel): void {
+    const rows = stashRows(model)
+    const text = model.reviewTarget.kind === "stash" ? `* ${model.reviewTarget.ref}` : "No stashes"
+    const displayRows = rows.length === 0 ? [{ kind: "message" as const, text }] : undefined
+    this.stashState = setListRows(this.stashState, rows, displayRows)
+  }
+
+  private renderStashPane(): void {
+    const pane = this.panes.stash
+    const focused = this.focusManager.active === "stash"
+    const win = this.geometry.windows.stash
+    const width = win !== undefined ? Math.max(10, widthOf(win) - 2) : 80
+    const content = renderListRows(this.stashState, focused, width)
     pane.update(content)
     pane.syncScrollbar()
   }
@@ -864,14 +980,18 @@ export class RootView {
     switch (this.focusManager.active) {
       case "files": {
         this.clearDiscardState()
-        this.fileCursorIndex = Math.max(0, Math.min(this.model.files.length - 1, this.fileCursorIndex + (direction === "next" ? 1 : -1)))
-        const selected = this.model.files[this.fileCursorIndex]
-        this.panes.files.box.bottomTitle = selected?.path ?? "No files"
-        if (selected !== undefined) this.onSelectFile?.(selected.path)
-        this.revealListRow("files", this.panes.files, this.fileCursorIndex)
-        const content = this.presentFilesContent(this.model)
-        this.mainGate.installSynchronous(content)
-        this.root.requestRender()
+        const next = moveListSelection(this.filesState, direction)
+        if (next !== this.filesState) {
+          this.filesState = next
+          this.renderFilesPane()
+          this.revealListRow("files", this.panes.files, next.selectedIndex)
+          const selected = next.selectedId
+          this.panes.files.box.bottomTitle = selected ?? "No files"
+          if (selected !== undefined) this.onSelectFile?.(selected)
+          const content = this.presentFilesContent(this.model)
+          this.mainGate.installSynchronous(content)
+          this.root.requestRender()
+        }
         return
       }
       case "branches": {
@@ -922,13 +1042,18 @@ export class RootView {
         }
         return
       }
-      case "stash":
+      case "stash": {
         this.pendingStashDrop = undefined
         this.panes.stash.box.bottomTitle = undefined
-        moveStashCursor(this.panes.stash, this.model, direction)
-        this.revealListRow("stash", this.panes.stash, stashCursorIndex(this.panes.stash))
-        this.syncPreviewForFocus("stash")
+        const next = moveListSelection(this.stashState, direction)
+        if (next !== this.stashState) {
+          this.stashState = next
+          this.renderStashPane()
+          this.revealListRow("stash", this.panes.stash, next.selectedIndex)
+          this.syncPreviewForFocus("stash")
+        }
         return
+      }
       case "main":
         // j/k (and h/l via hunk-next/previous) move the hunk cursor here:
         // MainCursorTarget is hunk-granular and githunk has no line cursor yet.
@@ -1006,9 +1131,12 @@ export class RootView {
 
   private actionOpenFile(): void {
     if (this.mutationInFlight) return
-    const selected = this.model.files[this.fileCursorIndex]
+    const selectedId = this.filesState?.selectedId
+    const selected = selectedId !== undefined ? this.model.files.find((f) => f.path === selectedId) : undefined
     if (selected !== undefined) {
       this.onSelectFile?.(selected.path)
+    } else if (selectedId !== undefined) {
+      this.onSelectFile?.(selectedId)
     }
     this.focusManager.focus("main")
   }
@@ -1019,7 +1147,8 @@ export class RootView {
       this.panes.main.box.bottomTitle = "Branch Review is read-only"
       return
     }
-    const file = this.model.files[this.fileCursorIndex]
+    const selectedId = this.filesState?.selectedId
+    const file = selectedId !== undefined ? this.model.files.find((f) => f.path === selectedId) : undefined
     if (file === undefined) return
     const staged = !file.untracked && file.worktreeStatus === "." && file.indexStatus !== "."
     const operation = staged ? this.onUnstageFile : this.onStageFile
@@ -1032,7 +1161,8 @@ export class RootView {
       this.panes.main.box.bottomTitle = "Branch Review is read-only"
       return
     }
-    const file = this.model.files[this.fileCursorIndex]
+    const selectedId = this.filesState?.selectedId
+    const file = selectedId !== undefined ? this.model.files.find((f) => f.path === selectedId) : undefined
     if (file === undefined || this.onDiscardFile === undefined) return
     if (!file.untracked && file.worktreeStatus === "." && file.indexStatus !== ".") {
       this.panes.files.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
@@ -1064,14 +1194,14 @@ export class RootView {
   private actionMarkReviewed(): void {
     if (this.mutationInFlight) return
     if (this.onMarkFocusedFileReviewed === undefined) return
-    const file = this.model.files[this.fileCursorIndex]
+    const selectedId = this.filesState?.selectedId
+    const file = selectedId !== undefined ? this.model.files.find((f) => f.path === selectedId) : undefined
     const focusedPath = this.model.focusId ?? this.model.selectionId
     const reviewPath = focusedPath !== undefined && this.model.files.some((candidate) => candidate.path === focusedPath)
       ? focusedPath
-      : file?.path
+      : file?.path ?? selectedId
     this.runUiMutation(() => this.onMarkFocusedFileReviewed!(reviewPath))
   }
-
   private actionStageSelection(): void {
     if (this.mutationInFlight) return
     if (this.onApplySelection === undefined) return
@@ -1386,21 +1516,21 @@ export class RootView {
 
   private actionStashApply(): void {
     if (this.mutationInFlight) return
-    const selected = selectedStashEntry(this.panes.stash, this.model)
+    const selected = selectedStashEntryFromState(this.stashState, this.model)
     if (selected === undefined || this.onApplyStash === undefined) return
     this.runUiMutation(() => this.onApplyStash!(selected.oid))
   }
 
   private actionStashPop(): void {
     if (this.mutationInFlight) return
-    const selected = selectedStashEntry(this.panes.stash, this.model)
+    const selected = selectedStashEntryFromState(this.stashState, this.model)
     if (selected === undefined || this.onPopStash === undefined) return
     this.runUiMutation(() => this.onPopStash!(selected.oid))
   }
 
   private actionStashDrop(): void {
     if (this.mutationInFlight) return
-    const selected = selectedStashEntry(this.panes.stash, this.model)
+    const selected = selectedStashEntryFromState(this.stashState, this.model)
     if (selected === undefined || this.onDropStash === undefined) return
     if (this.pendingStashDrop?.oid === selected.oid) {
       this.pendingStashDrop = undefined
@@ -1414,7 +1544,7 @@ export class RootView {
 
   private actionStashInspect(): void {
     if (this.mutationInFlight) return
-    const selected = selectedStashEntry(this.panes.stash, this.model)
+    const selected = selectedStashEntryFromState(this.stashState, this.model)
     if (selected === undefined || this.onInspectStash === undefined) return
     this.runUiMutation(() => this.onInspectStash!(selected.oid))
   }
@@ -1765,14 +1895,15 @@ export class RootView {
   private refreshCommitsPanel(model: AppModel): void {
     const commits = model.commits ?? []
     const rows = commits.map((c) => ({ id: c.oid, columns: [{ text: c.subject, priority: 2 }] }))
+    const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: model.loading ? "Loading…" : "No commits" }] : undefined
     let panel = this.commitsPanel
-    panel = { ...panel, views: { ...panel.views, commits: setListRows(panel.views.commits, rows) } }
+    panel = { ...panel, views: { ...panel.views, commits: setListRows(panel.views.commits, rows, displayRows) } }
     if (panel.child !== undefined) {
       const details = panel.child.value.details
       const fileRows = commitFileRows(details)
-      const displayRows = fileRows.length === 0 ? [{ kind: "message" as const, text: "No files" }] : undefined
+      const displayRowsChild = fileRows.length === 0 ? [{ kind: "message" as const, text: "No files" }] : undefined
       const listRows = fileRows.length === 0 ? [] : fileRows
-      const nextView = setListRows(panel.child.view, listRows, displayRows)
+      const nextView = setListRows(panel.child.view, listRows, displayRowsChild)
       panel = { ...panel, child: { ...panel.child, view: nextView } }
     }
     this.commitsPanel = panel
@@ -1798,9 +1929,10 @@ export class RootView {
   }
 
   private presentFilesContent(model: AppModel): MainPaneContent {
-    const selected = model.files[this.fileCursorIndex]
-    const stableId = selected?.path ?? "empty"
-    const label = selected?.path ?? "Files"
+    const selectedId = this.filesState?.selectedId
+    const selected = selectedId !== undefined ? model.files.find((f) => f.path === selectedId) : undefined
+    const stableId = selected?.path ?? selectedId ?? "empty"
+    const label = selected?.path ?? selectedId ?? "Files"
     const text = model.rawPatchSections.length > 0 ? model.rawPatchSections.map((p) => p.text).join("") : model.patches.map((p) => p.text).join("")
     if (text.length > 0) {
       try {
@@ -1810,7 +1942,6 @@ export class RootView {
     }
     return { source: "files", stableId, label, plainText: text.length > 0 ? text : "No patch loaded" }
   }
-
   private presentCommitContent(details: CommitDetails): MainPaneContent {
     return {
       source: "commit",
@@ -1901,10 +2032,9 @@ export class RootView {
       return
     }
     if (focus === "stash") {
-      const stashes = this.model.stashes ?? []
-      const idx = stashCursorIndex(this.panes.stash)
-      const entry = stashes[idx]
-      const stableId = entry?.ref ?? "stash-empty"
+      const selectedId = this.stashState?.selectedId
+      const entry = selectedId !== undefined ? (this.model.stashes ?? []).find((s) => s.oid === selectedId) : undefined
+      const stableId = entry?.ref ?? selectedId ?? "stash-empty"
       const content: MainPaneContent = { source: "stash", stableId, label: entry?.ref ?? "Stash", plainText: entry !== undefined ? `${entry.ref} ${entry.message}` : "No stashes" }
       this.mainGate.installSynchronous(content)
       return
@@ -2072,6 +2202,33 @@ export class RootView {
           this.revealListRow("branches", this.panes.branches, nextView.selectedIndex)
           this.syncPreviewForFocus("branches")
         }
+      }
+      this.root.requestRender()
+      return
+    }
+    if (paneId === "files") {
+      const next = selectListRow(this.filesState, stableId)
+      if (next !== this.filesState) {
+        this.filesState = next
+        this.renderFilesPane()
+        this.revealListRow("files", this.panes.files, next.selectedIndex)
+        const file = this.model.files.find((f) => f.path === stableId)
+        this.panes.files.box.bottomTitle = stableId
+        if (file) this.onSelectFile?.(file.path)
+        else this.onSelectFile?.(stableId)
+        const content = this.presentFilesContent(this.model)
+        this.mainGate.installSynchronous(content)
+      }
+      this.root.requestRender()
+      return
+    }
+    if (paneId === "stash") {
+      const next = selectListRow(this.stashState, stableId)
+      if (next !== this.stashState) {
+        this.stashState = next
+        this.renderStashPane()
+        this.revealListRow("stash", this.panes.stash, next.selectedIndex)
+        this.syncPreviewForFocus("stash")
       }
       this.root.requestRender()
       return
@@ -2410,6 +2567,12 @@ export class RootView {
             listState = panel.views[panel.activeTab]
             viewIdForDouble = `branches:${panel.activeTab}`
           }
+        } else if (paneId === "files") {
+          listState = this.filesState
+          viewIdForDouble = "files"
+        } else if (paneId === "stash") {
+          listState = this.stashState
+          viewIdForDouble = "stash"
         }
         if (listState) {
           const pane = (this.panes as Record<string, PaneHandle>)[paneId]
@@ -2447,115 +2610,6 @@ export class RootView {
             this.lastSplitterPress = undefined
             if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
             this.selectRowForPane(paneId, stableId)
-            event.preventDefault()
-            event.stopPropagation()
-            return
-          } else {
-            this.pendingClick = undefined
-            this.lastSplitterPress = undefined
-            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
-            event.preventDefault()
-            event.stopPropagation()
-            return
-          }
-        }
-        if (paneId === "files") {
-          const pane = this.panes.files
-          const offset = event.y - geometry.screenY
-          const clampedOffset = Math.max(0, Math.min(geometry.height - 1, offset))
-          const rowIndex = pane.text.scrollY + clampedOffset
-          const withinY = event.y >= geometry.screenY && event.y < geometry.screenY + geometry.height
-          if (withinY && rowIndex >= 0 && rowIndex < this.model.files.length) {
-            const file = this.model.files[rowIndex]
-            if (!file) {
-              this.pendingClick = undefined
-              if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
-              event.preventDefault()
-              event.stopPropagation()
-              return
-            }
-            const stableId = file.path
-            const now = Date.now()
-            const pending = this.pendingClick
-            const isDouble = pending !== undefined && pending.viewId === "files" && pending.stableId === stableId && now - pending.at <= DOUBLE_CLICK_MS && Math.abs(pending.x - event.x) <= 1 && Math.abs(pending.y - event.y) <= 1
-            if (isDouble) {
-              this.pendingClick = undefined
-              this.lastSplitterPress = undefined
-              if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
-              this.fileCursorIndex = rowIndex
-              this.revealListRow("files", pane, rowIndex)
-              this.panes.files.box.bottomTitle = file.path
-              this.onSelectFile?.(file.path)
-              const content = this.presentFilesContent(this.model)
-              this.mainGate.installSynchronous(content)
-              this.root.requestRender()
-              event.preventDefault()
-              event.stopPropagation()
-              this.actionOpenFile()
-              return
-            }
-            this.pendingClick = { viewId: "files", stableId, x: event.x, y: event.y, at: now }
-            this.lastSplitterPress = undefined
-            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
-            this.fileCursorIndex = rowIndex
-            this.panes.files.box.bottomTitle = file.path
-            this.onSelectFile?.(file.path)
-            this.revealListRow("files", pane, rowIndex)
-            const content = this.presentFilesContent(this.model)
-            this.mainGate.installSynchronous(content)
-            this.root.requestRender()
-            event.preventDefault()
-            event.stopPropagation()
-            return
-          } else {
-            this.pendingClick = undefined
-            this.lastSplitterPress = undefined
-            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
-            event.preventDefault()
-            event.stopPropagation()
-            return
-          }
-        }
-        if (paneId === "stash") {
-          const pane = this.panes.stash
-          const offset = event.y - geometry.screenY
-          const clampedOffset = Math.max(0, Math.min(geometry.height - 1, offset))
-          const rowIndex = pane.text.scrollY + clampedOffset
-          const stashes = this.model.stashes ?? []
-          const withinY = event.y >= geometry.screenY && event.y < geometry.screenY + geometry.height
-          if (withinY && rowIndex >= 0 && rowIndex < stashes.length) {
-            const stash = stashes[rowIndex]
-            if (!stash) {
-              this.pendingClick = undefined
-              if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
-              event.preventDefault()
-              event.stopPropagation()
-              return
-            }
-            const stableId = stash.oid
-            const now = Date.now()
-            const pending = this.pendingClick
-            const isDouble = pending !== undefined && pending.viewId === "stash" && pending.stableId === stableId && now - pending.at <= DOUBLE_CLICK_MS && Math.abs(pending.x - event.x) <= 1 && Math.abs(pending.y - event.y) <= 1
-            if (isDouble) {
-              this.pendingClick = undefined
-              this.lastSplitterPress = undefined
-              if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
-              updateStashPane(pane, this.model, rowIndex)
-              this.revealListRow("stash", pane, rowIndex)
-              this.syncPreviewForFocus("stash")
-              this.root.requestRender()
-              event.preventDefault()
-              event.stopPropagation()
-              this.actionStashInspect()
-              return
-            }
-            this.pendingClick = { viewId: "stash", stableId, x: event.x, y: event.y, at: now }
-            this.lastSplitterPress = undefined
-            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
-            updateStashPane(pane, this.model, rowIndex)
-            this.revealListRow("stash", pane, rowIndex)
-            this.syncPreviewForFocus("stash")
-            this.root.requestRender()
             event.preventDefault()
             event.stopPropagation()
             return

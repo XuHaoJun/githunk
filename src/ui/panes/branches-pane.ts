@@ -3,7 +3,7 @@ import type { AppModel } from "../../app/model"
 import { filterItems } from "../../app/filter"
 import { createPane, type PaneHandle } from "./common"
 import type { ListColumn, ListRow } from "../list-view"
-import { createListState, renderListRows, selectListRow } from "../list-view"
+import { createListState, renderListRows, selectListRow, setListRows, type ListState } from "../list-view"
 
 function formatBranchTime(committedAt: string, now: Date = new Date()): string {
   const unix = Number(committedAt)
@@ -14,18 +14,17 @@ function formatBranchTime(committedAt: string, now: Date = new Date()): string {
   const diffSec = Math.round(diffMs / 1000)
   const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" })
   const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ["year", 365 * 24 * 60 * 60],
-    ["month", 30 * 24 * 60 * 60],
-    ["week", 7 * 24 * 60 * 60],
-    ["day", 24 * 60 * 60],
-    ["hour", 60 * 60],
+    ["year", 31536000],
+    ["month", 2592000],
+    ["week", 604800],
+    ["day", 86400],
+    ["hour", 3600],
     ["minute", 60],
     ["second", 1],
   ]
   for (const [unit, secs] of units) {
     if (Math.abs(diffSec) >= secs || unit === "second") {
-      const value = Math.round(diffSec / secs)
-      return rtf.format(-value, unit)
+      return rtf.format(-Math.round(diffSec / secs), unit)
     }
   }
   return rtf.format(0, "second")
@@ -69,26 +68,23 @@ export function localBranchRows(model: AppModel, filter = ""): ListRow[] {
 export function createBranchesPane(renderer: CliRenderer, model: AppModel): PaneHandle {
   const pane = createPane(renderer, "branches", "3 Local Branches | Remotes | Tags", "")
   pane.box.title = "3 Local Branches | Remotes | Tags"
-  updateBranchesPane(pane, model)
-  return pane
-}
-
-/**
- * @deprecated — legacy direct-update path for pre-Task4 callers. Use PanelState + renderListRows via RootView.
- * TODO: delete with navigation task that removes dispatch.integration's 3 obsolete scope tests (bracket scope + mixed-pane j navigation).
- */
-export function updateBranchesPane(pane: PaneHandle, model: AppModel, _selectedIndex = 0, _filter = ""): void {
-  pane.box.title = "3 Local Branches | Remotes | Tags"
-  const rows = localBranchRows(model, _filter)
-  let state = createListState(rows)
-  if (rows.length > 0) {
-    const clamped = Math.max(0, Math.min(_selectedIndex, rows.length - 1))
-    const id = rows[clamped]?.id
-    if (id !== undefined) state = selectListRow(state, id)
-  }
+  const rows = localBranchRows(model)
+  const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No branches" }] : undefined
+  const state = createListState(rows, displayRows)
   const content = renderListRows(state, false, 80)
   pane.update(content)
   pane.syncScrollbar()
+  return pane
+}
+
+export function updateBranchesPane(pane: PaneHandle, model: AppModel, state: ListState, focused: boolean, filter = ""): ListState {
+  const rows = localBranchRows(model, filter)
+  const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No branches" }] : undefined
+  const next = setListRows(state, rows, displayRows)
+  const content = renderListRows(next, focused, 80)
+  pane.update(content)
+  pane.syncScrollbar()
+  return next
 }
 
 // --- Compatibility shims for pre-Task4 callers (dispatch.integration) ---
