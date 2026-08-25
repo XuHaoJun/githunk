@@ -14,5 +14,6 @@ export type CommitDetails = CommitSummary & {
   readonly document: DiffDocument
   readonly patch: DiffDocument
   readonly raw: string
+  // TODO Task 5: make required once fixtures updated
   readonly preamble?: string
 }

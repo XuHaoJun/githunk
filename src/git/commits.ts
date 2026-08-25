@@ -57,7 +57,7 @@ function detailsFromShow(raw: string, oid: string, parentOids: readonly string[]
   const patchOffset = patchText.length === 0 ? raw.length : raw.indexOf(patchText, messageStart)
   const preambleEnd = patchOffset < 0 ? raw.length : patchOffset
   const preamble = raw.slice(0, preambleEnd)
-  const messageLines = raw.slice(messageStart, preambleEnd < 0 ? raw.length : preambleEnd).replace(/\n+$/, "").split(/\r?\n/)
+  const messageLines = raw.slice(messageStart, preambleEnd).replace(/\n+$/, "").split(/\r?\n/)
   const lines = messageLines.map((line) => line.startsWith("    ") ? line.slice(4) : line)
   const subject = lines.shift() ?? ""
   const body = lines.join("\n").replace(/^\n+/, "").replace(/\n+$/, "")
@@ -87,6 +87,7 @@ async function parentOidsFor(runner: CommandRunner, oid: string): Promise<readon
 }
 
 export async function loadCommit(runner: CommandRunner, oid: string): Promise<CommitDetails> {
+  // --stat before -m so preamble includes diff stat ("1 file changed"); file-specific patch omits stat
   const result = await runner.run(["show", "--format=fuller", "--no-ext-diff", "--no-color", "--find-renames", "--binary", "--stat", "-m", oid, "--"], { readOnly: true })
   const parents = await parentOidsFor(runner, oid)
   return detailsFromShow(result.stdout, oid, parents)

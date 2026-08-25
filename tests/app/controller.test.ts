@@ -119,6 +119,7 @@ describe("AppController", () => {
       loadCommits: async () => [],
       loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
       loadStashes: async () => [],
+      loadTags: async () => [],
     })
 
     await controller.refresh()
@@ -159,6 +160,7 @@ describe("AppController", () => {
       loadCommits: async () => [],
       loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
       loadStashes: async () => [],
+      loadTags: async () => [],
     })
     await controller.refresh()
     await expect(controller.toggleAllFiles()).rejects.toThrow("second failed")

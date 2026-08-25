@@ -50,6 +50,7 @@ export type AppControllerOptions = {
   readonly inferBase?: BaseInferenceLoader
   readonly loadStashes?: () => Promise<readonly StashEntry[]>
   readonly loadTags?: TagListLoader
+  // alias for symmetry with branchesLoader; prefer loadTags
   readonly tagsLoader?: TagListLoader
   readonly mutations?: GitMutations
   readonly commitMutations?: CommitMutations
@@ -148,7 +149,7 @@ export class AppController {
       : options.loadBranch ?? options.branchLoader ?? (runner === undefined ? async () => { throw new Error("Branch review requires a GitRunner") } : (baseRef) => loadBranchReview(runner, baseRef))
     this.loadBranchesListing = options instanceof GitRunner
       ? () => listBranches(options)
-      : options.loadBranches ?? options.branchesLoader ?? (load === undefined && runner !== undefined ? () => listBranches(runner) : async () => ({ detached: true, localBranches: [], remotes: [] }))
+      : options.loadBranches ?? options.branchesLoader ?? (runner !== undefined ? () => listBranches(runner) : async () => ({ detached: true, localBranches: [], remotes: [] }))
     this.loadCommitList = options instanceof GitRunner
       ? (range, filter) => listCommits(options, range, filter)
       : options.loadCommits ?? options.commitsLoader ?? (runner === undefined ? async () => [] : (range, filter) => listCommits(runner, range, filter))
@@ -168,7 +169,7 @@ export class AppController {
       ? () => listTags(options)
       : options.loadTags ??
         options.tagsLoader ??
-        (load === undefined && runner !== undefined ? () => listTags(runner) : async () => [] as readonly TagSummary[])
+        (runner !== undefined ? () => listTags(runner) : async () => [] as readonly TagSummary[])
     const target: ReviewTarget = { kind: "working-tree", scope: "all" }
     this.currentState = {
       repositoryRoot: repositoryRoot ?? "",
@@ -276,21 +277,6 @@ export class AppController {
     }
     if (tagWarning !== undefined) {
       this.currentState = { ...this.currentState, banner: tagWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
-    }
-  }
-  private async refreshStashes(): Promise<string | undefined> {
-    try {
-      const stashes = await this.loadStashesListing()
-      this.currentState = {
-        ...this.currentState,
-        stashes,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
-      }
-      return undefined
-    } catch (error) {
-      const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
-      this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
-      return banner
     }
   }
 

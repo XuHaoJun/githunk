@@ -1,6 +1,7 @@
 import type { BranchListing, LocalBranch, Remote, RemoteBranch } from "../domain/branch"
 import { trackingLocalName } from "../domain/branch"
 import { GitRunner } from "./runner"
+import { parseNulFields } from "./parse"
 
 type CommandRunner = Pick<GitRunner, "run">
 
@@ -35,22 +36,6 @@ function withoutRecordTerminator(value: string): string {
   return value.replace(/\r?\n$/, "")
 }
 
-function parseNulFields(raw: string, width: number): string[][] {
-  const values = raw.split("\0")
-  const records: string[][] = []
-  let fields: string[] = []
-  for (const value of values) {
-    const field = value.replace(/^\r?\n/, "").replace(/\r?\n$/, "")
-    if (field.length === 0 && fields.length === 0) continue
-    fields.push(field)
-    if (fields.length === width) {
-      records.push(fields)
-      fields = []
-    }
-  }
-  return records
-}
-
 async function validateBranchName(runner: CommandRunner, name: string): Promise<void> {
   await runner.run(["check-ref-format", "--branch", name], { readOnly: true })
 }
@@ -71,9 +56,9 @@ export async function listLocalBranches(runner: CommandRunner): Promise<readonly
     ...(oid === undefined || oid.length === 0 ? {} : { oid }),
     ...(upstream === undefined || upstream.length === 0 ? {} : { upstream }),
     isCurrent: head === "*",
-    committedAt: committedAt ?? "",
-    subject: subject ?? "",
-    upstreamTrack: upstreamTrack ?? "",
+    ...(committedAt ? { committedAt } : {}),
+    ...(subject ? { subject } : {}),
+    ...(upstreamTrack ? { upstreamTrack } : {}),
   }))
 }
 

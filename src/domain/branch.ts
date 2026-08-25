@@ -3,8 +3,11 @@ export type LocalBranch = {
   readonly oid?: string
   readonly upstream?: string
   readonly isCurrent: boolean
+  // TODO Task 5: make required once fixtures updated
   readonly committedAt?: string
+  // TODO Task 5: make required once fixtures updated
   readonly subject?: string
+  // TODO Task 5: make required once fixtures updated
   readonly upstreamTrack?: string
 }
 
