@@ -5,7 +5,6 @@ import {
   type MouseEvent,
 } from "@opentui/core"
 import type { AppModel } from "../app/model"
-import type { WorkingTreeScope } from "../domain/review-target"
 import {
   DEFAULT_LOG_HEIGHT,
   DEFAULT_SIDE_PANEL_RATIO,
@@ -24,8 +23,10 @@ import {
   type WindowName,
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
-import { indexForStableId } from "../app/filter"
-import { createBranchesPane, branchItemId, branchPaneItems, moveBranchesCursor, selectedBranchItem, updateBranchesPane } from "./panes/branches-pane"
+import { createBranchesPane } from "./panes/branches-pane"
+import { localBranchRows } from "./panes/branches-pane"
+import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
+import { tagRows } from "./panes/tags-pane"
 import { commitsCursorIndex as readCommitsCursorIndex, createCommitsPane, getSelectedCommit, moveCommitsCursor, updateCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, filesPaneCommitAvailable, updateFilesPane } from "./panes/files-pane"
@@ -48,6 +49,8 @@ import { createKeybindingMenu, type KeybindingMenuHandle } from "./keybinding-me
 import { createSplitter, type SplitterAxis, type SplitterHandle } from "./splitter"
 import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
+import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, type PanelState } from "./panel-state"
+import { createListState, moveListSelection, renderListRows, selectListRow, setListRows, type ListState } from "./list-view"
 
 
 const PANE_TITLES: Readonly<Record<FocusId, string>> = {
@@ -68,7 +71,6 @@ export type RootViewOptions = {
   readonly onUnstageFile?: (path: string) => Promise<void>
   readonly onDiscardFile?: (path: string, untracked: boolean) => Promise<void>
   readonly onToggleAllFiles?: () => Promise<void>
-  readonly onScopeChange?: (scope: WorkingTreeScope) => Promise<void>
   readonly onModeChange?: (mode: "working-tree" | "branch") => Promise<void>
   readonly onChooseBase?: (baseRef: string) => Promise<void>
   readonly onCancelBase?: () => Promise<void>
@@ -114,9 +116,6 @@ function capitalizeKeyName(key: string): string {
 const DOUBLE_CLICK_MS = 400
 
 
-/** Ring order for the `[` / `]` scope-cycle keys in the main pane. */
-const SCOPE_ORDER: readonly WorkingTreeScope[] = ["all", "staged", "unstaged"]
-
 export class RootView {
   readonly renderer: CliRenderer
   readonly root: BoxRenderable
@@ -142,7 +141,6 @@ export class RootView {
   private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
   private readonly onDiscardFile: ((path: string, untracked: boolean) => Promise<void>) | undefined
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
-  private readonly onScopeChange: ((scope: WorkingTreeScope) => Promise<void>) | undefined
   private readonly onModeChange: ((mode: "working-tree" | "branch") => Promise<void>) | undefined
   private readonly onChooseBase: ((baseRef: string) => Promise<void>) | undefined
   private readonly onCancelBase: (() => Promise<void>) | undefined
@@ -163,8 +161,8 @@ export class RootView {
   private readonly onSwitchLocalBranch: ((branch: string) => Promise<void>) | undefined
   private readonly onCreateBranch: ((startPoint?: string, branchName?: string) => Promise<void>) | undefined
   private readonly onDeleteBranch: ((branch: string, force: boolean) => Promise<void>) | undefined
-  private readonly onRenameBranch: ((branch: string, newName?: string) => Promise<void>) | undefined
   private readonly onFetchRemote: ((remote: string) => Promise<void>) | undefined
+  private readonly onRenameBranch: ((branch: string, newName?: string) => Promise<void>) | undefined
   private readonly onFetch: (() => Promise<void>) | undefined
   private readonly onPull: (() => Promise<void>) | undefined
   private readonly onPush: (() => Promise<void>) | undefined
@@ -201,7 +199,7 @@ export class RootView {
   private remoteCheckoutInFlight = false
   private branchFilter = ""
   private branchFilterActive = false
-  private branchCursorIndex = 0
+  branchesPanel: PanelState<"branches" | "remotes" | "tags", { kind: "remote-branches"; remote: string }>
   private readonly registry = createRegistry()
   private readonly onQuit: (() => void) | undefined
   private readonly onGeometryChange: ((state: PersistedUiState) => void) | undefined
@@ -226,7 +224,6 @@ export class RootView {
     this.onUnstageFile = options.onUnstageFile
     this.onDiscardFile = options.onDiscardFile
     this.onToggleAllFiles = options.onToggleAllFiles
-    this.onScopeChange = options.onScopeChange
     this.onApplySelection = options.onApplySelection
     this.onDiscardSelection = options.onDiscardSelection
     this.onSelectFile = options.onSelectFile
@@ -282,6 +279,22 @@ export class RootView {
       commits: createCommitsPane(renderer, model),
       stash: createStashPane(renderer, model),
     }
+    // Initialize PanelState for window 3 tabs (branches|remotes|tags) with transient RemoteBranches child
+    {
+      const branchesRows = localBranchRows(model, this.branchFilter)
+      const remotesRowsData = remoteRows(model, this.branchFilter)
+      const tagsRowsData = tagRows(model, this.branchFilter)
+      this.branchesPanel = createPanelState(
+        ["branches", "remotes", "tags"] as const,
+        "branches",
+        {
+          branches: createListState(branchesRows),
+          remotes: createListState(remotesRowsData),
+          tags: createListState(tagsRowsData),
+        },
+      )
+      this.renderBranchesPane()
+    }
     this.commandLog = createCommandLogPane(renderer, model.commandLog)
     this.verticalSplitter = createSplitter(renderer, "vertical", "vertical-splitter")
     this.horizontalSplitter = createSplitter(renderer, "horizontal", "horizontal-splitter")
@@ -306,6 +319,7 @@ export class RootView {
       this.branchFilterActive = false
       this.filterInput.close()
       this.applyFocus(focus)
+      this.renderBranchesPane()
       this.recomputeLayout()
       this.syncCommitPreview()
     }
@@ -377,9 +391,8 @@ export class RootView {
     }
     updateStatusPane(this.panes.status, model)
     updateFilesPane(this.panes.files, model)
-    const branchCount = branchPaneItems(model, this.branchFilter).length
-    this.branchCursorIndex = Math.min(this.branchCursorIndex, Math.max(0, branchCount - 1))
-    updateBranchesPane(this.panes.branches, model, this.branchCursorIndex, this.branchFilter)
+    this.refreshBranchesPanel(model)
+    this.renderBranchesPane()
     const focusedIndex = model.focusId === undefined ? -1 : model.files.findIndex((file) => file.path === model.focusId)
     this.fileCursorIndex = focusedIndex >= 0
       ? focusedIndex
@@ -422,18 +435,70 @@ export class RootView {
     return this.panes[id]
   }
 
+  get activeBranchesTab(): "branches" | "remotes" | "tags" {
+    return this.branchesPanel.activeTab
+  }
 
   private uiState(): UiState {
     const target = this.model.reviewTarget
-    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
+    const selected = this.selectedBranchesItem()
+    let kind: UiState["selectedBranchKind"]
+    if (selected !== undefined) {
+      if (selected.id.startsWith("local:")) kind = "local"
+      else if (selected.id.startsWith("remote-branch:")) kind = "remote-branch"
+      else if (selected.id.startsWith("remote:")) kind = "remote"
+      else if (selected.id.startsWith("tag:")) kind = "tag" as UiState["selectedBranchKind"]
+      else kind = undefined
+    } else {
+      kind = undefined
+    }
     return {
       focus: this.focusManager.active,
       screenMode: this.geometry.screenMode,
       modal: this.modalInputActive(),
       mainScope: target.kind === "working-tree" ? target.scope : undefined,
-      selectedBranchKind: selected?.kind,
+      selectedBranchKind: kind,
       hasSelectedStash: selectedStashEntry(this.panes.stash, this.model) !== undefined,
     }
+  }
+
+  private selectedBranchesItem(): { readonly id: string } | undefined {
+    const state = this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab]
+    if (state === undefined || state.rows.length === 0) return undefined
+    const id = state.selectedId
+    if (id === undefined) return undefined
+    return { id }
+  }
+
+  private refreshBranchesPanel(model: AppModel): void {
+    const branchesRows = localBranchRows(model, this.branchFilter)
+    const remotesRowsData = remoteRows(model, this.branchFilter)
+    const tagsRowsData = tagRows(model, this.branchFilter)
+    let panel = this.branchesPanel
+    panel = { ...panel, views: { ...panel.views, branches: setListRows(panel.views.branches, branchesRows) } }
+    panel = { ...panel, views: { ...panel.views, remotes: setListRows(panel.views.remotes, remotesRowsData) } }
+    panel = { ...panel, views: { ...panel.views, tags: setListRows(panel.views.tags, tagsRowsData) } }
+    if (panel.child !== undefined && panel.child.value.kind === "remote-branches") {
+      const remote = panel.child.value.remote
+      const remoteBranchRowsData = remoteBranchRows(model, remote, this.branchFilter)
+      const nextChildView = setListRows(panel.child.view, remoteBranchRowsData)
+      panel = { ...panel, child: { ...panel.child, view: nextChildView } }
+    }
+    this.branchesPanel = panel
+  }
+
+  private renderBranchesPane(): void {
+    const pane = this.panes.branches
+    pane.box.title = "3 Local Branches | Remotes | Tags"
+    const focused = this.focusManager.active === "branches"
+    const state = this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab]
+    if (state === undefined) {
+      pane.update("")
+      return
+    }
+    const content = renderListRows(state, focused, 80)
+    pane.update(content)
+    pane.syncScrollbar()
   }
 
   private handleAction(action: Action, key: KeyEvent): void {
@@ -457,8 +522,8 @@ export class RootView {
       case "inspect": this.actionInspect(); return
       case "stage-selection": this.actionStageSelection(); return
       case "discard-selection": this.actionDiscardSelection(); return
-      case "scope-next": this.actionScopeCycle("next"); return
-      case "scope-previous": this.actionScopeCycle("previous"); return
+      case "tab-next": this.actionCycleTab("next"); return
+      case "tab-previous": this.actionCycleTab("previous"); return
       case "branch-checkout": this.actionBranchCheckout(); return
       case "branch-create": this.actionBranchCreate(); return
       case "branch-delete": this.actionBranchDelete(key.shift === true); return
@@ -662,8 +727,6 @@ export class RootView {
 
   private handleFilterKey(key: KeyEvent): boolean {
     if (!this.branchFilterActive) return false
-    const previous = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-    const previousId = previous === undefined ? undefined : branchItemId(previous)
     const result = this.filterInput.handleKey(key)
     if (result.cancelled) {
       this.pendingBranchDelete = undefined
@@ -675,11 +738,11 @@ export class RootView {
       this.branchFilter = this.filterInput.state.query
     }
     this.branchFilterActive = this.filterInput.state.active
-    const filtered = branchPaneItems(this.model, this.branchFilter)
-    this.branchCursorIndex = indexForStableId(filtered, previousId, branchItemId, this.branchCursorIndex)
-    updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
+    this.refreshBranchesPanel(this.model)
+    this.renderBranchesPane()
     return result.consumed
   }
+
 
   private actionMoveCursor(direction: "next" | "previous"): void {
     switch (this.focusManager.active) {
@@ -692,15 +755,30 @@ export class RootView {
         this.revealListRow("files", this.panes.files, this.fileCursorIndex)
         return
       }
-      case "branches":
+      case "branches": {
         this.pendingBranchDelete = undefined
         this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
-        this.branchCursorIndex = moveBranchesCursor(this.model, this.branchCursorIndex, direction, this.branchFilter)
-        updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
-        // Items render below the branch/upstream header and the section title.
-        this.revealListRow("branches", this.panes.branches, 3 + this.branchCursorIndex)
+        const panel = this.branchesPanel
+        if (panel.child !== undefined) {
+          const nextView = moveListSelection(panel.child.view, direction)
+          if (nextView !== panel.child.view) {
+            this.branchesPanel = { ...panel, child: { ...panel.child, view: nextView } }
+            this.renderBranchesPane()
+            this.revealListRow("branches", this.panes.branches, nextView.selectedIndex)
+          }
+        } else {
+          const active = panel.activeTab
+          const currentView = panel.views[active]!
+          const nextView = moveListSelection(currentView, direction)
+          if (nextView !== currentView) {
+            this.branchesPanel = { ...panel, views: { ...panel.views, [active]: nextView } }
+            this.renderBranchesPane()
+            this.revealListRow("branches", this.panes.branches, nextView.selectedIndex)
+          }
+        }
         return
+      }
       case "commits":
         moveCommitsCursor(this.panes.commits, this.model, direction)
         this.revealListRow("commits", this.panes.commits, readCommitsCursorIndex(this.panes.commits))
@@ -721,6 +799,7 @@ export class RootView {
         return
     }
   }
+
 
   /**
    * Scrolls a pane so the given content row is on screen after a cursor move. The viewport
@@ -760,14 +839,18 @@ export class RootView {
     // Lists are short enough that repeating the single-step move is simpler
     // and cannot disagree with it about clamping or selection side effects.
     const direction = edge === "bottom" ? "next" : "previous"
+    const branchCount = this.branchesPanel.child !== undefined
+      ? this.branchesPanel.child.view.rows.length
+      : this.branchesPanel.views[this.branchesPanel.activeTab]?.rows.length ?? 0
     const limit = Math.max(
       this.model.files.length,
       (this.model.commits ?? []).length,
       (this.model.stashes ?? []).length,
-      branchPaneItems(this.model, this.branchFilter).length,
+      branchCount,
     ) + 1
     for (let moved = 0; moved < limit; moved += 1) this.actionMoveCursor(direction)
   }
+
 
   private actionInspect(): void {
     switch (this.focusManager.active) {
@@ -942,94 +1025,136 @@ export class RootView {
     }
   }
 
-  private actionScopeCycle(direction: "next" | "previous"): void {
-    if (this.mutationInFlight) {
-      this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
-      return
-    }
-    if (this.onScopeChange === undefined) return
-    if (this.model.reviewTarget.kind !== "working-tree") return
-    this.invalidateRemoteCheckout()
-    const index = SCOPE_ORDER.indexOf(this.model.reviewTarget.scope)
-    const nextIndex = direction === "next" ? (index + 1) % SCOPE_ORDER.length : (index - 1 + SCOPE_ORDER.length) % SCOPE_ORDER.length
-    const scope = SCOPE_ORDER[nextIndex]!
-    this.runUiMutation(() => this.onScopeChange!(scope))
+  private actionCycleTab(direction: "next" | "previous"): void {
+    this.branchesPanel = cyclePanelTab(this.branchesPanel, direction)
+    this.renderBranchesPane()
+    this.root.requestRender()
   }
 
   private actionBranchCheckout(): void {
     if (this.mutationInFlight) return
-    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-    if (selected === undefined) return
-    if (selected.kind === "local" && this.onSwitchLocalBranch !== undefined) this.runUiMutation(() => this.onSwitchLocalBranch!(selected.name))
-    if (selected.kind === "remote-branch" && this.onCheckoutRemoteTracking !== undefined) {
-      this.runRemoteCheckout({ remote: selected.remote, branch: selected.name, ref: selected.ref }, false)
+    const panel = this.branchesPanel
+    if (panel.child !== undefined) {
+      const state = panel.child.view
+      const id = state.selectedId
+      if (id !== undefined && id.startsWith("remote-branch:") && this.onCheckoutRemoteTracking !== undefined) {
+        const ref = id.slice("remote-branch:".length)
+        const remote = panel.child.value.remote
+        const name = ref.slice(remote.length + 1)
+        this.runRemoteCheckout({ remote, branch: name, ref }, false)
+      }
+      return
+    }
+    const view = panel.views[panel.activeTab]
+    const id = view?.selectedId
+    if (id === undefined) return
+    if (id.startsWith("local:") && this.onSwitchLocalBranch !== undefined) {
+      const name = id.slice("local:".length)
+      this.runUiMutation(() => this.onSwitchLocalBranch!(name))
     }
   }
 
   private actionBranchCreate(): void {
     if (this.mutationInFlight) return
     if (this.onCreateBranch === undefined) return
-    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-    this.branchDialogContext = { mode: "branch-create", ...(selected?.kind === "local" ? { startPoint: selected.name } : {}) }
+    const panel = this.branchesPanel
+    let startPoint: string | undefined
+    if (panel.child === undefined && panel.activeTab === "branches") {
+      const id = panel.views.branches?.selectedId
+      if (id !== undefined && id.startsWith("local:")) startPoint = id.slice("local:".length)
+    }
+    this.branchDialogContext = { mode: "branch-create", ...(startPoint === undefined ? {} : { startPoint }) }
     this.openBranchDialog("branch-create", "")
   }
 
   private actionBranchDelete(force: boolean): void {
     if (this.mutationInFlight) return
-    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-    if (selected === undefined || this.onDeleteBranch === undefined) return
+    const panel = this.branchesPanel
+    if (panel.child !== undefined) return
+    if (panel.activeTab !== "branches") return
+    const id = panel.views.branches?.selectedId
+    if (id === undefined || !id.startsWith("local:") || this.onDeleteBranch === undefined) return
+    const name = id.slice("local:".length)
     const pending = this.pendingBranchDelete
-    if (pending?.branch === selected.name && pending.force === force) {
+    if (pending?.branch === name && pending.force === force) {
       this.pendingBranchDelete = undefined
       this.panes.branches.box.bottomTitle = undefined
-      this.runUiMutation(() => this.onDeleteBranch!(selected.name, force))
+      this.runUiMutation(() => this.onDeleteBranch!(name, force))
     } else {
-      this.pendingBranchDelete = { branch: selected.name, force }
-      const confirmation = branchDeleteConfirmation(selected.name, force)
+      this.pendingBranchDelete = { branch: name, force }
+      const confirmation = branchDeleteConfirmation(name, force)
       this.panes.branches.box.bottomTitle = `${confirmation.message} Press ${force ? "D" : "d"} again to confirm or Escape to cancel.`
     }
   }
 
   private actionBranchRename(): void {
     if (this.mutationInFlight) return
-    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-    if (selected === undefined || this.onRenameBranch === undefined) return
-    this.branchDialogContext = { mode: "branch-rename", branch: selected.name }
+    const panel = this.branchesPanel
+    if (panel.child !== undefined) return
+    if (panel.activeTab !== "branches") return
+    const id = panel.views.branches?.selectedId
+    if (id === undefined || !id.startsWith("local:") || this.onRenameBranch === undefined) return
+    const name = id.slice("local:".length)
+    this.branchDialogContext = { mode: "branch-rename", branch: name }
     this.openBranchDialog("branch-rename", "")
   }
 
   private actionFetchRemote(): void {
     if (this.mutationInFlight) return
-    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-    if (selected?.kind === "remote" && this.onFetchRemote !== undefined) this.runUiMutation(() => this.onFetchRemote!(selected.name))
+    const panel = this.branchesPanel
+    if (panel.child !== undefined) return
+    if (panel.activeTab !== "remotes") return
+    const id = panel.views.remotes?.selectedId
+    if (id === undefined || !id.startsWith("remote:") || this.onFetchRemote === undefined) return
+    const name = id.slice("remote:".length)
+    this.runUiMutation(() => this.onFetchRemote!(name))
   }
 
   private actionBranchInspect(): void {
     if (this.mutationInFlight) return
-    const selected = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-    if (selected === undefined) return
-    if (selected.kind === "local" && this.onInspectBranch !== undefined) {
-      this.invalidateRemoteCheckout()
-      this.panes.branches.box.bottomTitle = undefined
-      this.runUiMutation(() => this.onInspectBranch!(selected.name))
+    const panel = this.branchesPanel
+    if (panel.child !== undefined) {
+      const state = panel.child.view
+      const id = state.selectedId
+      if (id !== undefined && id.startsWith("remote-branch:")) {
+        const ref = id.slice("remote-branch:".length)
+        const remote = panel.child.value.remote
+        const name = ref.slice(remote.length + 1)
+        const selection = { remote, branch: name, ref }
+        if (this.pendingRemoteMismatch !== undefined &&
+          this.pendingRemoteMismatch.selection.remote === selection.remote &&
+          this.pendingRemoteMismatch.selection.branch === selection.branch &&
+          this.pendingRemoteMismatch.selection.ref === selection.ref) {
+          this.runRemoteCheckout(selection, true)
+        } else {
+          this.invalidateRemoteCheckout()
+          this.panes.branches.box.bottomTitle = undefined
+          if (this.onInspectBranch !== undefined) this.runUiMutation(() => this.onInspectBranch!(ref))
+        }
+      }
+      return
     }
-    if (selected.kind === "remote" && this.onBrowseRemote !== undefined) {
-      this.invalidateRemoteCheckout()
-      this.panes.branches.box.bottomTitle = undefined
-      this.runUiMutation(() => this.onBrowseRemote!(selected.name))
-    }
-    if (selected.kind === "remote-branch" && this.onInspectBranch !== undefined) {
-      const selection = { remote: selected.remote, branch: selected.name, ref: selected.ref }
-      if (this.pendingRemoteMismatch !== undefined &&
-        this.pendingRemoteMismatch.selection.remote === selection.remote &&
-        this.pendingRemoteMismatch.selection.branch === selection.branch &&
-        this.pendingRemoteMismatch.selection.ref === selection.ref) {
-        this.runRemoteCheckout(selection, true)
-      } else {
+    const view = panel.views[panel.activeTab]
+    const id = view?.selectedId
+    if (id === undefined) return
+    if (id.startsWith("local:")) {
+      const name = id.slice("local:".length)
+      if (this.onInspectBranch !== undefined) {
         this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
-        this.runUiMutation(() => this.onInspectBranch!(selected.ref))
+        this.runUiMutation(() => this.onInspectBranch!(name))
       }
+    } else if (id.startsWith("remote:")) {
+      const remote = id.slice("remote:".length)
+      const rows = remoteBranchRows(this.model, remote, this.branchFilter)
+      const childView = createListState(rows)
+      this.branchesPanel = enterPanelChild(this.branchesPanel, { kind: "remote-branches", remote }, childView)
+      this.renderBranchesPane()
+      if (this.onBrowseRemote !== undefined) {
+        this.runUiMutation(() => this.onBrowseRemote!(remote))
+      }
+    } else if (id.startsWith("tag:")) {
+      // Tag preview wiring deferred to Task 5; no-op here preserves navigation-only contract
     }
   }
 
@@ -1055,7 +1180,11 @@ export class RootView {
       this.pendingStashDrop = undefined
       this.panes.stash.box.bottomTitle = undefined
     }
-    if (this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined || this.branchFilterActive || this.remoteCheckoutInFlight) {
+    if (this.branchesPanel.child !== undefined) {
+      this.branchesPanel = leavePanelChild(this.branchesPanel)
+      this.renderBranchesPane()
+      this.root.requestRender()
+    } else if (this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined || this.branchFilterActive || this.remoteCheckoutInFlight) {
       this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
@@ -1063,7 +1192,8 @@ export class RootView {
       this.filterInput.clear()
       this.filterInput.close()
       this.branchFilter = ""
-      updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
+      this.refreshBranchesPanel(this.model)
+      this.renderBranchesPane()
     }
     if (this.pendingFileDiscard !== undefined) {
       this.clearDiscardState()
@@ -1181,14 +1311,13 @@ export class RootView {
     this.pendingBranchDelete = undefined
     this.invalidateRemoteCheckout()
     this.panes.branches.box.bottomTitle = undefined
-    const selectedBeforeFilter = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-    const selectedId = selectedBeforeFilter === undefined ? undefined : branchItemId(selectedBeforeFilter)
     this.filterInput.open()
     this.branchFilterActive = true
     this.branchFilter = ""
-    this.branchCursorIndex = indexForStableId(branchPaneItems(this.model), selectedId, branchItemId, this.branchCursorIndex)
-    updateBranchesPane(this.panes.branches, this.model, this.branchCursorIndex, this.branchFilter)
+    this.refreshBranchesPanel(this.model)
+    this.renderBranchesPane()
   }
+
 
   private actionCopyMenu(): void {
     this.copyMenuOpen = true
@@ -1312,7 +1441,9 @@ export class RootView {
     if (this.onCheckoutRemoteTracking === undefined || this.mutationInFlight) return
     const requestGeneration = ++this.remoteCheckoutGeneration
     const requestFocus = this.focusManager.active
-    const requestCursor = this.branchCursorIndex
+    const requestActiveTab = this.branchesPanel.activeTab
+    const requestChild = this.branchesPanel.child
+    const requestSelectedId = (this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab])?.selectedId
     const requestFilter = this.branchFilter
     const requestFilterActive = this.branchFilterActive
     const requestTarget = JSON.stringify(this.model.reviewTarget)
@@ -1321,14 +1452,12 @@ export class RootView {
     this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
     const isCurrent = (): boolean => {
       if (requestGeneration !== this.remoteCheckoutGeneration) return false
-      if (this.focusManager.active !== requestFocus || this.branchCursorIndex !== requestCursor ||
+      if (this.focusManager.active !== requestFocus || this.branchesPanel.activeTab !== requestActiveTab ||
+        (this.branchesPanel.child?.value.remote ?? null) !== (requestChild?.value.remote ?? null) ||
+        (this.branchesPanel.child?.view.selectedId ?? this.branchesPanel.views[this.branchesPanel.activeTab]?.selectedId) !== requestSelectedId ||
         this.branchFilter !== requestFilter || this.branchFilterActive !== requestFilterActive ||
         JSON.stringify(this.model.reviewTarget) !== requestTarget) return false
-      const current = selectedBranchItem(this.model, this.branchCursorIndex, this.branchFilter)
-      return current?.kind === "remote-branch" &&
-        current.remote === selection.remote &&
-        current.name === selection.branch &&
-        current.ref === selection.ref
+      return requestSelectedId === `remote-branch:${selection.ref}`
     }
     void this.onCheckoutRemoteTracking(selection, confirmedMismatch).then((result) => {
       if (!isCurrent()) return

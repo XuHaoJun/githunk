@@ -283,10 +283,21 @@ describe("GITHUNK_BINDINGS", () => {
     expect(registry.dispatch({ name: "l" }, { context: "main" })).toBe("hunk-next")
   })
 
-  test("moves the main scope toggle off tab and onto bracket keys", () => {
+  test("moves the main scope toggle off tab and onto bracket keys in branches pane", () => {
     expect(registry.dispatch({ name: "tab" }, { context: "main" })).toBe("pane-next")
-    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBe("scope-next")
-    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBe("scope-previous")
+    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
+    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
+    expect(registry.dispatch({ name: "]" }, { context: "files" })).toBeUndefined()
+    expect(registry.dispatch({ name: "[" }, { context: "files" })).toBeUndefined()
+    expect(registry.dispatch({ name: "]" }, { context: "branches" })).toBe("tab-next")
+    expect(registry.dispatch({ name: "[" }, { context: "branches" })).toBe("tab-previous")
+  })
+
+  test("adds tab-next and tab-previous and deletes scope-next/scope-previous", () => {
+    expect(ACTIONS).toContain("tab-next")
+    expect(ACTIONS).toContain("tab-previous")
+    expect(ACTIONS).not.toContain("scope-next")
+    expect(ACTIONS).not.toContain("scope-previous")
   })
 
   test("declares paging, jumping, main scrolling, screen modes and the menu", () => {
@@ -334,8 +345,9 @@ describe("GITHUNK_BINDINGS", () => {
     const all = model({ reviewTarget: { kind: "working-tree", scope: "all" } })
     const hints = registry.hintsFor("main", all, ui({ focus: "main", mainScope: "all" }), 300)
     expect(hints).not.toContain("stage: space")
-    expect(hints).toContain("scope: ")
+    expect(hints).not.toContain("scope: ")
   })
+
 
   describe("stash pane gating", () => {
     const workingTree = model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } })

@@ -12,7 +12,7 @@ export const ACTIONS = [
   "next", "previous", "page-next", "page-previous", "goto-top", "goto-bottom",
   "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
   "main-half-page-down", "main-half-page-up",
-  "hunk-next", "hunk-previous", "scope-next", "scope-previous",
+  "hunk-next", "hunk-previous", "tab-next", "tab-previous",
   // review targets
   "mode-branch", "mode-working-tree", "mark-reviewed",
   // working tree
@@ -310,8 +310,6 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   // ---- main pane ----
   { keys: ["l"], action: "hunk-next", description: "hunk", displayKeys: "h/l", contexts: ["main"], displayOnScreen: true, menuDescription: "next hunk" },
   { keys: ["h"], action: "hunk-previous", description: "previous hunk", contexts: ["main"] },
-  { keys: ["]"], action: "scope-next", description: "scope", contexts: ["main"], displayOnScreen: true, available: writable, menuDescription: "next scope: all, staged, unstaged" },
-  { keys: ["["], action: "scope-previous", description: "previous scope", contexts: ["main"], available: writable },
   { keys: ["space"], action: "stage-selection", description: "stage", contexts: ["main"], displayOnScreen: true, available: lineActions, menuDescription: "stage the selected lines" },
   { keys: ["d"], action: "discard-selection", description: "discard", contexts: ["main"], displayOnScreen: true, available: (model, ui) => lineActions(model, ui) && ui.mainScope !== "staged", menuDescription: "discard the selected lines" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["main"] },
@@ -337,6 +335,8 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["f"], action: "fetch-remote", description: "fetch", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "remote", menuDescription: "fetch the selected remote" },
   { keys: ["enter"], action: "inspect", description: "inspect", contexts: ["branches"], displayOnScreen: true },
   { keys: ["/"], action: "filter", description: "filter", contexts: ["branches"], displayOnScreen: true },
+  { keys: ["]"], action: "tab-next", description: "next tab", contexts: ["branches"], displayOnScreen: true, menuDescription: "next tab" },
+  { keys: ["["], action: "tab-previous", description: "previous tab", contexts: ["branches"], menuDescription: "previous tab" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["branches"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["branches"] },
 

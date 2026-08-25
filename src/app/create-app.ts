@@ -55,9 +55,6 @@ export function createApp(options: CreateAppOptions): App {
     onToggleAllFiles: async () => {
       try { await controller.toggleAllFiles() } finally { view.update(controller.state) }
     },
-    onScopeChange: async (scope) => {
-      try { await controller.setWorkingTreeScope(scope) } finally { view.update(controller.state) }
-    },
     onModeChange: async (mode) => {
       try { await controller.switchMode(mode) } finally { view.update(controller.state) }
     },
