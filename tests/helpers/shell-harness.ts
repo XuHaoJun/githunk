@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createTestRenderer, type KeyInput, type MockMouse } from "@opentui/core/testing"
-import type { CliRenderer } from "@opentui/core"
+import type { CapturedFrame, CliRenderer } from "@opentui/core"
 import { createApp, type App } from "../../src/app/create-app"
 import { GitRunner } from "../../src/git/runner"
 import { createTempRepository, type TempRepository } from "./temp-repository"
@@ -79,6 +79,8 @@ export type ShellHarness = {
    *  key press that triggers an async git operation and before asserting on its outcome. */
   settle(): Promise<void>
   frame(): string
+  /** Per-span `fg`/`bg` RGBA and `attributes` for the last rendered frame, for colour assertions. */
+  captureSpans(): CapturedFrame
   flush(): Promise<void>
   paneTextGeometry(id: FocusId): { readonly screenX: number; readonly screenY: number; readonly width: number; readonly height: number } | undefined
   cleanup(): Promise<void>
@@ -187,6 +189,7 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
       await setup.flush()
     },
     frame: () => setup.captureCharFrame(),
+    captureSpans: () => setup.captureSpans(),
     flush: () => setup.flush(),
     paneTextGeometry(id: FocusId) {
       return app.view?.paneTextGeometry(id)

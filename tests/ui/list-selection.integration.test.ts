@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import { createListState, selectListRow, setListRows } from "../../src/ui/list-view"
-import { fileRows } from "../../src/ui/panes/files-pane"
+import { createFilesTreeState, filesTreeRows } from "../../src/ui/panes/files-pane"
 import { localBranchRows } from "../../src/ui/panes/branches-pane"
 import { tagRows } from "../../src/ui/panes/tags-pane"
 import { stashRows } from "../../src/ui/panes/stash-pane"
@@ -54,7 +54,7 @@ describe("full-row list selection", () => {
     expect(stashView.renderedListText("stash")).not.toMatch(/^[>▸]/m)
     await stashHarness.cleanup()
     const emptyFilesModel = { files: [], reviewStatuses: {}, reviewTarget: { kind: "working-tree", scope: "all" } } as unknown as AppModel
-    const rows = fileRows(emptyFilesModel)
+    const rows = filesTreeRows(createFilesTreeState(emptyFilesModel), emptyFilesModel)
     expect(rows.length).toBe(0)
     const state = createListState(rows, rows.length === 0 ? [{ kind: "message", text: "No changed files" }] : undefined)
     expect(state.selectedId).toBeUndefined()
@@ -77,20 +77,21 @@ describe("full-row list selection", () => {
       commandLog: [],
       title: "t",
     } as unknown as AppModel
-    const rows = fileRows(base)
-    expect(rows.map((r) => r.id)).toEqual(["a.txt", "b.txt", "c.txt"])
+    const rowsFor = (m: AppModel) => filesTreeRows(createFilesTreeState(m), m)
+    const rows = rowsFor(base)
+    expect(rows.map((r) => r.id)).toEqual(["file:a.txt", "file:b.txt", "file:c.txt"])
     let state = createListState(rows)
-    state = selectListRow(state, "b.txt")
+    state = selectListRow(state, "file:b.txt")
     expect(state.selectedIndex).toBe(1)
     const nextModel = { ...base, files: [base.files[0]!, base.files[2]!] } as AppModel
-    const nextRows = fileRows(nextModel)
+    const nextRows = rowsFor(nextModel)
     state = setListRows(state, nextRows, nextRows.length === 0 ? [{ kind: "message", text: "No changed files" }] : undefined)
-    expect(state.selectedId).toBe("c.txt")
+    expect(state.selectedId).toBe("file:c.txt")
     expect(state.selectedIndex).toBe(1)
     const finalModel = { ...base, files: [base.files[0]!] } as AppModel
-    const finalRows = fileRows(finalModel)
+    const finalRows = rowsFor(finalModel)
     state = setListRows(state, finalRows, finalRows.length === 0 ? [{ kind: "message", text: "No changed files" }] : undefined)
-    expect(state.selectedId).toBe("a.txt")
+    expect(state.selectedId).toBe("file:a.txt")
     expect(state.selectedIndex).toBe(0)
   })
 

@@ -5,6 +5,7 @@ import { createPane, type PaneHandle } from "./common"
 import { commitGraphRows } from "../commit-graph"
 import { AUTHOR_COLUMN_WIDTH, authorColor, authorInitials } from "../author-style"
 import { createListState, renderListRows, selectListRow, type ListState, type ListRow } from "../list-view"
+import { COMMITS_JUMP_KEY, COMMITS_TABS } from "./reflog-pane"
 
 const paneStates = new WeakMap<PaneHandle, ListState>()
 
@@ -75,7 +76,9 @@ export function renderCommitRows(
 }
 
 export function createCommitsPane(renderer: CliRenderer, model: AppModel): PaneHandle {
-  const pane = createPane(renderer, "commits", "4 Commits", "No commit selected")
+  const pane = createPane(renderer, "commits", "", "No commit selected", false, {
+    tabs: { jumpKey: COMMITS_JUMP_KEY, tabs: COMMITS_TABS },
+  })
   updateCommitsPane(pane, model)
   return pane
 }

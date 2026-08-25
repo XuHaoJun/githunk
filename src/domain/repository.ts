@@ -4,6 +4,9 @@ import type { CommandRecord } from "./command"
 import type { CommitSummary } from "./commit"
 import type { BranchListing } from "./branch"
 import type { TagSummary } from "./tag"
+import type { ReflogEntry } from "./reflog"
+import type { Worktree } from "./worktree"
+import type { SubmoduleConfig } from "./submodule"
 import type { ChangedFile, ReviewTarget, WorkingTreeScope } from "./review-target"
 import type { ReviewFileState } from "./review-progress"
 export type PatchSection = {
@@ -25,6 +28,12 @@ export type AppModel = {
   readonly upstream?: string
   readonly branches?: BranchListing
   readonly tags?: readonly TagSummary[]
+  /** `git log -g` for HEAD, backing panel 4's Reflog tab. */
+  readonly reflog?: readonly ReflogEntry[]
+  /** `git worktree list`, backing panel 2's Worktrees tab. */
+  readonly worktrees?: readonly Worktree[]
+  /** The `.gitmodules` sections, recursively, backing panel 2's Submodules tab. */
+  readonly submodules?: readonly SubmoduleConfig[]
   readonly upstreamChoice?: UpstreamRequired
   readonly stashes?: readonly StashEntry[]
   readonly reviewTarget: ReviewTarget

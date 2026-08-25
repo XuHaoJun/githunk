@@ -1,5 +1,27 @@
 import { BoxRenderable, ScrollBarRenderable, TextRenderable, type CliRenderer, type StyledText } from "@opentui/core"
 import type { FocusId } from "../focus"
+import { PaneTabsBoxRenderable, buildPaneTabsStrip, paneTabsPlainTitle } from "../pane-tabs"
+
+/** Static half of a tabbed pane: the panel's jump label and its tab labels. */
+export type PaneTabsConfig = {
+  readonly jumpKey: string
+  readonly tabs: readonly string[]
+  /** Which tab is active on first paint; defaults to the first. */
+  readonly activeIndex?: number
+}
+
+/** Dynamic half, pushed on every tab cycle and focus change. */
+export type PaneTabsUpdate = {
+  /** Relabels the strip; omit to keep the current labels. */
+  readonly tabs?: readonly string[]
+  readonly activeIndex: number
+  readonly focused: boolean
+}
+
+export type CreatePaneOptions = {
+  /** Attaches the shared lazygit tab strip to the pane's top border row. */
+  readonly tabs?: PaneTabsConfig
+}
 
 export type PaneHandle = {
   readonly id: FocusId
@@ -7,6 +29,18 @@ export type PaneHandle = {
   readonly text: TextRenderable
   update(content: string | StyledText): void
   setFocused(focused: boolean): void
+  /**
+   * Repaints the pane's tab strip. Present only on panes created with `options.tabs`, so a
+   * pane without tabs cannot silently swallow the call.
+   */
+  setTabs?(update: PaneTabsUpdate): void
+  /**
+   * Replaces the strip with a plain dynamic title, undoing the last `setTabs`. lazygit's own
+   * drill-down views work this way: commit files is a separate view with a
+   * `DynamicTitleBuilder` and no `Tabs` at all (pkg/gui/context/commit_files_context.go:48), so
+   * gocui's `drawTitle` renders its bare title and no tab strip. Present only on tabbed panes.
+   */
+  setPlainTitle?(title: string): void
   /**
    * Re-mirrors the text viewport into the pane's scrollbar. Internal plumbing for scroll
    * paths that mutate `text.scrollY` without a content update (reveal and page scrolls);
@@ -104,8 +138,13 @@ export function createPane(
   title: string,
   content: string,
   selectable = false,
+  options: CreatePaneOptions = {},
 ): PaneHandle {
-  const box = new BoxRenderable(renderer, {
+  const tabsConfig = options.tabs
+  // Tabbed panes need a box that can overdraw its own border row with per-tab colours; the
+  // rest keep the plain BoxRenderable, so nothing about them changes.
+  const BoxClass = tabsConfig === undefined ? BoxRenderable : PaneTabsBoxRenderable
+  const box = new BoxClass(renderer, {
     id: `${id}-pane`,
     border: true,
     borderColor: "#555555",
@@ -134,6 +173,21 @@ export function createPane(
     originalTextMouseEvent?.(event)
   }
   const bar = attachVerticalScrollbar(box, text, id)
+  let tabState: PaneTabsUpdate | undefined
+  const paintTabs = (update: PaneTabsUpdate): void => {
+    if (tabsConfig === undefined || !(box instanceof PaneTabsBoxRenderable)) return
+    const tabs = update.tabs ?? tabState?.tabs ?? tabsConfig.tabs
+    tabState = { ...update, tabs }
+    const input = { jumpKey: tabsConfig.jumpKey, tabs, activeIndex: update.activeIndex, focused: update.focused }
+    // The plain title carries the same text in lazygit's exact format, so the strip stays
+    // readable (just uncoloured) wherever the overdraw does not reach.
+    box.title = paneTabsPlainTitle(input)
+    box.setTabStrip(buildPaneTabsStrip(input))
+    box.requestRender()
+  }
+  if (tabsConfig !== undefined) {
+    paintTabs({ tabs: tabsConfig.tabs, activeIndex: tabsConfig.activeIndex ?? 0, focused: false })
+  }
   return {
     id,
     box,
@@ -149,6 +203,20 @@ export function createPane(
       box.titleColor = focused ? "#ffffff" : "#aaaaaa"
       box.requestRender()
     },
+    ...(tabsConfig === undefined ? {} : {
+      setTabs(update: PaneTabsUpdate) {
+        paintTabs(update)
+      },
+      setPlainTitle(title: string) {
+        if (!(box instanceof PaneTabsBoxRenderable)) return
+        // Drop the remembered strip too, so the next setTabs repaints from the config's labels
+        // rather than resurrecting whatever was active before the drill-down.
+        tabState = undefined
+        box.title = title
+        box.setTabStrip(undefined)
+        box.requestRender()
+      },
+    }),
     syncScrollbar() {
       syncVerticalScrollbar(bar, text)
     },

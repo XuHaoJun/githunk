@@ -17,6 +17,8 @@ export const ACTIONS = [
   "mode-branch", "mode-working-tree", "mark-reviewed",
   // working tree
   "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection",
+  // file tree
+  "toggle-file-tree", "collapse-files", "expand-files",
   // commits
   "commit", "amend", "commit-drilldown", "commit-back",
   // branches and remotes
@@ -42,6 +44,10 @@ export type UiState = {
   readonly modal: boolean
   readonly mainScope: "all" | "staged" | "unstaged" | undefined
   readonly selectedBranchKind: "local" | "remote" | "remote-branch" | undefined
+  /** Which of panel 4's tabs is active; `undefined` behaves as the Commits tab. */
+  readonly commitsTab?: "commits" | "reflog"
+  /** Which of panel 2's tabs is active; `undefined` behaves as the Files tab. */
+  readonly filesTab?: "files" | "worktrees" | "submodules"
   /** Whether the stash pane currently has an entry selected. */
   readonly hasSelectedStash: boolean
 }
@@ -247,6 +253,21 @@ const lineActions = (model: AppModel, ui: UiState): boolean => writable(model) &
 const inCommit = (model: AppModel): boolean => model.reviewTarget.kind === "commit"
 
 /**
+ * Only panel 4's Commits tab drills into commit files. lazygit attaches
+ * `SwitchToDiffFilesController` (the GoInto -> commit files binding) to LocalCommits, SubCommits
+ * and Stash only; the reflog context instead gets `SwitchToSubCommitsController`
+ * (pkg/gui/controllers.go:229-249), a panel githunk has no equivalent for.
+ */
+const onCommitsTab = (_model: AppModel, ui: UiState): boolean => (ui.commitsTab ?? "commits") === "commits"
+
+/**
+ * Panel 2's Worktrees and Submodules tabs are navigation-only here, and in lazygit they are
+ * separate contexts with their own bindings — none of the working-tree or file-tree actions
+ * reaches them (pkg/gui/controllers.go attaches FilesController to the Files context alone).
+ */
+const onFilesTab = (_model: AppModel, ui: UiState): boolean => (ui.filesTab ?? "files") === "files"
+
+/**
  * Mirrors lazygit, which gates stash actions only on having a stash selected, and
  * AppController.ensureStashOperation, which permits them from a working-tree or a
  * stash review target but refuses a branch or commit one.
@@ -318,11 +339,15 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["main"], available: inCommit },
 
   // ---- files pane ----
-  { keys: ["space"], action: "stage-file", description: "stage", contexts: ["files"], displayOnScreen: true, available: writable, menuDescription: "stage or unstage the selected file" },
-  { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"], displayOnScreen: true, available: writable, menuDescription: "discard the file's changes" },
-  { keys: ["a"], action: "stage-all", description: "all", contexts: ["files"], displayOnScreen: true, available: writable, menuDescription: "stage or unstage every file" },
-  { keys: ["r"], action: "mark-reviewed", description: "reviewed", contexts: ["files"], displayOnScreen: true, menuDescription: "mark the file reviewed" },
-  { keys: ["enter"], action: "inspect", description: "open", contexts: ["files"], displayOnScreen: true, menuDescription: "open the file in the main pane" },
+  { keys: ["space"], action: "stage-file", description: "stage", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "stage or unstage the selected file or directory" },
+  { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "discard the file's (or directory's) changes" },
+  { keys: ["a"], action: "stage-all", description: "all", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "stage or unstage every file" },
+  { keys: ["r"], action: "mark-reviewed", description: "reviewed", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "mark the file reviewed" },
+  { keys: ["enter"], action: "inspect", description: "open", contexts: ["files"], displayOnScreen: true, menuDescription: "open the file in the main pane, or collapse a directory" },
+  // pkg/config/user_config.go:1100-1106 — ToggleTreeView, CollapseAll, ExpandAll.
+  { keys: ["`"], action: "toggle-file-tree", description: "tree view", contexts: ["files"], available: onFilesTab, menuDescription: "toggle between the file tree and a flat list" },
+  { keys: ["-"], action: "collapse-files", description: "collapse all", contexts: ["files"], available: onFilesTab, menuDescription: "collapse every directory in the file tree" },
+  { keys: ["="], action: "expand-files", description: "expand all", contexts: ["files"], available: onFilesTab, menuDescription: "expand every directory in the file tree" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["files"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["files"] },
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["files"], available: inCommit },
@@ -336,13 +361,13 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["f"], action: "fetch-remote", description: "fetch", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "remote", menuDescription: "fetch the selected remote" },
   { keys: ["enter"], action: "inspect", description: "inspect", contexts: ["branches"], displayOnScreen: true },
   { keys: ["/"], action: "filter", description: "filter", contexts: ["branches"], displayOnScreen: true },
-  { keys: ["]"], action: "tab-next", description: "next tab", contexts: ["branches"], displayOnScreen: true, menuDescription: "next tab" },
-  { keys: ["["], action: "tab-previous", description: "previous tab", contexts: ["branches"], displayOnScreen: true, menuDescription: "previous tab" },
+  { keys: ["]"], action: "tab-next", description: "next tab", contexts: ["files", "branches", "commits"], displayOnScreen: true, menuDescription: "next tab" },
+  { keys: ["["], action: "tab-previous", description: "previous tab", contexts: ["files", "branches", "commits"], displayOnScreen: true, menuDescription: "previous tab" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["branches"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["branches"] },
 
   // ---- commits pane ----
-  { keys: ["enter"], action: "commit-drilldown", description: "inspect", contexts: ["commits"], displayOnScreen: true, menuDescription: "inspect this commit on its own" },
+  { keys: ["enter"], action: "commit-drilldown", description: "inspect", contexts: ["commits"], displayOnScreen: true, available: onCommitsTab, menuDescription: "inspect this commit on its own" },
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["commits"], displayOnScreen: true, available: inCommit },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["commits"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["commits"] },

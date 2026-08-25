@@ -1,5 +1,6 @@
 import type { TextChunk } from "@opentui/core"
-import { StyledText, bgBlue, cyan, dim, fg, green, magenta, yellow } from "@opentui/core"
+import { StyledText, bg, bold, cyan, dim, fg, green, magenta, yellow } from "@opentui/core"
+import { SELECTED_LINE_BG, brightenAnsiForeground } from "./theme"
 
 export type ListColumnSegment = { readonly text: string; readonly color?: string | undefined }
 
@@ -290,6 +291,33 @@ function renderColumns(row: ListRow, layout: ListColumnLayout): TextChunk[] {
   return chunks
 }
 
+/** `#rrggbb` for a resolved chunk colour, the form `brightenAnsiForeground` keys its map by. */
+function hexOf(color: { toInts(): readonly number[] }): string {
+  const [r = 0, g = 0, b = 0] = color.toInts()
+  return `#${[r, g, b].map((component) => component.toString(16).padStart(2, "0")).join("")}`
+}
+
+/**
+ * One rune of a highlighted line, lazygit's way: the base-ANSI foreground is promoted to its
+ * bright variant, bold is ORed in, and the selection background replaces whatever was there —
+ * pkg/gocui/view.go:665-680 (`View.setCharacter`).
+ *
+ * Every chunk reaching here already carries a *resolved* foreground (`fg(hex)`, OpenTUI's
+ * `cyan`/`green`/… helpers and `ListColumn.segments` all end up as an `RGBA` on the chunk), so
+ * transforming that resolved value covers all of them uniformly. A chunk with no foreground at
+ * all keeps the list's default one — brightening a colour it never had would invent one.
+ */
+function highlightChunk(chunk: TextChunk, selectedBg: (input: TextChunk) => TextChunk): TextChunk {
+  const current = chunk.fg
+  const brightened = current === undefined ? chunk : recolor(chunk, hexOf(current))
+  return bold(selectedBg(brightened))
+}
+
+function recolor(chunk: TextChunk, hex: string): TextChunk {
+  const bright = brightenAnsiForeground(hex)
+  return bright === hex ? chunk : fg(bright)(chunk)
+}
+
 export function renderListRows(state: ListState, focused: boolean, width: number): StyledText {
   const safeWidth = Math.max(0, Math.floor(width))
   const displayRows = state.displayRows
@@ -329,13 +357,15 @@ export function renderListRows(state: ListState, focused: boolean, width: number
     const shouldHighlight = isSelected && dr.kind === "item"
 
     if (shouldHighlight) {
-      lineChunks = lineChunks.map((c) => bgBlue(c) as TextChunk)
+      // lazygit's SelectedLineBgColor, not OpenTUI's `bgBlue` (#0000FF) — see ./theme.
+      const selectedBg = bg(SELECTED_LINE_BG)
+      lineChunks = lineChunks.map((c) => highlightChunk(c, selectedBg))
       const plainLen = lineChunks.reduce((sum, c) => sum + visualLength(c.text), 0)
       const pad = Math.max(0, safeWidth - plainLen)
       if (pad > 0) {
-        lineChunks.push(bgBlue(" ".repeat(pad)) as TextChunk)
+        lineChunks.push(selectedBg(" ".repeat(pad)) as TextChunk)
       } else if (lineChunks.length === 0 && safeWidth > 0) {
-        lineChunks.push(bgBlue(" ".repeat(safeWidth)) as TextChunk)
+        lineChunks.push(selectedBg(" ".repeat(safeWidth)) as TextChunk)
       }
     }
 

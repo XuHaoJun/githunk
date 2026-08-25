@@ -120,6 +120,9 @@ describe("AppController", () => {
       loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
       loadStashes: async () => [],
       loadTags: async () => [],
+      loadReflog: async () => [],
+      loadWorktrees: async () => [],
+      loadSubmodules: async () => [],
     })
 
     await controller.refresh()
@@ -161,11 +164,48 @@ describe("AppController", () => {
       loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
       loadStashes: async () => [],
       loadTags: async () => [],
+      loadReflog: async () => [],
+      loadWorktrees: async () => [],
+      loadSubmodules: async () => [],
     })
     await controller.refresh()
     await expect(controller.toggleAllFiles()).rejects.toThrow("second failed")
     expect(loads).toBe(2)
     expect(controller.state.banner).toBe("second failed")
+  })
+
+  test("refresh publishes the worktree and submodule listings", async () => {
+    const worktrees = [{ path: "/tmp/repo", name: "repo", isMain: true, isCurrent: true, isPathMissing: false }] as const
+    const submodules = [{ name: "vendor/lib", path: "vendor/lib", url: "/tmp/lib" }] as const
+    const controller = new AppController({
+      load: async (target) => snapshot(target.scope, ""),
+      loadWorktrees: async () => worktrees,
+      loadSubmodules: async () => submodules,
+    })
+    await controller.refresh()
+    expect(controller.state.worktrees).toEqual(worktrees)
+    expect(controller.state.submodules).toEqual(submodules)
+  })
+
+  test("a failing worktree or submodule listing only raises a banner", async () => {
+    const controller = new AppController({
+      load: async (target) => snapshot(target.scope, ""),
+      loadWorktrees: async () => { throw new Error("worktree listing failed") },
+      loadSubmodules: async () => [],
+    })
+    await controller.refresh()
+    expect(controller.state.banner).toBe("worktree listing failed")
+    expect(controller.state.worktrees).toBeUndefined()
+    expect(controller.state.title).toBe("Working Tree — All")
+
+    const other = new AppController({
+      load: async (target) => snapshot(target.scope, ""),
+      loadWorktrees: async () => [],
+      loadSubmodules: async () => { throw new Error("submodule listing failed") },
+    })
+    await other.refresh()
+    expect(other.state.banner).toBe("submodule listing failed")
+    expect(other.state.submodules).toBeUndefined()
   })
 
   test("refresh publishes the real tag list", async () => {

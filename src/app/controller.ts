@@ -21,6 +21,12 @@ import { fetch as fetchSync, pull as pullSync, push as pushSync, type PullOption
 import type { StashCreateOptions, StashDropOptions, StashEntry } from "../domain/stash"
 import type { TagPreview, TagSummary } from "../domain/tag"
 import { listTags, loadTagPreview } from "../git/tags"
+import type { ReflogEntry } from "../domain/reflog"
+import { listReflog } from "../git/reflog"
+import type { Worktree } from "../domain/worktree"
+import { listWorktrees } from "../git/worktrees"
+import type { SubmoduleConfig } from "../domain/submodule"
+import { listSubmodules } from "../git/submodules"
 import { MutationQueue } from "./mutation-queue"
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
 export type BranchReviewLoader = (baseRef: string) => Promise<BranchReviewSnapshot>
@@ -30,6 +36,9 @@ export type CommitLoader = (oid: string) => Promise<CommitDetails>
 export type CommitFilePatchLoader = (oid: string, path: string) => Promise<DiffDocument>
 export type BaseInferenceLoader = () => Promise<BaseInference>
 export type TagListLoader = () => Promise<readonly TagSummary[]>
+export type ReflogListLoader = () => Promise<readonly ReflogEntry[]>
+export type WorktreeListLoader = () => Promise<readonly Worktree[]>
+export type SubmoduleListLoader = () => Promise<readonly SubmoduleConfig[]>
 
 
 export type AppControllerOptions = {
@@ -52,6 +61,15 @@ export type AppControllerOptions = {
   readonly loadTags?: TagListLoader
   // alias for symmetry with branchesLoader; prefer loadTags
   readonly tagsLoader?: TagListLoader
+  readonly loadReflog?: ReflogListLoader
+  // alias for symmetry with tagsLoader; prefer loadReflog
+  readonly reflogLoader?: ReflogListLoader
+  readonly loadWorktrees?: WorktreeListLoader
+  // alias for symmetry with tagsLoader; prefer loadWorktrees
+  readonly worktreesLoader?: WorktreeListLoader
+  readonly loadSubmodules?: SubmoduleListLoader
+  // alias for symmetry with tagsLoader; prefer loadSubmodules
+  readonly submodulesLoader?: SubmoduleListLoader
   readonly mutations?: GitMutations
   readonly commitMutations?: CommitMutations
   readonly reviewStore?: ReviewStore
@@ -108,6 +126,9 @@ export class AppController {
   private readonly loadBranchesListing: BranchListingLoader
   private readonly loadStashesListing: () => Promise<readonly StashEntry[]>
   private readonly loadTagsListing: TagListLoader
+  private readonly loadReflogListing: ReflogListLoader
+  private readonly loadWorktreesListing: WorktreeListLoader
+  private readonly loadSubmodulesListing: SubmoduleListLoader
   private readonly loadCommitList: CommitListLoader
   private readonly loadCommitDetails: CommitLoader
   private readonly loadCommitFile: CommitFilePatchLoader
@@ -169,6 +190,21 @@ export class AppController {
       : options.loadTags ??
         options.tagsLoader ??
         (runner !== undefined ? () => listTags(runner) : async () => [] as readonly TagSummary[])
+    this.loadReflogListing = options instanceof GitRunner
+      ? () => listReflog(options)
+      : options.loadReflog ??
+        options.reflogLoader ??
+        (runner !== undefined ? () => listReflog(runner) : async () => [] as readonly ReflogEntry[])
+    this.loadWorktreesListing = options instanceof GitRunner
+      ? () => listWorktrees(options)
+      : options.loadWorktrees ??
+        options.worktreesLoader ??
+        (runner !== undefined ? () => listWorktrees(runner) : async () => [] as readonly Worktree[])
+    this.loadSubmodulesListing = options instanceof GitRunner
+      ? () => listSubmodules(options)
+      : options.loadSubmodules ??
+        options.submodulesLoader ??
+        (runner !== undefined ? () => listSubmodules(runner) : async () => [] as readonly SubmoduleConfig[])
     const target: ReviewTarget = { kind: "working-tree", scope: "all" }
     this.currentState = {
       repositoryRoot: repositoryRoot ?? "",
@@ -203,11 +239,26 @@ export class AppController {
       (value) => ({ status: "fulfilled" as const, value }),
       (reason) => ({ status: "rejected" as const, reason }),
     )
-    const [branchesResult, stashesResult, tagsResult] = await Promise.all([branchesPromise, stashesPromise, tagsPromise])
+    const reflogPromise = this.loadReflogListing().then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason) => ({ status: "rejected" as const, reason }),
+    )
+    const worktreesPromise = this.loadWorktreesListing().then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason) => ({ status: "rejected" as const, reason }),
+    )
+    const submodulesPromise = this.loadSubmodulesListing().then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason) => ({ status: "rejected" as const, reason }),
+    )
+    const [branchesResult, stashesResult, tagsResult, reflogResult, worktreesResult, submodulesResult] = await Promise.all([branchesPromise, stashesPromise, tagsPromise, reflogPromise, worktreesPromise, submodulesPromise])
     if (generation !== this.generation) return
     let branchWarning: string | undefined
     let stashWarning: string | undefined
     let tagWarning: string | undefined
+    let reflogWarning: string | undefined
+    let worktreeWarning: string | undefined
+    let submoduleWarning: string | undefined
     if (branchesResult.status === "fulfilled") {
       this.currentState = {
         ...this.currentState,
@@ -256,6 +307,59 @@ export class AppController {
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
       }
     }
+    // A reflog is optional data (a fresh repo, `core.logAllRefUpdates=false` or an expired
+    // reflog all leave it empty), so a failure only raises a banner — never aborts the refresh.
+    if (reflogResult.status === "fulfilled") {
+      this.currentState = {
+        ...this.currentState,
+        reflog: reflogResult.value,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    } else {
+      const error = reflogResult.reason
+      reflogWarning =
+        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
+      this.currentState = {
+        ...this.currentState,
+        banner: reflogWarning,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    }
+    // Worktrees and submodules are optional data too — a repository can have neither, and
+    // `git worktree list` can fail outright in a bare or partially initialised repo — so a
+    // failure only raises a banner, exactly as the reflog does.
+    if (worktreesResult.status === "fulfilled") {
+      this.currentState = {
+        ...this.currentState,
+        worktrees: worktreesResult.value,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    } else {
+      const error = worktreesResult.reason
+      worktreeWarning =
+        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
+      this.currentState = {
+        ...this.currentState,
+        banner: worktreeWarning,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    }
+    if (submodulesResult.status === "fulfilled") {
+      this.currentState = {
+        ...this.currentState,
+        submodules: submodulesResult.value,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    } else {
+      const error = submodulesResult.reason
+      submoduleWarning =
+        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
+      this.currentState = {
+        ...this.currentState,
+        banner: submoduleWarning,
+        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      }
+    }
     const target = this.currentState.reviewTarget
     if (target.kind === "working-tree") {
       await this.refreshTarget(target)
@@ -276,6 +380,15 @@ export class AppController {
     }
     if (tagWarning !== undefined) {
       this.currentState = { ...this.currentState, banner: tagWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+    }
+    if (reflogWarning !== undefined) {
+      this.currentState = { ...this.currentState, banner: reflogWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+    }
+    if (worktreeWarning !== undefined) {
+      this.currentState = { ...this.currentState, banner: worktreeWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+    }
+    if (submoduleWarning !== undefined) {
+      this.currentState = { ...this.currentState, banner: submoduleWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
     }
   }
 

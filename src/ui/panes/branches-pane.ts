@@ -76,9 +76,14 @@ export function localBranchRows(model: AppModel, filter = ""): ListRow[] {
   return [...filterItems(filter, rows, (row) => row.columns[1]?.text ?? row.id)]
 }
 
+/** Panel 3's tab labels and jump label, in lazygit's order (pkg/gui/views.go side-panel groups). */
+export const BRANCHES_TABS = ["Local Branches", "Remotes", "Tags"] as const
+export const BRANCHES_JUMP_KEY = "3"
+
 export function createBranchesPane(renderer: CliRenderer, model: AppModel): PaneHandle {
-  const pane = createPane(renderer, "branches", "3 Local Branches | Remotes | Tags", "")
-  pane.box.title = "3 Local Branches | Remotes | Tags"
+  const pane = createPane(renderer, "branches", "", "", false, {
+    tabs: { jumpKey: BRANCHES_JUMP_KEY, tabs: BRANCHES_TABS },
+  })
   const rows = localBranchRows(model)
   const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No branches" }] : undefined
   const state = createListState(rows, displayRows)

@@ -718,9 +718,9 @@ describe("overflow scrollbars and keyboard auto-scroll", () => {
       return rows
     }
     // Commits overflows: the column inside the right border carries thumb glyphs.
-    expect(paneRows("4 Commits").some((glyph) => "█▄▀".includes(glyph))).toBe(true)
+    expect(paneRows("[4]─Commits - Reflog").some((glyph) => "█▄▀".includes(glyph))).toBe(true)
     // Files fits its two entries: nothing but blank space inside the right border.
-    expect(paneRows("2 Files").every((glyph) => glyph === " ")).toBe(true)
+    expect(paneRows("[2]─Files - Worktrees - Submodules").every((glyph) => glyph === " ")).toBe(true)
   })
 
   test("hunk moves in the main pane scroll the target hunk's header into view", async () => {

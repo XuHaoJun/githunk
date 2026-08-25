@@ -22,7 +22,7 @@ export type MainCursorTarget = {
 }
 
 export type MainPaneContent = {
-  readonly source: "files" | "local-branch" | "remote" | "remote-branch" | "tag" | "commit" | "commit-file" | "stash"
+  readonly source: "files" | "local-branch" | "remote" | "remote-branch" | "tag" | "commit" | "commit-file" | "stash" | "reflog" | "worktree" | "submodule"
   readonly stableId: string
   readonly label: string
   readonly preamble?: string

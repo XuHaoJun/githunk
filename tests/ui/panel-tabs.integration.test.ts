@@ -49,11 +49,14 @@ describe("panel 3 tabs and RemoteBranches child", () => {
     expect(harness.app.view!.activeBranchesTab).toBe(beforeMain)
     expect(harness.app.controller.state.reviewTarget).toEqual(targetBeforeMainBracket)
 
-    // Bracket in Files must not change tab
+    // Bracket in Files cycles panel 2's own tabs and leaves panel 3 alone.
     await harness.pressKey("2")
     await harness.pressKey("]")
+    expect(harness.app.view!.activeFilesTab).toBe("worktrees")
     expect(harness.app.view!.activeBranchesTab).toBe(beforeMain)
     expect(harness.app.controller.state.reviewTarget).toEqual(beforeTarget)
+    await harness.pressKey("[")
+    expect(harness.app.view!.activeFilesTab).toBe("files")
 
     // Return to branches and verify target still unchanged
     await harness.pressKey("3")
@@ -62,13 +65,13 @@ describe("panel 3 tabs and RemoteBranches child", () => {
     expect(harness.app.controller.state.reviewTarget).toEqual(beforeTarget)
   })
 
-  test("scope-next and scope-previous are unhandled in every context", async () => {
+  test("scope-next and scope-previous are unhandled in the tabless main pane", async () => {
     const registry = createRegistry()
     expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
     expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
-    expect(registry.dispatch({ name: "]" }, { context: "files" })).toBeUndefined()
-    expect(registry.dispatch({ name: "[" }, { context: "files" })).toBeUndefined()
-    // In branches context they are tab actions
+    // Every tabbed panel binds them to its own tab cycle instead.
+    expect(registry.dispatch({ name: "]" }, { context: "files" })).toBe("tab-next")
+    expect(registry.dispatch({ name: "[" }, { context: "files" })).toBe("tab-previous")
     expect(registry.dispatch({ name: "]" }, { context: "branches" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "branches" })).toBe("tab-previous")
   })
@@ -132,7 +135,7 @@ describe("panel 3 tabs and RemoteBranches child", () => {
     expect(harness.app.view!.activeBranchesTab).toBe("branches")
   })
 
-  test("panel 3 title is Local Branches | Remotes | Tags with active styled and IDs exactly", async () => {
+  test("panel 3 title is lazygit's [3]-Local Branches - Remotes - Tags with the active tab styled", async () => {
     harness = await createShellHarness()
     await harness.pressKey("3")
     const pane = harness.app.view!.paneFor("branches")
@@ -143,10 +146,11 @@ describe("panel 3 tabs and RemoteBranches child", () => {
       const styledTitle = title as { chunks: readonly { text: string }[] }
       plainTitle = styledTitle.chunks.map((c) => c.text).join("")
     } else plainTitle = String(title)
-    expect(plainTitle).toBe("3 Local Branches | Remotes | Tags")
-    expect(plainTitle).toContain("|")
+    // gocui/gui.go drawTitle: `[<jumpKey>]` + frame rune, tabs joined by " - ".
+    expect(plainTitle).toBe("[3]─Local Branches - Remotes - Tags")
+    expect(plainTitle).not.toContain("|")
     const styled = harness.app.view!.branchesTitleStyled
-    expect(styled.chunks.map((c) => c.text).join("")).toBe("3 Local Branches | Remotes | Tags")
+    expect(styled.chunks.map((c) => c.text).join("")).toBe("[3]─Local Branches - Remotes - Tags")
     const localChunk = styled.chunks.find((c) => c.text === "Local Branches")!
     expect(localChunk.fg).toBeDefined()
     const remotesChunk = styled.chunks.find((c) => c.text === "Remotes")!

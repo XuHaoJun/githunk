@@ -1,16 +1,14 @@
 import {
   BoxRenderable,
   StyledText,
-  cyan,
-  dim,
   type CliRenderer,
   type KeyEvent,
   type MouseEvent,
-  type TextChunk,
 } from "@opentui/core"
 import type { AppModel } from "../app/model"
 import type { CommitDetails } from "../domain/commit"
 import type { TagSummary } from "../domain/tag"
+import type { ReflogEntry } from "../domain/reflog"
 import {
   DEFAULT_LOG_HEIGHT,
   DEFAULT_SIDE_PANEL_RATIO,
@@ -29,13 +27,32 @@ import {
   type WindowName,
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
-import { createBranchesPane } from "./panes/branches-pane"
+import { createBranchesPane, BRANCHES_JUMP_KEY, BRANCHES_TABS } from "./panes/branches-pane"
 import { localBranchRows } from "./panes/branches-pane"
+import { buildPaneTabsStrip, paneTabAtOffset } from "./pane-tabs"
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
 import { tagRows } from "./panes/tags-pane"
 import { buildCommitRows, createCommitsPane } from "./panes/commits-pane"
+import { COMMITS_JUMP_KEY, COMMITS_TABS, NO_REFLOG_HISTORY, reflogRows } from "./panes/reflog-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
-import { createFilesPane, fileRows, filesPaneCommitAvailable } from "./panes/files-pane"
+import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, createFilesPane, createFilesTreeState, fileHasUnstagedChanges, filesPaneCommitAvailable, filesTreeRows } from "./panes/files-pane"
+import { NO_WORKTREES_THIS_REPO, selectedWorktreeFrom, worktreePreviewText, worktreeRows } from "./panes/worktrees-pane"
+import { NO_SUBMODULES, selectedSubmoduleFrom, submodulePreviewText, submoduleRows } from "./panes/submodules-pane"
+import {
+  collapseAllFileTree,
+  everyFileInNode,
+  expandAllFileTree,
+  fileTreeRows,
+  forEachFile,
+  setFileTreeItems,
+  someFileInNode,
+  toggleFileTreeCollapsedPath,
+  toggleFileTreeMode,
+  type FileTreeRow,
+  type FileTreeState,
+} from "./file-tree"
+import { submoduleFullName } from "../domain/submodule"
+import type { ChangedFile } from "../domain/review-target"
 import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, type MainPaneContent } from "./panes/main-pane"
 import { commitFileRows } from "./panes/commit-files-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
@@ -57,7 +74,8 @@ import { createKeybindingMenu, type KeybindingMenuHandle } from "./keybinding-me
 import { createSplitter, type SplitterAxis, type SplitterHandle } from "./splitter"
 import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
-import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, type PanelState } from "./panel-state"
+import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, updatePanelView, type PanelState } from "./panel-state"
+import { TITLE_PREFIX_FRAME_RUNE } from "./theme"
 import { createListState, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRows, type ListState, type ListRow } from "./list-view"
 import { MainPreviewGate } from "./main-preview"
 import type { CommitSummary } from "../domain/commit"
@@ -70,6 +88,12 @@ const PANE_TITLES: Readonly<Record<FocusId, string>> = {
 function paneTitleFor(focus: FocusId): string {
   return PANE_TITLES[focus]
 }
+/** Panel 2's tab keys, in the same order as `FILES_TABS`' labels. */
+const FILES_TAB_ORDER = ["files", "worktrees", "submodules"] as const
+/** Panel 3's tab keys, in the same order as `BRANCHES_TABS`' labels. */
+const BRANCHES_TAB_ORDER = ["branches", "remotes", "tags"] as const
+/** Panel 4's tab keys, in the same order as `COMMITS_TABS`' labels. */
+const COMMITS_TAB_ORDER = ["commits", "reflog"] as const
 export type RootViewOptions = {
   readonly sidePanelRatio?: number
   readonly logHeight?: number
@@ -199,7 +223,7 @@ export class RootView {
   private pendingDiscardPaths: readonly string[] = []
   private discardPending = false
   private pendingStashDrop: { readonly oid: string; readonly ref: string } | undefined
-  private pendingFileDiscard: { readonly path: string; readonly untracked: boolean } | undefined
+  private pendingFileDiscard: { readonly path: string; readonly untracked: boolean; readonly directory: boolean } | undefined
   private branchDialogContext: { readonly mode: "branch-create"; readonly startPoint?: string } | { readonly mode: "branch-rename"; readonly branch: string } | undefined
   private mutationInFlight = false
   private pendingBranchDelete: { readonly branch: string; readonly force: boolean } | undefined
@@ -209,8 +233,14 @@ export class RootView {
   private branchFilter = ""
   private branchFilterActive = false
   branchesPanel: PanelState<"branches" | "remotes" | "tags", { kind: "remote-branches"; remote: string }>
-  commitsPanel: PanelState<"commits", { kind: "commit-files"; oid: string; details: CommitDetails }>
-  filesState: ListState
+  commitsPanel: PanelState<"commits" | "reflog", { kind: "commit-files"; oid: string; details: CommitDetails }>
+  filesPanel: PanelState<"files" | "worktrees" | "submodules", never>
+  /**
+   * The Files tab's tree, kept next to the panel rather than inside it: `PanelState` stores one
+   * `ListState` per tab, and the tree is the *source* those rows are rendered from — collapse,
+   * flat/tree mode and the collapsed-path set all outlive any single row list.
+   */
+  filesTree: FileTreeState<ChangedFile>
   stashState: ListState
   private mainGate!: MainPreviewGate
   private installedMainContent: MainPaneContent | undefined
@@ -316,13 +346,34 @@ export class RootView {
       const commits = model.commits ?? []
       const rows = buildCommitRows(commits, new Date())
       const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: model.loading ? "Loading…" : "No commits" }] : undefined
-      this.commitsPanel = createPanelState(["commits"] as const, "commits", { commits: createListState(rows, displayRows) })
+      const reflog = reflogRows(model)
+      const reflogDisplayRows = reflog.length === 0 ? [{ kind: "message" as const, text: NO_REFLOG_HISTORY }] : undefined
+      this.commitsPanel = createPanelState(
+        ["commits", "reflog"] as const,
+        "commits",
+        {
+          commits: createListState(rows, displayRows),
+          reflog: createListState(reflog, reflogDisplayRows),
+        },
+      )
       this.renderCommitsPane()
     }
+    // Panel 2's tabs are lazygit's `{"files", "worktrees", "submodules"}` group
+    // (pkg/config/user_config.go:872). Worktrees and Submodules are navigation-only here.
     {
-      const rows = fileRows(model)
-      const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No changed files" }] : undefined
-      this.filesState = createListState(rows, displayRows)
+      this.filesTree = createFilesTreeState(model)
+      const rows = filesTreeRows(this.filesTree, model)
+      const worktrees = worktreeRows(model)
+      const submodules = submoduleRows(model)
+      this.filesPanel = createPanelState(
+        ["files", "worktrees", "submodules"] as const,
+        "files",
+        {
+          files: createListState(rows, rows.length === 0 ? [{ kind: "message", text: NO_CHANGED_FILES }] : undefined),
+          worktrees: createListState(worktrees, worktrees.length === 0 ? [{ kind: "message", text: NO_WORKTREES_THIS_REPO }] : undefined),
+          submodules: createListState(submodules, submodules.length === 0 ? [{ kind: "message", text: NO_SUBMODULES }] : undefined),
+        },
+      )
       this.renderFilesPane()
     }
     {
@@ -461,7 +512,7 @@ export class RootView {
       this.panes.main.box.bottomTitle = `Upstream required for ${model.upstreamChoice.branch}: ${choices || "no candidates"} — choose a number`
     }
     updateStatusPane(this.panes.status, model)
-    this.refreshFilesState(model)
+    this.refreshFilesPanel(model)
     this.renderFilesPane()
     this.refreshBranchesPanel(model)
     this.renderBranchesPane()
@@ -469,7 +520,10 @@ export class RootView {
     this.renderCommitsPane()
     this.refreshStashState(model)
     this.renderStashPane()
-    this.syncPreviewForFocus(this.focusManager.active)
+    // lazygit's `postRefreshUpdate` (pkg/gui/view_helpers.go:135): while the focused context is
+    // the main view, the *side* context underneath it in the stack is the one asked to
+    // re-render main — the main context itself has nothing to render.
+    this.syncPreviewForFocus(this.focusManager.active === "main" ? this.focusManager.lastSide : this.focusManager.active)
     this.commandLog.update(model.commandLog)
     this.recomputeLayout()
   }
@@ -496,9 +550,7 @@ export class RootView {
   get mainScrollX(): number { return this.panes.main.text.scrollX }
   /** The commits pane's list cursor index. */
   get commitsCursorIndex(): number {
-    const panel = this.commitsPanel
-    if (panel.child !== undefined) return panel.child.view.selectedIndex
-    return panel.views.commits?.selectedIndex ?? 0
+    return this.commitsView()?.selectedIndex ?? 0
   }
   get mainPane(): PaneHandle { return this.panes.main }
   get commitsPane(): PaneHandle { return this.panes.commits }
@@ -512,7 +564,41 @@ export class RootView {
   get commitsSelectedOid(): string | undefined {
     const panel = this.commitsPanel
     if (panel.child !== undefined) return panel.child.view.selectedId?.split("\u0000")[0] ?? panel.child.value.oid
+    if (panel.activeTab === "reflog") return this.selectedReflogEntry()?.oid
     return panel.views.commits?.selectedId
+  }
+
+  get activeCommitsTab(): "commits" | "reflog" {
+    return this.commitsPanel.activeTab
+  }
+
+  /** The list panel 4 is showing: the drill-down child if any, else the active tab's view. */
+  private commitsView(): ListState | undefined {
+    const panel = this.commitsPanel
+    return panel.child?.view ?? panel.views[panel.activeTab]
+  }
+
+  get activeFilesTab(): "files" | "worktrees" | "submodules" {
+    return this.filesPanel.activeTab
+  }
+
+  /** The list panel 2 is showing: the active tab's view. */
+  private filesView(): ListState | undefined {
+    return this.filesPanel.views[this.filesPanel.activeTab]
+  }
+
+  /** The tree row the Files tab has selected — a file row or a directory row. */
+  private selectedFileRow(): FileTreeRow<ChangedFile> | undefined {
+    const id = this.filesPanel.views.files?.selectedId
+    if (id === undefined) return undefined
+    return fileTreeRows(this.filesTree).find((row) => row.id === id)
+  }
+
+  /** The reflog entry the Reflog tab has selected, resolved through the model by row id. */
+  private selectedReflogEntry(): ReflogEntry | undefined {
+    const id = this.commitsPanel.views.reflog?.selectedId
+    if (id === undefined) return undefined
+    return (this.model.reflog ?? []).find((entry) => entry.id === id)
   }
   paneScrollY(id: FocusId): number {
     if (id === "command-log") return this.commandLog.text.scrollY
@@ -539,13 +625,15 @@ export class RootView {
   }
 
   selectedListId(pane: "files" | "branches" | "commits" | "stash" | string): string | undefined {
-    if (pane === "files") return this.filesState?.selectedId
-    if (pane === "stash") return this.stashState?.selectedId
-    if (pane === "commits") {
-      const panel = this.commitsPanel
-      if (panel.child !== undefined) return panel.child.view.selectedId
-      return panel.views.commits?.selectedId
+    // The Files tab's rows are identified by `file:`/`dir:` prefixed tree paths internally; the
+    // path is what callers mean by "the selection", so that is what is reported here. The two
+    // read-only tabs have no such split and report their row ids unchanged.
+    if (pane === "files") {
+      if (this.filesPanel.activeTab !== "files") return this.filesView()?.selectedId
+      return this.selectedFileRow()?.path
     }
+    if (pane === "stash") return this.stashState?.selectedId
+    if (pane === "commits") return this.commitsView()?.selectedId
     if (pane === "branches") {
       const panel = this.branchesPanel
       if (panel.child !== undefined) return panel.child.view.selectedId
@@ -556,13 +644,9 @@ export class RootView {
 
   renderedListText(pane: "files" | "branches" | "commits" | "stash" | string): string {
     const getState = (): ListState | undefined => {
-      if (pane === "files") return this.filesState
+      if (pane === "files") return this.filesView()
       if (pane === "stash") return this.stashState
-      if (pane === "commits") {
-        const p = this.commitsPanel
-        if (p.child !== undefined) return p.child.view
-        return p.views.commits
-      }
+      if (pane === "commits") return this.commitsView()
       if (pane === "branches") {
         const p = this.branchesPanel
         if (p.child !== undefined) return p.child.view
@@ -585,11 +669,11 @@ export class RootView {
     const id = this.selectedListId(pane)
     if (id === undefined) return false
     const state = pane === "files"
-      ? this.filesState
+      ? this.filesView()
       : pane === "stash"
         ? this.stashState
         : pane === "commits"
-          ? (this.commitsPanel.child?.view ?? this.commitsPanel.views.commits)
+          ? this.commitsView()
           : (this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab as "branches" | "remotes" | "tags"])
     if (!state || state.rows.length === 0) return false
     const winName = pane === "files" ? "files" : pane === "stash" ? "stash" : pane === "commits" ? "commits" : "branches"
@@ -621,6 +705,8 @@ export class RootView {
       modal: this.modalInputActive(),
       mainScope: target.kind === "working-tree" ? target.scope : undefined,
       selectedBranchKind: kind,
+      commitsTab: this.commitsPanel.activeTab,
+      filesTab: this.filesPanel.activeTab,
       hasSelectedStash: this.stashState?.selectedId !== undefined && (this.model.stashes ?? []).some((s) => s.oid === this.stashState.selectedId),
     }
   }
@@ -633,27 +719,35 @@ export class RootView {
     return { id }
   }
 
-  private plainChunk(text: string): TextChunk {
-    return { __isChunk: true as const, text } as unknown as TextChunk
+  /**
+   * Panel 3's title strip, as painted on the pane's top border row. Shared with panels that
+   * grow tabs later; see src/ui/pane-tabs.ts for the lazygit format it reproduces.
+   */
+  get branchesTitleStyled(): StyledText {
+    return buildPaneTabsStrip(this.branchesTabsInput())
   }
 
-  get branchesTitleStyled(): StyledText {
-    const active = this.branchesPanel.activeTab
-    const parts: Array<{ readonly text: string; readonly tab: "branches" | "remotes" | "tags" }> = [
-      { text: "Local Branches", tab: "branches" },
-      { text: "Remotes", tab: "remotes" },
-      { text: "Tags", tab: "tags" },
-    ]
-    const chunks: TextChunk[] = []
-    chunks.push(this.plainChunk("3 "))
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i]!
-      const isActive = part.tab === active
-      const chunk = isActive ? (cyan(part.text) as unknown as TextChunk) : (dim(part.text) as unknown as TextChunk)
-      chunks.push(chunk)
-      if (i < parts.length - 1) chunks.push(this.plainChunk(" | "))
+  private branchesTabsInput(): { jumpKey: string; tabs: readonly string[]; activeIndex: number; focused: boolean } {
+    return {
+      jumpKey: BRANCHES_JUMP_KEY,
+      tabs: BRANCHES_TABS,
+      activeIndex: Math.max(0, BRANCHES_TAB_ORDER.indexOf(this.branchesPanel.activeTab)),
+      focused: this.focusManager.active === "branches",
     }
-    return new StyledText(chunks)
+  }
+
+  /** Panel 4's title strip; the drill-down child replaces it with a plain dynamic title. */
+  get commitsTitleStyled(): StyledText {
+    return buildPaneTabsStrip(this.commitsTabsInput())
+  }
+
+  private commitsTabsInput(): { jumpKey: string; tabs: readonly string[]; activeIndex: number; focused: boolean } {
+    return {
+      jumpKey: COMMITS_JUMP_KEY,
+      tabs: COMMITS_TABS,
+      activeIndex: Math.max(0, COMMITS_TAB_ORDER.indexOf(this.commitsPanel.activeTab)),
+      focused: this.focusManager.active === "commits",
+    }
   }
 
   private refreshBranchesPanel(model: AppModel): void {
@@ -675,9 +769,9 @@ export class RootView {
 
   private renderBranchesPane(): void {
     const pane = this.panes.branches
-    // Box title must remain a plain string — OpenTUI Box.title stringifies StyledText to `[object Object]`.
-    pane.box.title = "3 Local Branches | Remotes | Tags"
-    const focused = this.focusManager.active === "branches"
+    const tabsInput = this.branchesTabsInput()
+    pane.setTabs?.({ activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
+    const focused = tabsInput.focused
     const state = this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab]
     if (state === undefined) {
       pane.update("")
@@ -690,27 +784,66 @@ export class RootView {
     pane.syncScrollbar()
   }
 
-  private refreshFilesState(model: AppModel): void {
-    const rows = fileRows(model)
-    const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No changed files" }] : undefined
-    let next = setListRows(this.filesState, rows, displayRows)
+  /** Panel 2's title strip; see src/ui/pane-tabs.ts for the lazygit format it reproduces. */
+  get filesTitleStyled(): StyledText {
+    return buildPaneTabsStrip(this.filesTabsInput())
+  }
+
+  private filesTabsInput(): { jumpKey: string; tabs: readonly string[]; activeIndex: number; focused: boolean } {
+    return {
+      jumpKey: FILES_JUMP_KEY,
+      tabs: FILES_TABS,
+      activeIndex: Math.max(0, FILES_TAB_ORDER.indexOf(this.filesPanel.activeTab)),
+      focused: this.focusManager.active === "files",
+    }
+  }
+
+  /** The Files tab's view, re-rendered from `this.filesTree` — the one place its rows are built. */
+  private filesTabView(model: AppModel): ListState {
+    const rows = filesTreeRows(this.filesTree, model)
+    const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: NO_CHANGED_FILES }] : undefined
+    return setListRows(this.filesPanel.views.files, rows, displayRows)
+  }
+
+  private refreshFilesPanel(model: AppModel): void {
+    this.filesTree = setFileTreeItems(this.filesTree, model.files)
+    let filesView = this.filesTabView(model)
     if (model.focusId !== undefined) {
-      const idx = rows.findIndex((r) => r.id === model.focusId)
-      if (idx !== -1) {
-        const withFocus = selectListRow(next, model.focusId)
-        if (withFocus.selectedId === model.focusId) next = withFocus
+      // The controller tracks the focused *path*; the tree identifies a file row by `file:<path>`.
+      const focusRowId = `file:${model.focusId}`
+      if (filesView.rows.some((row) => row.id === focusRowId)) {
+        const withFocus = selectListRow(filesView, focusRowId)
+        if (withFocus.selectedId === focusRowId) filesView = withFocus
       }
     }
-    this.filesState = next
+    let panel = updatePanelView(this.filesPanel, "files", filesView)
+    const worktrees = worktreeRows(model)
+    panel = updatePanelView(panel, "worktrees", setListRows(panel.views.worktrees, worktrees, worktrees.length === 0 ? [{ kind: "message", text: NO_WORKTREES_THIS_REPO }] : undefined))
+    const submodules = submoduleRows(model)
+    panel = updatePanelView(panel, "submodules", setListRows(panel.views.submodules, submodules, submodules.length === 0 ? [{ kind: "message", text: NO_SUBMODULES }] : undefined))
+    this.filesPanel = panel
+  }
+
+  /** Re-renders the Files tab after a tree mutation (collapse, flat/tree mode). */
+  private applyFilesTree(next: FileTreeState<ChangedFile>): void {
+    this.filesTree = next
+    this.filesPanel = updatePanelView(this.filesPanel, "files", this.filesTabView(this.model))
+    this.renderFilesPane()
+    this.root.requestRender()
   }
 
   private renderFilesPane(): void {
     const pane = this.panes.files
-    const focused = this.focusManager.active === "files"
+    const tabsInput = this.filesTabsInput()
+    pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
+    const state = this.filesView()
+    if (state === undefined) {
+      pane.update("")
+      return
+    }
     const win = this.geometry.windows.files
     const width = win !== undefined ? Math.max(10, widthOf(win) - 2) : 80
-    const content = renderListRows(this.filesState, focused, width)
-    pane.update(content)
+    pane.update(renderListRows(state, tabsInput.focused, width))
     pane.syncScrollbar()
   }
 
@@ -753,6 +886,9 @@ export class RootView {
       case "inspect": this.actionInspect(); return
       case "stage-selection": this.actionStageSelection(); return
       case "discard-selection": this.actionDiscardSelection(); return
+      case "toggle-file-tree": this.actionToggleFileTree(); return
+      case "collapse-files": this.actionCollapseAllFiles(); return
+      case "expand-files": this.actionExpandAllFiles(); return
       case "tab-next": this.actionCycleTab("next"); return
       case "tab-previous": this.actionCycleTab("previous"); return
       case "branch-checkout": this.actionBranchCheckout(); return
@@ -979,18 +1115,27 @@ export class RootView {
     switch (this.focusManager.active) {
       case "files": {
         this.clearDiscardState()
-        const next = moveListSelection(this.filesState, direction)
-        if (next !== this.filesState) {
-          this.filesState = next
-          this.renderFilesPane()
-          this.revealListRow("files", this.panes.files, next.selectedIndex)
-          const selected = next.selectedId
-          this.panes.files.box.bottomTitle = selected ?? "No files"
-          if (selected !== undefined) this.onSelectFile?.(selected)
-          const content = this.presentFilesContent(this.model)
-          this.mainGate.installSynchronous(content)
+        const panel = this.filesPanel
+        const active = panel.activeTab
+        const current = panel.views[active]
+        if (current === undefined) return
+        const next = moveListSelection(current, direction)
+        if (next === current) return
+        this.filesPanel = updatePanelView(panel, active, next)
+        this.renderFilesPane()
+        this.revealListRow("files", this.panes.files, next.selectedIndex)
+        if (active !== "files") {
+          this.syncPreviewForFocus("files")
           this.root.requestRender()
+          return
         }
+        const row = this.selectedFileRow()
+        this.panes.files.box.bottomTitle = row?.path ?? "No files"
+        // A directory is not a review target: telling the controller about it would file a
+        // review status under a path that is not a file.
+        if (row?.kind === "file") this.onSelectFile?.(row.path)
+        this.mainGate.installSynchronous(this.presentFilesContent(this.model))
+        this.root.requestRender()
         return
       }
       case "branches": {
@@ -1030,10 +1175,11 @@ export class RootView {
             this.syncPreviewForFocus("commits")
           }
         } else {
-          const currentView = panel.views.commits!
+          const active = panel.activeTab
+          const currentView = panel.views[active]!
           const nextView = moveListSelection(currentView, direction)
           if (nextView !== currentView) {
-            this.commitsPanel = { ...panel, views: { ...panel.views, commits: nextView } }
+            this.commitsPanel = updatePanelView(panel, active, nextView)
             this.renderCommitsPane()
             this.revealListRow("commits", this.panes.commits, nextView.selectedIndex)
             this.syncPreviewForFocus("commits")
@@ -1107,8 +1253,11 @@ export class RootView {
       : this.branchesPanel.views[this.branchesPanel.activeTab]?.rows.length ?? 0
     const limit = Math.max(
       this.model.files.length,
+      (this.model.worktrees ?? []).length,
+      (this.model.submodules ?? []).length,
       (this.model.commits ?? []).length,
       (this.model.stashes ?? []).length,
+      (this.model.reflog ?? []).length,
       branchCount,
     ) + 1
     for (let moved = 0; moved < limit; moved += 1) this.actionMoveCursor(direction)
@@ -1117,9 +1266,20 @@ export class RootView {
 
   private actionInspect(): void {
     switch (this.focusManager.active) {
-      case "files":
+      case "files": {
+        // The Worktrees and Submodules tabs are navigation-only; lazygit's Enter there switches
+        // worktree or enters the submodule repository, both of which change the repository
+        // wholesale and are out of scope.
+        if (this.filesPanel.activeTab !== "files") return
+        const row = this.selectedFileRow()
+        // files_controller.go:715 EnterFile: a node with no file toggles its collapsed state.
+        if (row?.kind === "directory") {
+          this.applyFilesTree(toggleFileTreeCollapsedPath(this.filesTree, row.internalPath))
+          return
+        }
         this.actionOpenFile()
         return
+      }
       case "branches":
         this.actionBranchInspect()
         return
@@ -1130,13 +1290,8 @@ export class RootView {
 
   private actionOpenFile(): void {
     if (this.mutationInFlight) return
-    const selectedId = this.filesState?.selectedId
-    const selected = selectedId !== undefined ? this.model.files.find((f) => f.path === selectedId) : undefined
-    if (selected !== undefined) {
-      this.onSelectFile?.(selected.path)
-    } else if (selectedId !== undefined) {
-      this.onSelectFile?.(selectedId)
-    }
+    const row = this.selectedFileRow()
+    if (row?.kind === "file") this.onSelectFile?.(row.path)
     this.focusManager.focus("main")
   }
 
@@ -1146,8 +1301,18 @@ export class RootView {
       this.panes.main.box.bottomTitle = "Branch Review is read-only"
       return
     }
-    const selectedId = this.filesState?.selectedId
-    const file = selectedId !== undefined ? this.model.files.find((f) => f.path === selectedId) : undefined
+    const row = this.selectedFileRow()
+    if (row === undefined) return
+    if (row.kind === "directory") {
+      // files_controller.go:509 toggleStaged: stage when any file within has unstaged changes,
+      // otherwise unstage. git resolves a directory pathspec across the subtree itself, so the
+      // single-path callbacks carry it unchanged.
+      const stage = someFileInNode(row.node, fileHasUnstagedChanges)
+      const operation = stage ? this.onStageFile : this.onUnstageFile
+      if (operation !== undefined) this.runUiMutation(() => operation(row.path))
+      return
+    }
+    const file = row.payload
     if (file === undefined) return
     const staged = !file.untracked && file.worktreeStatus === "." && file.indexStatus !== "."
     const operation = staged ? this.onUnstageFile : this.onStageFile
@@ -1160,19 +1325,24 @@ export class RootView {
       this.panes.main.box.bottomTitle = "Branch Review is read-only"
       return
     }
-    const selectedId = this.filesState?.selectedId
-    const file = selectedId !== undefined ? this.model.files.find((f) => f.path === selectedId) : undefined
-    if (file === undefined || this.onDiscardFile === undefined) return
+    const row = this.selectedFileRow()
+    if (row === undefined || this.onDiscardFile === undefined) return
+    if (row.kind === "directory") {
+      this.confirmDirectoryDiscard(row)
+      return
+    }
+    const file = row.payload
+    if (file === undefined) return
     if (!file.untracked && file.worktreeStatus === "." && file.indexStatus !== ".") {
       this.panes.files.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
       return
     }
     const pending = this.pendingFileDiscard
-    if (pending?.path === file.path && pending.untracked === file.untracked) {
+    if (pending?.path === file.path && pending.untracked === file.untracked && !pending.directory) {
       this.pendingFileDiscard = undefined
       this.runUiMutation(() => this.onDiscardFile!(file.path, file.untracked))
     } else {
-      this.pendingFileDiscard = { path: file.path, untracked: file.untracked }
+      this.pendingFileDiscard = { path: file.path, untracked: file.untracked, directory: false }
       this.panes.files.box.bottomTitle = `${discardConfirmation(file.path, file.untracked).message} Press d again to confirm or Escape to cancel.`
     }
   }
@@ -1193,12 +1363,19 @@ export class RootView {
   private actionMarkReviewed(): void {
     if (this.mutationInFlight) return
     if (this.onMarkFocusedFileReviewed === undefined) return
-    const selectedId = this.filesState?.selectedId
-    const file = selectedId !== undefined ? this.model.files.find((f) => f.path === selectedId) : undefined
+    const row = this.selectedFileRow()
+    // Review progress is githunk's own, per-file, and the controller only takes one path (and
+    // falls back to the first changed file when the path is not one), so a directory row cannot
+    // express "mark this subtree reviewed" — say so rather than marking the wrong file.
+    if (row?.kind === "directory") {
+      this.panes.files.box.bottomTitle = "Mark reviewed applies to a file; select a file row"
+      return
+    }
+    const file = row?.payload
     const focusedPath = this.model.focusId ?? this.model.selectionId
     const reviewPath = focusedPath !== undefined && this.model.files.some((candidate) => candidate.path === focusedPath)
       ? focusedPath
-      : file?.path ?? selectedId
+      : file?.path
     this.runUiMutation(() => this.onMarkFocusedFileReviewed!(reviewPath))
   }
   private actionStageSelection(): void {
@@ -1255,11 +1432,11 @@ export class RootView {
     const modelFile = this.model.files.find((file) => file.path === path)
     if (modelFile?.untracked && this.onDiscardFile !== undefined) {
       const pending = this.pendingFileDiscard
-      if (pending?.path === path && pending.untracked) {
+      if (pending?.path === path && pending.untracked && !pending.directory) {
         this.pendingFileDiscard = undefined
         this.runUiMutation(() => this.onDiscardFile!(path, true))
       } else {
-        this.pendingFileDiscard = { path, untracked: true }
+        this.pendingFileDiscard = { path, untracked: true, directory: false }
         this.panes.main.box.bottomTitle = `${discardConfirmation(path, true).message} Press d again to confirm or Escape to cancel.`
       }
       return
@@ -1289,11 +1466,120 @@ export class RootView {
     }
   }
 
+  /**
+   * Discarding a directory means discarding its subtree, which git already does for a directory
+   * pathspec: `restore` for the tracked changes and `clean` for the untracked files. Both are
+   * issued through the same single-path callback the file case uses, so nothing about the
+   * mutation plumbing changes. A subtree whose every file is *only* staged is refused for the
+   * same reason a staged file is (githunk's discard never touches the index).
+   */
+  private confirmDirectoryDiscard(row: FileTreeRow<ChangedFile>): void {
+    if (everyFileInNode(row.node, (file) => !file.untracked && file.worktreeStatus === "." && file.indexStatus !== ".")) {
+      this.panes.files.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
+      return
+    }
+    const pending = this.pendingFileDiscard
+    if (pending?.path === row.path && pending.directory) {
+      this.pendingFileDiscard = undefined
+      const tracked: string[] = []
+      const untracked: string[] = []
+      forEachFile(row.node, (file) => (file.untracked ? untracked : tracked).push(file.path))
+      const discard = this.onDiscardFile
+      if (discard === undefined) return
+      this.runUiMutation(async () => {
+        if (tracked.length > 0) await discard(row.path, false)
+        if (untracked.length > 0) await discard(row.path, true)
+      })
+      return
+    }
+    this.pendingFileDiscard = { path: row.path, untracked: false, directory: true }
+    this.panes.files.box.bottomTitle = `${discardConfirmation(row.path).message} Press d again to confirm or Escape to cancel.`
+  }
+
+  /** lazygit's `` ` `` binding — files_controller.go:1502 toggleTreeView. */
+  private actionToggleFileTree(): void {
+    if (this.filesPanel.activeTab !== "files") return
+    this.applyFilesTree(toggleFileTreeMode(this.filesTree))
+  }
+
+  /** lazygit's `-` binding — files_controller.go:698 collapseAll. */
+  private actionCollapseAllFiles(): void {
+    if (this.filesPanel.activeTab !== "files") return
+    this.applyFilesTree(collapseAllFileTree(this.filesTree))
+  }
+
+  /** lazygit's `=` binding — files_controller.go:706 expandAll. */
+  private actionExpandAllFiles(): void {
+    if (this.filesPanel.activeTab !== "files") return
+    this.applyFilesTree(expandAllFileTree(this.filesTree))
+  }
+
+  /**
+   * The tab strip painted on `paneId`'s top border row, or undefined for a pane without tabs.
+   * Panels that grow tabs register them here (and in their `createPane` options).
+   */
+  private paneTabsGeometryFor(paneId: FocusId): { readonly jumpKey: string; readonly tabs: readonly string[] } | undefined {
+    if (paneId === "files") return { jumpKey: FILES_JUMP_KEY, tabs: FILES_TABS }
+    if (paneId === "branches") return { jumpKey: BRANCHES_JUMP_KEY, tabs: BRANCHES_TABS }
+    // The drill-down child replaces the strip with a plain title, so there is nothing to hit.
+    if (paneId === "commits") return this.commitsPanel.child !== undefined ? undefined : { jumpKey: COMMITS_JUMP_KEY, tabs: COMMITS_TABS }
+    return undefined
+  }
+
+  /** Activates a tab by index, as a click on the title row does (gocui/gui.go:1807). */
+  private selectPaneTab(paneId: FocusId, index: number): void {
+    if (paneId === "files") {
+      const tab = FILES_TAB_ORDER[index]
+      if (tab === undefined || this.filesPanel.activeTab === tab) return
+      this.filesPanel = { ...this.filesPanel, activeTab: tab }
+      this.renderFilesPane()
+      this.syncPreviewForFocus("files")
+      this.root.requestRender()
+      return
+    }
+    if (paneId === "branches") {
+      const tab = BRANCHES_TAB_ORDER[index]
+      if (tab === undefined) return
+      if (this.branchesPanel.child === undefined && this.branchesPanel.activeTab === tab) return
+      this.branchesPanel = { ...leavePanelChild(this.branchesPanel), activeTab: tab }
+      this.renderBranchesPane()
+      this.root.requestRender()
+      return
+    }
+    if (paneId === "commits") {
+      const tab = COMMITS_TAB_ORDER[index]
+      if (tab === undefined) return
+      if (this.commitsPanel.child === undefined && this.commitsPanel.activeTab === tab) return
+      this.commitsPanel = { ...leavePanelChild(this.commitsPanel), activeTab: tab }
+      this.renderCommitsPane()
+      this.syncPreviewForFocus("commits")
+      this.root.requestRender()
+    }
+  }
+
   private actionCycleTab(direction: "next" | "previous"): void {
-    if (this.focusManager.active !== "branches") return
-    this.branchesPanel = cyclePanelTab(this.branchesPanel, direction)
-    this.renderBranchesPane()
-    this.root.requestRender()
+    if (this.focusManager.active === "files") {
+      this.filesPanel = cyclePanelTab(this.filesPanel, direction)
+      this.clearDiscardState()
+      this.renderFilesPane()
+      // Activating a context renders it to main (pkg/gui/context.go `Activate` -> HandleFocus).
+      this.syncPreviewForFocus("files")
+      this.root.requestRender()
+      return
+    }
+    if (this.focusManager.active === "branches") {
+      this.branchesPanel = cyclePanelTab(this.branchesPanel, direction)
+      this.renderBranchesPane()
+      this.root.requestRender()
+      return
+    }
+    if (this.focusManager.active === "commits") {
+      this.commitsPanel = cyclePanelTab(this.commitsPanel, direction)
+      this.renderCommitsPane()
+      // Activating a context renders it to main (pkg/gui/context.go `Activate` -> HandleFocus).
+      this.syncPreviewForFocus("commits")
+      this.root.requestRender()
+    }
   }
   private actionBranchCheckout(): void {
     if (this.mutationInFlight) return
@@ -1425,6 +1711,10 @@ export class RootView {
   private actionCommitDrilldown(): void {
     if (this.mutationInFlight) return
     if (this.commitsPanel.child !== undefined) return
+    // Only the Commits tab drills into commit files: lazygit attaches
+    // `SwitchToDiffFilesController` to LocalCommits/SubCommits/Stash, never to the reflog
+    // context (pkg/gui/controllers.go:240-249).
+    if (this.commitsPanel.activeTab !== "commits") return
     const selectedId = this.commitsPanel.views.commits?.selectedId
     if (selectedId === undefined || this.loadCommitInspection === undefined) return
     const oid = selectedId
@@ -1451,6 +1741,7 @@ export class RootView {
   }
 
   private actionCommitBack(): void {
+    if (this.popFocusedMainView()) return
     if (this.commitsPanel.child !== undefined) {
       const oid = this.commitsPanel.child.value.oid
       this.commitsPanel = leavePanelChild(this.commitsPanel)
@@ -1465,7 +1756,20 @@ export class RootView {
     }
   }
 
+  /**
+   * Escape out of the focused main pane, lazygit's `ContextMgr.Pop()` (pkg/gui/context.go:132).
+   * Pushing the main context left the side context underneath it on the stack, so popping lands
+   * back on the pane the main view was focused from — `FocusManager.lastSide` here. Returns
+   * whether it handled the key, so both Escape handlers can defer to it first.
+   */
+  private popFocusedMainView(): boolean {
+    if (this.focusManager.active !== "main") return false
+    this.focusManager.focus(this.focusManager.lastSide)
+    return true
+  }
+
   private actionBack(): void {
+    if (this.popFocusedMainView()) return
     if (this.commitsPanel.child !== undefined) {
       const oid = this.commitsPanel.child.value.oid
       this.commitsPanel = leavePanelChild(this.commitsPanel)
@@ -1895,8 +2199,11 @@ export class RootView {
     const commits = model.commits ?? []
     const rows = buildCommitRows(commits, new Date())
     const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: model.loading ? "Loading…" : "No commits" }] : undefined
+    const reflog = reflogRows(model)
+    const reflogDisplayRows = reflog.length === 0 ? [{ kind: "message" as const, text: NO_REFLOG_HISTORY }] : undefined
     let panel = this.commitsPanel
-    panel = { ...panel, views: { ...panel.views, commits: setListRows(panel.views.commits, rows, displayRows) } }
+    panel = updatePanelView(panel, "commits", setListRows(panel.views.commits, rows, displayRows))
+    panel = updatePanelView(panel, "reflog", setListRows(panel.views.reflog, reflog, reflogDisplayRows))
     if (panel.child !== undefined) {
       const details = panel.child.value.details
       const fileRows = commitFileRows(details)
@@ -1911,12 +2218,15 @@ export class RootView {
   private renderCommitsPane(): void {
     const pane = this.panes.commits
     if (this.commitsPanel.child !== undefined) {
+      // lazygit's commit files are their own view with a `DynamicTitleBuilder` and no tabs
+      // (pkg/gui/context/commit_files_context.go:48), so the strip is replaced, not extended.
       const short = this.commitsPanel.child.value.details.shortOid ?? this.commitsPanel.child.value.details.oid.slice(0, 8)
-      pane.box.title = `4 Diff files (${short})`
+      pane.setPlainTitle?.(`[${COMMITS_JUMP_KEY}]${TITLE_PREFIX_FRAME_RUNE}Diff files (${short})`)
     } else {
-      pane.box.title = "4 Commits"
+      const tabsInput = this.commitsTabsInput()
+      pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
     }
-    const state = this.commitsPanel.child?.view ?? this.commitsPanel.views.commits
+    const state = this.commitsView()
     if (state === undefined) {
       pane.update("")
       return
@@ -1934,10 +2244,11 @@ export class RootView {
   }
 
   private presentFilesContent(model: AppModel): MainPaneContent {
-    const selectedId = this.filesState?.selectedId
-    const selected = selectedId !== undefined ? model.files.find((f) => f.path === selectedId) : undefined
-    const stableId = selected?.path ?? selectedId ?? "empty"
-    const label = selected?.path ?? selectedId ?? "Files"
+    // A directory row labels the preview with the directory: githunk's main pane always shows the
+    // whole working-tree patch, which already is the subtree's combined diff lazygit renders there.
+    const row = this.selectedFileRow()
+    const stableId = row?.path ?? "empty"
+    const label = row?.path ?? "Files"
     const text = model.rawPatchSections.length > 0 ? model.rawPatchSections.map((p) => p.text).join("") : model.patches.map((p) => p.text).join("")
     if (text.length > 0) {
       try {
@@ -1984,6 +2295,23 @@ export class RootView {
         }
         return
       }
+      if (this.commitsPanel.activeTab === "reflog") {
+        // reflog_commits_controller.go:40-52 — `git show <hash>` for the selection, or the
+        // literal "No reflog history" when there is none. A reflog entry points at a real
+        // commit, so this reuses the Commits tab's own commit preview, keyed on that oid.
+        const entry = this.selectedReflogEntry()
+        if (entry === undefined) {
+          this.mainGate.installSynchronous({ source: "reflog", stableId: "reflog-empty", label: "Reflog", plainText: NO_REFLOG_HISTORY })
+          return
+        }
+        if (this.loadCommitInspection !== undefined) {
+          const load = (): Promise<CommitDetails> => this.loadCommitInspection!(entry.oid)
+          const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
+          const promise = this.mainGate.request("commit", entry.oid, load, present)
+          this.previewInflight = promise.catch(() => {})
+        }
+        return
+      }
       const state = this.commitsPanel.views.commits
       if (state === undefined || state.selectedId === undefined) {
         this.installInitialMainContent(this.model)
@@ -1999,8 +2327,24 @@ export class RootView {
       return
     }
     if (focus === "files") {
-      const content = this.presentFilesContent(this.model)
-      this.mainGate.installSynchronous(content)
+      const active = this.filesPanel.activeTab
+      if (active === "worktrees") {
+        // worktrees_controller.go:80-118 GetOnRenderToMain.
+        const worktree = selectedWorktreeFrom(this.model, this.filesPanel.views.worktrees?.selectedId)
+        this.mainGate.installSynchronous(worktree === undefined
+          ? { source: "worktree", stableId: "worktree-empty", label: "Worktree", plainText: NO_WORKTREES_THIS_REPO }
+          : { source: "worktree", stableId: worktree.path, label: worktree.name, plainText: worktreePreviewText(worktree) })
+        return
+      }
+      if (active === "submodules") {
+        // submodules_controller.go:107-127 GetOnRenderToMain.
+        const submodule = selectedSubmoduleFrom(this.model, this.filesPanel.views.submodules?.selectedId)
+        this.mainGate.installSynchronous(submodule === undefined
+          ? { source: "submodule", stableId: "submodule-empty", label: "Submodule", plainText: NO_SUBMODULES }
+          : { source: "submodule", stableId: submoduleFullName(submodule), label: submoduleFullName(submodule), plainText: submodulePreviewText(submodule) })
+        return
+      }
+      this.mainGate.installSynchronous(this.presentFilesContent(this.model))
       return
     }
     if (focus === "branches") {
@@ -2044,12 +2388,13 @@ export class RootView {
       this.mainGate.installSynchronous(content)
       return
     }
-    if (focus === "main") {
-      const content = this.presentFilesContent(this.model)
-      this.mainGate.installSynchronous(content)
-      return
-    }
-    // for status, etc., keep current
+    // `main` deliberately renders nothing: lazygit's `Contexts().Normal` is a `MainContext`
+    // with no focus-time render-to-main (pkg/gui/context/main_context.go), and
+    // `SwitchToFocusedMainViewController` only pushes it (clearing the search string), so
+    // focusing the main pane cannot change what the main pane shows. Not touching `mainGate`
+    // is also what preserves an in-flight preview: the gate's generation/identity guard only
+    // discards a request when a *newer* one supersedes it.
+    // Same for status, etc.: keep whatever is installed.
   }
   private moveMainCursor(direction: "next" | "previous"): void {
     const pane = this.panes.main
@@ -2173,11 +2518,12 @@ export class RootView {
           this.syncPreviewForFocus("commits")
         }
       } else {
-        const view = panel.views.commits
+        const active = panel.activeTab
+        const view = panel.views[active]
         if (!view) return
         const nextView = selectListRow(view, stableId)
         if (nextView !== view) {
-          this.commitsPanel = { ...panel, views: { ...panel.views, commits: nextView } }
+          this.commitsPanel = updatePanelView(panel, active, nextView)
           this.renderCommitsPane()
           this.revealListRow("commits", this.panes.commits, nextView.selectedIndex)
           this.syncPreviewForFocus("commits")
@@ -2212,17 +2558,23 @@ export class RootView {
       return
     }
     if (paneId === "files") {
-      const next = selectListRow(this.filesState, stableId)
-      if (next !== this.filesState) {
-        this.filesState = next
+      const panel = this.filesPanel
+      const active = panel.activeTab
+      const view = panel.views[active]
+      if (view === undefined) return
+      const next = selectListRow(view, stableId)
+      if (next !== view) {
+        this.filesPanel = updatePanelView(panel, active, next)
         this.renderFilesPane()
         this.revealListRow("files", this.panes.files, next.selectedIndex)
-        const file = this.model.files.find((f) => f.path === stableId)
-        this.panes.files.box.bottomTitle = stableId
-        if (file) this.onSelectFile?.(file.path)
-        else this.onSelectFile?.(stableId)
-        const content = this.presentFilesContent(this.model)
-        this.mainGate.installSynchronous(content)
+        if (active === "files") {
+          const row = this.selectedFileRow()
+          this.panes.files.box.bottomTitle = row?.path ?? stableId
+          if (row?.kind === "file") this.onSelectFile?.(row.path)
+          this.mainGate.installSynchronous(this.presentFilesContent(this.model))
+        } else {
+          this.syncPreviewForFocus("files")
+        }
       }
       this.root.requestRender()
       return
@@ -2253,7 +2605,7 @@ export class RootView {
       return
     }
     if (paneId === "files") {
-      this.actionOpenFile()
+      this.actionInspect()
       return
     }
     if (paneId === "stash") {
@@ -2527,6 +2879,21 @@ export class RootView {
           return
         }
         const paneId = hit.id
+        // A plain left click on the top border row activates a tab — gocui/gui.go:1807.
+        const tabsGeometry = this.paneTabsGeometryFor(paneId)
+        const tabWindow = (this.geometry.windows as unknown as Record<string, { x0: number; y0: number } | undefined>)[hit.winName]
+        if (tabsGeometry !== undefined && tabWindow !== undefined && event.y === tabWindow.y0) {
+          const tabIndex = paneTabAtOffset(tabsGeometry, event.x - tabWindow.x0)
+          if (tabIndex !== undefined) {
+            this.pendingClick = undefined
+            this.lastSplitterPress = undefined
+            if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+            this.selectPaneTab(paneId, tabIndex)
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+        }
         if (paneId === "main") {
           this.pendingClick = undefined
           this.lastSplitterPress = undefined
@@ -2560,8 +2927,8 @@ export class RootView {
             listState = panel.child.view
             viewIdForDouble = "commit-files"
           } else {
-            listState = panel.views.commits
-            viewIdForDouble = "commits"
+            listState = panel.views[panel.activeTab]
+            viewIdForDouble = `commits:${panel.activeTab}`
           }
         } else if (paneId === "branches") {
           const panel = this.branchesPanel
@@ -2573,8 +2940,8 @@ export class RootView {
             viewIdForDouble = `branches:${panel.activeTab}`
           }
         } else if (paneId === "files") {
-          listState = this.filesState
-          viewIdForDouble = "files"
+          listState = this.filesView()
+          viewIdForDouble = `files:${this.filesPanel.activeTab}`
         } else if (paneId === "stash") {
           listState = this.stashState
           viewIdForDouble = "stash"

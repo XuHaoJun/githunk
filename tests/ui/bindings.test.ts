@@ -287,8 +287,10 @@ describe("GITHUNK_BINDINGS", () => {
     expect(registry.dispatch({ name: "tab" }, { context: "main" })).toBe("pane-next")
     expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
     expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
-    expect(registry.dispatch({ name: "]" }, { context: "files" })).toBeUndefined()
-    expect(registry.dispatch({ name: "[" }, { context: "files" })).toBeUndefined()
+    // Panel 2 has tabs of its own now (lazygit's `{files, worktrees, submodules}` group), so the
+    // brackets cycle there too — only the tabless main pane leaves them unbound.
+    expect(registry.dispatch({ name: "]" }, { context: "files" })).toBe("tab-next")
+    expect(registry.dispatch({ name: "[" }, { context: "files" })).toBe("tab-previous")
     expect(registry.dispatch({ name: "]" }, { context: "branches" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "branches" })).toBe("tab-previous")
   })
