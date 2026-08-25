@@ -396,14 +396,7 @@ export class RootView {
         model: this.model,
         ui: this.uiState(),
       })
-      if (action === undefined) {
-        if (routedKey.name === "escape" && this.commitsPanel.child !== undefined) {
-          this.actionBack()
-          key.preventDefault()
-          key.stopPropagation()
-        }
-        return
-      }
+      if (action === undefined) return
       this.handleAction(action, routedKey)
       key.preventDefault()
       key.stopPropagation()
@@ -834,6 +827,9 @@ export class RootView {
         this.panes.files.box.bottomTitle = selected?.path ?? "No files"
         if (selected !== undefined) this.onSelectFile?.(selected.path)
         this.revealListRow("files", this.panes.files, this.fileCursorIndex)
+        const content = this.presentFilesContent(this.model)
+        this.mainGate.installSynchronous(content)
+        this.root.requestRender()
         return
       }
       case "branches": {
@@ -847,6 +843,7 @@ export class RootView {
             this.branchesPanel = { ...panel, child: { ...panel.child, view: nextView } }
             this.renderBranchesPane()
             this.revealListRow("branches", this.panes.branches, nextView.selectedIndex)
+            this.syncPreviewForFocus("branches")
           }
         } else {
           const active = panel.activeTab
@@ -856,6 +853,7 @@ export class RootView {
             this.branchesPanel = { ...panel, views: { ...panel.views, [active]: nextView } }
             this.renderBranchesPane()
             this.revealListRow("branches", this.panes.branches, nextView.selectedIndex)
+            this.syncPreviewForFocus("branches")
           }
         }
         return
@@ -882,10 +880,12 @@ export class RootView {
         }
         return
       }
+      case "stash":
         this.pendingStashDrop = undefined
         this.panes.stash.box.bottomTitle = undefined
         moveStashCursor(this.panes.stash, this.model, direction)
         this.revealListRow("stash", this.panes.stash, stashCursorIndex(this.panes.stash))
+        this.syncPreviewForFocus("stash")
         return
       case "main":
         // j/k (and h/l via hunk-next/previous) move the hunk cursor here:
@@ -1119,11 +1119,11 @@ export class RootView {
   }
 
   private actionCycleTab(direction: "next" | "previous"): void {
+    if (this.focusManager.active !== "branches") return
     this.branchesPanel = cyclePanelTab(this.branchesPanel, direction)
     this.renderBranchesPane()
     this.root.requestRender()
   }
-
   private actionBranchCheckout(): void {
     if (this.mutationInFlight) return
     const panel = this.branchesPanel
@@ -1778,11 +1778,10 @@ export class RootView {
       document: details.document,
     }
   }
-  private presentCommitFileContent(oid: string, filePath: string, doc: DiffDocument): MainPaneContent {
-    const id = filePath
-    return { source: "commit-file", stableId: id, label: filePath, document: doc }
+  private presentCommitFileContent(oid: string, selectedId: string, doc: DiffDocument): MainPaneContent {
+    const label = selectedId.split("\u0000")[0]!
+    return { source: "commit-file", stableId: `${oid}\0${selectedId}`, label, document: doc }
   }
-
   private syncPreviewForFocus(focus: FocusId): void {
     if (focus === "commits") {
       if (this.commitsPanel.child !== undefined) {
@@ -1799,11 +1798,10 @@ export class RootView {
         const filePath = selectedId.split("\u0000")[0]!
         const oid = child.value.oid
         if (this.loadCommitFileInspection !== undefined) {
-          const stableId = selectedId
+          const stableId = `${oid}\0${selectedId}`
           const load = (): Promise<DiffDocument> => this.loadCommitFileInspection!(oid, filePath)
-          const present = (doc: DiffDocument): MainPaneContent => this.presentCommitFileContent(oid, filePath, doc)
+          const present = (doc: DiffDocument): MainPaneContent => this.presentCommitFileContent(oid, selectedId, doc)
           const promise = this.mainGate.request("commit-file", stableId, load, present)
-          this.previewInflight = promise.catch(() => {})
         }
         return
       }

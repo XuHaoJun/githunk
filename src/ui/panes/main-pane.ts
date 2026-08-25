@@ -135,6 +135,15 @@ function buildStyledContent(content: MainPaneContent): string | StyledText {
     const preamble = content.preamble ?? ""
     const diffStyled = renderDiff(content.document).styledText
     if (preamble.length === 0) return diffStyled
+    const plainChunk = { __isChunk: true as const, text: preamble } as unknown as TextChunk
+    // Access chunks via guarded property check to avoid inline cast lint
+    if (diffStyled !== null && typeof diffStyled === "object" && "chunks" in diffStyled) {
+      const maybe = (diffStyled as unknown as { chunks: unknown }).chunks
+      if (Array.isArray(maybe) && maybe.length > 0) {
+        const diffChunks = maybe as unknown as TextChunk[]
+        return new StyledText([plainChunk, ...diffChunks])
+      }
+    }
     return `${preamble}${content.document.text}`
   }
   if (content.plainText !== undefined) return content.plainText
@@ -156,16 +165,6 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
   renderedTexts.set(pane, nextText)
   paneTitles.set(pane, `0 Main — ${content.label}`)
 
-  if (tooSmall) {
-    pane.box.title = paneTitles.get(pane) ?? `0 Main — ${content.label}`
-    pane.update("Terminal too small")
-    documents.delete(pane)
-    return
-  }
-
-  pane.box.title = paneTitles.get(pane) ?? `0 Main — ${content.label}`
-
-  // Lifecycle: viewport and selection handling
   const clearSelection = (): void => {
     const view = pane.text
     if (view !== null && typeof view === "object" && "resetSelection" in view) {
@@ -174,6 +173,20 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     }
     cursorTargets.delete(pane)
   }
+
+  if (tooSmall) {
+    pane.box.title = paneTitles.get(pane) ?? `0 Main — ${content.label}`
+    pane.update("Terminal too small")
+    documents.delete(pane)
+    clearSelection()
+    pane.text.scrollX = 0
+    pane.text.scrollY = 0
+    return
+  }
+
+  pane.box.title = paneTitles.get(pane) ?? `0 Main — ${content.label}`
+
+  // Lifecycle: viewport and selection handling
   if (!sameIdentity) {
     clearSelection()
     pane.text.scrollX = 0
@@ -214,37 +227,15 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     }
     // If not preserved, pick first hunk
     const initialTarget = preservedTarget ?? (!sameIdentity || !identicalText ? moveMainCursor(doc, undefined, "next") : previousTarget ?? moveMainCursor(doc, undefined, "next"))
-    // When we cleared selection due to identity change or text change, we must not keep initialTarget if we just cleared
     const shouldKeepTarget = sameIdentity && identicalText
     documents.set(pane, doc)
     if (shouldKeepTarget && initialTarget) {
       cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
-    } else if (!shouldKeepTarget && identicalText === false) {
-      // cleared: if document has hunks, set initial? Spec says different identity clears selection, but for document we may still want initial cursor? Original updateMainPane always set initialTarget when document exists.
-      // For lifecycle, after clearing, we should set a default target only if not cleared? The spec says clear native/document selection. So delete.
-      // But for usability, should we still have a hunk cursor? The spec's selection refers to native text selection and document cursor. Clearing means no cursor target.
-      // We'll delete; subsequent j/k will create.
-      if (sameIdentity && identicalText) {
-        if (initialTarget) cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
-      } else {
-        // different identity or changed text: clear
-        cursorTargets.delete(pane)
-        // Optionally set first hunk as cursor only after cleared? Spec says clear, so keep deleted.
-        // However to avoid empty cursor, we could still set initialTarget but spec says clear selection.
-        // Keep deleted to satisfy "clear selection" assertion.
-      }
     } else {
-      if (initialTarget) cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
-      else cursorTargets.delete(pane)
+      cursorTargets.delete(pane)
     }
     pane.text.wrapMode = "char"
-    pane.update(renderDiff(doc).styledText)
-    // If preamble exists, we need to prepend it without re-rendering document? renderDiff already set styledText; we need to include preamble.
-    if (content.preamble !== undefined && content.preamble.length > 0) {
-      // Rebuild with preamble handling; use buildStyledContent but we already rendered.
-      const styled = buildStyledContent(content)
-      pane.update(styled)
-    }
+    pane.update(buildStyledContent(content))
     // clamp again after content size known
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
@@ -254,15 +245,12 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
 
   // plainText or preamble-only
   documents.delete(pane)
-  if (!sameIdentity || !identicalText) {
-    // already cleared above
-  }
   const styled = buildStyledContent(content)
   pane.update(styled)
   pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
   pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
   pane.syncScrollbar()
-}
+  }
 
 export function setMainLoading(pane: PaneHandle, loading: boolean, tooSmall: boolean): void {
   if (tooSmall) return
