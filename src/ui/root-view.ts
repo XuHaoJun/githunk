@@ -27,7 +27,7 @@ import {
   type WindowName,
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
-import { createBranchesPane, BRANCHES_JUMP_KEY, BRANCHES_TABS, NO_BRANCHES_THIS_REPO } from "./panes/branches-pane"
+import { createBranchesPane, BRANCHES_JUMP_KEY, BRANCHES_TABS, NO_BRANCHES_THIS_REPO, type BranchRowOptions } from "./panes/branches-pane"
 import { localBranchRows } from "./panes/branches-pane"
 import { buildPaneTabsStrip, paneTabAtOffset } from "./pane-tabs"
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
@@ -35,6 +35,8 @@ import { tagRows } from "./panes/tags-pane"
 import { buildCommitRows, createCommitsPane } from "./panes/commits-pane"
 import { COMMITS_JUMP_KEY, COMMITS_TABS, NO_REFLOG_HISTORY, reflogRows } from "./panes/reflog-pane"
 import type { RefLogTarget } from "../git/ref-log"
+import type { ItemOperation } from "../domain/item-operation"
+import { SPINNER_RATE_MS } from "./loader"
 import { parseAnsi } from "./ansi"
 import { NO_BRANCHES_FOR_REMOTE, NO_REMOTES, remotePreviewText } from "./panes/remotes-pane"
 import { NO_TAGS, tagPreamble } from "./panes/tags-pane"
@@ -196,6 +198,19 @@ export class RootView {
   private readonly loadCommitFileInspection: ((oid: string, path: string) => Promise<DiffDocument>) | undefined
   private readonly loadTagInspection: ((tag: TagSummary) => Promise<import("../domain/tag").TagPreview>) | undefined
   private readonly loadRefLogInspection: ((target: RefLogTarget) => Promise<string>) | undefined
+  /**
+   * List row id → the operation currently running against it, lazygit's
+   * `State().SetItemOperation` / `ClearItemOperation` (pkg/gui/controllers/helpers/
+   * inline_status_helper.go:99-138). Held by the view, not the model: it describes what the UI is
+   * doing, and it must survive the model replacement a mid-operation refresh performs.
+   */
+  private readonly itemOperations = new Map<string, ItemOperation>()
+  /**
+   * Repaints the panels carrying an inline status, at the spinner's own rate. lazygit runs exactly
+   * this ticker for the duration of an operation (inline_status_helper.go:109-121), and stops it
+   * when the last one finishes so an idle app draws nothing.
+   */
+  private spinnerTimer: ReturnType<typeof setInterval> | undefined
   private readonly onPreviewError: ((error: unknown) => void) | undefined
   private readonly onCommitMessage: ((message: string) => Promise<void>) | undefined
   private readonly onAmendMessage: ((message: string) => Promise<void>) | undefined
@@ -338,7 +353,7 @@ export class RootView {
     }
     // Initialize PanelState for window 3 tabs (branches|remotes|tags) with transient RemoteBranches child
     {
-      const branchesRows = localBranchRows(model, this.branchFilter)
+      const branchesRows = localBranchRows(model, this.branchFilter, this.branchRowOptions())
       const remotesRowsData = remoteRows(model, this.branchFilter)
       const tagsRowsData = tagRows(model, this.branchFilter)
       this.branchesPanel = createPanelState(
@@ -766,8 +781,9 @@ export class RootView {
   }
 
   private refreshBranchesPanel(model: AppModel): void {
-    const branchesRows = localBranchRows(model, this.branchFilter)
-    const remotesRowsData = remoteRows(model, this.branchFilter)
+    const rowOptions = this.branchRowOptions()
+    const branchesRows = localBranchRows(model, this.branchFilter, rowOptions)
+    const remotesRowsData = remoteRows(model, this.branchFilter, rowOptions)
     const tagsRowsData = tagRows(model, this.branchFilter)
     let panel = this.branchesPanel
     panel = { ...panel, views: { ...panel.views, branches: setListRows(panel.views.branches, branchesRows, branchesRows.length === 0 ? [{ kind: "message", text: "No branches" }] : undefined) } }
@@ -1617,7 +1633,8 @@ export class RootView {
     if (id === undefined) return
     if (id.startsWith("local:") && this.onSwitchLocalBranch !== undefined) {
       const name = id.slice("local:".length)
-      this.runUiMutation(() => this.onSwitchLocalBranch!(name))
+      // refs_helper.go:73 attributes a checkout to the branch being checked out.
+      this.runUiMutation(() => this.onSwitchLocalBranch!(name), { rowId: id, operation: "checking-out" })
     }
   }
 
@@ -1674,7 +1691,8 @@ export class RootView {
     const id = panel.views.remotes?.selectedId
     if (id === undefined || !id.startsWith("remote:") || this.onFetchRemote === undefined) return
     const name = id.slice("remote:".length)
-    this.runUiMutation(() => this.onFetchRemote!(name))
+    // remotes_controller.go:365 attributes a remote fetch to the remote's own row.
+    this.runUiMutation(() => this.onFetchRemote!(name), { rowId: id, operation: "fetching" })
   }
 
   private actionBranchInspect(): void {
@@ -1901,14 +1919,25 @@ export class RootView {
     this.runUiMutation(() => this.onFetch!())
   }
 
+  /**
+   * sync_controller.go:161,196 attributes a pull or a push to the *current* branch's row, whichever
+   * panel the key was pressed in.
+   */
+  private currentBranchRowId(): string | undefined {
+    const current = this.model.branches?.localBranches.find((branch) => branch.isCurrent)?.name
+    return current === undefined ? undefined : `local:${current}`
+  }
+
   private actionPull(): void {
     if (this.mutationInFlight || this.onPull === undefined) return
-    this.runUiMutation(() => this.onPull!())
+    const rowId = this.currentBranchRowId()
+    this.runUiMutation(() => this.onPull!(), rowId === undefined ? undefined : { rowId, operation: "pulling" })
   }
 
   private actionPush(): void {
     if (this.mutationInFlight || this.onPush === undefined) return
-    this.runUiMutation(() => this.onPush!())
+    const rowId = this.currentBranchRowId()
+    this.runUiMutation(() => this.onPush!(), rowId === undefined ? undefined : { rowId, operation: "pushing" })
   }
 
   private actionRefresh(): void {
@@ -2171,14 +2200,68 @@ export class RootView {
     return true
   }
 
-  private runUiMutation(operation: () => Promise<void> | undefined): void {
+  /** The clock and per-row extras every branches-panel row build needs. */
+  private branchRowOptions(): BranchRowOptions {
+    return {
+      ...(this.itemOperations.size === 0 ? {} : { itemOperations: this.itemOperations }),
+      ...(this.model.pullRequests === undefined ? {} : { pullRequests: this.model.pullRequests }),
+    }
+  }
+
+  /** The operation showing on a row, if any. Test and diagnostics accessor. */
+  itemOperationFor(rowId: string): ItemOperation | undefined {
+    return this.itemOperations.get(rowId)
+  }
+
+  private startSpinner(): void {
+    if (this.spinnerTimer !== undefined) return
+    this.spinnerTimer = setInterval(() => {
+      this.refreshBranchesPanel(this.model)
+      this.renderBranchesPane()
+      this.root.requestRender()
+    }, SPINNER_RATE_MS)
+  }
+
+  private stopSpinner(): void {
+    if (this.spinnerTimer === undefined) return
+    clearInterval(this.spinnerTimer)
+    this.spinnerTimer = undefined
+  }
+
+  private beginItemOperation(rowId: string, operation: ItemOperation): void {
+    this.itemOperations.set(rowId, operation)
+    this.startSpinner()
+    this.refreshBranchesPanel(this.model)
+    this.renderBranchesPane()
+    this.root.requestRender()
+  }
+
+  private endItemOperation(rowId: string): void {
+    if (!this.itemOperations.delete(rowId)) return
+    if (this.itemOperations.size === 0) this.stopSpinner()
+    this.refreshBranchesPanel(this.model)
+    this.renderBranchesPane()
+    this.root.requestRender()
+  }
+
+  /**
+   * `inlineStatus` attributes the operation to one list row for its duration, which is lazygit's
+   * `WithInlineStatus` (inline_status_helper.go:66-97): the row itself says `Pulling ●∙∙` instead of
+   * showing ahead/behind counts that the operation is in the middle of invalidating.
+   */
+  private runUiMutation(
+    operation: () => Promise<void> | undefined,
+    inlineStatus?: { readonly rowId: string; readonly operation: ItemOperation },
+  ): void {
     if (this.mutationInFlight) return
     this.mutationInFlight = true
     this.clearDiscardState()
     this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
+    if (inlineStatus !== undefined) this.beginItemOperation(inlineStatus.rowId, inlineStatus.operation)
     const promise = operation()
     if (promise === undefined) {
       this.mutationInFlight = false
+      if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
       return
     }
     void promise.catch((error: unknown) => {
@@ -2187,6 +2270,7 @@ export class RootView {
     }).finally(() => {
       this.mutationInFlight = false
       this.clearDiscardState()
+      if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
     })
   }
 
@@ -2704,6 +2788,8 @@ export class RootView {
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
+    // An in-flight inline status would otherwise keep its interval — and the process — alive.
+    this.stopSpinner()
     this.cancelGesture()
     this.root.onMouse = undefined
     this.verticalSplitter.box.onMouseOver = undefined

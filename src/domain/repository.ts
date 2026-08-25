@@ -3,6 +3,7 @@ import type { UpstreamRequired } from "../git/sync"
 import type { CommandRecord } from "./command"
 import type { CommitSummary } from "./commit"
 import type { BranchListing } from "./branch"
+import type { PullRequest } from "./pull-request"
 import type { TagSummary } from "./tag"
 import type { ReflogEntry } from "./reflog"
 import type { Worktree } from "./worktree"
@@ -27,6 +28,12 @@ export type AppModel = {
   readonly branch: string
   readonly upstream?: string
   readonly branches?: BranchListing
+  /**
+   * Branch name → its pull request, keyed as `pullRequestsByBranch` keys them. Absent until the
+   * background refresh has asked `gh`, and absent for good where `gh` is unavailable — so the
+   * branches panel must render identically without it.
+   */
+  readonly pullRequests?: Readonly<Record<string, PullRequest>>
   readonly tags?: readonly TagSummary[]
   /** `git log -g` for HEAD, backing panel 4's Reflog tab. */
   readonly reflog?: readonly ReflogEntry[]

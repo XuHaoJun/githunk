@@ -1,14 +1,30 @@
 import type { CliRenderer } from "@opentui/core"
 import { AppController } from "./controller"
 import type { GitRunner } from "../git/runner"
+import { createGhRunner, loadPullRequests } from "../git/github"
 import { UiStateStore, type UiState as PersistedUiState } from "../ui/ui-state-store"
 import { RootView } from "../ui/root-view"
+import { BackgroundRefresher, DEFAULT_FETCH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from "./background"
 
 export type CreateAppOptions = {
   readonly repositoryRoot: string
   readonly runner: GitRunner
   readonly renderer?: CliRenderer
   readonly onQuit?: () => void
+  /**
+   * lazygit's background routines: `git fetch` every 60s and a working-tree refresh every 10s
+   * (pkg/gui/background.go). Off by default here because the tests and one-shot embeddings that
+   * build an app must not start timers; `src/main.ts` turns it on.
+   */
+  readonly background?: BackgroundOptions
+}
+
+export type BackgroundOptions = {
+  readonly enabled: boolean
+  readonly autoFetch?: boolean
+  readonly autoRefresh?: boolean
+  readonly fetchIntervalMs?: number
+  readonly refreshIntervalMs?: number
 }
 
 export type App = {
@@ -19,10 +35,38 @@ export type App = {
   destroy(): void
 }
 
+/**
+ * Reads the background-routine settings off the environment. githunk has no config file, so these
+ * stand in for lazygit's `git.autoFetch`, `git.autoRefresh` and the `refresher.*` intervals.
+ * `GITHUNK_AUTO_FETCH=0` is the switch someone on a metered or offline connection wants.
+ */
+export function backgroundOptionsFromEnv(env: Record<string, string | undefined> = process.env): BackgroundOptions {
+  const flag = (name: string): boolean | undefined => {
+    const value = env[name]
+    if (value === undefined || value.length === 0) return undefined
+    return value !== "0" && value.toLowerCase() !== "false"
+  }
+  const seconds = (name: string, fallback: number): number => {
+    const value = Number(env[name])
+    return Number.isFinite(value) && value > 0 ? value * 1000 : fallback
+  }
+  return {
+    enabled: flag("GITHUNK_BACKGROUND") ?? true,
+    autoFetch: flag("GITHUNK_AUTO_FETCH") ?? true,
+    autoRefresh: flag("GITHUNK_AUTO_REFRESH") ?? true,
+    fetchIntervalMs: seconds("GITHUNK_FETCH_INTERVAL", DEFAULT_FETCH_INTERVAL_MS),
+    refreshIntervalMs: seconds("GITHUNK_REFRESH_INTERVAL", DEFAULT_REFRESH_INTERVAL_MS),
+  }
+}
+
 export function createApp(options: CreateAppOptions): App {
+  // `gh` is a network call, so it is wired only where a background routine will drive it: an app
+  // built without background routines (tests, one-shot embeddings) never spawns it.
+  const ghRunner = options.background?.enabled === true ? createGhRunner(options.repositoryRoot, options.runner.log) : undefined
   const controller = new AppController({
     repositoryRoot: options.repositoryRoot,
     runner: options.runner,
+    ...(ghRunner === undefined ? {} : { loadPullRequests: () => loadPullRequests(ghRunner) }),
   })
   const renderer = options.renderer
   if (renderer === undefined) {
@@ -162,6 +206,39 @@ export function createApp(options: CreateAppOptions): App {
     onGeometryChange: (state) => { latestGeometry = state },
   })
 
+  const backgroundOptions = options.background
+  /**
+   * lazygit's two background routines. The fetch is followed by a branch refresh, because that is
+   * what changes when remote-tracking refs move — `PostFetchRefresh`
+   * (pkg/gui/controllers/helpers/branches_helper.go, called from background.go:255-259) — and by a
+   * pull-request refresh, which lazygit likewise re-runs from its remotes refresh
+   * (refresh_helper.go:1552-1556).
+   */
+  const background = backgroundOptions?.enabled === true
+    ? new BackgroundRefresher({
+        fetch: async () => {
+          await controller.fetch()
+          await controller.refreshBranches()
+          await controller.refreshPullRequests()
+          view.update(controller.state)
+        },
+        refresh: async () => {
+          await controller.refreshFiles()
+          view.update(controller.state)
+        },
+        ...(backgroundOptions.autoFetch === undefined ? {} : { autoFetch: backgroundOptions.autoFetch }),
+        ...(backgroundOptions.autoRefresh === undefined ? {} : { autoRefresh: backgroundOptions.autoRefresh }),
+        ...(backgroundOptions.fetchIntervalMs === undefined ? {} : { fetchIntervalMs: backgroundOptions.fetchIntervalMs }),
+        ...(backgroundOptions.refreshIntervalMs === undefined ? {} : { refreshIntervalMs: backgroundOptions.refreshIntervalMs }),
+        // Everything the UI drives goes through `runUiMutation`, so this is lazygit's
+        // `backgroundRefreshesPaused()` for githunk: no background git while the user's own runs.
+        isBusy: () => view.isMutating,
+        // A background fetch fails whenever the network does. The command log already carries the
+        // failure; a banner would fight with whatever the user is reading.
+        onError: () => undefined,
+      })
+    : undefined
+
   return {
     controller,
     view,
@@ -172,9 +249,16 @@ export function createApp(options: CreateAppOptions): App {
       }
       await controller.refresh()
       view.update(controller.state)
+      if (background !== undefined) {
+        background.start()
+        // lazygit fetches once immediately, because `goEvery` starts by waiting out the interval
+        // (pkg/gui/background.go:135-137). Not awaited: the app is already usable.
+        void controller.refreshPullRequests().then(() => view.update(controller.state)).catch(() => undefined)
+      }
     },
     saveUiState,
     destroy: () => {
+      background?.stop()
       // Geometry is a convenience: a failed final write must never mask a clean shutdown.
       void saveUiState().catch(() => undefined)
       view.destroy()

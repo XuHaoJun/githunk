@@ -22,6 +22,7 @@ import type { StashCreateOptions, StashDropOptions, StashEntry } from "../domain
 import type { TagPreview, TagSummary } from "../domain/tag"
 import { listTags, loadTagPreview } from "../git/tags"
 import { loadRefLog, refLogFullName, type RefLogTarget } from "../git/ref-log"
+import { pullRequestsByBranch, type PullRequest } from "../domain/pull-request"
 import type { ReflogEntry } from "../domain/reflog"
 import { listReflog } from "../git/reflog"
 import type { Worktree } from "../domain/worktree"
@@ -40,6 +41,7 @@ export type TagListLoader = () => Promise<readonly TagSummary[]>
 export type ReflogListLoader = () => Promise<readonly ReflogEntry[]>
 export type WorktreeListLoader = () => Promise<readonly Worktree[]>
 export type SubmoduleListLoader = () => Promise<readonly SubmoduleConfig[]>
+export type PullRequestListLoader = () => Promise<readonly PullRequest[]>
 
 
 export type AppControllerOptions = {
@@ -71,6 +73,11 @@ export type AppControllerOptions = {
   readonly loadSubmodules?: SubmoduleListLoader
   // alias for symmetry with tagsLoader; prefer loadSubmodules
   readonly submodulesLoader?: SubmoduleListLoader
+  /**
+   * Pull requests for the branches panel's dots. Absent — or failing, which is what an unavailable
+   * `gh` looks like — leaves the panel exactly as it renders without them.
+   */
+  readonly loadPullRequests?: PullRequestListLoader
   readonly mutations?: GitMutations
   readonly commitMutations?: CommitMutations
   readonly reviewStore?: ReviewStore
@@ -139,6 +146,7 @@ export class AppController {
   private readonly loadReflogListing: ReflogListLoader
   private readonly loadWorktreesListing: WorktreeListLoader
   private readonly loadSubmodulesListing: SubmoduleListLoader
+  private readonly loadPullRequestList: PullRequestListLoader | undefined
   private readonly loadCommitList: CommitListLoader
   private readonly loadCommitDetails: CommitLoader
   private readonly loadCommitFile: CommitFilePatchLoader
@@ -210,6 +218,7 @@ export class AppController {
       : options.loadWorktrees ??
         options.worktreesLoader ??
         (runner !== undefined ? () => listWorktrees(runner) : async () => [] as readonly Worktree[])
+    this.loadPullRequestList = options instanceof GitRunner ? undefined : options.loadPullRequests
     this.loadSubmodulesListing = options instanceof GitRunner
       ? () => listSubmodules(options)
       : options.loadSubmodules ??
@@ -233,6 +242,44 @@ export class AppController {
   }
   get state(): AppModel {
     return this.currentState
+  }
+
+  /**
+   * The last pull requests fetched, kept so a branch refresh can re-key them against the new branch
+   * list without another network call — lazygit's `rebuildPullRequestsMap`
+   * (pkg/gui/controllers/helpers/refresh_helper.go:1819-1825).
+   */
+  private pullRequestList: readonly PullRequest[] = []
+
+  private rebuildPullRequests(): void {
+    if (this.pullRequestList.length === 0) return
+    const listing = this.currentState.branches
+    this.currentState = {
+      ...this.currentState,
+      pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? []),
+    }
+  }
+
+  /**
+   * Asks `gh` for this repo's pull requests and re-keys them by branch. A failure is swallowed:
+   * `gh` missing or unauthenticated is the common case, and lazygit likewise only logs when it
+   * cannot reach GitHub (refresh_helper.go:1840-1843).
+   */
+  async refreshPullRequests(): Promise<void> {
+    if (this.loadPullRequestList === undefined) return
+    try {
+      this.pullRequestList = await this.loadPullRequestList()
+    } catch {
+      this.pullRequestList = []
+      this.currentState = { ...this.currentState, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      return
+    }
+    const listing = this.currentState.branches
+    this.currentState = {
+      ...this.currentState,
+      pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? []),
+      commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+    }
   }
 
   async refresh(): Promise<void> {
@@ -400,6 +447,19 @@ export class AppController {
     if (submoduleWarning !== undefined) {
       this.currentState = { ...this.currentState, banner: submoduleWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
     }
+    // The branch list just changed, so the cached pull requests need re-keying against it.
+    this.rebuildPullRequests()
+  }
+
+  /**
+   * lazygit's `RefreshOptions{Scope: []{FILES}}` — the working-tree half of a refresh and nothing
+   * else, which is what the 10-second background routine runs (pkg/gui/background.go:146-154).
+   * Queued behind any mutation in flight, so it cannot read a half-applied index.
+   */
+  async refreshFiles(): Promise<void> {
+    const target = this.currentState.reviewTarget
+    if (target.kind !== "working-tree") return
+    await this.mutationQueue.run(() => this.refreshTarget(target))
   }
 
   async refreshBranches(): Promise<string | undefined> {
@@ -410,6 +470,7 @@ export class AppController {
         branches,
         commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
       }
+      this.rebuildPullRequests()
       return undefined
     } catch (error) {
       const banner = error instanceof GitCommandError

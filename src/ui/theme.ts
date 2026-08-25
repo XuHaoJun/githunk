@@ -53,7 +53,50 @@ export const REFLOG_HASH_FG = "#000080"
 const ANSI_RED = "#800000"
 const ANSI_GREEN = "#008000"
 const ANSI_YELLOW = "#808000"
+const ANSI_MAGENTA = "#800080"
 const ANSI_CYAN = "#008080"
+
+/**
+ * A branch's recency cell. lazygit: `recencyColor := style.FgCyan`, promoted to `style.FgGreen`
+ * for the checked-out branch, whose recency is the literal `"  *"` —
+ * pkg/gui/presentation/branches.go:131-134,141.
+ */
+export const BRANCH_RECENCY_FG = ANSI_CYAN
+export const BRANCH_RECENCY_CURRENT_FG = ANSI_GREEN
+
+/**
+ * The branch-status cell, right of the name. All five states come from
+ * `BranchStatus` — pkg/gui/presentation/branches.go:219-249.
+ */
+export const BRANCH_ITEM_OPERATION_FG = ANSI_CYAN
+export const BRANCH_UPSTREAM_GONE_FG = ANSI_RED
+export const BRANCH_MATCHES_UPSTREAM_FG = ANSI_GREEN
+export const BRANCH_UPSTREAM_NOT_LOCAL_FG = ANSI_MAGENTA
+export const BRANCH_DIVERGED_FG = ANSI_YELLOW
+
+/**
+ * A branch's pull-request dot. Unlike the rest of lazygit's palette these are literal RGB, not
+ * ANSI names — `WithPrColor` in pkg/gui/presentation/branches.go:283-296:
+ *
+ *     case "OPEN":   color.RGB(0x43, 0x84, 0x40, isBg)
+ *     case "CLOSED": color.RGB(0xC9, 0x45, 0x3C, isBg)
+ *     case "MERGED": color.RGB(0x82, 0x59, 0xDD, isBg)
+ *     case "DRAFT":  color.RGB(0x67, 0x6C, 0x75, isBg)
+ *
+ * so they are reproduced exactly rather than pinned to a palette entry.
+ */
+export const PR_OPEN_FG = "#438440"
+export const PR_CLOSED_FG = "#c9453c"
+export const PR_MERGED_FG = "#8259dd"
+export const PR_DRAFT_FG = "#676c75"
+
+/**
+ * An open pull request's checks icon replaces its state dot, and unlike the state colours these
+ * are ANSI names again — `checksStatePresentation`, pkg/gui/presentation/branches.go:344-358.
+ */
+export const PR_CHECKS_PASSING_FG = ANSI_GREEN
+export const PR_CHECKS_PENDING_FG = ANSI_YELLOW
+export const PR_CHECKS_FAILING_FG = ANSI_RED
 
 /**
  * A file (or directory subtree) whose only changes are staged.

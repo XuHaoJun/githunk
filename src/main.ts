@@ -1,5 +1,5 @@
 import { createCliRenderer } from "@opentui/core"
-import { createApp } from "./app/create-app"
+import { backgroundOptionsFromEnv, createApp } from "./app/create-app"
 import { GitCommandError, GitRunner } from "./git/runner"
 
 export async function startApp(): Promise<number> {
@@ -26,6 +26,7 @@ export async function startApp(): Promise<number> {
     runner,
     renderer,
     onQuit: () => renderer.destroy(),
+    background: backgroundOptionsFromEnv(),
   })
   renderer.once("destroy", () => app.destroy())
 

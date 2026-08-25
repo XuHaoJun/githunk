@@ -1,6 +1,10 @@
 import type { AppModel } from "../../app/model"
 import type { Remote } from "../../domain/branch"
+import type { ItemOperation } from "../../domain/item-operation"
+import { itemOperationLabel } from "../../domain/item-operation"
 import { filterItems } from "../../app/filter"
+import { loaderFrame } from "../loader"
+import { BRANCH_ITEM_OPERATION_FG } from "../theme"
 import type { ListRow } from "../list-view"
 import { createListState, renderListRows, setListRows, type ListState } from "../list-view"
 import type { PaneHandle } from "./common"
@@ -28,13 +32,28 @@ export function remotePreviewText(remote: Remote): string {
   return content
 }
 
-export function remoteRows(model: AppModel, filter = ""): ListRow[] {
+export type RemoteRowOptions = {
+  /** Row id (`remote:<name>`) → the operation in flight on it. */
+  readonly itemOperations?: ReadonlyMap<string, ItemOperation>
+  readonly spinnerNowMs?: number
+}
+
+/**
+ * `getRemoteDisplayStrings` — pkg/gui/presentation/remotes.go:29-56 — appends the operation and
+ * spinner in cyan to the row's description while a fetch of that remote is running. The URL cells
+ * are githunk's own; lazygit's description cell is a blue `N branches`, which githunk cannot fill
+ * because it loads a remote's branches on drill-down rather than on refresh.
+ */
+export function remoteRows(model: AppModel, filter = "", options: RemoteRowOptions = {}): ListRow[] {
   const listing = model.branches
   if (listing === undefined) return []
+  const spinnerNowMs = options.spinnerNowMs ?? Date.now()
   const rows: ListRow[] = listing.remotes.map((remote) => {
     const id = `remote:${remote.name}`
+    const operation = options.itemOperations?.get(id)
     const columns: ListRow["columns"] = [
       { text: remote.name, priority: 2 },
+      ...(operation === undefined ? [] : [{ text: `${itemOperationLabel(operation)} ${loaderFrame(spinnerNowMs)}`, priority: 1, color: BRANCH_ITEM_OPERATION_FG }]),
       ...(remote.fetchUrl ? [{ text: remote.fetchUrl, priority: 4, style: "dim" as const }] : []),
       ...(remote.pushUrl !== undefined && remote.pushUrl !== remote.fetchUrl ? [{ text: remote.pushUrl, priority: 4, style: "dim" as const }] : []),
     ]
