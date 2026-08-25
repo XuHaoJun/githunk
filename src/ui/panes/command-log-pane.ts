@@ -1,5 +1,6 @@
 import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
 import { attachVerticalScrollbar, syncVerticalScrollbar } from "./common"
+import { setPlainPaneText } from "./pane-text"
 import type { CommandRecord } from "../../domain/command"
 import type { FocusId } from "../focus"
 
@@ -76,6 +77,7 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
     originalLogMouseEvent?.(event as unknown as never)
   }
   const bar = attachVerticalScrollbar(box, text, "command-log")
+  let rendered: { readonly count: number; readonly newest: CommandRecord | undefined } | undefined
   const pane: CommandLogPaneHandle = {
     id: "command-log",
     box,
@@ -87,7 +89,13 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
       syncVerticalScrollbar(bar, text)
     },
     update(nextRecords: readonly CommandRecord[]) {
-      text.content = nextRecords.length === 0 ? "No commands recorded" : nextRecords.map(formatRecord).join("\n\n")
+      // The log keeps each command's whole stdout, so this text is as large as the biggest patch
+      // the app has run — and `CommandLog.records()` hands back the same array it appends to, so
+      // identity cannot detect a new record. Comparing the count and the newest record does, and
+      // skipping an unchanged log is what keeps it off the cost of every layout pass and refresh.
+      if (rendered !== undefined && rendered.count === nextRecords.length && rendered.newest === nextRecords[nextRecords.length - 1]) return
+      rendered = { count: nextRecords.length, newest: nextRecords[nextRecords.length - 1] }
+      setPlainPaneText(text, nextRecords.length === 0 ? "No commands recorded" : nextRecords.map(formatRecord).join("\n\n"))
       text.scrollY = text.maxScrollY
       syncVerticalScrollbar(bar, text)
     },
