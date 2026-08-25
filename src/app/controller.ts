@@ -82,11 +82,20 @@ function titleFor(target: ReviewTarget, branch = ""): string {
   if (target.kind === "commit") return `Commit — ${target.oid}`
   return `Stash — ${target.ref}`
 }
-function rawPatchForFile(file: ChangedFile, patches: readonly PatchSection[]): string {
+/**
+ * Sections with their file boundaries resolved once. `rawPatchForFile` is asked for every changed
+ * file, so parsing inside it made review fingerprinting cost files times patch size.
+ */
+type IndexedPatchSection = { readonly text: string; readonly files: readonly DiffFile[] }
+
+function indexPatchSections(patches: readonly PatchSection[]): readonly IndexedPatchSection[] {
+  return patches.map((section) => ({ text: section.text, files: parseDiff(section.text).files }))
+}
+
+function rawPatchForFile(file: ChangedFile, sections: readonly IndexedPatchSection[]): string {
   let result = ""
-  for (const section of patches) {
-    const document = parseDiff(section.text)
-    for (const parsed of document.files) {
+  for (const section of sections) {
+    for (const parsed of section.files) {
       if (parsed.newPath !== file.path && parsed.oldPath !== file.path && parsed.newPath !== file.previousPath && parsed.oldPath !== file.previousPath) continue
       result += section.text.slice(parsed.startUtf16, parsed.endUtf16)
     }
@@ -752,7 +761,7 @@ export class AppController {
     const fingerprint = fingerprintFile(this.currentState.reviewTarget, {
       currentPath: file.path,
       previousPath: file.previousPath,
-      rawPatch: rawPatchForFile(file, this.currentState.rawPatchSections),
+      rawPatch: rawPatchForFile(file, indexPatchSections(this.currentState.rawPatchSections)),
     })
     const key = targetKey(this.currentState.reviewTarget)
     const targetRecord = ownValue(this.reviewDatabase.targets, key) ?? { files: {} }
@@ -912,11 +921,12 @@ export class AppController {
     }
     const record = ownValue(this.reviewDatabase.targets, targetKey(target))
     const statuses: Record<string, ReviewFileState> = Object.create(null) as Record<string, ReviewFileState>
+    const sections = indexPatchSections(patches)
     for (const file of files) {
       const fingerprint = fingerprintFile(target, {
         currentPath: file.path,
         previousPath: file.previousPath,
-        rawPatch: rawPatchForFile(file, patches),
+        rawPatch: rawPatchForFile(file, sections),
       })
       statuses[file.path] = reviewStateFor(ownValue(record?.files, file.path), fingerprint)
     }

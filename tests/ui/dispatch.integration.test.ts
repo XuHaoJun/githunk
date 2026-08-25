@@ -3,7 +3,30 @@ import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import { getMainCursorTarget } from "../../src/ui/panes/main-pane"
 import { paneScrollbar } from "../../src/ui/panes/common"
 import { branchPaneItems } from "../../src/ui/panes/branches-pane"
-import { createTempRepository } from "../helpers/temp-repository"
+import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
+
+/** One tracked file with two separated edits, so its patch has two hunks. */
+async function twoHunkFile(repository: TempRepository): Promise<void> {
+  const base = Array.from({ length: 40 }, (_value, index) => `line ${index}`)
+  await repository.write("a.txt", `${base.join("\n")}\n`)
+  await repository.git(["add", "-A"])
+  await repository.git(["commit", "-m", "base"])
+  const edited = [...base]
+  edited[1] = "line 1 changed"
+  edited[35] = "line 35 changed"
+  await repository.write("a.txt", `${edited.join("\n")}\n`)
+}
+
+/** One tracked file whose patch is both taller than the viewport and several hunks long. */
+async function tallMultiHunkFile(repository: TempRepository): Promise<void> {
+  const base = Array.from({ length: 200 }, (_value, index) => `line ${index}`)
+  await repository.write("a.txt", `${base.join("\n")}\n`)
+  await repository.git(["add", "-A"])
+  await repository.git(["commit", "-m", "base"])
+  const edited = [...base]
+  for (const index of [5, 100, 195]) edited[index] = `line ${index} changed`
+  await repository.write("a.txt", `${edited.join("\n")}\n`)
+}
 
 describe("root view dispatch", () => {
   let harness: ShellHarness | undefined
@@ -605,12 +628,10 @@ describe("navigation keys", () => {
   })
 
   test("h and l move between hunks inside the main pane without moving focus", async () => {
-    harness = await createShellHarness()
+    // The main pane holds the selected file's patch, so hunk navigation needs a file with two
+    // hunks: moveMainCursor clamps to the current target when the patch has only one.
+    harness = await createShellHarness({ setup: twoHunkFile })
     const view = harness.app.view!
-    // moveMainCursor clamps to the current target when the patch has only one, so
-    // give it a second unstaged file to navigate onto.
-    await harness.repository.write("c.txt", "second file\n")
-    await harness.app.refresh()
 
     await harness.pressKey("2")
     await harness.pressKey("RETURN")
@@ -724,27 +745,19 @@ describe("overflow scrollbars and keyboard auto-scroll", () => {
   })
 
   test("hunk moves in the main pane scroll the target hunk's header into view", async () => {
-    harness = await createShellHarness({ height: 24 })
-    await harness.repository.write("big.txt", `${Array.from({ length: 120 }, (_v, i) => `line ${i}`).join("\n")}\n`)
-    const stage = Bun.spawn(["git", "add", "big.txt"], { cwd: harness.repository.path })
-    await stage.exited
-    await harness.app.refresh()
+    harness = await createShellHarness({ height: 24, setup: tallMultiHunkFile })
 
     await harness.pressKey("0")
     for (let moved = 0; moved < 8; moved += 1) await harness.pressKey("j")
 
     const pane = harness.app.view!.mainPane
-    // A tall diff scrolled near its end: the revealed hunk header sits at the viewport bottom.
+    // A tall diff scrolled to its last hunk: the revealed hunk header sits at the viewport bottom.
     expect(pane.text.scrollY).toBeGreaterThan(0)
-    expect(harness.frame()).toContain("@@ -0,0 +1 @@")
+    expect(harness.frame()).toContain("@@ -193,7 +193,7 @@")
   })
 
   test("the scrollbar thumb tracks hunk moves in the main pane", async () => {
-    harness = await createShellHarness({ height: 24 })
-    await harness.repository.write("big.txt", `${Array.from({ length: 120 }, (_v, i) => `line ${i}`).join("\n")}\n`)
-    const stage = Bun.spawn(["git", "add", "big.txt"], { cwd: harness.repository.path })
-    await stage.exited
-    await harness.app.refresh()
+    harness = await createShellHarness({ height: 24, setup: tallMultiHunkFile })
 
     await harness.pressKey("0")
     for (let moved = 0; moved < 8; moved += 1) await harness.pressKey("j")
@@ -759,11 +772,7 @@ describe("overflow scrollbars and keyboard auto-scroll", () => {
   })
 
   test("the scrollbar thumb tracks half-page scrolls in the main pane", async () => {
-    harness = await createShellHarness({ height: 24 })
-    await harness.repository.write("big.txt", `${Array.from({ length: 120 }, (_v, i) => `line ${i}`).join("\n")}\n`)
-    const stage = Bun.spawn(["git", "add", "big.txt"], { cwd: harness.repository.path })
-    await stage.exited
-    await harness.app.refresh()
+    harness = await createShellHarness({ height: 24, setup: tallMultiHunkFile })
 
     await harness.pressKey("0")
     await harness.pressKey("d", { ctrl: true })

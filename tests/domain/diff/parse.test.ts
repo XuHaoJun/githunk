@@ -79,7 +79,7 @@ describe("parseDiff hostile unified diff", () => {
   test("render keeps source text selectable while exposing explicit display map", () => {
     const document = parseDiff(fixture)
     const rendered = renderDiff(document)
-    expect(rendered.styledText.chunks.length).toBeGreaterThan(3)
+    expect(rendered.displayLines.length).toBe(document.lines.length)
     expect(rendered.displayText).toContain("new value")
     expect(rendered.displayText).not.toBe(document.text)
     expect(rendered.displayToRaw.length).toBeGreaterThan(0)
