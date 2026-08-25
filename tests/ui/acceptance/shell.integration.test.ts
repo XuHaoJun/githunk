@@ -38,9 +38,10 @@ describe("review shell acceptance", () => {
     await harness.pressKey("2")
     const before = harness.app.view!.geometry.windows.stash!
     const heightBeforeFocus = before.y1 - before.y0 + 1
+    expect(heightBeforeFocus).toBe(3)
     await harness.pressKey("5")
     const focused = harness.app.view!.geometry.windows.stash!
-    expect(focused.y1 - focused.y0 + 1).toBe(heightBeforeFocus)
+    expect(focused.y1 - focused.y0 + 1).toBeGreaterThan(heightBeforeFocus)
   })
 
   test("hjkl navigates: h and l between panes, j and k within one", async () => {

@@ -457,7 +457,7 @@ describe("screen modes and layout", () => {
 
     await harness.pressKey("5")
     const focusedStash = view.geometry.windows.stash!
-    expect(focusedStash.y1 - focusedStash.y0 + 1).toBe(stashHeight)
+    expect(focusedStash.y1 - focusedStash.y0 + 1).toBeGreaterThan(stashHeight)
   })
 
   test("a terminal resize keeps the layout consistent", async () => {
