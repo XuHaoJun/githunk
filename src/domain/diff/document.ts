@@ -49,10 +49,24 @@ export type DisplaySourceSegment = {
   readonly lineIndex: number
 }
 
+export type DiffDisplayLineStyle = "plain" | "addition" | "deletion" | "hunk-header" | "metadata"
+
+/**
+ * How one rendered row is painted: a dim line-number gutter `gutterCols` columns wide (0 when
+ * the line has none), then `style` for the rest of the row. A renderer needs no other input to
+ * colour a row, so rows can be painted lazily — only the ones the viewport actually shows.
+ */
+export type DiffDisplayLine = {
+  readonly gutterCols: number
+  readonly style: DiffDisplayLineStyle
+}
+
 export type DisplayOffsetMap = {
   readonly displayText: string
   readonly displayToRaw: readonly number[]
   readonly segments: readonly DisplaySourceSegment[]
+  /** One entry per document line, in display order: `displayText`'s rows. */
+  readonly displayLines: readonly DiffDisplayLine[]
 }
 
 export type DiffDocument = {
@@ -60,11 +74,7 @@ export type DiffDocument = {
   readonly lines: readonly DiffLine[]
   readonly files: readonly DiffFile[]
   /** Populated by renderDiff so selection mapping can use the exact displayed document. */
-  rendered?: {
-    readonly displayText: string
-    readonly displayToRaw: readonly number[]
-    readonly segments: readonly DisplaySourceSegment[]
-  }
+  rendered?: DisplayOffsetMap
 }
 
 export type CopyMode = "text" | "added" | "removed" | "patch" | "hunk" | "file"

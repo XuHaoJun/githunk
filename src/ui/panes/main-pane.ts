@@ -1,10 +1,9 @@
-import { StyledText } from "@opentui/core"
-import type { CliRenderer, TextChunk } from "@opentui/core"
+import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
-import { parseDiff } from "../../domain/diff/parse"
 import type { DiffDocument, DiffFile } from "../../domain/diff/document"
 import { renderDiff } from "../../domain/diff/render"
 import { createPane, type PaneHandle } from "./common"
+import { installDiffText, releaseDiffText } from "./diff-text"
 
 // Main generation has no patch threshold — all patches go through preview gate (Task 7)
 
@@ -132,25 +131,26 @@ function renderedTextFor(content: MainPaneContent): string {
   return content.preamble ?? ""
 }
 
-function buildStyledContent(content: MainPaneContent): string | StyledText {
-  if (content.document !== undefined) {
-    const preamble = content.preamble ?? ""
-    const diffStyled = renderDiff(content.document).styledText
-    if (preamble.length === 0) return diffStyled
-    const plainChunk = { __isChunk: true as const, text: preamble } as unknown as TextChunk
-    // Access chunks via guarded property check to avoid inline cast lint
-    if (diffStyled !== null && typeof diffStyled === "object" && "chunks" in diffStyled) {
-      const maybe = (diffStyled as unknown as { chunks: unknown }).chunks
-      if (Array.isArray(maybe) && maybe.length > 0) {
-        const diffChunks = maybe as unknown as TextChunk[]
-        return new StyledText([plainChunk, ...diffChunks])
-      }
-    }
-    return `${preamble}${content.document.text}`
-  }
+function buildPlainContent(content: MainPaneContent): string {
   if (content.plainText !== undefined) return content.plainText
   if (content.preamble !== undefined) return content.preamble
   return "No content"
+}
+
+/**
+ * Re-clamps the viewport to content that has not changed. A resize moves `maxScrollY`/`maxScrollX`
+ * without touching what the pane shows, so this is all a layout pass owes the main pane.
+ */
+export function clampMainScroll(pane: PaneHandle): void {
+  pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
+  pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
+  pane.syncScrollbar()
+}
+
+/** Replaces whatever a diff left behind, so plain content never inherits its highlights. */
+function updatePlain(pane: PaneHandle, value: string): void {
+  releaseDiffText(pane.text)
+  pane.update(value)
 }
 export function installMainContent(pane: PaneHandle, content: MainPaneContent, tooSmall: boolean): void {
   const previousContent = installedContents.get(pane)
@@ -178,7 +178,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
 
   if (tooSmall) {
     pane.box.title = paneTitles.get(pane) ?? `0 Main — ${content.label}`
-    pane.update("Terminal too small")
+    updatePlain(pane, "Terminal too small")
     documents.delete(pane)
     clearSelection()
     pane.text.scrollX = 0
@@ -237,7 +237,8 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
       cursorTargets.delete(pane)
     }
     pane.text.wrapMode = "char"
-    pane.update(buildStyledContent(content))
+    const rendered = renderDiff(doc)
+    installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })
     // clamp again after content size known
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
@@ -247,8 +248,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
 
   // plainText or preamble-only
   documents.delete(pane)
-  const styled = buildStyledContent(content)
-  pane.update(styled)
+  updatePlain(pane, buildPlainContent(content))
   pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
   pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
   pane.syncScrollbar()

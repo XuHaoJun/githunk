@@ -53,7 +53,7 @@ import {
 } from "./file-tree"
 import { submoduleFullName } from "../domain/submodule"
 import type { ChangedFile } from "../domain/review-target"
-import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, type MainPaneContent } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, type MainPaneContent } from "./panes/main-pane"
 import { commitFileRows } from "./panes/commit-files-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
@@ -244,6 +244,10 @@ export class RootView {
   stashState: ListState
   private mainGate!: MainPreviewGate
   private installedMainContent: MainPaneContent | undefined
+  private filesDocumentCache: { readonly text: string; readonly document: DiffDocument } | undefined
+  private filesSelectionCache: { readonly text: string; readonly rowId: string; readonly document: DiffDocument } | undefined
+  /** `tooSmall` as of the last main-pane install, so a layout pass can tell whether it changed. */
+  private installedMainTooSmall = false
   private mainLoading = false
   private previewInflight: Promise<void> = Promise.resolve()
   private readonly registry = createRegistry()
@@ -386,6 +390,7 @@ export class RootView {
     this.mainGate = new MainPreviewGate({
       install: (content) => {
         this.installedMainContent = content
+        this.installedMainTooSmall = this.geometry.tooSmall
         installMainPaneContent(this.panes.main, content, this.geometry.tooSmall)
         this.root.requestRender()
       },
@@ -416,7 +421,8 @@ export class RootView {
     this.root.add(this.keybindingMenu.box)
     renderer.root.add(this.root)
 
-    this.focusManager.onChange = (focus, _logVisible) => {
+    this.focusManager.onChange = (focus, logVisible) => {
+      if (logVisible) this.commandLog.update(this.model.commandLog)
       this.pendingClick = undefined
       this.cancelGesture()
       this.clearDiscardState()
@@ -524,7 +530,9 @@ export class RootView {
     // the main view, the *side* context underneath it in the stack is the one asked to
     // re-render main — the main context itself has nothing to render.
     this.syncPreviewForFocus(this.focusManager.active === "main" ? this.focusManager.lastSide : this.focusManager.active)
-    this.commandLog.update(model.commandLog)
+    // A hidden log is not worth rendering: it holds every command's whole stdout, so the text is
+    // as large as the biggest patch the session has run. `applyFocus` renders it when it opens.
+    if (this.focusManager.logVisible) this.commandLog.update(model.commandLog)
     this.recomputeLayout()
   }
   private clearDiscardState(): void {
@@ -2191,6 +2199,7 @@ export class RootView {
 
   installMainContent(content: MainPaneContent): void {
     this.installedMainContent = content
+    this.installedMainTooSmall = this.geometry.tooSmall
     installMainPaneContent(this.panes.main, content, this.geometry.tooSmall)
     this.root.requestRender()
   }
@@ -2243,18 +2252,56 @@ export class RootView {
     this.mainGate.installSynchronous(content)
   }
 
+  /**
+   * The whole working-tree patch, parsed once per refresh. Focus changes and cursor moves
+   * re-present the same patch, so this is keyed on the patch text rather than redone per keypress;
+   * parsing is pure and the document is immutable, so sharing it is safe.
+   */
+  private filesDocument(text: string): DiffDocument | undefined {
+    const cached = this.filesDocumentCache
+    if (cached !== undefined && cached.text === text) return cached.document
+    try {
+      const document = parseDiff(text)
+      this.filesDocumentCache = { text, document }
+      return document
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * The selected node's own patch, as lazygit's files pane renders it: a file row diffs that file
+   * and a directory row diffs its subtree (`pathsForDiff` →
+   * `WorktreeFileDiffCmdObj`, pkg/gui/controllers/files_controller.go:366). Sliced out of the
+   * already-parsed tree patch instead of re-running git, and re-parsed standalone so line staging
+   * and selection see a patch `git apply` accepts.
+   */
+  private selectedFilesDocument(row: FileTreeRow<ChangedFile> | undefined, text: string, document: DiffDocument): DiffDocument {
+    if (row === undefined) return document
+    const cached = this.filesSelectionCache
+    if (cached !== undefined && cached.text === text && cached.rowId === row.id) return cached.document
+    const prefix = row.kind === "directory" ? `${row.path}/` : undefined
+    const wanted = (path: string | undefined): boolean =>
+      path !== undefined && path !== "/dev/null" && (prefix === undefined ? path === row.path : path.startsWith(prefix))
+    let sliced = ""
+    for (const file of document.files) {
+      if (wanted(file.newPath) || wanted(file.oldPath)) sliced += text.slice(file.startUtf16, file.endUtf16)
+    }
+    // A one-file patch is its own slice; nothing to gain from parsing it twice. An empty slice
+    // means the row named nothing in the patch (a submodule row, say), so keep the whole patch.
+    const document_ = sliced.length === 0 || sliced.length === text.length ? document : parseDiff(sliced)
+    this.filesSelectionCache = { text, rowId: row.id, document: document_ }
+    return document_
+  }
+
   private presentFilesContent(model: AppModel): MainPaneContent {
-    // A directory row labels the preview with the directory: githunk's main pane always shows the
-    // whole working-tree patch, which already is the subtree's combined diff lazygit renders there.
     const row = this.selectedFileRow()
     const stableId = row?.path ?? "empty"
     const label = row?.path ?? "Files"
     const text = model.rawPatchSections.length > 0 ? model.rawPatchSections.map((p) => p.text).join("") : model.patches.map((p) => p.text).join("")
     if (text.length > 0) {
-      try {
-        const doc = parseDiff(text)
-        return { source: "files", stableId, label, document: doc }
-      } catch {}
+      const document = this.filesDocument(text)
+      if (document !== undefined) return { source: "files", stableId, label, document: this.selectedFilesDocument(row, text, document) }
     }
     return { source: "files", stableId, label, plainText: text.length > 0 ? text : "No patch loaded" }
   }
@@ -3132,7 +3179,16 @@ export class RootView {
       this.commandLog.update(this.model.commandLog)
     }
     if (this.installedMainContent !== undefined) {
-      installMainPaneContent(this.panes.main, this.installedMainContent, this.geometry.tooSmall)
+      // What the main pane shows does not depend on geometry — except for the "Terminal too
+      // small" swap — so only that transition reinstalls. A resize still moves the scroll
+      // bounds, which is all the other branch has to answer for. (Reinstalling unconditionally
+      // meant every focus change, splitter drag and resize re-pushed the whole patch.)
+      if (this.geometry.tooSmall !== this.installedMainTooSmall) {
+        this.installedMainTooSmall = this.geometry.tooSmall
+        installMainPaneContent(this.panes.main, this.installedMainContent, this.geometry.tooSmall)
+      } else {
+        clampMainScroll(this.panes.main)
+      }
     }
 
     place(this.hintsBar.hints, "hints")
