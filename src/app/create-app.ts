@@ -219,6 +219,10 @@ export function createApp(options: CreateAppOptions): App {
         fetch: async () => {
           await controller.fetch()
           await controller.refreshBranches()
+          // Painted before the pull requests are asked for: `gh` is a network call, and lazygit
+          // likewise lands its pull requests in their own pass whenever they happen to arrive
+          // (refresh_helper.go:1845-1855) rather than holding the branch counts behind them.
+          view.update(controller.state)
           await controller.refreshPullRequests()
           view.update(controller.state)
         },
