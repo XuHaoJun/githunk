@@ -109,3 +109,21 @@ describe("tab-specific pane rows", () => {
     expect(remoteBranchRows(emptyModel, "origin")).toEqual([])
   })
 })
+
+describe("row column alignment", () => {
+  test("remote rows keep a fixed cell count so an operation label cannot shift the URLs", () => {
+    const rows = remoteRows({
+      ...model,
+      branches: {
+        ...model.branches!,
+        remotes: [
+          { name: "origin", fetchUrl: "https://example.com/a.git", pushUrl: "ssh://example.com/a.git" },
+          { name: "bare", branches: [] },
+        ],
+      },
+    } as AppModel)
+    expect(new Set(rows.map((row) => row.columns.length)).size).toBe(1)
+    expect(rows.map((row) => row.columns[0]!.text)).toEqual(["origin", "bare"])
+    expect(rows.map((row) => row.columns[2]!.text)).toEqual(["https://example.com/a.git", ""])
+  })
+})

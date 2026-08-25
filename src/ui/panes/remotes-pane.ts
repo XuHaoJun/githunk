@@ -51,11 +51,13 @@ export function remoteRows(model: AppModel, filter = "", options: RemoteRowOptio
   const rows: ListRow[] = listing.remotes.map((remote) => {
     const id = `remote:${remote.name}`
     const operation = options.itemOperations?.get(id)
+    // Fixed positions, blank where empty: ../list-view addresses columns by index (see the same
+    // note in ./branches-pane).
     const columns: ListRow["columns"] = [
       { text: remote.name, priority: 2 },
-      ...(operation === undefined ? [] : [{ text: `${itemOperationLabel(operation)} ${loaderFrame(spinnerNowMs)}`, priority: 1, color: BRANCH_ITEM_OPERATION_FG }]),
-      ...(remote.fetchUrl ? [{ text: remote.fetchUrl, priority: 4, style: "dim" as const }] : []),
-      ...(remote.pushUrl !== undefined && remote.pushUrl !== remote.fetchUrl ? [{ text: remote.pushUrl, priority: 4, style: "dim" as const }] : []),
+      { text: operation === undefined ? "" : `${itemOperationLabel(operation)} ${loaderFrame(spinnerNowMs)}`, priority: 1, color: BRANCH_ITEM_OPERATION_FG },
+      { text: remote.fetchUrl ?? "", priority: 4, style: "dim" as const },
+      { text: remote.pushUrl !== undefined && remote.pushUrl !== remote.fetchUrl ? remote.pushUrl : "", priority: 4, style: "dim" as const },
     ]
     return { id, columns }
   })

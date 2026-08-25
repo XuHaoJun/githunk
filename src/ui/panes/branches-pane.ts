@@ -73,14 +73,13 @@ export function localBranchRows(model: AppModel, filter = "", options: BranchRow
     // where *every* cell is blank is dropped whole, so a repo without pull requests loses nothing.
     columns.push({ text: icon?.text ?? "", priority: 0, ...(icon?.color === undefined ? {} : { color: icon.color }) })
     columns.push({ text: branch.name, priority: 2, flex: true })
+    // Every cell below is present on every row, blank where the branch has nothing to put in it:
+    // ../list-view addresses columns by index and pads each to its widest cell, so a row that
+    // omitted one would shift every later cell of that row into the wrong column.
     const status = branchStatus(branch, options.itemOperations?.get(id), spinnerNowMs)
-    if (status !== undefined) columns.push({ text: status.text, priority: 3, color: status.color })
-    if (branch.upstream !== undefined && branch.upstream.length > 0) {
-      columns.push({ text: `↳${branch.upstream}`, priority: 5, style: "dim" })
-    }
-    if (branch.subject !== undefined && branch.subject.length > 0) {
-      columns.push({ text: branch.subject, priority: 4 })
-    }
+    columns.push({ text: status?.text ?? "", priority: 3, ...(status === undefined ? {} : { color: status.color }) })
+    columns.push({ text: branch.upstream === undefined || branch.upstream.length === 0 ? "" : `↳${branch.upstream}`, priority: 5, style: "dim" })
+    columns.push({ text: branch.subject ?? "", priority: 4 })
     return { id, columns }
   })
   if (filter.length === 0) return rows

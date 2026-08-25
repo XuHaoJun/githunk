@@ -123,6 +123,19 @@ describe("localBranchRows", () => {
     expect(rows.find((row) => row.id === "local:main")!.columns[1]!.text).toBe("")
   })
 
+  test("every row has the same cells in the same positions, whatever the branch lacks", () => {
+    // ../../src/ui/list-view addresses columns by index and pads each to its widest cell, so a row
+    // that omitted a cell would push its later cells into the wrong columns — which silently hid
+    // the status of every branch whose neighbour had no status.
+    const rows = localBranchRows(modelWith(branches), "", { now })
+    const widths = new Set(rows.map((row) => row.columns.length))
+    expect(widths.size).toBe(1)
+    const columnTexts = (index: number): readonly string[] => rows.map((row) => row.columns[index]!.text)
+    expect(columnTexts(2)).toEqual(["main", "feature", "local-only"])
+    expect(columnTexts(3)).toEqual(["✓", "↓7↑3", ""])
+    expect(columnTexts(5)).toEqual(["trunk work", "feature work", "no upstream"])
+  })
+
   test("the checked-out branch stays pinned above the date order", () => {
     const rows = localBranchRows(modelWith(branches), "", { now })
     expect(rows.map((row) => row.id)).toEqual(["local:main", "local:feature", "local:local-only"])
