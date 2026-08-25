@@ -90,7 +90,13 @@ describe("lazygit core UI acceptance", () => {
     const commitsText = view.renderedListText("commits")
     expect(commitsText).toContain("NR")
     expect(commitsText).toMatch(/\b[0-9a-f]{8}\b/)
-    expect(commitsText).toMatch(/[●│┬]/)
+    // Lazygit's graph glyphs: ○ commit, ◎ merge, box-drawing connectors between lanes.
+    expect(commitsText).toMatch(/[○◎]/)
+    expect(commitsText).toMatch(/[│─╮╯╭╰]/)
+    // Author initials occupy a fixed two-cell column on every row, so nothing downstream shifts.
+    const commitLines = commitsText.split("\n").filter((line) => /^[0-9a-f]{8} /.test(line))
+    expect(commitLines.length).toBeGreaterThan(1)
+    for (const line of commitLines) expect(line).toMatch(/^[0-9a-f]{8} .{2} /)
     expect(commitsText).not.toContain("▸")
     expect(commitsText).not.toContain(">")
     expect(view.selectedRowHasBackground("commits")).toBe(true)

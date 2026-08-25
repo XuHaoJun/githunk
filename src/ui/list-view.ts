@@ -1,10 +1,18 @@
 import type { TextChunk } from "@opentui/core"
-import { StyledText, bgBlue, cyan, dim, green, magenta, yellow } from "@opentui/core"
+import { StyledText, bgBlue, cyan, dim, fg, green, magenta, yellow } from "@opentui/core"
+
+export type ListColumnSegment = { readonly text: string; readonly color?: string | undefined }
 
 export type ListColumn = {
   readonly text: string
   readonly priority: number
   readonly style?: "default" | "dim" | "cyan" | "green" | "yellow" | "magenta"
+  /** Truecolor foreground (hex). Wins over `style` when set. */
+  readonly color?: string
+  /** Per-character colouring for `text`; the segments must concatenate back to `text`. */
+  readonly segments?: readonly ListColumnSegment[]
+  /** Absorbs leftover width and is never dropped; defaults to the last surviving column. */
+  readonly flex?: boolean
 }
 export type ListRow = { readonly id: string; readonly columns: readonly ListColumn[] }
 export type ListDisplayRow =
@@ -146,7 +154,8 @@ function plainChunk(text: string): TextChunk {
   return { __isChunk: true as const, text }
 }
 
-function styleToChunk(text: string, style: ListColumn["style"]): TextChunk {
+function styleToChunk(text: string, style: ListColumn["style"], color?: string): TextChunk {
+  if (color !== undefined) return fg(color)(text) as TextChunk
   switch (style) {
     case "dim":
       return dim(text)
@@ -178,86 +187,106 @@ function truncateToWidth(text: string, width: number): string {
   return chars.slice(0, width).join("")
 }
 
-function renderColumns(columns: readonly ListColumn[], width: number): TextChunk[] {
+/**
+ * Column geometry for a whole list, mirroring lazygit's `utils.RenderDisplayStrings`:
+ * every column is padded to the widest cell in that column so the ones after it line
+ * up on every row, and columns that are blank on every row disappear entirely.
+ *
+ * Deciding this once per list — rather than per row — is what keeps a variable-width
+ * cell (an author's initials, a graph lane) from shifting the rest of the row around.
+ */
+export type ListColumnLayout = {
+  /** Indices into each row's `columns`, in render order. */
+  readonly indexes: readonly number[]
+  /** Rendered width for each entry of `indexes`. */
+  readonly widths: readonly number[]
+}
+
+export function computeColumnLayout(rows: readonly ListRow[], width: number): ListColumnLayout {
   const safeWidth = Math.max(0, Math.floor(width))
-  // Prepare mutable texts
-  const texts = columns.map((c) => c.text)
-  const styles = columns.map((c) => c.style)
-  const priorities = columns.map((c) => c.priority)
+  const columnCount = rows.reduce((max, row) => Math.max(max, row.columns.length), 0)
+  if (columnCount === 0 || safeWidth === 0) return { indexes: [], widths: [] }
 
-  // Order indices by priority descending (least important first)
-  const order = priorities
-    .map((p, idx) => ({ p, idx }))
-    .sort((a, b) => {
-      if (b.p !== a.p) return b.p - a.p
-      // For equal priority, truncate later columns first (stable-ish)
-      return b.idx - a.idx
-    })
-    .map((o) => o.idx)
-
-  const sepWidth = 1 // single space separator
-  const sepCount = Math.max(0, columns.length - 1)
-
-  let total = texts.reduce((sum, t) => sum + visualLength(t), 0) + sepCount * sepWidth
-
-  if (total <= safeWidth) {
-    // No truncation needed
-  } else {
-    let excess = total - safeWidth
-    for (const idx of order) {
-      if (excess <= 0) break
-      const len = visualLength(texts[idx]!)
-      if (len === 0) continue
-      const reduceBy = Math.min(len, excess)
-      const chars = [...texts[idx]!]
-      const truncated = chars.slice(0, chars.length - reduceBy).join("")
-      texts[idx] = truncated
-      excess -= reduceBy
+  const rawWidths: number[] = []
+  const priorities: number[] = []
+  const flexes: boolean[] = []
+  for (let j = 0; j < columnCount; j++) {
+    let maxWidth = 0
+    let priority = 0
+    let flex = false
+    for (const row of rows) {
+      const column = row.columns[j]
+      if (column === undefined) continue
+      maxWidth = Math.max(maxWidth, visualLength(column.text))
+      priority = Math.max(priority, column.priority)
+      if (column.flex === true) flex = true
     }
-    // If still excess after truncating all columns to zero, we will have separators left; handle by not rendering trailing separators
-    // Recalculate total after loop – if still > width, we will handle separator trimming below
+    rawWidths.push(maxWidth)
+    priorities.push(priority)
+    flexes.push(flex)
   }
 
-  const chunks: TextChunk[] = []
-  let first = true
-  for (let i = 0; i < texts.length; i++) {
-    const txt = texts[i]!
-    // Skip empty columns? Keep them as zero-width but still need separator logic
-    // If column became empty due to truncation, skip its chunk but keep separator handling minimal
-    if (txt.length === 0) {
-      // If we skipped, we should not add separator before it, but we already counted separators.
-      // For simplicity, if all remaining leading columns are empty, just continue.
-      // We'll emit separator only if we have emitted something before and there is a later non-empty column.
-      // Instead we track emission.
-      continue
-    }
-    if (!first) {
-      chunks.push(plainChunk(" "))
-    }
-    first = false
-    chunks.push(styleToChunk(txt, styles[i]) as TextChunk)
-  }
+  // Blank-everywhere columns are dropped, so an absent marker leaves no gap.
+  let indexes = rawWidths.map((_, j) => j).filter((j) => rawWidths[j]! > 0)
+  if (indexes.length === 0) return { indexes: [], widths: [] }
 
-  let plainLen = chunks.reduce((sum, c) => sum + visualLength(c.text), 0)
-  if (plainLen > safeWidth) {
-    let overflow = plainLen - safeWidth
-    for (let i = chunks.length - 1; i >= 0 && overflow > 0; i--) {
-      const c = chunks[i]!
-      const len = visualLength(c.text)
-      if (len === 0) continue
-      if (len <= overflow) {
-        overflow -= len
-        chunks.splice(i, 1)
-      } else {
-        const chars = [...c.text]
-        const kept = chars.slice(0, chars.length - overflow).join("")
-        const next: TextChunk = { ...c, text: kept }
-        chunks[i] = next
-        overflow = 0
+  // The flex column carries the row's primary content, so it shrinks instead of
+  // disappearing. Without a declared one, the widest column plays that part.
+  let flexIndex = indexes.find((j) => flexes[j] === true)
+  if (flexIndex === undefined) {
+    flexIndex = indexes.reduce((best, j) => (rawWidths[j]! > rawWidths[best]! ? j : best), indexes[0]!)
+  }
+  const minFlex = Math.max(1, Math.min(rawWidths[flexIndex]!, Math.floor(safeWidth / 2)))
+
+  const spaceForFlex = (kept: readonly number[]): number =>
+    safeWidth - kept.reduce((sum, j) => sum + (j === flexIndex ? 0 : rawWidths[j]!), 0) - Math.max(0, kept.length - 1)
+
+  // Shed whole columns — least important first — only once squeezing the flex
+  // column alone would leave it unreadably narrow.
+  while (indexes.length > 1 && spaceForFlex(indexes) < minFlex) {
+    let victim = -1
+    for (const j of indexes) {
+      if (j === flexIndex) continue
+      if (victim === -1 || priorities[j]! > priorities[victim]! || (priorities[j] === priorities[victim] && j > victim)) {
+        victim = j
       }
     }
+    if (victim === -1) break
+    indexes = indexes.filter((j) => j !== victim)
   }
 
+  const flexWidth = Math.max(0, Math.min(rawWidths[flexIndex]!, spaceForFlex(indexes)))
+  const widths = indexes.map((j) => (j === flexIndex ? flexWidth : rawWidths[j]!))
+  return { indexes, widths }
+}
+
+function renderColumns(row: ListRow, layout: ListColumnLayout): TextChunk[] {
+  const chunks: TextChunk[] = []
+  for (let i = 0; i < layout.indexes.length; i++) {
+    const column = row.columns[layout.indexes[i]!]
+    const cellWidth = layout.widths[i]!
+    const isLast = i === layout.indexes.length - 1
+    if (i > 0) chunks.push(plainChunk(" "))
+    const text = column?.text ?? ""
+    const truncated = truncateToWidth(text, cellWidth)
+    if (truncated.length > 0) {
+      if (column?.segments !== undefined && truncated === text) {
+        for (const segment of column.segments) {
+          if (segment.text.length === 0) continue
+          chunks.push(styleToChunk(segment.text, column.style, segment.color))
+        }
+      } else {
+        chunks.push(styleToChunk(truncated, column?.style, column?.color))
+      }
+    }
+    // The final column needs no trailing padding — nothing follows it to align.
+    if (!isLast) {
+      const pad = cellWidth - visualLength(truncated)
+      if (pad > 0) chunks.push(plainChunk(" ".repeat(pad)))
+    }
+  }
+  // Drop the separator runs left dangling when trailing columns rendered empty.
+  while (chunks.length > 0 && chunks[chunks.length - 1]!.text.trim().length === 0) chunks.pop()
   return chunks
 }
 
@@ -268,6 +297,12 @@ export function renderListRows(state: ListState, focused: boolean, width: number
     return new StyledText([])
   }
   const rowMap = new Map(state.rows.map((r) => [r.id, r] as const))
+  const visibleRows = displayRows.flatMap((dr) => {
+    if (dr.kind !== "item") return []
+    const row = rowMap.get(dr.id)
+    return row === undefined ? [] : [row]
+  })
+  const layout = computeColumnLayout(visibleRows, safeWidth)
   const allChunks: TextChunk[] = []
 
   for (let i = 0; i < displayRows.length; i++) {
@@ -278,7 +313,7 @@ export function renderListRows(state: ListState, focused: boolean, width: number
     if (dr.kind === "item") {
       const row = rowMap.get(dr.id)
       if (row) {
-        lineChunks = renderColumns(row.columns, safeWidth)
+        lineChunks = renderColumns(row, layout)
       } else {
         lineChunks = []
       }

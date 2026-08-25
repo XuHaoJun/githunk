@@ -34,7 +34,9 @@ export function parseCommitLog(raw: string): readonly CommitSummary[] {
 }
 
 export async function listCommits(runner: CommandRunner, range: string, filter?: string): Promise<readonly CommitSummary[]> {
-  const args = ["log", "-z", `--format=${LOG_FORMAT}`, range]
+  // `--topo-order` is lazygit's default `git.log.order`: it keeps a branch's commits
+  // contiguous so the rendered graph reads as lanes rather than an interleaved tangle.
+  const args = ["log", "-z", "--topo-order", `--format=${LOG_FORMAT}`, range]
   if (filter !== undefined && filter.length > 0) args.push("--", filter)
   const result = await runner.run(args, { readOnly: true })
   return parseCommitLog(result.stdout)

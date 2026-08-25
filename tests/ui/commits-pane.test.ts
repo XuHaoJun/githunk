@@ -49,6 +49,34 @@ describe("commits pane rows", () => {
     expect(hasBg(unfocused.content.chunks)).toBe(false)
   })
 
+  test("keeps the author column two cells wide whatever the name", () => {
+    const mixed = [
+      mkCommit({ oid: "aaa1234567890", parentOids: ["bbb1234567890"], authorName: "Author Name", subject: "one" }),
+      mkCommit({ oid: "bbb1234567890", parentOids: ["ccc1234567890"], authorName: "Solo", subject: "two" }),
+      mkCommit({ oid: "ccc1234567890", authorName: "X", subject: "three" }),
+    ]
+    const lines = renderCommitRows(mixed, { focused: false, width: 80, now }).plainText.split("\n")
+    // "Author Name" → "AN", "Solo" → "So", "X" → "X " (padded); the graph then starts at a fixed offset.
+    expect(lines.map((line) => line.slice(9, 11))).toEqual(["AN", "So", "X "])
+    expect(new Set(lines.map((line) => line.indexOf("\u25cb")))).toEqual(new Set([12]))
+  })
+
+  test("pads the graph column so every subject starts at the same offset", () => {
+    const merged = [
+      mkCommit({ oid: "m00", parentOids: ["l00", "r00"], subject: "merge branch" }),
+      mkCommit({ oid: "r00", parentOids: ["b00"], subject: "right side" }),
+      mkCommit({ oid: "l00", parentOids: ["b00"], subject: "left side" }),
+      mkCommit({ oid: "b00", parentOids: [], subject: "base" }),
+    ]
+    const lines = renderCommitRows(merged, { focused: false, width: 80, now }).plainText.split("\n")
+    // The merge row needs three lanes, the root row one; padding keeps the subjects in one column.
+    expect(lines[0]).toContain("\u25ce\u2500\u256e")
+    const subjects = ["merge branch", "right side", "left side", "base"]
+    const offsets = new Set(lines.map((line, index) => line.indexOf(subjects[index]!)))
+    expect(offsets.size).toBe(1)
+    expect([...offsets][0]).toBeGreaterThan(0)
+  })
+
   test("drops time then author before truncating subject at narrow width", () => {
     const narrow = renderCommitRows(commits, { selectedId: commits[0]!.oid, focused: false, width: 30, now })
     // At width 30, time/author should be dropped fully so subject appears even if truncated

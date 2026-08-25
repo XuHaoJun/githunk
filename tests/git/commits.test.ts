@@ -84,3 +84,18 @@ describe("commit history loaders", () => {
     expect(details.document.files).toHaveLength(1)
   })
 })
+
+describe("commit log ordering", () => {
+  test("requests topo-order so the graph renders as contiguous lanes", async () => {
+    const calls: string[][] = []
+    const runner = {
+      run: async (args: readonly string[]) => {
+        calls.push([...args])
+        return { exitCode: 0, stdout: "", stderr: "", record: {} as never }
+      },
+    }
+    await listCommits(runner as never, "HEAD")
+    // Matches lazygit's default `git.log.order: topo-order`.
+    expect(calls[0]).toContain("--topo-order")
+  })
+})

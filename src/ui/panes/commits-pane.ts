@@ -3,11 +3,12 @@ import type { AppModel } from "../../app/model"
 import type { CommitSummary } from "../../domain/commit"
 import { createPane, type PaneHandle } from "./common"
 import { commitGraphRows } from "../commit-graph"
+import { AUTHOR_COLUMN_WIDTH, authorColor, authorInitials } from "../author-style"
 import { createListState, renderListRows, selectListRow, type ListState, type ListRow } from "../list-view"
 
 const paneStates = new WeakMap<PaneHandle, ListState>()
 
-function formatRelativeTime(authoredAt: string, now: Date): string {
+export function formatRelativeTime(authoredAt: string, now: Date): string {
   const then = new Date(authoredAt).getTime()
   if (Number.isNaN(then)) return ""
   const diffMs = now.getTime() - then
@@ -31,27 +32,26 @@ function formatRelativeTime(authoredAt: string, now: Date): string {
   return rtf.format(0, "second")
 }
 
-function getCommitAuthorInitials(authorName: string): string {
-  if (authorName.length === 0) return ""
-  const parts = authorName.trim().split(/\s+/)
-  if (parts.length === 1) return parts[0]!.slice(0, 2)
-  return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`
-}
-
-function buildRows(commits: readonly CommitSummary[], now: Date): ListRow[] {
-  const graphs = commitGraphRows(commits)
+/**
+ * Lazygit column order (`pkg/gui/presentation/commits.go:displayCommit`):
+ * hash → author initials → graph → subject, with the relative time trailing.
+ * The graph's pipe colour is the author colour, exactly as lazygit's
+ * `loadPipesets` derives it, so a lane and its author read as one thing.
+ */
+export function buildCommitRows(commits: readonly CommitSummary[], now: Date): ListRow[] {
+  const graphs = commitGraphRows(commits, (_commit, index) => authorColor(commits[index]!.authorName))
   return commits.map((commit, index) => {
-    const graph = graphs[index] ?? ""
+    const graph = graphs[index]
     const shortHash = commit.oid.length >= 8 ? commit.oid.slice(0, 8) : commit.shortOid
-    const authorInitials = getCommitAuthorInitials(commit.authorName)
+    const initials = authorInitials(commit.authorName).padEnd(AUTHOR_COLUMN_WIDTH, " ")
     const relative = formatRelativeTime(commit.authoredAt, now)
     return {
       id: commit.oid,
       columns: [
         { text: shortHash, priority: 1, style: "yellow" },
-        { text: authorInitials, priority: 3, style: "cyan" },
-        { text: graph, priority: 0, style: "dim" },
-        { text: commit.subject, priority: 2 },
+        { text: initials, priority: 3, color: authorColor(commit.authorName) },
+        { text: graph?.text ?? "", priority: 0, segments: graph?.segments ?? [] },
+        { text: commit.subject, priority: 2, flex: true },
         { text: relative, priority: 4, style: "dim" },
       ],
     }
@@ -63,7 +63,7 @@ export function renderCommitRows(
   options: { readonly selectedId?: string; readonly focused: boolean; readonly width: number; readonly now?: Date | number },
 ): { readonly content: StyledText; readonly plainText: string; readonly state: ListState } {
   const nowDate = options.now === undefined ? new Date() : options.now instanceof Date ? options.now : new Date(options.now)
-  const rows = buildRows(commits, nowDate)
+  const rows = buildCommitRows(commits, nowDate)
   let state = createListState(rows)
   if (options.selectedId !== undefined) {
     const next = selectListRow(state, options.selectedId)
@@ -124,7 +124,7 @@ export function updateCommitsPane(pane: PaneHandle, model: AppModel): void {
   }
   const previous = paneStates.get(pane)
   const prevId = previous?.selectedId
-  const rows = buildRows(commits, new Date())
+  const rows = buildCommitRows(commits, new Date())
   let state = createListState(rows)
   if (prevId !== undefined) {
     const withPrev = selectListRow(state, prevId)

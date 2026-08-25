@@ -33,7 +33,7 @@ import { createBranchesPane } from "./panes/branches-pane"
 import { localBranchRows } from "./panes/branches-pane"
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
 import { tagRows } from "./panes/tags-pane"
-import { createCommitsPane } from "./panes/commits-pane"
+import { buildCommitRows, createCommitsPane } from "./panes/commits-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
 import { createFilesPane, fileRows, filesPaneCommitAvailable } from "./panes/files-pane"
 import { createMainPane, changeLineIndexes, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, type MainPaneContent } from "./panes/main-pane"
@@ -60,67 +60,7 @@ import { createRegistry, type Action, type MenuEntry, type UiState } from "./bin
 import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, type PanelState } from "./panel-state"
 import { createListState, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRows, type ListState, type ListRow } from "./list-view"
 import { MainPreviewGate } from "./main-preview"
-import { commitGraphRows } from "./commit-graph"
 import type { CommitSummary } from "../domain/commit"
-function formatRelativeTime(authoredAt: string, now: Date): string {
-  const then = new Date(authoredAt).getTime()
-  if (Number.isNaN(then)) return ""
-  const diffMs = now.getTime() - then
-  const diffSec = Math.round(diffMs / 1000)
-  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" })
-  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ["year", 365 * 24 * 60 * 60],
-    ["month", 30 * 24 * 60 * 60],
-    ["week", 7 * 24 * 60 * 60],
-    ["day", 24 * 60 * 60],
-    ["hour", 60 * 60],
-    ["minute", 60],
-    ["second", 1],
-  ]
-  for (const [unit, secs] of units) {
-    if (Math.abs(diffSec) >= secs || unit === "second") {
-      const value = Math.round(diffSec / secs)
-      return rtf.format(-value, unit)
-    }
-  }
-  return rtf.format(0, "second")
-}
-
-function getCommitAuthorInitials(authorName: string): string {
-  if (authorName.length === 0) return ""
-  const firstGrapheme = [...authorName][0] ?? ""
-  if (firstGrapheme.length === 0) return ""
-  // If single word, take first 2 graphemes (e.g., "Jesse" → "Je"); if multiple words, take initials of first two words (e.g., "Noah Reviewer" → "NR").
-  const parts = authorName.trim().split(/\s+/)
-  if (parts.length === 1) return parts[0]!.slice(0, 2)
-  const first = parts[0]![0] ?? ""
-  const second = parts[1]![0] ?? ""
-  return `${first}${second}`
-}
-
-function buildCommitRows(commits: readonly CommitSummary[]): readonly ListRow[] {
-  const now = new Date()
-  const graphs = commitGraphRows(commits)
-  return commits.map((commit, index) => {
-    const graph = graphs[index] ?? ""
-    const shortHash = commit.oid.length >= 8 ? commit.oid.slice(0, 8) : commit.shortOid
-    const authorInitials = getCommitAuthorInitials(commit.authorName)
-    const relative = formatRelativeTime(commit.authoredAt, now)
-    // Lazygit order: hash → author (2-letter initials) → graph → subject → (time)
-    // See `pkg/gui/presentation/commits.go:displayCommit` cols: hash, author (CommitAuthorShortLength=2), graph+mark+tag+name.
-    return {
-      id: commit.oid,
-      columns: [
-        { text: shortHash, priority: 1, style: "yellow" as const },
-        { text: authorInitials, priority: 3, style: "cyan" as const },
-        { text: graph, priority: 0, style: "dim" as const },
-        { text: commit.subject, priority: 2 },
-        { text: relative, priority: 4, style: "dim" as const },
-      ],
-    }
-  })
-}
-
 const PANE_TITLES: Readonly<Record<FocusId, string>> = {
   main: "Main", status: "Review", files: "Files",
   branches: "Branches", commits: "Commits", stash: "Stash",
@@ -374,7 +314,7 @@ export class RootView {
     // Initialize PanelState for window 4 (commits + transient commit-files)
     {
       const commits = model.commits ?? []
-      const rows = buildCommitRows(commits)
+      const rows = buildCommitRows(commits, new Date())
       const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: model.loading ? "Loading…" : "No commits" }] : undefined
       this.commitsPanel = createPanelState(["commits"] as const, "commits", { commits: createListState(rows, displayRows) })
       this.renderCommitsPane()
@@ -1953,7 +1893,7 @@ export class RootView {
 
   private refreshCommitsPanel(model: AppModel): void {
     const commits = model.commits ?? []
-    const rows = buildCommitRows(commits)
+    const rows = buildCommitRows(commits, new Date())
     const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: model.loading ? "Loading…" : "No commits" }] : undefined
     let panel = this.commitsPanel
     panel = { ...panel, views: { ...panel.views, commits: setListRows(panel.views.commits, rows, displayRows) } }
