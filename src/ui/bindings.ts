@@ -11,7 +11,6 @@ export const ACTIONS = [
   // list and document navigation
   "next", "previous", "page-next", "page-previous", "goto-top", "goto-bottom",
   "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
-  "main-half-page-down", "main-half-page-up",
   "hunk-next", "hunk-previous", "tab-next", "tab-previous",
   // review targets
   "mode-branch", "mode-working-tree", "mark-reviewed",
@@ -296,12 +295,14 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: [","], action: "page-previous", description: "page up" },
   { keys: [">", "end"], action: "goto-bottom", description: "go to bottom" },
   { keys: ["<", "home"], action: "goto-top", description: "go to top" },
-  { keys: ["J"], action: "main-scroll-down", description: "scroll main down" },
-  { keys: ["K"], action: "main-scroll-up", description: "scroll main up" },
+  // `<pgup>`/`<pgdown>`, `K`/`J` and `<ctrl+u>`/`<ctrl+d>` are one binding in lazygit —
+  // `scrollUpMain`/`scrollDownMain` with `scrollUpMain-alt1`/`-alt2` merged into it
+  // (pkg/config/user_config.go:1047-1052, pkg/gui/keybindings.go:87-100) — so they scroll the same
+  // `gui.scrollHeight` lines rather than one of them meaning "half a page".
+  { keys: ["J", "pagedown", "ctrl+d"], action: "main-scroll-down", description: "scroll main down" },
+  { keys: ["K", "pageup", "ctrl+u"], action: "main-scroll-up", description: "scroll main up" },
   { keys: ["L"], action: "main-scroll-right", description: "scroll main right" },
   { keys: ["H"], action: "main-scroll-left", description: "scroll main left" },
-  { keys: ["ctrl+d", "pagedown"], action: "main-half-page-down", description: "main half page down" },
-  { keys: ["ctrl+u", "pageup"], action: "main-half-page-up", description: "main half page up" },
 
   // ---- review targets ----
   { keys: ["b"], action: "mode-branch", description: "branch review", displayOnScreen: true, available: (model) => model.reviewTarget.kind !== "branch" },

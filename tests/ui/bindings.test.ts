@@ -312,8 +312,12 @@ describe("GITHUNK_BINDINGS", () => {
     expect(registry.dispatch({ name: "K" })).toBe("main-scroll-up")
     expect(registry.dispatch({ name: "L" })).toBe("main-scroll-right")
     expect(registry.dispatch({ name: "H" })).toBe("main-scroll-left")
-    expect(registry.dispatch({ name: "d", ctrl: true })).toBe("main-half-page-down")
-    expect(registry.dispatch({ name: "u", ctrl: true })).toBe("main-half-page-up")
+    // lazygit merges `scrollUpMain-alt1`/`-alt2` into `scrollUpMain`, so all six keys are one
+    // binding scrolling `gui.scrollHeight` lines (pkg/config/user_config.go:1047-1052).
+    expect(registry.dispatch({ name: "d", ctrl: true })).toBe("main-scroll-down")
+    expect(registry.dispatch({ name: "u", ctrl: true })).toBe("main-scroll-up")
+    expect(registry.dispatch({ name: "pagedown" })).toBe("main-scroll-down")
+    expect(registry.dispatch({ name: "pageup" })).toBe("main-scroll-up")
     expect(registry.dispatch({ name: "+" })).toBe("screen-mode-next")
     expect(registry.dispatch({ name: "_" })).toBe("screen-mode-previous")
     expect(registry.dispatch({ name: "?" })).toBe("keybinding-menu")

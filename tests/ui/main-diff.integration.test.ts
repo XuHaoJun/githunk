@@ -122,7 +122,9 @@ describe("main pane diff rendering", () => {
     })
     await harness.pressKey("2")
     await harness.pressKey("0")
-    for (let page = 0; page < 12; page++) await harness.pressKey("d", { ctrl: true })
+    // `.` is the page scroll of the focused main view (lazygit's `ViewSelectionController`);
+    // `<ctrl+d>` is the *global* scroll, and moves only `gui.scrollHeight` lines.
+    for (let page = 0; page < 12; page++) await harness.pressKey(".")
     expect(harness.app.view!.mainScrollY).toBeGreaterThan(100)
 
     // Every row of this diff body is an addition or a deletion, so the first row of the

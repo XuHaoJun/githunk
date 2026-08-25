@@ -59,7 +59,7 @@ import {
 } from "./file-tree"
 import { submoduleFullName } from "../domain/submodule"
 import type { ChangedFile } from "../domain/review-target"
-import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainPaneContent } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { commitFileRows } from "./panes/commit-files-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
@@ -160,6 +160,15 @@ export type GestureOwner =
   | { readonly kind: "scrollbar"; readonly paneId: FocusId }
   | { readonly kind: "main-selection" }
 
+
+/**
+ * Lines the main view scrolls per press of the *global* scroll keys — lazygit's
+ * `gui.scrollHeight`, default 2 (pkg/config/user_config.go:857). `<pgup>`/`<pgdown>`, `K`/`J` and
+ * `<ctrl+u>`/`<ctrl+d>` are all aliases of the one handler (`scrollUpMain`/`scrollDownMain`,
+ * pkg/gui/global_handlers.go:15-22), as is the mouse wheel over the main view
+ * (keybindings.go:177-189), so they all move by this.
+ */
+export const MAIN_SCROLL_HEIGHT = 2
 
 export class RootView {
   readonly renderer: CliRenderer
@@ -583,6 +592,8 @@ export class RootView {
     return this.commitsView()?.selectedIndex ?? 0
   }
   get mainPane(): PaneHandle { return this.panes.main }
+  /** The main pane's hunk cursor — what `h`/`l` move and line staging acts on. Test accessor. */
+  get mainCursorTarget(): MainCursorTarget | undefined { return getMainCursorTarget(this.panes.main) }
   get commitsPane(): PaneHandle { return this.panes.commits }
   get filesPane(): PaneHandle { return this.panes.files }
   get branchesPane(): PaneHandle { return this.panes.branches }
@@ -960,12 +971,11 @@ export class RootView {
         this.menuOpen = !this.menuOpen
         this.recomputeLayout()
         return
-      case "main-scroll-down": scrollMainPane(this.panes.main, "y", 1); this.root.requestRender(); return
-      case "main-scroll-up": scrollMainPane(this.panes.main, "y", -1); this.root.requestRender(); return
+      case "main-scroll-down": scrollMainPane(this.panes.main, "y", MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
+      case "main-scroll-up": scrollMainPane(this.panes.main, "y", -MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
       case "main-scroll-right": scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
       case "main-scroll-left": scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
-      case "main-half-page-down": scrollMainPane(this.panes.main, "y", this.mainPageStep()); this.root.requestRender(); return
-      case "main-half-page-up": scrollMainPane(this.panes.main, "y", -this.mainPageStep()); this.root.requestRender(); return
+
       case "page-next": this.actionPage("next"); return
       case "page-previous": this.actionPage("previous"); return
       case "goto-top": this.actionJump("top"); return
@@ -1231,9 +1241,12 @@ export class RootView {
         return
       }
       case "main":
-        // j/k (and h/l via hunk-next/previous) move the hunk cursor here:
-        // MainCursorTarget is hunk-granular and githunk has no line cursor yet.
-        this.moveMainCursor(direction)
+        // One line, like lazygit's `ViewSelectionController.handleLineChange(±1)`
+        // (pkg/gui/controllers/view_selection_controller.go:53-70). The hunk cursor is githunk's
+        // own, for line staging, and `h`/`l` are what move it — binding j/k to it made a short
+        // press do nothing when the next hunk was already on screen, jump a screenful when it was
+        // not, and nothing at all on a pane holding no patch (a branch's commit graph).
+        this.scrollMainBy(direction === "next" ? 1 : -1)
         return
       default:
         return
@@ -1246,7 +1259,7 @@ export class RootView {
    * height is read from computeLayout's windows map rather than from `text.height`: the
    * layout engine computes asynchronously, so `text.height` can be stale at cursor-move
    * time, while this.geometry is updated synchronously by recomputeLayout (the same
-   * source focusedPageStep and mainPageStep already trust).
+   * source focusedPageStep and mainPageDelta already trust).
    */
   private revealListRow(name: SideWindow | "main", pane: PaneHandle, line: number): void {
     const visibleLines = Math.max(1, heightOf(this.geometry.windows[name]) - 2)
@@ -1256,9 +1269,19 @@ export class RootView {
     pane.syncScrollbar()
   }
 
-  /** Half the main pane's visible rows, at least one. */
-  private mainPageStep(): number {
-    return Math.max(1, Math.floor(heightOf(this.geometry.windows.main) / 2))
+  /**
+   * lazygit's `ViewTrait.PageDelta()`: one row short of the viewport, so a page scroll leaves a
+   * line of overlap to read against (pkg/gui/context/view_trait.go:87-96). The window height
+   * includes both border rows, hence the extra one.
+   */
+  get mainPageDelta(): number {
+    return Math.max(1, heightOf(this.geometry.windows.main) - 3)
+  }
+
+  /** Every keyboard path that scrolls the main view vertically ends here. */
+  private scrollMainBy(delta: number): void {
+    scrollMainPane(this.panes.main, "y", delta)
+    this.root.requestRender()
   }
 
   /** The visible rows of the focused pane, at least one, used as the page step. */
@@ -1271,11 +1294,22 @@ export class RootView {
   }
 
   private actionPage(direction: "next" | "previous"): void {
+    if (this.focusManager.active === "main") {
+      // `ViewSelectionController.handlePrevPage`/`handleNextPage` — view_selection_controller.go:72-78.
+      this.scrollMainBy(direction === "next" ? this.mainPageDelta : -this.mainPageDelta)
+      return
+    }
     const step = this.focusedPageStep()
     for (let moved = 0; moved < step; moved += 1) this.actionMoveCursor(direction)
   }
 
   private actionJump(edge: "top" | "bottom"): void {
+    if (this.focusManager.active === "main") {
+      // `handleGotoTop`/`handleGotoBottom` scroll by the whole content height, which the pane's
+      // own clamping turns into "as far as it goes" — view_selection_controller.go:81-97.
+      this.scrollMainBy(edge === "bottom" ? this.panes.main.text.scrollHeight : -this.panes.main.text.scrollHeight)
+      return
+    }
     // Lists are short enough that repeating the single-step move is simpler
     // and cannot disagree with it about clamping or selection side effects.
     const direction = edge === "bottom" ? "next" : "previous"
