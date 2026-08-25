@@ -43,42 +43,54 @@ describe("computeLayout side region", () => {
 
 describe("computeLayout left stack", () => {
   test("pins the status pane", () => {
-    const layout = computeLayout({ width: 120, height: 40 }, { focus: "files" })
+    const layout = computeLayout({ width: 120, height: 40 }, { focus: "files", currentSideWindow: "files" })
     expect(heightOf(layout.windows.status)).toBe(STATUS_PANE_HEIGHT)
   })
 
-  test("keeps every left pane at the same height when focus changes", () => {
-    for (const terminalHeight of [40, 24, 18]) {
-      const heightsByFocus = SIDE_WINDOWS.map((focus) => {
-        const layout = computeLayout({ width: 120, height: terminalHeight }, { focus })
-        return SIDE_WINDOWS.map((window) => heightOf(layout.windows[window]))
-      })
-      expect(new Set(heightsByFocus.map((heights) => heights.join(","))).size).toBe(1)
-    }
+  test("folds an unfocused stash to three rows and expands focused stash", () => {
+    const unfocused = computeLayout({ width: 120, height: 40 }, { focus: "commits", currentSideWindow: "commits" })
+    expect(heightOf(unfocused.windows.stash)).toBe(3)
+    const focused = computeLayout({ width: 120, height: 40 }, { focus: "stash", currentSideWindow: "stash" })
+    expect(heightOf(focused.windows.stash)).toBeGreaterThan(3)
   })
 
+  test("uses the last side window as compact absorber while Main is focused", () => {
+    const layout = computeLayout({ width: 120, height: 24 }, { focus: "main", currentSideWindow: "branches" })
+    expect(heightOf(layout.windows.branches)).toBeGreaterThan(3)
+    expect(heightOf(layout.windows.commits)).toBe(3)
+    expect(heightOf(layout.windows.stash)).toBe(3)
+  })
+
+  test("lower-right log height does not reduce the left side-section height", () => {
+    const hidden = computeLayout({ width: 120, height: 40 }, { logVisible: false, currentSideWindow: "files" })
+    const shown = computeLayout({ width: 120, height: 40 }, { logVisible: true, logHeight: 12, currentSideWindow: "files" })
+    for (const pane of SIDE_WINDOWS) expect(heightOf(shown.windows[pane])).toBe(heightOf(hidden.windows[pane]))
+  })
+
+  test("normal vs compact threshold at 28 available rows", () => {
+    // terminal 29 => body 28 (normal), terminal 28 => body 27 (compact)
+    const normal = computeLayout({ width: 120, height: 29 }, { focus: "commits", currentSideWindow: "commits", hintsVisible: true })
+    expect(heightOf(normal.windows.stash)).toBe(3) // stash folded even in normal (not current)
+    expect(heightOf(normal.windows.branches)).toBeGreaterThan(3)
+    const compact = computeLayout({ width: 120, height: 28 }, { focus: "commits", currentSideWindow: "commits", hintsVisible: true })
+    expect(heightOf(compact.windows.branches)).toBe(3)
+    expect(heightOf(compact.windows.commits)).toBeGreaterThan(3)
+  })
+
+  test("compact squash threshold at 21 available rows", () => {
+    // terminal 22 => body 21 (squashed 3), terminal 21 => body 20 (squashed 1)
+    const tallSquashed = computeLayout({ width: 120, height: 22 }, { focus: "main", currentSideWindow: "files", hintsVisible: true })
+    expect(heightOf(tallSquashed.windows.branches)).toBe(3)
+    expect(heightOf(tallSquashed.windows.status)).toBe(3)
+    const tiny = computeLayout({ width: 120, height: 21 }, { focus: "main", currentSideWindow: "files", hintsVisible: true })
+    expect(heightOf(tiny.windows.branches)).toBe(1)
+    expect(heightOf(tiny.windows.status)).toBe(1)
+    expect(heightOf(tiny.windows.files)).toBeGreaterThan(1)
+  })
 
   test("partitions the side height exactly across the five panes", () => {
     for (const height of [40, 33, 26, 19, 12]) {
-      const layout = computeLayout({ width: 120, height }, { focus: "files", hintsVisible: true })
-      const total = SIDE_WINDOWS.reduce((sum, name) => sum + heightOf(layout.windows[name]), 0)
-      expect(total).toBe(height - 1)
-    }
-  })
-
-  test("squashes compact panes and keeps the files pane usable on a short terminal", () => {
-    const short = computeLayout({ width: 120, height: 24 }, { focus: "files" })
-    expect(heightOf(short.windows.branches)).toBe(FOLDED_PANE_HEIGHT)
-    expect(heightOf(short.windows.files)).toBeGreaterThan(FOLDED_PANE_HEIGHT)
-
-    const shorter = computeLayout({ width: 120, height: 18 }, { focus: "files" })
-    expect(heightOf(shorter.windows.branches)).toBe(1)
-    expect(heightOf(shorter.windows.files)).toBeGreaterThan(1)
-  })
-
-  test("keeps a weighted absorber when focus is on the main pane", () => {
-    for (const height of [24, 18]) {
-      const layout = computeLayout({ width: 120, height }, { focus: "main" })
+      const layout = computeLayout({ width: 120, height }, { focus: "files", currentSideWindow: "files", hintsVisible: true })
       const total = SIDE_WINDOWS.reduce((sum, name) => sum + heightOf(layout.windows[name]), 0)
       expect(total).toBe(height - 1)
     }

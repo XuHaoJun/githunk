@@ -500,6 +500,7 @@ export class RootView {
     }
     return {
       focus: this.focusManager.active,
+      currentSideWindow: this.focusManager.lastSide,
       screenMode: this.geometry.screenMode,
       modal: this.modalInputActive(),
       mainScope: target.kind === "working-tree" ? target.scope : undefined,
@@ -2068,6 +2069,7 @@ export class RootView {
       logHeight: this.logHeight,
       logVisible: this.focusManager.logVisible,
       focus: this.focusManager.active,
+      currentSideWindow: this.focusManager.lastSide,
       screenMode: this.screenMode,
       hintsVisible: true,
       statusWidth: this.statusSegmentWidth(),

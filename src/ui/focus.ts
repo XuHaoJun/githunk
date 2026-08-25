@@ -9,13 +9,23 @@ export function focusIdForKey(key: string): FocusId | undefined {
 
 export type FocusChange = (focus: FocusId, logVisible: boolean) => void
 
+import type { SideWindow } from "./layout"
+
+const SIDE_IDS: Record<string, true> = { status: true, files: true, branches: true, commits: true, stash: true }
+
+function isSideWindowId(id: string): id is SideWindow {
+  return SIDE_IDS[id] === true
+}
+
 export class FocusManager {
   active: FocusId = "main"
   logVisible = false
   onChange: FocusChange | undefined
+  lastSide: SideWindow = "files"
 
   focus(id: FocusId): void {
     if (id === COMMAND_LOG_FOCUS_ID && !this.logVisible) return
+    if (isSideWindowId(id)) this.lastSide = id
     this.active = id
     this.onChange?.(this.active, this.logVisible)
   }

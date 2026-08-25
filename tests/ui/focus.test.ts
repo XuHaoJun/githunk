@@ -30,4 +30,28 @@ describe("focus navigation", () => {
     expect(focus.handleKey("0")).toBe(true)
     expect(focus.active).toBe("main")
   })
+
+  test("tracks lastSide and updates before onChange", () => {
+    const focus = new FocusManager()
+    expect(focus.lastSide).toBe("files")
+    focus.focus("branches")
+    expect(focus.lastSide).toBe("branches")
+    focus.focus("main")
+    expect(focus.lastSide).toBe("branches")
+    let seenLast: string | undefined
+    focus.onChange = () => { seenLast = focus.lastSide }
+    focus.focus("stash")
+    expect(seenLast).toBe("stash")
+  })
+
+  test("lastSide does not change when focusing main or command-log", () => {
+    const focus = new FocusManager()
+    focus.focus("commits")
+    expect(focus.lastSide).toBe("commits")
+    focus.focus("main")
+    expect(focus.lastSide).toBe("commits")
+    focus.logVisible = true
+    focus.focus("command-log")
+    expect(focus.lastSide).toBe("commits")
+  })
 })

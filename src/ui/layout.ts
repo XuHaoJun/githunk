@@ -31,6 +31,7 @@ export type LayoutRequest = {
   readonly logHeight?: number
   readonly logVisible?: boolean
   readonly focus?: FocusId
+  readonly currentSideWindow?: SideWindow
   readonly screenMode?: ScreenMode
   readonly hintsVisible?: boolean
   readonly statusWidth?: number
@@ -81,26 +82,28 @@ export function previousScreenMode(current: ScreenMode): ScreenMode {
 }
 
 /**
- * The five left panes. Their geometry is independent of focus so moving
- * between panes does not make the stack jump. In compact layouts, files is
- * the fixed absorber that takes the remaining rows.
+ * Lazygit-matched side sizing: Status 3 pinned in normal layout, Stash folds to 3
+ * unless it is currentSideWindow, and compact layout weights only currentSideWindow.
  */
 function sideChildren(
+  currentSideWindow: SideWindow,
   focusedSide: SideWindow | undefined,
   enlarged: boolean,
 ): (width: number, height: number) => readonly Box[] {
   return (_width, height) => {
     if (enlarged) {
-      return [{ window: focusedSide ?? "files", weight: 1 }]
+      return [{ window: focusedSide ?? currentSideWindow, weight: 1 }]
     }
     if (height >= MIN_HEIGHT_FOR_NORMAL_LAYOUT) {
-      return SIDE_WINDOWS.map((window): Box =>
-        window === "status" ? { window, size: STATUS_PANE_HEIGHT } : { window, weight: 1 },
-      )
+      return SIDE_WINDOWS.map((window): Box => {
+        if (window === "status") return { window, size: STATUS_PANE_HEIGHT }
+        if (window === "stash" && currentSideWindow !== "stash") return { window, size: FOLDED_PANE_HEIGHT }
+        return { window, weight: 1 }
+      })
     }
     const squashed = height >= MIN_HEIGHT_FOR_TALL_SQUASHED ? FOLDED_PANE_HEIGHT : 1
-    return SIDE_WINDOWS.map((window) =>
-      window === "files" ? { window, weight: 1 } : { window, size: squashed },
+    return SIDE_WINDOWS.map((window): Box =>
+      window === currentSideWindow ? { window, weight: 1 } : { window, size: squashed },
     )
   }
 }
@@ -128,7 +131,8 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
     : bodyHeight < MIN_MAIN_HEIGHT
   const tooSmall = widthTooSmall || heightTooSmall
 
-  const focusedSide = isSideWindow(focus) ? focus : undefined
+  const focusedSide = isSideWindow(focus) ? (focus as SideWindow) : undefined
+  const currentSideWindow: SideWindow = requested.currentSideWindow ?? focusedSide ?? "files"
   const enlargedSide = screenMode !== "normal" && focusedSide !== undefined
   const sideCollapsed = screenMode !== "normal" && focusedSide === undefined
   const mainCollapsed = screenMode === "full" && focusedSide !== undefined
@@ -165,7 +169,7 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
     bodyChildren.push({
       direction: "row",
       ...(mainWidth === 0 ? { weight: 1 } : { size: sideWidth }),
-      conditionalChildren: sideChildren(focusedSide, enlargedSide),
+      conditionalChildren: sideChildren(currentSideWindow, focusedSide, enlargedSide),
     })
   }
   if (splitterWidth > 0) bodyChildren.push({ window: "vsplit", size: splitterWidth })
