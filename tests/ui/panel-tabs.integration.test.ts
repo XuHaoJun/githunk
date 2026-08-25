@@ -138,11 +138,20 @@ describe("panel 3 tabs and RemoteBranches child", () => {
     const pane = harness.app.view!.paneFor("branches")
     expect(pane.box.title).toBe("3 Local Branches | Remotes | Tags")
     expect(pane.box.title).toContain("|")
+    const styled = harness.app.view!.branchesTitleStyled
+    expect(styled.chunks.map((c) => c.text).join("")).toBe("3 Local Branches | Remotes | Tags")
+    const localChunk = styled.chunks.find((c) => c.text === "Local Branches")!
+    expect(localChunk.fg).toBeDefined()
+    const remotesChunk = styled.chunks.find((c) => c.text === "Remotes")!
+    expect(remotesChunk.fg).toBeUndefined()
+    await harness.pressKey("]")
+    const styledRemotes = harness.app.view!.branchesTitleStyled
+    expect(styledRemotes.chunks.find((c) => c.text === "Local Branches")!.fg).toBeUndefined()
+    expect(styledRemotes.chunks.find((c) => c.text === "Remotes")!.fg).toBeDefined()
     const m = harness.app.controller.state
     const localRows = localBranchRows(m)
     expect(localRows.every((r) => r.id.startsWith("local:"))).toBe(true)
     const remRows = remoteRows(m)
-    // May be empty in fresh harness without remote, but if present check prefix
     if (remRows.length > 0) expect(remRows.every((r) => r.id.startsWith("remote:"))).toBe(true)
   })
 })

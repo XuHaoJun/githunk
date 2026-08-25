@@ -1,8 +1,12 @@
 import {
   BoxRenderable,
+  StyledText,
+  cyan,
+  dim,
   type CliRenderer,
   type KeyEvent,
   type MouseEvent,
+  type TextChunk,
 } from "@opentui/core"
 import type { AppModel } from "../app/model"
 import {
@@ -447,7 +451,6 @@ export class RootView {
       if (selected.id.startsWith("local:")) kind = "local"
       else if (selected.id.startsWith("remote-branch:")) kind = "remote-branch"
       else if (selected.id.startsWith("remote:")) kind = "remote"
-      else if (selected.id.startsWith("tag:")) kind = "tag" as UiState["selectedBranchKind"]
       else kind = undefined
     } else {
       kind = undefined
@@ -468,6 +471,29 @@ export class RootView {
     const id = state.selectedId
     if (id === undefined) return undefined
     return { id }
+  }
+
+  private plainChunk(text: string): TextChunk {
+    return { __isChunk: true as const, text } as unknown as TextChunk
+  }
+
+  get branchesTitleStyled(): StyledText {
+    const active = this.branchesPanel.activeTab
+    const parts: Array<{ readonly text: string; readonly tab: "branches" | "remotes" | "tags" }> = [
+      { text: "Local Branches", tab: "branches" },
+      { text: "Remotes", tab: "remotes" },
+      { text: "Tags", tab: "tags" },
+    ]
+    const chunks: TextChunk[] = []
+    chunks.push(this.plainChunk("3 "))
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]!
+      const isActive = part.tab === active
+      const chunk = isActive ? (cyan(part.text) as unknown as TextChunk) : this.plainChunk(part.text)
+      chunks.push(chunk)
+      if (i < parts.length - 1) chunks.push(this.plainChunk(" | "))
+    }
+    return new StyledText(chunks)
   }
 
   private refreshBranchesPanel(model: AppModel): void {
@@ -496,10 +522,13 @@ export class RootView {
       pane.update("")
       return
     }
-    const content = renderListRows(state, focused, 80)
+    const win = this.geometry.windows.branches
+    const width = win !== undefined ? Math.max(10, widthOf(win) - 2) : 80
+    const content = renderListRows(state, focused, width)
     pane.update(content)
     pane.syncScrollbar()
   }
+
 
   private handleAction(action: Action, key: KeyEvent): void {
     switch (action) {

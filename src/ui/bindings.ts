@@ -336,7 +336,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["enter"], action: "inspect", description: "inspect", contexts: ["branches"], displayOnScreen: true },
   { keys: ["/"], action: "filter", description: "filter", contexts: ["branches"], displayOnScreen: true },
   { keys: ["]"], action: "tab-next", description: "next tab", contexts: ["branches"], displayOnScreen: true, menuDescription: "next tab" },
-  { keys: ["["], action: "tab-previous", description: "previous tab", contexts: ["branches"], menuDescription: "previous tab" },
+  { keys: ["["], action: "tab-previous", description: "previous tab", contexts: ["branches"], displayOnScreen: true, menuDescription: "previous tab" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["branches"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["branches"] },
 

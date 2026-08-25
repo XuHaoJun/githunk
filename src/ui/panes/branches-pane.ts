@@ -3,6 +3,7 @@ import type { AppModel } from "../../app/model"
 import { filterItems } from "../../app/filter"
 import { createPane, type PaneHandle } from "./common"
 import type { ListColumn, ListRow } from "../list-view"
+import { createListState, renderListRows, selectListRow } from "../list-view"
 
 function formatBranchTime(committedAt: string, now: Date = new Date()): string {
   const unix = Number(committedAt)
@@ -68,18 +69,26 @@ export function localBranchRows(model: AppModel, filter = ""): ListRow[] {
 export function createBranchesPane(renderer: CliRenderer, model: AppModel): PaneHandle {
   const pane = createPane(renderer, "branches", "3 Local Branches | Remotes | Tags", "")
   pane.box.title = "3 Local Branches | Remotes | Tags"
+  updateBranchesPane(pane, model)
   return pane
 }
 
+/**
+ * @deprecated — legacy direct-update path for pre-Task4 callers. Use PanelState + renderListRows via RootView.
+ * TODO: delete with navigation task that removes dispatch.integration's 3 obsolete scope tests (bracket scope + mixed-pane j navigation).
+ */
 export function updateBranchesPane(pane: PaneHandle, model: AppModel, _selectedIndex = 0, _filter = ""): void {
   pane.box.title = "3 Local Branches | Remotes | Tags"
   const rows = localBranchRows(model, _filter)
-  if (rows.length === 0) {
-    pane.update(model.branch ? `* ${model.branch}` : "* (detached/loading)")
-    return
+  let state = createListState(rows)
+  if (rows.length > 0) {
+    const clamped = Math.max(0, Math.min(_selectedIndex, rows.length - 1))
+    const id = rows[clamped]?.id
+    if (id !== undefined) state = selectListRow(state, id)
   }
-  const lines = rows.map((r) => r.columns.map((c) => c.text).join(" "))
-  pane.update(lines.join("\n"))
+  const content = renderListRows(state, false, 80)
+  pane.update(content)
+  pane.syncScrollbar()
 }
 
 // --- Compatibility shims for pre-Task4 callers (dispatch.integration) ---
