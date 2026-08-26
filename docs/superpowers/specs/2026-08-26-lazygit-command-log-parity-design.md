@@ -158,7 +158,9 @@ Styles, copied from `command_log_panel.go` and `theme/theme.go:11`:
 | `tip-label` | `ANSI_YELLOW` | `style.FgYellow` (`command_log_panel.go:81`) |
 | `tip` | `ANSI_GREEN` | `style.FgGreen` (`command_log_panel.go:82`) |
 
-lazygit sets `Wrap = true` on the view (`views.go:150`), and gocui wraps at character boundaries. githunk sets `wrapMode: "char"` on the `TextRenderable` and lets OpenTUI do the wrapping, rather than wrapping in its own pure function. Self-wrapping would have to count display columns to place highlights, and nothing in githunk measures East Asian width, so a CJK filename would mis-colour; OpenTUI already measures it.
+lazygit sets `Wrap = true` on the view (`views.go:150`), and gocui wraps at character boundaries. githunk sets `wrapMode: "char"` on the `TextRenderable` and lets OpenTUI do the wrapping, rather than wrapping in its own pure function. Wrapping is the widget's job because it already knows where every row breaks; reimplementing that against a cached row map would duplicate state the widget owns.
+
+**An earlier draft of this section justified the choice by claiming nothing in githunk measures East Asian width. That was false** — `isWide` has been in `src/ui/author-style.ts` all along — and the related claim that highlight columns count code points is false too: `addHighlight` indexes **display cells**, established by probing it with `"ab tip: "` (8 cells / 8 code points), `"🎲 tip: "` (8 cells / 7 code points) and `"中 tip: "` (8 cells / 7 code points) — the last two diverge, and `end: 7` stopped short of the trailing space in both. Span boundaries are therefore measured in cells, through that one shared `isWide`. The decision to let OpenTUI wrap stands; only its stated reason was wrong.
 
 Colour then follows `src/ui/panes/diff-text.ts` exactly, in a new `src/ui/panes/command-log-text.ts`:
 
