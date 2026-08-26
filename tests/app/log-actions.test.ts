@@ -5,19 +5,23 @@ import { LOG_ACTIONS } from "../../src/app/log-actions"
 import { GitRunner } from "../../src/git/runner"
 import type { GitMutations } from "../../src/git/mutations"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
+import type { ChangedFile } from "../../src/domain/review-target"
+import type { DiffDocument } from "../../src/domain/diff/document"
 import type { BranchReviewSnapshot } from "../../src/git/branch-review"
 import type { StashCreateOptions } from "../../src/domain/stash"
 
-function snapshot(): WorkingTreeSnapshot {
+function snapshot(files: readonly ChangedFile[] = []): WorkingTreeSnapshot {
   return {
     repositoryRoot: "/tmp/repo",
     branch: "main",
     upstream: "origin/main",
     reviewTarget: { kind: "working-tree", scope: "all" },
-    files: [],
+    files,
     patches: [{ label: "UNSTAGED", text: "" }],
   }
 }
+
+const emptyDiffDocument: DiffDocument = { text: "", lines: [], files: [] }
 
 function branchSnapshot(baseRef: string): BranchReviewSnapshot {
   return {
@@ -46,12 +50,12 @@ function stubMutations(): GitMutations {
   } as unknown as GitMutations
 }
 
-function harness(): { readonly controller: AppController; readonly log: CommandLog } {
+function harness(files: readonly ChangedFile[] = []): { readonly controller: AppController; readonly log: CommandLog } {
   const log = new CommandLog()
   const controller = new AppController({
     repositoryRoot: "/tmp/repo",
     runner: new GitRunner({ cwd: "/tmp/repo", log }),
-    load: async () => snapshot(),
+    load: async () => snapshot(files),
     // Reaching a Branch Review target must not spawn real git (tests/app/controller-branch.test.ts
     // uses the same stub loaders to get there without a real repository).
     loadBranch: async (baseRef) => branchSnapshot(baseRef),
@@ -98,6 +102,27 @@ describe("action labels", () => {
     expect(actions(log)).toContain("Discard all unstaged changes selected file(s)")
   })
 
+  /**
+   * staging_controller.go:239-265: staging a selection (`ApplySelection`) and discarding one
+   * (`DiscardSelection`, which routes into `applySelectionAndRefresh(true)`) share the same
+   * `Tr.Actions.ApplyPatch` label (english.go:2215). Both call sites are exercised directly here —
+   * `applyPatch` is referenced twice in `LOG_ACTIONS`' mapping (once per method), so a static
+   * reachability check alone cannot tell whether either call site still exists.
+   */
+  test("applySelection logs Apply patch", async () => {
+    const { controller, log } = harness()
+    await controller.refresh()
+    await controller.applySelection(emptyDiffDocument, [], { reverse: false, wholeFile: true })
+    expect(actions(log)).toEqual([LOG_ACTIONS.applyPatch])
+  })
+
+  test("discardSelection logs Apply patch", async () => {
+    const { controller, log } = harness()
+    await controller.refresh()
+    await controller.discardSelection(emptyDiffDocument, [], { wholeFile: true })
+    expect(actions(log)).toEqual([LOG_ACTIONS.applyPatch])
+  })
+
   test("commit and amend log their own labels", async () => {
     const { controller, log } = harness()
     await controller.refresh()
@@ -116,7 +141,12 @@ describe("action labels", () => {
     expect(actions(log)).toEqual([])
   })
 
-  test("every label is one of lazygit's strings, with no trailing punctuation", () => {
+  /**
+   * This is a shape check only — it does not compare against lazygit, so a typo like "Stagee
+   * file" would still pass it. The verbatim-string requirement is carried by the individual pins
+   * scattered through this file (e.g. `expect(actions(log)).toContain("Unstage file")` above).
+   */
+  test("every label is non-empty, starts with a capital letter, and has no trailing punctuation", () => {
     for (const label of Object.values(LOG_ACTIONS)) {
       expect(label.length).toBeGreaterThan(0)
       expect(label).not.toMatch(/[.:]$/)
@@ -203,14 +233,38 @@ describe("action labels", () => {
     expect(actions(log)).toEqual([])
   })
 
-  test("toggleAllFiles logs Unstage all files when everything is already staged", async () => {
-    // The harness's snapshot has no files, so `files.some(...)` is false and `shouldStage` is
-    // false — the same "nothing left to stage" branch as `toggleStaged`'s (files_controller.go:544
-    // vs :559).
+  /**
+   * files_controller.go:555-557 returns `NothingToStageForSubmodule` *before* the `LogAction` at
+   * :559 when there is nothing left to stage or unstage — a clean tree must not write an action
+   * line for a `for` loop that iterates zero files. `controller.ts`'s `toggleAllFiles` guards on
+   * `files.length === 0` for the same reason.
+   */
+  test("toggleAllFiles on a clean tree logs nothing", async () => {
     const { controller, log } = harness()
     await controller.refresh()
     await controller.toggleAllFiles()
+    expect(actions(log)).toEqual([])
+  })
+
+  const stagedFile: ChangedFile = { path: "staged.ts", indexStatus: "M", worktreeStatus: ".", untracked: false, conflicted: false, additions: 1, deletions: 0 }
+  const unstagedFile: ChangedFile = { path: "unstaged.ts", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 }
+
+  test("toggleAllFiles logs Unstage all files when everything is already staged", async () => {
+    // shouldStage is `files.some((file) => file.untracked || file.worktreeStatus !== ".")`
+    // (controller.ts:954); a fully-staged file (worktreeStatus ".", not untracked) keeps that
+    // false, landing on the "nothing left to stage" branch (files_controller.go:544 vs :559).
+    const { controller, log } = harness([stagedFile])
+    await controller.refresh()
+    await controller.toggleAllFiles()
     expect(actions(log)).toEqual(["Unstage all files"])
+  })
+
+  test("toggleAllFiles logs Stage all files when an unstaged file is present", async () => {
+    // A file with worktreeStatus other than "." trips `shouldStage` true.
+    const { controller, log } = harness([unstagedFile])
+    await controller.refresh()
+    await controller.toggleAllFiles()
+    expect(actions(log)).toEqual(["Stage all files"])
   })
 
   /**
