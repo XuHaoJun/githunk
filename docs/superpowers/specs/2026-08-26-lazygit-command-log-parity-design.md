@@ -111,7 +111,7 @@ lazygit calls `LogAction` from its UI controllers, because that is the layer whe
 | `unstageFile` | `Unstage file` | `files_controller.go:625` -> `:559` |
 | `toggleAllFiles` | `Stage all files` / `Unstage all files` | `files_controller.go:960` -> `:544,559`, chosen by the same `shouldStage` test |
 | `discardFile` | `Discard all changes in selected file(s)` | `files_controller.go:1744`; `english.go:2173` |
-| `applySelection`, `discardSelection` | `Apply patch` | `staging_controller.go:265,332`; `english.go:2215` |
+| `applySelection`, `discardSelection` | `Apply patch` | `staging_controller.go:239-265`; `DiscardSelection` (`:213`) reaches the same `applySelection`, so lazygit labels both identically; `english.go:2215` |
 | `commit` | `Commit` | `english.go:2192` |
 | `amend` | `Amend commit` | `amend_helper.go:22` |
 | `push` | `Push` | `sync_controller.go:197` |

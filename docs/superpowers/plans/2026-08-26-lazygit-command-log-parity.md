@@ -2717,7 +2717,12 @@ export const LOG_ACTIONS = {
   unstageAllFiles: "Unstage all files",
   /** files_controller.go:1744; english.go:2173 */
   discardAllChangesInFile: "Discard all changes in selected file(s)",
-  /** staging_controller.go:265,332; english.go:2215 — line-level staging and discarding both. */
+  /**
+   * staging_controller.go:239-265; english.go:2215. Both staging and discarding a selection:
+   * `DiscardSelection` (:213) routes through `applySelectionAndRefresh(true)` into the same
+   * `applySelection`, so lazygit labels the two identically. (:332 is `editHunk`, a feature
+   * githunk does not have.)
+   */
   applyPatch: "Apply patch",
   /** english.go:2192 */
   commit: "Commit",
@@ -2995,8 +3000,10 @@ describe("random tips", () => {
       const bound = registry.bindings.some((binding) => binding.action === expected.action && binding.keys.includes(expected.key))
       expect(bound).toBe(true)
       expect(COMMAND_LOG_TIPS.some((tip) => tip.includes(`'${expected.label}'`))).toBe(true)
-      expect(key.length).toBeGreaterThan(0)
     }
+    // Every pinned key must actually be referenced by a tip; an orphan entry means a tip was
+    // dropped without its key, and the loop above would not notice.
+    expect(Object.keys(COMMAND_LOG_TIP_KEYS)).toHaveLength(8)
   })
 })
 ```
