@@ -681,6 +681,10 @@ export class RootView {
     if (id === undefined) return undefined
     return (this.model.reflog ?? []).find((entry) => entry.id === id)
   }
+  /** The command log pane's `view.Autoscroll` (pkg/gui/extras_panel.go:48-94), for tests. */
+  get commandLogAutoscroll(): boolean {
+    return this.commandLog.autoscroll
+  }
   paneScrollY(id: FocusId): number {
     if (id === "command-log") return this.commandLog.text.scrollY
     const pane = (this.panes as Record<string, PaneHandle>)[id]
@@ -3142,6 +3146,12 @@ export class RootView {
             const signed = direction === "up" ? -1 : direction === "down" ? 1 : 0
             if (signed !== 0) {
               const delta = Math.max(1, scrollInfo?.delta ?? 1)
+              // Over the command log the wheel is not just a scroll: lazygit binds MouseWheelUp/
+              // MouseWheelDown on the extras view to `scrollUpExtra`/`scrollDownExtra`
+              // (pkg/gui/keybindings.go:248-258), the same handlers `,`/`.` use, and both assign
+              // `Autoscroll = false` (pkg/gui/extras_panel.go:49,57) before scrolling. This is the
+              // only wheel dispatcher in the app, so the transition has to be applied here.
+              if (hit.id === "command-log") this.commandLog.applyScrollInput(signed < 0 ? "scroll-up" : "scroll-down")
               pane.scrollBy(signed * 2 * delta)
             }
           }

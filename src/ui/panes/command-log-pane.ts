@@ -48,6 +48,25 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     width: "100%",
   })
   box.add(text)
+  // The same local-default suppression every other pane gets from `createPane`
+  // (src/ui/panes/common.ts:168-175). OpenTUI 0.5.6's `TextBufferRenderable.onMouseEvent` scrolls
+  // the view itself on a wheel event and never consults `defaultPrevented`
+  // (node_modules/@opentui/core/chunk-bun-da1keqyp.js:2814-2833), so the handler has to be replaced
+  // rather than merely prevented. It deliberately does *not* `stopPropagation()`:
+  // `processMouseEvent` keeps bubbling the event to the parent chain (`:1259-1266`) up to
+  // RootView's single wheel dispatcher, which owns the scroll distance for every pane and — for
+  // this one — clears autoscroll, the way lazygit's wheel binding over the extras view runs
+  // `scrollUpExtra`/`scrollDownExtra` (pkg/gui/keybindings.go:248-258), both of which assign
+  // `Autoscroll = false` (pkg/gui/extras_panel.go:49,57). Without the suppression one tick applies
+  // two independent scrolls, and only the bubbled one goes through the transition.
+  const originalTextMouseEvent = (text as unknown as { onMouseEvent?: (event: MouseEvent) => void }).onMouseEvent?.bind(text)
+  ;(text as unknown as { onMouseEvent: (event: MouseEvent) => void }).onMouseEvent = (event: MouseEvent) => {
+    if ((event as unknown as { type: string }).type === "scroll") {
+      event.preventDefault()
+      return
+    }
+    originalTextMouseEvent?.(event)
+  }
   const bar = attachVerticalScrollbar(box, text, "command-log")
   let rendered: { readonly count: number; readonly newest: CommandLogLine | undefined } | undefined
   // `gui.Views.Extras.Autoscroll = true` at startup (pkg/gui/views.go:149).
