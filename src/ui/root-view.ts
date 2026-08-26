@@ -73,6 +73,7 @@ import { branchDeleteConfirmation, remoteTrackingMismatchConfirmation } from "./
 import { COPY_MENU_ITEMS } from "./copy-menu"
 import type { CheckoutRemoteTrackingResult, RemoteBranchSelection } from "../git/branches"
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
+import { createCommitMessagePanel, type CommitMessagePanelHandle } from "./commit-message-panel"
 import { FilterInput } from "./filter-input"
 import { normalizeKey } from "./keymap"
 import { createHintsBar, reviewStatusText, type HintsBarHandle } from "./hints-bar"
@@ -237,6 +238,7 @@ export class RootView {
   private readonly onCommitMessage: ((message: string) => Promise<void>) | undefined
   private readonly onAmendMessage: ((message: string) => Promise<void>) | undefined
   private readonly onCurrentCommitMessage: (() => Promise<string>) | undefined
+  private readonly commitMessagePanel: CommitMessagePanelHandle
   private commitDialog: CommitDialog | undefined
   /** Arms the second-press stage-everything confirmation of withEnsureCommittableFiles. */
   private pendingStageAllCommit: boolean = false
@@ -467,9 +469,11 @@ export class RootView {
     this.root.add(this.horizontalSplitter.box)
     this.hintsBar = createHintsBar(renderer)
     this.keybindingMenu = createKeybindingMenu(renderer)
+    this.commitMessagePanel = createCommitMessagePanel(renderer)
     this.root.add(this.hintsBar.hints)
     this.root.add(this.hintsBar.status)
     this.root.add(this.keybindingMenu.box)
+    this.root.add(this.commitMessagePanel.box)
     renderer.root.add(this.root)
 
     this.focusManager.onChange = (focus, logVisible) => {
@@ -592,7 +596,7 @@ export class RootView {
     this.pendingFileDiscard = undefined
   }
   private modalInputActive(): boolean {
-    return this.branchFilterActive || this.commitDialog !== undefined || this.copyMenuOpen ||
+    return this.branchFilterActive || this.commitDialog !== undefined || this.commitMessagePanel.visible || this.copyMenuOpen ||
       this.menuOpen ||
       this.model.upstreamChoice !== undefined || this.model.basePicker !== undefined ||
       this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined ||
@@ -1031,6 +1035,11 @@ export class RootView {
       this.handleFilterKey(key)
       return
     }
+    if (this.commitMessagePanel.visible) {
+      if (this.mutationInFlight) return
+      this.handleCommitMessagePanelKey(key)
+      return
+    }
     if (this.commitDialog !== undefined) {
       const mode = this.commitDialog.state.mode
       if (mode === "stash") {
@@ -1049,8 +1058,6 @@ export class RootView {
         this.handleBranchDialogKey(key)
         return
       }
-      if (this.mutationInFlight) return
-      this.handleCommitDialogKey(key)
       return
     }
     if (this.copyMenuOpen) {
@@ -2046,7 +2053,7 @@ export class RootView {
   private actionStashCreate(): void {
     if (this.mutationInFlight || this.onCreateStash === undefined) return
     this.stashIncludeUntracked = false
-    this.openCommitDialog("stash", "")
+    this.openCommitDialog("")
   }
 
   private actionStashApply(): void {
@@ -2087,7 +2094,7 @@ export class RootView {
   private actionCommit(): void {
     if (this.mutationInFlight || this.onCommitMessage === undefined) return
     if (!this.commitAttemptAvailable()) return
-    this.withEnsureCommittableFiles(() => this.openCommitDialog("commit", ""))
+    this.withEnsureCommittableFiles(() => this.openCommitMessagePanel("commit", ""))
   }
 
   private actionAmend(): void {
@@ -2119,10 +2126,10 @@ export class RootView {
    * (pkg/gui/controllers/helpers/working_tree_helper.go:229-258). Githunk's confirmation idiom
    * is a second press of the same key, as with file discard and stash drop.
    */
-  private withEnsureCommittableFiles(retry: () => void): void {
+  private withEnsureCommittableFiles(retry: () => void | Promise<void>): void {
     if (anyStagedChanges(this.model)) {
       this.pendingStageAllCommit = false
-      retry()
+      void retry()
       return
     }
     if (this.model.files.length === 0) {
@@ -2139,7 +2146,7 @@ export class RootView {
     if (this.onToggleAllFiles === undefined) return
     this.runUiMutation(async () => {
       await this.onToggleAllFiles!()
-      retry()
+      await retry()
     })
   }
 
@@ -2380,66 +2387,72 @@ export class RootView {
       }
     })
   }
-  private openCommitDialog(mode: "commit" | "amend" | "stash", initialMessage: string): void {
-    this.commitDialog = new CommitDialog(mode, initialMessage)
+  private openCommitDialog(initialMessage: string): void {
+    this.commitDialog = new CommitDialog("stash", initialMessage)
     this.panes.main.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
     this.root.requestRender()
   }
+
+  private openCommitMessagePanel(mode: "commit" | "amend", initialMessage: string): void {
+    this.commitMessagePanel.open(mode, initialMessage)
+    this.recomputeLayout()
+    this.root.requestRender()
+  }
+
   private openBranchDialog(mode: "branch-create" | "branch-rename", initialMessage: string): void {
     this.commitDialog = new CommitDialog(mode, initialMessage)
     this.panes.branches.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
     this.root.requestRender()
   }
 
-  private openAmendDialog(): void {
+  private async openAmendDialog(): Promise<void> {
     if (this.onCurrentCommitMessage === undefined) return
-    this.mutationInFlight = true
-    void this.onCurrentCommitMessage().then((message) => {
-      this.openCommitDialog("amend", message)
-    }).catch((error: unknown) => {
+    const ownsMutation = !this.mutationInFlight
+    if (ownsMutation) this.mutationInFlight = true
+    try {
+      const message = await this.onCurrentCommitMessage()
+      this.openCommitMessagePanel("amend", message)
+    } catch (error: unknown) {
       this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
       this.root.requestRender()
-    }).finally(() => {
-      this.mutationInFlight = false
-    })
+    } finally {
+      if (ownsMutation) this.mutationInFlight = false
+    }
   }
 
-  private handleCommitDialogKey(key: KeyEvent): boolean {
-    const dialog = this.commitDialog
-    if (dialog === undefined) return false
-    const result = commitDialogKey(dialog.state, key)
-    if (result.result?.kind === "cancelled") {
-      this.commitDialog = undefined
-      this.panes.main.box.bottomTitle = undefined
+  private handleCommitMessagePanelKey(key: KeyEvent): void {
+    const result = this.commitMessagePanel.handleKey(key)
+    if (result === undefined) {
       this.root.requestRender()
-      return true
+      return
     }
-    if (result.result?.kind === "confirmed") {
-      const message = result.result.message
-      const operation = dialog.state.mode === "amend" ? this.onAmendMessage : this.onCommitMessage
-      if (operation === undefined) return true
-      this.mutationInFlight = true
-      void operation(message).then(() => {
-        if (this.commitDialog === dialog) {
-          this.commitDialog = undefined
-          this.panes.main.box.bottomTitle = undefined
-        }
-      }).catch((error: unknown) => {
-        dialog.setError(error instanceof Error ? error.message : String(error))
-        this.panes.main.box.bottomTitle = renderCommitDialog(dialog.state)
-      }).finally(() => {
-        this.mutationInFlight = false
-        this.root.requestRender()
-      })
-      return true
+    if (result.kind === "changed") {
+      this.recomputeLayout()
+      return
     }
-    const next = result
-    const nextDialog = new CommitDialog(next.state.mode, next.state.message)
-    nextDialog.setError(next.state.error)
-    this.commitDialog = nextDialog
-    this.panes.main.box.bottomTitle = renderCommitDialog(nextDialog.state)
-    this.root.requestRender()
-    return true
+    if (result.kind === "cancelled") {
+      this.commitMessagePanel.close()
+      this.recomputeLayout()
+      this.root.requestRender()
+      return
+    }
+
+    const operation = this.commitMessagePanel.mode === "amend" ? this.onAmendMessage : this.onCommitMessage
+    if (operation === undefined) {
+      this.commitMessagePanel.setError("Commit operation is unavailable")
+      this.root.requestRender()
+      return
+    }
+    this.mutationInFlight = true
+    void operation(result.message).then(() => {
+      this.commitMessagePanel.close()
+      this.recomputeLayout()
+    }).catch((error: unknown) => {
+      this.commitMessagePanel.setError(error instanceof Error ? error.message : String(error))
+    }).finally(() => {
+      this.mutationInFlight = false
+      this.root.requestRender()
+    })
   }
 
   /** The clock and per-row extras every branches-panel row build needs. */
@@ -3583,6 +3596,7 @@ export class RootView {
       )
     }
     this.keybindingMenu.box.visible = this.menuOpen
+    this.commitMessagePanel.layout(this.geometry.terminalWidth, this.geometry.terminalHeight)
     this.root.requestRender()
   }
 }
