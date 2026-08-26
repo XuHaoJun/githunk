@@ -1,12 +1,54 @@
-import { RGBA } from "@opentui/core"
+import { RGBA, type ColorInput } from "@opentui/core"
+
+export type TerminalPaletteSnapshot = {
+  readonly palette?: readonly (string | null)[]
+  readonly defaultForeground?: string | null
+  readonly defaultBackground?: string | null
+}
 
 /**
- * Lazygit's theme names are ANSI indices, not CSS colours. Keep that intent in the OpenTUI value so
- * the terminal resolves the palette (Ghostty, tmux, and user overrides) exactly as lazygit does.
- * Explicit RGB values use `RGBA.fromInts` instead and therefore remain truecolor.
+ * Fallback values for a terminal that cannot answer OpenTUI's palette query. These are Ghostty's
+ * built-in defaults in the development environment; terminals that answer the query replace them
+ * before the first application render. The RGBA values still retain indexed/default intent.
  */
+const FALLBACK_ANSI_PALETTE: readonly string[] = [
+  "#1d1f21",
+  "#cc6666",
+  "#b5bd68",
+  "#f0c674",
+  "#81a2be",
+  "#b294bb",
+  "#8abeb7",
+  "#c5c8c6",
+  "#666666",
+  "#d54e53",
+  "#b9ca4a",
+  "#e7c547",
+  "#7aa6da",
+  "#c397d8",
+  "#70c0b1",
+  "#eaeaea",
+]
+const FALLBACK_DEFAULT_FOREGROUND = "#ffffff"
+const FALLBACK_DEFAULT_BACKGROUND = "#282c34"
+
+let terminalPalette: readonly (string | null)[] = []
+let defaultForegroundFallback = FALLBACK_DEFAULT_FOREGROUND
+let defaultBackgroundFallback = FALLBACK_DEFAULT_BACKGROUND
+
+function fallbackForIndexedSlot(slot: number): string | undefined {
+  return terminalPalette[slot] ?? FALLBACK_ANSI_PALETTE[slot]
+}
+
 function indexed(slot: number): RGBA {
-  return RGBA.fromIndex(slot)
+  return RGBA.fromIndex(slot, fallbackForIndexedSlot(slot))
+}
+
+function copyRgbFallback(target: RGBA, source: ColorInput): void {
+  const resolved = typeof source === "string" ? RGBA.fromHex(source) : source
+  for (let index = 0; index < target.buffer.length; index++) {
+    target.buffer[index] = (target.buffer[index]! & 0xff00) | (resolved.buffer[index]! & 0xff)
+  }
 }
 
 export const ANSI_BLACK = indexed(0)
@@ -27,10 +69,9 @@ export const ANSI_BRIGHT_MAGENTA = indexed(13)
 export const ANSI_BRIGHT_CYAN = indexed(14)
 export const ANSI_BRIGHT_WHITE = indexed(15)
 
-
 /** lazygit's `default` foreground/background values, resolved by the terminal. */
-export const DEFAULT_FOREGROUND = RGBA.defaultForeground()
-export const DEFAULT_BACKGROUND = RGBA.defaultBackground()
+export const DEFAULT_FOREGROUND = RGBA.defaultForeground(defaultForegroundFallback)
+export const DEFAULT_BACKGROUND = RGBA.defaultBackground(defaultBackgroundFallback)
 
 /** lazygit's selected-line background: `SelectedLineBgColor: []string{"blue"}`. */
 export const SELECTED_LINE_BG = ANSI_BLUE
@@ -81,11 +122,61 @@ export const SUBMODULE_NAME_FG = ANSI_GREEN
 export const SUBMODULE_PATH_FG = ANSI_YELLOW
 export const SUBMODULE_URL_FG = ANSI_CYAN
 
+/** Creates an indexed ANSI color using the current terminal palette fallback. */
+export function indexedColor(slot: number): RGBA {
+  return indexed(slot)
+}
+
+/**
+ * Updates fallback RGB values from OpenTUI's terminal palette query without changing color intent.
+ * This matters when the native renderer must fall back to RGB while lazygit would emit an ANSI
+ * index; both then resolve to the same terminal palette color.
+ */
+export function configureTerminalPalette(snapshot: TerminalPaletteSnapshot): void {
+  terminalPalette = snapshot.palette ?? []
+  defaultForegroundFallback = snapshot.defaultForeground ?? FALLBACK_DEFAULT_FOREGROUND
+  defaultBackgroundFallback = snapshot.defaultBackground ?? FALLBACK_DEFAULT_BACKGROUND
+
+  const ansiTokens = [
+    ANSI_BLACK,
+    ANSI_RED,
+    ANSI_GREEN,
+    ANSI_YELLOW,
+    ANSI_BLUE,
+    ANSI_MAGENTA,
+    ANSI_CYAN,
+    ANSI_WHITE,
+    ANSI_BRIGHT_BLACK,
+    ANSI_BRIGHT_RED,
+    ANSI_BRIGHT_GREEN,
+    ANSI_BRIGHT_YELLOW,
+    ANSI_BRIGHT_BLUE,
+    ANSI_BRIGHT_MAGENTA,
+    ANSI_BRIGHT_CYAN,
+    ANSI_BRIGHT_WHITE,
+  ]
+  for (let index = 0; index < ansiTokens.length; index++) {
+    const fallback = fallbackForIndexedSlot(index)
+    if (fallback !== undefined) copyRgbFallback(ansiTokens[index]!, fallback)
+  }
+  copyRgbFallback(DEFAULT_FOREGROUND, defaultForegroundFallback)
+  copyRgbFallback(DEFAULT_BACKGROUND, defaultBackgroundFallback)
+}
+
 /**
  * Mirrors lazygit's highlighted-line rule in `pkg/gocui/view.go:675-685`: only base ANSI indices
  * become bright; RGB and terminal-default values are left untouched. The caller adds bold.
  */
 export function brightenAnsiForeground(color: RGBA): RGBA {
   if (color.intent !== "indexed" || color.slot < 0 || color.slot > 7) return color
-  return indexed(color.slot + 8)
+  return [
+    ANSI_BRIGHT_BLACK,
+    ANSI_BRIGHT_RED,
+    ANSI_BRIGHT_GREEN,
+    ANSI_BRIGHT_YELLOW,
+    ANSI_BRIGHT_BLUE,
+    ANSI_BRIGHT_MAGENTA,
+    ANSI_BRIGHT_CYAN,
+    ANSI_BRIGHT_WHITE,
+  ][color.slot]!
 }

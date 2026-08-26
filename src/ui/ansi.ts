@@ -1,4 +1,5 @@
 import { RGBA } from "@opentui/core"
+import { indexedColor } from "./theme"
 
 
 /**
@@ -57,7 +58,6 @@ function sameColor(a: RGBA | undefined, b: RGBA | undefined): boolean {
   return ar === br && ag === bg && ab === bb && aa === ba
 }
 
-
 function sameStyle(a: AnsiStyle, b: AnsiStyle): boolean {
   return sameColor(a.fg, b.fg) && a.bold === b.bold && a.dim === b.dim
 }
@@ -65,7 +65,7 @@ function sameStyle(a: AnsiStyle, b: AnsiStyle): boolean {
 /** xterm's 256-colour index space, preserved as indexed intent for the terminal to resolve. */
 function color256(index: number): RGBA | undefined {
   if (index < 0 || index > 255) return undefined
-  return RGBA.fromIndex(index)
+  return indexedColor(index)
 }
 
 
@@ -88,9 +88,9 @@ function applySgr(style: AnsiStyle, params: readonly number[]): AnsiStyle {
       next.bold = false
       next.dim = false
     } else if (param >= 30 && param <= 37) {
-      next.fg = RGBA.fromIndex(param - 30)
+      next.fg = indexedColor(param - 30)
     } else if (param >= 90 && param <= 97) {
-      next.fg = RGBA.fromIndex(param - 90 + 8)
+      next.fg = indexedColor(param - 90 + 8)
     } else if (param === 39) {
       next.fg = undefined
     } else if (param === 38) {

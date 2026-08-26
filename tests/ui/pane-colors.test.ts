@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { TextRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
+import { createHintsBar } from "../../src/ui/hints-bar"
 import { createKeybindingMenu } from "../../src/ui/keybinding-menu"
 import { createPane } from "../../src/ui/panes/common"
+import { createSplitter } from "../../src/ui/splitter"
 
 describe("lazygit pane color semantics", () => {
   test("uses terminal defaults when a pane is unfocused", async () => {
@@ -36,6 +39,31 @@ describe("lazygit pane color semantics", () => {
       const menu = createKeybindingMenu(setup.renderer)
       expect(menu.box.backgroundColor.intent).toBe("default")
       expect(menu.box.borderColor.intent).toBe("default")
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+  test("uses lazygit's blue hint color and terminal-default status color", async () => {
+    const setup = await createTestRenderer({ width: 80, height: 24 })
+    try {
+      const hints = createHintsBar(setup.renderer)
+      expect(hints.hints.fg.intent).toBe("indexed")
+      expect(hints.hints.fg.slot).toBe(4)
+      expect(hints.status.fg.intent).toBe("default")
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+
+  test("uses terminal-default splitter rules and lazygit green hover", async () => {
+    const setup = await createTestRenderer({ width: 80, height: 24 })
+    try {
+      const splitter = createSplitter(setup.renderer, "vertical", "splitter")
+      const text = splitter.box.findDescendantById("splitter-glyphs") as TextRenderable
+      expect(text.fg.intent).toBe("default")
+      splitter.setHovered(true)
+      expect(text.fg.intent).toBe("indexed")
+      expect(text.fg.slot).toBe(2)
     } finally {
       setup.renderer.destroy()
     }

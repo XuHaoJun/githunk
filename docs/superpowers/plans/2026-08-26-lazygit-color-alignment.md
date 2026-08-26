@@ -4,7 +4,7 @@
 
 **Goal:** Make githunk preserve lazygit's ANSI indexed/default color semantics so the terminal palette controls the same colors in both applications.
 
-**Architecture:** `src/ui/theme.ts` owns immutable-by-convention `RGBA` tokens for ANSI indices, terminal defaults, and explicit RGB values. ANSI parsing, list rendering, diff highlighting, tab strips, pane chrome, and base text renderables consume those tokens instead of static ANSI-mimicking hex strings or OpenTUI CSS color helpers. The old string-hex theme contract is removed rather than shimmed.
+**Architecture:** `src/ui/theme.ts` owns immutable-by-convention `RGBA` tokens for ANSI indices, terminal defaults, and explicit RGB values. It also accepts OpenTUI's terminal palette query before the first application render and updates RGB fallbacks without changing indexed/default intent; Ghostty's built-in palette is the no-response fallback used in this environment. ANSI parsing, list rendering, diff highlighting, tab strips, pane chrome, and base text renderables consume those tokens instead of static ANSI-mimicking hex strings or OpenTUI CSS color helpers. The old string-hex theme contract is removed rather than shimmed.
 
 **Tech Stack:** Bun, strict TypeScript, OpenTUI 0.5.6 `RGBA`/`ColorInput`, Bun test, vendored lazygit Go sources.
 
@@ -24,18 +24,15 @@
 
 **Files:**
 - Modify: `src/ui/theme.ts`
-- Create: `tests/ui/theme.test.ts`
+- Modify: `src/main.ts`
 
 **Interfaces:**
 - Produces `ANSI_BLACK`, `ANSI_RED`, `ANSI_GREEN`, `ANSI_YELLOW`, `ANSI_BLUE`, `ANSI_MAGENTA`, `ANSI_CYAN`, `ANSI_WHITE` as indexed `RGBA` values with slots 0-7.
 - Produces `ANSI_BRIGHT_BLACK` through `ANSI_BRIGHT_WHITE` as indexed slots 8-15.
 - Produces `DEFAULT_FOREGROUND` and `DEFAULT_BACKGROUND` as default-intent `RGBA` values.
 - Existing semantic exports (`SELECTED_LINE_BG`, `TAB_ACTIVE_FG`, `REFLOG_HASH_FG`, branch/file/worktree colors, PR colors) become `RGBA` values; ANSI aliases point at indexed tokens and PR colors use RGB-intent values.
-- `brightenAnsiForeground(color: RGBA): RGBA` returns slot `index + 8` for indexed slots 0-7 and returns the original value for RGB/default values.
-
-- [ ] **Step 1: Write the failing token tests**
-
-  Create `tests/ui/theme.test.ts`. Assert that `RGBA.fromIndex(2)` has `intent === "indexed"` and `slot === 2`; `RGBA.defaultForeground()` has `intent === "default"`; `SELECTED_LINE_BG` is indexed slot 4; `brightenAnsiForeground(ANSI_GREEN)` is indexed slot 10; and an RGB value such as `RGBA.fromInts(26, 43, 60)` is unchanged by brightening.
+- Produces `indexedColor(slot: number): RGBA`, using the queried palette fallback for indexed slots.
+- Produces `configureTerminalPalette(snapshot: TerminalPaletteSnapshot): void`, updating fallback RGB bytes while preserving each token's intent/slot.
 
 - [ ] **Step 2: Run the token test and verify it fails**
 
@@ -45,7 +42,7 @@
 
 - [ ] **Step 3: Implement semantic tokens**
 
-  Import `RGBA` from `@opentui/core`; construct ANSI tokens with `RGBA.fromIndex`, defaults with `RGBA.defaultForeground`/`RGBA.defaultBackground`, and literal PR colors with `RGBA.fromInts`. Replace the static hex map with slot-based brightening. Keep the token names stable so callsites can migrate without aliases for the old value type.
+  Import `RGBA` from `@opentui/core`; construct ANSI tokens with `RGBA.fromIndex`, defaults with `RGBA.defaultForeground`/`RGBA.defaultBackground`, and literal PR colors with `RGBA.fromInts`. Add Ghostty fallback palette values, `indexedColor`, and `configureTerminalPalette`; use a full 256-color query in `src/main.ts` before `createApp` so the fallback matches lazygit when OpenTUI cannot emit indexed colors directly.
 
 - [ ] **Step 4: Run the token test and verify it passes**
 
@@ -147,13 +144,14 @@
   Expected: PASS.
 
 ---
-
 ### Task 4: Align pane defaults, borders, and remaining standard chrome
 
 **Files:**
 - Modify: `src/ui/panes/common.ts`
 - Modify: `src/ui/panes/command-log-pane.ts`
 - Modify: `src/ui/keybinding-menu.ts`
+- Modify: `src/ui/hints-bar.ts`
+- Modify: `src/ui/splitter.ts`
 - Modify: `tests/ui/pane-tabs.test.ts`
 - Modify: `tests/ui/pane-tabs.integration.test.ts`
 - Modify: `tests/ui/files-tabs.integration.test.ts`
@@ -215,15 +213,11 @@
 
 - [ ] **Step 3: Launch githunk in a real PTY with background work disabled**
 
-  Run from a temporary Git repository: `GITHUNK_BACKGROUND=0 bun run start`
-
-  Exercise Files, Branches, Commits, selected rows, the active tab strip, and Main diff colors; exit with `q`. Confirm the display follows the terminal's ANSI palette instead of the old static dark values.
+  Run from the controlled Git fixture in a tmux PTY: `GITHUNK_BACKGROUND=0 bun /absolute/path/to/githunk/src/main.ts`. Exercise Files, Branches, Commits, selected rows, the active tab strip, and Main diff colors; capture with `tmux capture-pane -p -e`.
 
 - [ ] **Step 4: Launch lazygit in the same PTY environment**
 
-  Run: `lazygit`
-
-  Compare selected-row background, active pane/tab green, staged green, diff addition green, diff hunk cyan, commit hash yellow, and default text/border. Record only intentional differences such as custom review/splitter UI and truecolor author/PR colors.
+  Run `lazygit` against the same fixture, exercise the same panes, and capture with `tmux capture-pane -p -e`. Resolve lazygit's ANSI SGR 16-color values through the active Ghostty palette and compare them with githunk's RGB fallback output for each corresponding semantic role: selected background, active green, staged/unstaged status, diff addition/deletion/hunk, commit hash, default text, and border.
 
 - [ ] **Step 5: Review whitespace and working-tree state**
 

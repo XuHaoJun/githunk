@@ -1,5 +1,6 @@
 import { createCliRenderer } from "@opentui/core"
 import { backgroundOptionsFromEnv, createApp } from "./app/create-app"
+import { configureTerminalPalette } from "./ui/theme"
 import { GitCommandError, GitRunner } from "./git/runner"
 
 export async function startApp(): Promise<number> {
@@ -20,6 +21,13 @@ export async function startApp(): Promise<number> {
     enableMouseMovement: true,
     targetFps: 30,
   })
+
+  try {
+    const terminalPalette = await renderer.getPalette({ size: 256, timeout: 500 })
+    configureTerminalPalette(terminalPalette)
+  } catch {
+    // Static Ghostty defaults remain the fallback when the terminal cannot answer OSC palette queries.
+  }
 
   const app = createApp({
     repositoryRoot,

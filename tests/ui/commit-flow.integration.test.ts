@@ -74,7 +74,8 @@ describe("committing from the files pane", () => {
     expect(descriptionBox).toBeInstanceOf(BoxRenderable)
     const summaryField = summaryBox instanceof BoxRenderable ? summaryBox : undefined
     const descriptionField = descriptionBox instanceof BoxRenderable ? descriptionBox : undefined
-    expect(summaryField?.borderColor.toInts()).toEqual([0, 128, 0, 255])
+    expect(summaryField?.borderColor.intent).toBe("indexed")
+    expect(summaryField?.borderColor.slot).toBe(2)
     expect(descriptionField?.borderColor.intent).toBe("default")
     expect(summaryEditor).toBeInstanceOf(TextareaRenderable)
     const summaryInput = summaryEditor instanceof TextareaRenderable ? summaryEditor : undefined

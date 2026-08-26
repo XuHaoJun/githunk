@@ -23,7 +23,7 @@ Lazygit's default theme config uses names such as `green`, `blue`, and `default`
 
 Githunk currently maps those same names to fixed RGB strings in `src/ui/theme.ts`, resolves OpenTUI named colors as CSS RGB values, and converts git SGR sequences to a fixed `ANSI_PALETTE`. On a Ghostty default palette this makes colors such as ANSI green, cyan, and blue much darker, especially selected-line blue.
 
-The installed OpenTUI 0.5.6 API provides `RGBA.fromIndex`, `RGBA.defaultForeground`, `RGBA.defaultBackground`, and `CliRenderer.getPalette`. The implementation will use the indexed/default RGBA intents directly rather than maintain a second hard-coded terminal palette.
+The installed OpenTUI 0.5.6 API provides `RGBA.fromIndex`, `RGBA.defaultForeground`, `RGBA.defaultBackground`, and `CliRenderer.getPalette`. The implementation uses indexed/default intents and queries the terminal palette before the first application render; if the query cannot complete, it uses the current Ghostty defaults as the RGB fallback while keeping the semantic intent.
 
 ## 3. Color Contract
 
@@ -90,7 +90,7 @@ Not included:
 
 This change removes the old string-hex theme contract. TypeScript compilation must fail until every caller is migrated, which is intentional and bounded by the repository.
 
-No terminal palette query is required for normal rendering: indexed/default intent is passed to OpenTUI and the terminal remains authoritative. OpenTUI's palette detection remains available for terminals that need native palette synchronization, but githunk does not maintain a second asynchronous palette state in this change.
+Startup queries the terminal palette through `CliRenderer.getPalette({ size: 256 })` before creating the app. A successful query supplies the fallback RGB values for terminals or multiplexers that cannot render indexed colors directly; a failed query falls back to Ghostty's built-in palette in this environment. Indexed/default intent is still preserved for terminals that support it.
 
 Truecolor SGR values are never quantized. Unsupported/malformed SGR values keep the existing parser behavior: consume the sequence and leave the current style unchanged.
 
