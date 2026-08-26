@@ -29,7 +29,7 @@ The larger gap is *what* gets logged. lazygit calls `DontLog()` on 80 command ob
 
 ```ts
 export type CommandLogStyle =
-  | "action" | "command" | "internal" | "output" | "intro" | "tip-label" | "tip"
+  | "action" | "command" | "internal" | "output-heading" | "output" | "intro" | "tip-label" | "tip"
 
 export type CommandLogSpan = { readonly style: CommandLogStyle; readonly text: string }
 
@@ -154,16 +154,16 @@ Styles, copied from `command_log_panel.go` and `theme/theme.go:11`:
 | `tip-label` | `ANSI_YELLOW` | `style.FgYellow` (`command_log_panel.go:81`) |
 | `tip` | `ANSI_GREEN` | `style.FgGreen` (`command_log_panel.go:82`) |
 
-lazygit sets `Wrap = true` on the view (`views.go:150`). githunk keeps `wrapMode: "none"` on the `TextRenderable` and wraps in a pure function instead, because `PaneTextBuffer.addHighlight(row, …)` addresses display rows and needs a one-to-one mapping to colour them. The visible result is the same: soft-wrapped continuation rows carry no extra indent, matching gocui. Wrapping is recomputed on resize.
+lazygit sets `Wrap = true` on the view (`views.go:150`), and gocui wraps at character boundaries. githunk sets `wrapMode: "char"` on the `TextRenderable` and lets OpenTUI do the wrapping, rather than wrapping in its own pure function. Self-wrapping would have to count display columns to place highlights, and nothing in githunk measures East Asian width, so a CJK filename would mis-colour; OpenTUI already measures it.
 
-```ts
-export function commandLogDisplayLines(
-  lines: readonly CommandLogLine[],
-  width: number,
-): readonly CommandLogDisplayLine[]
-```
+Colour then follows `src/ui/panes/diff-text.ts` exactly, in a new `src/ui/panes/command-log-text.ts`:
 
-The pane paints only rows near the viewport, as `src/ui/panes/diff-text.ts` does. Change detection keeps the existing shape — `lines()` returns the live array, so identity cannot detect an append; the pane compares the line count and the identity of the last line, and additionally re-wraps when the width changed.
+- the text goes in whole and unstyled through `setPlainPaneText`, per the `pane-text.ts` cost rule;
+- `text.lineInfo.lineSources` maps each visual row back to its logical line, cached per wrap width, as `diff-text.ts:104-108` does — this is what makes wrapping the widget's problem rather than ours;
+- only rows within `MARGIN_ROWS` of the viewport carry highlights, repainted incrementally on scroll (`diff-text.ts:120-133`), driven from the same `onLifecyclePass` hook (`diff-text.ts:138-152`);
+- **every line but one has a single span**, so its rows are painted `{ start: 0, end: ROW_END_COLS }` and no column arithmetic happens at all. The sole multi-span line is `Random tip: <tip>`; its first row is painted by code-point offset and any continuation row takes the `tip` style whole.
+
+Change detection keeps the existing shape — `lines()` returns the live array, so identity cannot detect an append; the pane compares the line count and the identity of the last line.
 
 The pane title becomes `Command log` (`english.go:1928`).
 
@@ -265,7 +265,7 @@ Pure unit tests, no renderer:
 
 - `formatCommandLine` — the space-only quoting rule from `CmdObj.ToString()`, including arguments with quotes, backslashes and empty strings.
 - `CommandLog` write API — span styles per kind, the two-space indent applied to every line of a multi-line command string, `Git output:` written once per command.
-- `commandLogDisplayLines` — wrapping at a width, continuation rows carrying no indent, spans split correctly across a wrap boundary, wide characters.
+- `commandLogRowHighlights(lines, lineSources, row)` — the pure row-to-highlight mapping behind the painter: a single-span row spans the full width, a `Random tip` first row splits at the label's code-point boundary, a continuation row takes the trailing span's style, and a row past the end yields nothing.
 - the autoscroll state machine — each input from §6 against the flag and viewport.
 - `computeLayout` — the three sizing branches from §9, tested directly against `computeLayout` per the repo convention.
 - `defaultUiState()` visibility, and a persisted `false` overriding it.
