@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
 import { GitRunner } from "../../src/git/runner"
 import { UiStateStore, defaultUiState } from "../../src/ui/ui-state-store"
+import { DEFAULT_LOG_HEIGHT } from "../../src/ui/layout"
 
 describe("UiStateStore", () => {
   let repository: TempRepository | undefined
@@ -35,5 +36,23 @@ describe("UiStateStore", () => {
     const store = new UiStateStore(runner)
     await Bun.write(await store.path(), JSON.stringify({ version: 1, sidePanelRatio: 9, commandLogHeight: -4, commandLogVisible: "yes" }))
     expect(await store.load()).toEqual(defaultUiState())
+  })
+
+  /**
+   * `Gui.ShowCommandLog: true` (pkg/config/user_config.go:901), and
+   * `gui.ShowExtrasWindow = userConfig.Gui.ShowCommandLog && !GetAppState().HideCommandLog`
+   * (pkg/gui/gui.go:523) — so shown unless the user hid it, and the persisted choice wins.
+   */
+  test("the command log is shown by default", () => {
+    expect(defaultUiState().commandLogVisible).toBe(true)
+    expect(defaultUiState().commandLogHeight).toBe(DEFAULT_LOG_HEIGHT)
+  })
+
+  test("a persisted hidden log still wins, as HideCommandLog does", async () => {
+    repository = await createTempRepository()
+    const runner = new GitRunner(repository.path)
+    const store = new UiStateStore(runner)
+    await store.save({ sidePanelRatio: 0.4, commandLogHeight: 12, commandLogVisible: false })
+    expect((await store.load()).commandLogVisible).toBe(false)
   })
 })

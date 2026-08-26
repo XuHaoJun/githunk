@@ -10,6 +10,11 @@ import type { UiState as PersistedUiState } from "../../src/ui/ui-state-store"
  * wiring in src/ui/root-view.ts holds together: `modalInputActive()` gates every other key while
  * the menu is up, `handleModalKey()` routes into `ActionMenuHandle.handleKey()`, and the two
  * items reach `FocusManager` exactly as extras_panel.go's `OnPress` handlers do.
+ *
+ * Every harness below states `logVisible: false` explicitly: these tests are about the show/hide
+ * transition itself (Task 10 made the log start shown by default, `Gui.ShowCommandLog: true`,
+ * pkg/config/user_config.go:901), so their toggles need a known starting state rather than one
+ * that silently flips meaning if the default changes again.
  */
 describe("@ opens the command log menu", () => {
   let harness: ShellHarness | undefined
@@ -20,7 +25,7 @@ describe("@ opens the command log menu", () => {
   })
 
   test("@ opens a modal menu that swallows other keys", async () => {
-    harness = await createShellHarness()
+    harness = await createShellHarness({ logVisible: false })
     const view = harness.app.view!
     expect(view.focusManager.logVisible).toBe(false)
 
@@ -36,7 +41,7 @@ describe("@ opens the command log menu", () => {
   })
 
   test("escape closes the menu without changing focus or visibility", async () => {
-    harness = await createShellHarness()
+    harness = await createShellHarness({ logVisible: false })
     const view = harness.app.view!
     await harness.pressKey("@")
     await harness.flush()
@@ -53,7 +58,7 @@ describe("@ opens the command log menu", () => {
   })
 
   test("@ then t shows the log without focusing it (extras_panel.go's t item)", async () => {
-    harness = await createShellHarness()
+    harness = await createShellHarness({ logVisible: false })
     const view = harness.app.view!
     await harness.pressKey("@")
     await harness.pressKey("t")
@@ -64,7 +69,7 @@ describe("@ opens the command log menu", () => {
   })
 
   test("@ then t a second time hides it again", async () => {
-    harness = await createShellHarness()
+    harness = await createShellHarness({ logVisible: false })
     const view = harness.app.view!
     await harness.pressKey("@")
     await harness.pressKey("t")
@@ -77,7 +82,7 @@ describe("@ opens the command log menu", () => {
   })
 
   test("@ then f shows and focuses the log even though it was hidden (extras_panel.go:40-46)", async () => {
-    harness = await createShellHarness()
+    harness = await createShellHarness({ logVisible: false })
     const view = harness.app.view!
     await harness.pressKey("@")
     await harness.pressKey("f")
@@ -91,7 +96,7 @@ describe("@ opens the command log menu", () => {
    * focused log must not leave focus pointing at a window that no longer exists.
    */
   test("@ then t pops focus back to the last side pane when the log was focused", async () => {
-    harness = await createShellHarness()
+    harness = await createShellHarness({ logVisible: false })
     const view = harness.app.view!
     // Focus branches first so lastSide is deterministic, rather than relying on the default.
     await harness.pressKey("3")
@@ -111,7 +116,7 @@ describe("@ opens the command log menu", () => {
   })
 
   test("j/k move the selection inside the menu; the accelerator fires regardless of it", async () => {
-    harness = await createShellHarness()
+    harness = await createShellHarness({ logVisible: false })
     const view = harness.app.view!
     await harness.pressKey("@")
     await harness.pressKey("j")
@@ -137,7 +142,7 @@ describe("@ opens the command log menu", () => {
    */
   test("@ then t persists the new visibility (extras_panel.go:24-27's SaveAppStateAndLogError)", async () => {
     const geometryChanges: PersistedUiState[] = []
-    harness = await createShellHarness({ onGeometryChange: (state) => geometryChanges.push(state) })
+    harness = await createShellHarness({ logVisible: false, onGeometryChange: (state) => geometryChanges.push(state) })
     const view = harness.app.view!
     expect(view.focusManager.logVisible).toBe(false)
     expect(geometryChanges).toHaveLength(0)
@@ -161,7 +166,7 @@ describe("@ opens the command log menu", () => {
    */
   test("@ then f shows and focuses the log WITHOUT persisting it (extras_panel.go:40-46 has no SaveAppStateAndLogError)", async () => {
     const geometryChanges: PersistedUiState[] = []
-    harness = await createShellHarness({ onGeometryChange: (state) => geometryChanges.push(state) })
+    harness = await createShellHarness({ logVisible: false, onGeometryChange: (state) => geometryChanges.push(state) })
     const view = harness.app.view!
 
     await harness.pressKey("@")

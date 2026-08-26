@@ -7,7 +7,7 @@ import { createApp, type App } from "../../src/app/create-app"
 import { GitRunner } from "../../src/git/runner"
 import { createTempRepository, type TempRepository } from "./temp-repository"
 import type { FocusId } from "../../src/ui/focus"
-import type { UiState as PersistedUiState } from "../../src/ui/ui-state-store"
+import { UiStateStore, defaultUiState, type UiState as PersistedUiState } from "../../src/ui/ui-state-store"
 
 async function createTempBareRepository(): Promise<TempRepository> {
   const path = await mkdtemp(join(tmpdir(), "githunk-bare-"))
@@ -63,6 +63,14 @@ export type ShellHarnessOptions = {
   readonly setupRepository?: (repository: TempRepository, fetchBare: TempRepository, pushBare: TempRepository) => Promise<void>
   /** Observe every geometry change RootView reports, e.g. to assert what gets persisted. */
   readonly onGeometryChange?: (state: PersistedUiState) => void
+  /**
+   * Pre-seeds `.git/githunk/ui-state-v1.json` so the app reads it back on `refresh()`, stating
+   * the command log's starting visibility explicitly rather than depending on whatever
+   * `defaultUiState()` (src/ui/ui-state-store.ts) currently defaults to — the same reasoning
+   * `RootView`'s own `logVisible ?? true` default follows `Gui.ShowCommandLog: true`
+   * (pkg/config/user_config.go:901).
+   */
+  readonly logVisible?: boolean
 }
 
 export type ShellHarness = {
@@ -138,6 +146,13 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
   // destroys the renderer directly on ctrl+c, regardless of RootView's key handling).
   let quitCalled = false
   setup.renderer.on("destroy", () => { quitCalled = true })
+
+  if (options.logVisible !== undefined) {
+    await new UiStateStore(new GitRunner(repository.path)).save({
+      ...defaultUiState(),
+      commandLogVisible: options.logVisible,
+    })
+  }
 
   const app = createApp({
     repositoryRoot: repository.path,

@@ -14,7 +14,9 @@ export function defaultUiState(): UiState {
   return {
     sidePanelRatio: DEFAULT_SIDE_PANEL_RATIO,
     commandLogHeight: DEFAULT_LOG_HEIGHT,
-    commandLogVisible: false,
+    // `Gui.ShowCommandLog: true` (pkg/config/user_config.go:901). A persisted `false` still wins,
+    // which is lazygit's `HideCommandLog` app-state flag (pkg/gui/gui.go:523).
+    commandLogVisible: true,
   }
 }
 

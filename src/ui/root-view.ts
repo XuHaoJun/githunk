@@ -364,7 +364,9 @@ export class RootView {
     this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
     this.renderer = renderer
     this.model = model
-    this.focusManager.logVisible = options.logVisible ?? false
+    // Shown unless the caller says otherwise, matching `Gui.ShowCommandLog: true`
+    // (pkg/config/user_config.go:901).
+    this.focusManager.logVisible = options.logVisible ?? true
     this.logHeight = options.logHeight ?? DEFAULT_LOG_HEIGHT
     if (options.sidePanelRatio !== undefined) this.sidePanelRatio = options.sidePanelRatio
     this.geometry = computeLayout(

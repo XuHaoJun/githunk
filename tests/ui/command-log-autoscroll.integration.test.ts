@@ -26,7 +26,14 @@ describe("command log autoscroll", () => {
    * (src/git/runner.ts:88), so a plain refresh cannot produce log lines.
    */
   async function harnessWithUpstream(height?: number): Promise<ShellHarness> {
-    const created = await createShellHarness({ commits: ["base commit"], ...(height === undefined ? {} : { height }) })
+    // Every test here needs the log shown to begin with; stated explicitly (Task 10 made that
+    // the default, `Gui.ShowCommandLog: true`, pkg/config/user_config.go:901) rather than relied
+    // on, so a future default change cannot silently retarget these autoscroll assertions.
+    const created = await createShellHarness({
+      commits: ["base commit"],
+      logVisible: true,
+      ...(height === undefined ? {} : { height }),
+    })
     remoteBare = await createTempRepository()
     await remoteBare.git(["config", "core.bare", "true"])
     await created.repository.git(["remote", "add", "origin", remoteBare.path])
@@ -56,11 +63,8 @@ describe("command log autoscroll", () => {
   test("wheel over the log scrolls it once, at every other pane's rate, and clears autoscroll", async () => {
     harness = await harnessWithUpstream()
     const view = harness.app.view!
-    // `@` opens the command-log menu (pkg/gui/extras_panel.go:12-38); `t` toggles it shown
-    // without moving focus, the same as its "show, don't focus" half in the old direct cycle.
-    await harness.pressKey("@")
-    await harness.pressKey("t")
-    await harness.flush()
+    // The log starts shown (harnessWithUpstream's `logVisible: true`) and unfocused, which is
+    // all this test needs — no `@`/`t` toggle required, unlike before Task 10.
     // Three pulls' worth of log lines, so the log overflows its window with room to scroll up in:
     // one mutation (-2 rows) is only distinguishable from two (-3) with headroom for three.
     await pull(harness)
@@ -95,9 +99,7 @@ describe("command log autoscroll", () => {
   test("a mutation re-arms autoscroll even though its output was the batch's last write", async () => {
     harness = await harnessWithUpstream()
     const view = harness.app.view!
-    await harness.pressKey("@")
-    await harness.pressKey("t")
-    await harness.flush()
+    // The log starts shown (harnessWithUpstream's `logVisible: true`); no `@`/`t` toggle needed.
     // Enough log to be scrollable, so the disarmed state is a real scrolled-up viewport. Three
     // pulls, not two: DEFAULT_LOG_HEIGHT's content area is 8 rows now (window_arrangement_helper.go
     // :415-417's frame made it 10 total), one row taller than before Task 9.
@@ -221,9 +223,7 @@ describe("command log autoscroll", () => {
    */
   test("dragging or clicking the command log's scrollbar clears autoscroll", async () => {
     harness = await harnessWithUpstream()
-    await harness.pressKey("@")
-    await harness.pressKey("t")
-    await harness.flush()
+    // The log starts shown (harnessWithUpstream's `logVisible: true`); no `@`/`t` toggle needed.
     await pull(harness)
     await pull(harness)
     await pull(harness)
@@ -273,9 +273,8 @@ describe("command log autoscroll", () => {
    */
   test("reopening the log after a hidden mutation re-pins to the bottom immediately", async () => {
     harness = await harnessWithUpstream()
-    await harness.pressKey("@")
-    await harness.pressKey("t")
-    await harness.flush()
+    // The log starts shown (harnessWithUpstream's `logVisible: true`); no `@`/`t` toggle needed —
+    // it gets hidden further down instead, via `focusManager.logVisible = false` directly.
     // Three pulls, not two — see the "re-arms" test above for why DEFAULT_LOG_HEIGHT's content
     // area needs one more pull's worth of lines to overflow since Task 9.
     await pull(harness)
@@ -322,9 +321,7 @@ describe("command log autoscroll", () => {
    */
   test("losing focus shrinks the log and the autoscroll pin lands exactly at the new bottom", async () => {
     harness = await harnessWithUpstream(20)
-    await harness.pressKey("@")
-    await harness.pressKey("t")
-    await harness.flush()
+    // The log starts shown (harnessWithUpstream's `logVisible: true`); no `@`/`t` toggle needed.
     // Six pulls' worth of log lines: comfortably more than the largest content height this
     // scenario ever shows (8 rows, focused, at this 20-row terminal — see below), so scrollY
     // has real room to be wrong in.

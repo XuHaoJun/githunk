@@ -156,15 +156,15 @@ describe("mouse parity - row selection and wheel routing", () => {
   })
 
   test("wheel over Command Log scrolls only log", async () => {
-    harness = await createShellHarness({ width: 120, height: 40 })
+    // Stated explicitly (Task 10 made this the default, `Gui.ShowCommandLog: true`,
+    // pkg/config/user_config.go:901) rather than relied on: this test's own `if (!logBox) return`
+    // guard used to silently no-op once the log started shown by default and the `@`/`t` toggle
+    // below (still present pre-Task-10, when the log started hidden) began hiding it instead of
+    // showing it.
+    harness = await createShellHarness({ width: 120, height: 40, logVisible: true })
     const view = harness.app.view!
-    // `@` opens the command-log menu (pkg/gui/extras_panel.go:12-38); `t` toggles it shown.
-    await harness.pressKey("@")
-    await harness.pressKey("t")
-    await harness.flush()
-    // need some log entries: harness already has some? we can just check scroll doesn't affect other panes
     const logBox = view.paneTextGeometry("command-log")
-    if (!logBox) return
+    if (!logBox) throw new Error("the command log window is not laid out")
     const commitsBefore = view.paneScrollY("commits")
     await harness.mockMouse.scroll(logBox.screenX + 1, logBox.screenY + 1, "down")
     await harness.flush()
