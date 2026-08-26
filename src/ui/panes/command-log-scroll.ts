@@ -29,7 +29,7 @@ export type CommandLogScrollInput =
   | "focus-lost"
   /**
    * Not a lazygit concept — lazygit has no scrollbar over the extras view, so there is no parity
-   * behaviour to copy for the draggable one this pane has (one of githunk's three documented review
+   * behaviour to copy for the draggable one this pane has (one of githunk's four documented review
    * extensions, docs/lazygit-compatibility-v0.1.md). Wired by analogy to the principle the rest of
    * this FSM already encodes: every explicit user scroll clears the flag and only an explicit
    * jump-to-bottom arms it. A scrollbar drag is an explicit user scroll, so — like scroll-up/

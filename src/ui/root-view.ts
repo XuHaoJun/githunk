@@ -2994,7 +2994,7 @@ export class RootView {
   /**
    * Shared by every scrollbar-drag gesture site (mouse down on the track, drag, and up): maps a
    * screen Y onto the pane's scroll range and jumps there. lazygit has no scrollbar over the
-   * extras view — this is one of githunk's three documented review extensions
+   * extras view — this is one of githunk's four documented review extensions
    * (docs/lazygit-compatibility-v0.1.md) — so there is no parity behaviour to copy for it clearing
    * the command log's autoscroll. It does so anyway, by the same principle the rest of the FSM
    * already encodes: every explicit user scroll clears the flag, only an explicit jump-to-bottom

@@ -108,9 +108,9 @@ commit message, the way the existing code and history do. Keybinding reference:
 `learn-projects/lazygit/docs/keybindings/Keybindings_en.md`.
 
 **Record parity status.** `docs/lazygit-compatibility-v0.1.md` holds the authoritative status matrix
-(`compatible` / `githunk review extension` / `not yet implemented` / `blocked`). Only three things
-are review extensions: main-pane selection/copy, the lower-right review + command-log region, and
-draggable splitters. Update the matrix when a row's status changes.
+(`compatible` / `githunk review extension` / `not yet implemented` / `blocked`). Exactly four things
+are review extensions: main-pane selection/copy, the lower-right review area, draggable splitters,
+and the command log's failed-command output block. Update the matrix when a row's status changes.
 
 **Constraints.** No new runtime dependencies. `strict` TypeScript with `noUncheckedIndexedAccess`
 and `exactOptionalPropertyTypes` — hence the pervasive
