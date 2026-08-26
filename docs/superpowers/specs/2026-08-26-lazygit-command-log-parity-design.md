@@ -278,7 +278,7 @@ Integration:
 
 ## 12. Files Touched
 
-`src/domain/command.ts`, `src/app/command-log.ts`, `src/app/log-actions.ts` (new), `src/app/command-log-tips.ts` (new), `src/app/controller.ts`, `src/app/create-app.ts`, `src/git/runner.ts`, `src/git/sync.ts`, `src/git/github.ts`, `src/ui/panes/command-log-pane.ts`, `src/ui/panes/command-log-text.ts` (new), `src/ui/action-menu.ts` (new), `src/ui/bindings.ts`, `src/ui/focus.ts`, `src/ui/layout.ts`, `src/ui/ui-state-store.ts`, `src/ui/root-view.ts`, `docs/lazygit-compatibility-v0.1.md`.
+`src/domain/command.ts`, `src/domain/repository.ts`, `src/app/command-log.ts`, `src/app/log-actions.ts` (new), `src/app/command-log-tips.ts` (new), `src/app/controller.ts`, `src/app/create-app.ts`, `src/git/runner.ts`, `src/git/sync.ts`, `src/git/github.ts`, `src/ui/panes/command-log-pane.ts`, `src/ui/panes/command-log-text.ts` (new), `src/ui/panes/command-log-scroll.ts` (new), `src/ui/action-menu.ts` (new), `src/ui/bindings.ts`, `src/ui/focus.ts`, `src/ui/layout.ts`, `src/ui/ui-state-store.ts`, `src/ui/root-view.ts`, `docs/lazygit-compatibility-v0.1.md`, `docs/release-checklist-v0.1.md`.
 
 The 14 read paths listed in §4.1 are **not** touched: the `readOnly`-implies-`dontLog` rule covers them without an edit.
 
