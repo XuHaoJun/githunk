@@ -134,6 +134,50 @@ describe("background auto-fetch", () => {
     await setup.flush()
     expect(setup.captureCharFrame()).not.toContain("made in another terminal")
   }, 20_000)
+  test("external index changes refresh before the periodic files interval", async () => {
+    repository = await createTempRepository()
+    await repository.write("a.txt", "one\n")
+    await repository.git(["add", "a.txt"])
+    await repository.git(["commit", "-m", "first commit"])
+    await repository.write("a.txt", "two\n")
+
+    const setup = await createTestRenderer({ width: 120, height: 40, useMouse: true })
+    renderer = setup.renderer
+    app = createApp({
+      repositoryRoot: repository.path,
+      runner: new GitRunner(repository.path),
+      renderer: setup.renderer,
+      background: {
+        enabled: true,
+        autoFetch: false,
+        autoDetectExternalChanges: false,
+        autoRefresh: true,
+        refreshIntervalMs: 10_000,
+      },
+    })
+    await app.refresh()
+    await setup.flush()
+    const file = () => app!.controller.state.files.find((entry) => entry.path === "a.txt")
+    expect(file()?.indexStatus).toBe(".")
+    expect(file()?.worktreeStatus).toBe("M")
+
+    await repository.git(["add", "a.txt"])
+    for (let attempt = 0; attempt < 10 && file()?.indexStatus !== "M"; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      await setup.flush()
+    }
+    expect(file()?.indexStatus).toBe("M")
+    expect(file()?.worktreeStatus).toBe(".")
+
+    await repository.git(["restore", "--staged", "--", "a.txt"])
+    for (let attempt = 0; attempt < 10 && file()?.indexStatus !== "."; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      await setup.flush()
+    }
+    expect(file()?.indexStatus).toBe(".")
+    expect(file()?.worktreeStatus).toBe("M")
+  }, 20_000)
+
 
   test("no background options means no timers at all", async () => {
     repository = await createTempRepository()

@@ -8,6 +8,8 @@ import { BackgroundRefresher, DEFAULT_EXTERNAL_CHANGE_INTERVAL_MS, DEFAULT_FETCH
 import { RefsWatcher } from "./refs-watcher"
 import { loadRefsSnapshot } from "../git/refs-snapshot"
 import { absolutePath, resolveEditCommand } from "../git/editor"
+import { isAbsolute, resolve } from "node:path"
+import { IndexWatcher } from "./index-watcher"
 
 export type CreateAppOptions = {
   readonly repositoryRoot: string
@@ -95,6 +97,46 @@ export function createApp(options: CreateAppOptions): App {
   }
   let view!: RootView
   let refsWatcher!: RefsWatcher
+  let indexWatcher: IndexWatcher | undefined
+  let indexWatcherStart: Promise<void> | undefined
+  let destroyed = false
+  let refreshInFlight = false
+  const backgroundOptions = options.background
+  const ensureIndexWatcher = async (): Promise<void> => {
+    if (destroyed || backgroundOptions?.enabled !== true || backgroundOptions.autoRefresh === false) return
+    if (indexWatcherStart !== undefined) {
+      await indexWatcherStart
+      return
+    }
+    indexWatcherStart = (async () => {
+      try {
+        const result = await options.runner.run(["rev-parse", "--git-path", "index"], { readOnly: true })
+        if (destroyed) return
+        const rawIndexPath = result.stdout.trim()
+        if (rawIndexPath.length === 0) return
+        const indexPath = isAbsolute(rawIndexPath) ? rawIndexPath : resolve(options.runner.cwd, rawIndexPath)
+        const watcher = new IndexWatcher({
+          indexPath,
+          onExternalChange: async () => {
+            if (destroyed) return
+            await controller.refreshFiles()
+            if (!destroyed) view.update(controller.state)
+          },
+          isBusy: () => refreshInFlight || view.isMutating,
+        })
+        if (destroyed) {
+          watcher.stop()
+          return
+        }
+        watcher.start()
+        indexWatcher = watcher
+      } catch {
+        // The periodic files refresh remains the fallback when Git or the filesystem cannot expose
+        // the index path.
+      }
+    })()
+    await indexWatcherStart
+  }
   const editFile = options.onEditFile ?? (async (path: string, line?: number): Promise<void> => {
     const abs = absolutePath(options.repositoryRoot, path)
     const { cmd, suspend } = await resolveEditCommand([abs], { ...(line === undefined ? {} : { line }), runner: options.runner, cwd: options.repositoryRoot })
@@ -143,7 +185,7 @@ export function createApp(options: CreateAppOptions): App {
       await controller.refresh()
       view.update(controller.state)
     },
-    isBusy: () => view.isMutating,
+    isBusy: () => refreshInFlight || view.isMutating,
   })
 
   view = new RootView(renderer, controller.state, {
@@ -268,14 +310,13 @@ export function createApp(options: CreateAppOptions): App {
     onEditFile: editFile,
     onQuit: () => options.onQuit?.(),
     onGeometryChange: (state) => { latestGeometry = state },
-    // Whatever githunk just did to the repository is now the baseline, so the poller does not
-    // report it back as an external change.
+    // Whatever githunk just did to the repository is now the baseline for ref polling. Index events
+    // remain queued because the watcher cannot attribute a concurrent index write safely.
     onMutationSettled: () => { void refsWatcher.resync() },
   })
 
-  const backgroundOptions = options.background
   /**
-   * lazygit's two background routines. The fetch is followed by a branch refresh, because that is
+   * lazygit's background routines. The fetch is followed by a branch refresh, because that is
    * what changes when remote-tracking refs move — `PostFetchRefresh`
    * (pkg/gui/controllers/helpers/branches_helper.go, called from background.go:255-259) — and by a
    * pull-request refresh, which lazygit likewise re-runs from its remotes refresh
@@ -307,7 +348,7 @@ export function createApp(options: CreateAppOptions): App {
         ...(backgroundOptions.externalChangeIntervalMs === undefined ? {} : { externalChangeIntervalMs: backgroundOptions.externalChangeIntervalMs }),
         // Everything the UI drives goes through `runUiMutation`, so this is lazygit's
         // `backgroundRefreshesPaused()` for githunk: no background git while the user's own runs.
-        isBusy: () => view.isMutating,
+        isBusy: () => refreshInFlight || view.isMutating,
         // A background fetch fails whenever the network does. The command log already carries the
         // failure; a banner would fight with whatever the user is reading.
         onError: () => undefined,
@@ -322,9 +363,17 @@ export function createApp(options: CreateAppOptions): App {
         persistedGeometryApplied = true
         view.applyPersistedGeometry(await uiStateStore.load())
       }
-      await controller.refresh()
-      view.update(controller.state)
-      await refsWatcher.resync()
+      if (destroyed) return
+      refreshInFlight = true
+      try {
+        await ensureIndexWatcher()
+        await controller.refresh()
+        view.update(controller.state)
+        await refsWatcher.resync()
+      } finally {
+        refreshInFlight = false
+      }
+      if (destroyed) return
       if (background !== undefined) {
         background.start()
         // lazygit fetches once immediately, because `goEvery` starts by waiting out the interval
@@ -334,6 +383,8 @@ export function createApp(options: CreateAppOptions): App {
     },
     saveUiState,
     destroy: () => {
+      destroyed = true
+      indexWatcher?.stop()
       background?.stop()
       // Geometry is a convenience: a failed final write must never mask a clean shutdown.
       void saveUiState().catch(() => undefined)

@@ -41,5 +41,6 @@ Additional notes:
 - Main generation has no patch-size threshold; large patches flow through the same gate as small ones.
 - Wheel and scrollbar are explicitly wired via `onMouseScroll` and `ScrollBarRenderable.onChange`; handlers do not merely stop propagation.
 - Exactly one gesture owner is captured at a time (vertical splitter, horizontal splitter, one scrollbar, Main-selection, or none); hit-test precedence is scrollbar, vertical splitter, horizontal splitter, then pane content; release/cancel clears ownership.
+- External staging/unstaging: githunk watches the resolved Git index directory and debounces `index`/`index.lock` events, so cross-process index changes refresh before the 10-second fallback; this is intentionally more responsive than lazygit's polling-only implementation.
 
 Verification for this slice is the repository-backed acceptance test `tests/acceptance/lazygit-core-ui.test.ts` (fixture with base/side/main/merge, light/annotated tags, stash, rename-before/after, staged/unstaged, fetch/push bare remotes) plus `bun run typecheck` and `bun test` and a PTY TUI smoke exercising `4`/click/wheel/`Enter`/file click/`Escape`/`3`/`[`/`]`/remote/`5`/splitters/scrollbar/Main Unicode copy.
