@@ -325,7 +325,9 @@ export function createApp(options: CreateAppOptions): App {
   const background = backgroundOptions?.enabled === true
     ? new BackgroundRefresher({
         fetch: async () => {
-          await controller.fetch()
+          // lazygit's background fetch is DontLog() while its foreground one is not
+          // (pkg/commands/git_commands/sync.go:65-84).
+          await controller.fetch(undefined, { background: true })
           await controller.refreshBranches()
           // Painted before the pull requests are asked for: `gh` is a network call, and lazygit
           // likewise lands its pull requests in their own pass whenever they happen to arrive

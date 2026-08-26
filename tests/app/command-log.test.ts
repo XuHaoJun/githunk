@@ -45,11 +45,12 @@ describe("CommandLog", () => {
    * lazygit's `prefixWriter` writes `style.FgMagenta.Sprintf("\n\n%s\n", Tr.GitOutput)` before the
    * first write for a command and never again (pkg/gui/extras_panel.go:97,100-119).
    */
-  test("logOutput writes a blank line and the heading once per command", () => {
+  test("outputWriter writes a blank line and the heading once per command", () => {
     const log = new CommandLog()
     log.logCommand("git push", true)
-    log.logOutput("Enumerating objects: 3\n")
-    log.logOutput("To github.com:o/r.git\n")
+    const writer = log.outputWriter()
+    writer.write("Enumerating objects: 3\n")
+    writer.write("To github.com:o/r.git\n")
     expect(texts(log.lines())).toEqual([
       "  git push",
       "",
@@ -60,21 +61,29 @@ describe("CommandLog", () => {
     expect(styles(log.lines())).toEqual(["command", "", "output-heading", "output", "output"])
   })
 
-  test("logOutput writes the heading again for the next command", () => {
+  /**
+   * `getCmdWriter()` hands out a fresh `prefixWriter` per command (extras_panel.go:96-97), so
+   * `prefixWritten` is per-command state — two commands writing output each get their own heading.
+   * A flag on the log only behaves the same while commands never interleave.
+   */
+  test("two interleaved commands each get their own heading", () => {
     const log = new CommandLog()
     log.logCommand("git push", true)
-    log.logOutput("one\n")
+    const push = log.outputWriter()
     log.logCommand("git pull", true)
-    log.logOutput("two\n")
+    const pull = log.outputWriter()
+    push.write("from push\n")
+    pull.write("from pull\n")
     expect(texts(log.lines()).filter((text) => text === "Git output:")).toHaveLength(2)
   })
 
-  test("logOutput ignores empty output and trims only trailing blank lines", () => {
+  test("outputWriter ignores empty output and trims only trailing blank lines", () => {
     const log = new CommandLog()
     log.logCommand("git push", true)
-    log.logOutput("")
+    const writer = log.outputWriter()
+    writer.write("")
     expect(texts(log.lines())).toEqual(["  git push"])
-    log.logOutput("a\n\nb\n\n\n")
+    writer.write("a\n\nb\n\n\n")
     expect(texts(log.lines())).toEqual(["  git push", "", "Git output:", "a", "", "b"])
   })
 

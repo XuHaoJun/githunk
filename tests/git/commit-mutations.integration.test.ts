@@ -49,13 +49,16 @@ describe("CommitMutations", () => {
     await repo.write(".git/hooks/commit-msg", "#!/bin/sh\necho hook failed >&2\nexit 1\n")
     await Bun.write(`${repo.path}/.git/hooks/commit-msg`, "#!/bin/sh\necho hook failed >&2\nexit 1\n")
     await Bun.spawn(["chmod", "+x", `${repo.path}/.git/hooks/commit-msg`]).exited
-    try {
-      await new CommitMutations(runner).commit("hook")
-      throw new Error("expected GitCommandError")
-    } catch (error) {
-      expect(error).toBeInstanceOf(GitCommandError)
-      expect((error as GitCommandError).record.stderr).toContain("hook failed")
-    }
+    const commitPromise = new CommitMutations(runner).commit("hook")
+    await expect(commitPromise).rejects.toBeInstanceOf(GitCommandError)
+    await expect(commitPromise).rejects.toMatchObject({ record: { stderr: expect.stringContaining("hook failed") } })
+    // githunk's deviation from lazygit's error-popup-and-log-nothing: a failed non-streamed
+    // command's stderr lands in the log under Git output: too, because PRD 6.7 requires command
+    // failures stay inspectable.
+    const texts = runner.log.lines().map((line) => line.spans.map((span) => span.text).join(""))
+    const headingIndex = texts.indexOf("Git output:")
+    expect(headingIndex).toBeGreaterThanOrEqual(0)
+    expect(texts.slice(headingIndex + 1).join("\n")).toContain("hook failed")
   })
 
   test("serializes exported helper calls sharing one runner", async () => {

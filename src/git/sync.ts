@@ -64,21 +64,33 @@ function validateUpstream(upstream: UpstreamCandidate): void {
     throw new Error("invalid upstream choice")
   }
 }
-export async function fetch(runner: CommandRunner, remote?: string): Promise<void> {
-  await runner.run(remote === undefined ? ["fetch"] : ["fetch", remote])
+export type FetchOptions = {
+  /**
+   * lazygit's `FetchBackgroundCmdObj` is `DontLog().FailOnCredentialRequest()` while the foreground
+   * `FetchCmdObj` is neither (pkg/commands/git_commands/sync.go:65-84): a fetch every 60 seconds
+   * would bury the commands the user actually ran.
+   */
+  readonly background?: boolean
+}
+
+export async function fetch(runner: CommandRunner, remote?: string, options: FetchOptions = {}): Promise<void> {
+  await runner.run(
+    remote === undefined ? ["fetch"] : ["fetch", remote],
+    options.background === true ? { dontLog: true } : { streamOutput: true },
+  )
 }
 
 export async function pull(runner: CommandRunner, options: PullOptions = {}): Promise<PullResult> {
   const branch = await currentBranch(runner)
   if (options.upstream !== undefined) {
     validateUpstream(options.upstream)
-    await runner.run(["pull", options.upstream.remote, options.upstream.branch])
+    await runner.run(["pull", options.upstream.remote, options.upstream.branch], { streamOutput: true })
     return { kind: "pulled" }
   }
   if (await upstreamRef(runner) === undefined) {
     return { kind: "upstream-required", branch, candidates: await upstreamCandidates(runner), operation: "pull" }
   }
-  await runner.run(["pull"])
+  await runner.run(["pull"], { streamOutput: true })
   return { kind: "pulled" }
 }
 
@@ -86,12 +98,12 @@ export async function push(runner: CommandRunner, options: PushOptions = {}): Pr
   const branch = await currentBranch(runner)
   if (options.upstream !== undefined) {
     validateUpstream(options.upstream)
-    await runner.run(["push", "--set-upstream", options.upstream.remote, options.upstream.branch])
+    await runner.run(["push", "--set-upstream", options.upstream.remote, options.upstream.branch], { streamOutput: true })
     return { kind: "pushed" }
   }
   if (await upstreamRef(runner) === undefined) {
     return { kind: "upstream-required", branch, candidates: await upstreamCandidates(runner), operation: "push" }
   }
-  await runner.run(["push"])
+  await runner.run(["push"], { streamOutput: true })
   return { kind: "pushed" }
 }

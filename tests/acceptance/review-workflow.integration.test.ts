@@ -261,8 +261,13 @@ describe("v0.1 review workflow acceptance", () => {
     expect(controller.state.patches).toEqual(viewBeforeFailure.patches)
     expect(controller.state.commandLog.length).toBeGreaterThan(viewBeforeFailure.commandLogLength)
     expect(controller.state.banner).toBeTruthy()
-    const failedCommand = controller.state.commandLog.at(-1)
-    expect(failedCommand?.spans.map((span) => span.text).join("")).toBe("  git fetch missing-remote")
+    // Logged before the spawn (cmd_obj_runner.go:196-203), so the failure output that follows it is
+    // now the last line, not the command itself — assert on the command's presence and on the
+    // Git output: heading that follows, rather than on the log's tail.
+    const commandTexts = controller.state.commandLog.map((line) => line.spans.map((span) => span.text).join(""))
+    const commandIndex = commandTexts.indexOf("  git fetch missing-remote")
+    expect(commandIndex).toBeGreaterThanOrEqual(0)
+    expect(commandTexts[commandIndex + 2]).toBe("Git output:")
     expect(secondAgentOid).toMatch(/^[0-9a-f]{40}$/)
   })
 })

@@ -53,11 +53,19 @@ describe("loadRepoConfig", () => {
     await repository.git(["config", "branch.master.remote", "origin"])
     await repository.git(["config", "branch.master.merge", "refs/heads/master"])
     const runner = new GitRunner(repository.path)
-    const before = runner.log.lines().length
 
-    const config = await loadRepoConfig(runner)
+    // loadRepoConfig's read is readOnly, so it is no longer logged (readOnly implies dontLog) — spy
+    // on run() calls directly to count spawned processes instead of reading the command log.
+    let spawned = 0
+    const countingRunner: Pick<GitRunner, "run"> = {
+      run: (args, options) => {
+        spawned++
+        return runner.run(args, options)
+      },
+    }
+    const config = await loadRepoConfig(countingRunner)
 
-    expect(runner.log.lines().length - before).toBe(1)
+    expect(spawned).toBe(1)
     expect(config.remotes.get("origin")).toEqual({
       fetchUrl: "https://example.com/repo.git",
       pushUrl: "ssh://git@example.com/repo.git",

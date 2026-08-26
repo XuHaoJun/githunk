@@ -531,9 +531,9 @@ export class AppController {
       await this.refreshStashTarget(ref)
     })
   }
-  async fetch(remote?: string): Promise<void> {
+  async fetch(remote?: string, options: { readonly background?: boolean } = {}): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
-    await this.runMutation(() => this.requireRunnerOperation((runner) => fetchSync(runner, remote)))
+    await this.runMutation(() => this.requireRunnerOperation((runner) => fetchSync(runner, remote, options)))
   }
   async pull(options: PullOptions = {}): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return

@@ -16,14 +16,19 @@ const GIT_OUTPUT_HEADING = "Git output:"
  * Every write here is one or more *logical* lines. Wrapping is the pane's business, because only
  * the pane knows its width — see src/ui/panes/command-log-text.ts.
  */
+/**
+ * lazygit's `prefixWriter` (pkg/gui/extras_panel.go:100-119): the first write emits the magenta
+ * `Git output:` heading, later writes do not. One of these per command, exactly as `getCmdWriter()`
+ * hands out a fresh one per command (`:96-97`) — so two commands' output can never end up under a
+ * single heading.
+ */
+export type CommandLogOutputWriter = {
+  write(text: string): void
+}
+
 export class CommandLog {
   private readonly lineList: CommandLogLine[] = []
   private lineId = 0
-  /**
-   * Cleared by each `logCommand` so the `Git output:` heading prints once per command, which is
-   * what lazygit's `prefixWriter.prefixWritten` does (pkg/gui/extras_panel.go:103-117).
-   */
-  private outputHeadingWritten = false
 
   lines(): readonly CommandLogLine[] {
     return this.lineList
@@ -43,30 +48,28 @@ export class CommandLog {
    * shell — and magenta when not, "to communicate that" in lazygit's words.
    */
   logCommand(cmdStr: string, commandLine: boolean): void {
-    this.outputHeadingWritten = false
     const style: CommandLogStyle = commandLine ? "command" : "internal"
     // `"  " + strings.ReplaceAll(cmdStr, "\n", "\n  ")` (command_log_panel.go:57).
     for (const text of `  ${cmdStr.replaceAll("\n", "\n  ")}`.split("\n")) this.push([{ style, text }])
   }
 
-  /**
-   * lazygit's `getCmdWriter` / `prefixWriter` (pkg/gui/extras_panel.go:96-119): a magenta
-   * `\n\nGit output:\n` before the first write for a command, then the output itself unstyled.
-   *
-   * lazygit streams this while the command runs. `GitRunner` buffers, so githunk writes it once the
-   * command has finished; the resulting log text is the same, it just arrives all at once.
-   */
-  logOutput(text: string): void {
-    if (text.length === 0) return
-    if (!this.outputHeadingWritten) {
-      this.outputHeadingWritten = true
-      // The `\n\n` of the prefix: one line ends, one blank line, then the heading.
-      this.push([])
-      this.push([{ style: "output-heading", text: GIT_OUTPUT_HEADING }])
+  /** lazygit's `getCmdWriter()` (pkg/gui/extras_panel.go:96-98): a fresh writer per command. */
+  outputWriter(): CommandLogOutputWriter {
+    let prefixWritten = false
+    return {
+      write: (text: string): void => {
+        if (text.length === 0) return
+        if (!prefixWritten) {
+          prefixWritten = true
+          // The `\n\n` of lazygit's prefix: one line ends, one blank line, then the heading.
+          this.push([])
+          this.push([{ style: "output-heading", text: GIT_OUTPUT_HEADING }])
+        }
+        // Trailing blank lines only: git's output almost always ends in a newline, and an empty
+        // final row under the heading reads as a rendering bug. Interior blanks are the command's.
+        for (const line of text.replace(/\n+$/, "").split("\n")) this.push([{ style: "output", text: line }])
+      },
     }
-    // Trailing blank lines only: git's output almost always ends in a newline, and an empty final
-    // row under the heading reads as a rendering bug. Interior blanks are the command's own.
-    for (const line of text.replace(/\n+$/, "").split("\n")) this.push([{ style: "output", text: line }])
   }
 
   /**

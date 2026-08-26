@@ -20,13 +20,25 @@ export type GitRunOptions = {
   readonly optionalLocks?: boolean
   readonly acceptedExitCodes?: readonly number[]
   /**
-   * Keeps the command out of the Command Log pane. lazygit's `DontLog()`
-   * (pkg/commands/oscommands/cmd_obj.go:118-128), which it sets on the plumbing behind a rendered
-   * value — the `rev-parse`/`rev-list` reachability queries that colour commit hashes, for one —
-   * so a 10s background refresh cannot bury the commands the user actually ran. The record is
+   * Keeps the command out of the Command Log pane, or forces it in. lazygit's `DontLog()`
+   * (pkg/commands/oscommands/cmd_obj.go:118-128), which it sets on 80 commands by hand — every
+   * loader and query, plus the background fetch (git_commands/sync.go:81).
+   *
+   * githunk defaults it from `readOnly` instead: a read is never logged and a write always is,
+   * which reproduces lazygit's set as a structural invariant rather than something each new loader
+   * must remember. Set this explicitly to override in either direction — `true` for a write that
+   * should stay quiet (the background fetch), `false` for a read that should not. The record is
    * still returned to the caller and still raises `GitCommandError`.
    */
   readonly dontLog?: boolean
+  /**
+   * Writes the command's output into the log under a magenta `Git output:` heading. lazygit does
+   * this for the commands it streams — the ones with a credential strategy, so push, pull and
+   * foreground fetch (pkg/commands/oscommands/cmd_obj_runner.go:234-246,
+   * pkg/commands/git_commands/sync.go:44,110,124,132) — via `getCmdWriter`
+   * (pkg/gui/extras_panel.go:96-98).
+   */
+  readonly streamOutput?: boolean
 }
 
 export type GitResult = {
@@ -69,6 +81,17 @@ export class GitRunner {
 
   async run(args: readonly string[], options: GitRunOptions = {}): Promise<GitResult> {
     const commandArgs = [...args]
+    // `readOnly` marks exactly githunk's reads — all 65 call sites outside this file were audited —
+    // so it is what decides whether the command is logged, unless the caller says otherwise. See
+    // the `dontLog` doc comment.
+    const shouldLog = options.dontLog === undefined ? options.readOnly !== true : !options.dontLog
+    // Before the spawn, as lazygit's `logCmdObj` is (cmd_obj_runner.go:196-203): the point is to
+    // see what is running, not what has run. The argv is prefixed with `git` and *not* with
+    // `--no-pager`, so the line matches what lazygit's `CmdObj.ToString()` shows for the same
+    // command (its builder prepends only `git`, git_cmd_obj_builder.go:57-59).
+    if (shouldLog) this.log.logCommand(formatCommandLine(["git", ...commandArgs]), true)
+    // One writer per command, so two commands' output can never share a heading. See Step 3a.
+    const writer = this.log.outputWriter()
     const startedAt = new Date()
     const startedAtMs = Date.now()
     let stdout = ""
@@ -134,10 +157,20 @@ export class GitRunner {
       stdout,
       stderr,
     }
-    if (options.dontLog !== true) this.log.logCommand(formatCommandLine(["git", ...commandArgs]), true)
-
     const acceptedExitCodes = options.acceptedExitCodes ?? [0]
-    if (!acceptedExitCodes.includes(exitCode)) {
+    const accepted = acceptedExitCodes.includes(exitCode)
+    if (shouldLog) {
+      if (options.streamOutput === true) {
+        // lazygit's cmdWriter receives both streams (cmd_obj_runner.go:230,258).
+        writer.write(`${stdout}${stderr}`)
+      } else if (!accepted) {
+        // githunk's one deviation from lazygit here, which raises an error popup instead and writes
+        // nothing. githunk has no popup — a failed mutation surfaces as a pane bottomTitle — and
+        // PRD 6.7 requires that command failures remain inspectable.
+        writer.write(stderr)
+      }
+    }
+    if (!accepted) {
       throw new GitCommandError(record)
     }
 
