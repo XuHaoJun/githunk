@@ -202,7 +202,9 @@ export async function renameBranch(runner: CommandRunner, oldName: string, newNa
 export async function fetchRemote(runner: CommandRunner, remote: string): Promise<void> {
   const remotes = await listRemoteNames(runner)
   if (!remotes.includes(remote)) throw new Error(`remote does not exist: ${remote}`)
-  await runner.run(["fetch", "--", remote])
+  // lazygit's FetchRemote builds with PromptOnCredentialRequest (sync.go:127-132), which routes it
+  // through runAndStream and so into the Git output: block (cmd_obj_runner.go:38-40,234-246).
+  await runner.run(["fetch", "--", remote], { streamOutput: true })
 }
 
 function splitRemoteRef(remoteRef: string, remotes: readonly string[]): { readonly remote: string; readonly branch: string } {

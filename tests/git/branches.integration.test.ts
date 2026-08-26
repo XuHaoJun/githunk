@@ -57,6 +57,53 @@ describe("branch and remote operations", () => {
     }
   })
 
+  test("fetchRemote streams a succeeding fetch's output under the Git output: heading", async () => {
+    const repository = await createTempRepository()
+    const bare = await createTempRepository()
+    const advancer = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      await bare.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", bare.path])
+      await repository.git(["push", "origin", "master"])
+      const runner = new GitRunner(repository.path)
+      // A brand-new remote's first non-verbose fetch is silent in this git version even though it
+      // creates a remote-tracking ref, so prime it once before observing output.
+      await fetchRemote(runner, "origin")
+
+      // Move the bare remote's master from an unrelated second repository, so repository's
+      // origin/master is stale and the next fetch has a genuine ref update to report — the default
+      // `+refs/heads/*:refs/remotes/origin/*` refspec force-updates remote-tracking refs
+      // (docs: git-fetch's REFSPECS), and non-verbose git still prints that update line (unlike
+      // the silent first fetch above, which only suppresses *new*-ref creation).
+      await advancer.git(["remote", "add", "origin", bare.path])
+      await advancer.write("file.txt", "advanced\n")
+      await advancer.git(["add", "file.txt"])
+      await advancer.git(["commit", "-m", "advance"])
+      await advancer.git(["push", "--force", "origin", "master"])
+
+      // lazygit's FetchRemote is PromptOnCredentialRequest, so it streams (sync.go:127-132,
+      // cmd_obj_runner.go:38-40,234-246) — pin that a *succeeding* fetch still gets the Git
+      // output: heading, which is what distinguishes streamOutput from the failure-only branch.
+      await fetchRemote(runner, "origin")
+      const texts = runner.log.lines().map((line) => line.spans.map((span) => span.text).join(""))
+      const commandIndices = texts.reduce<number[]>((acc, text, index) => {
+        if (text === "  git fetch -- origin") acc.push(index)
+        return acc
+      }, [])
+      const secondFetchIndex = commandIndices[1]
+      expect(secondFetchIndex).toBeGreaterThanOrEqual(0)
+      expect(texts[secondFetchIndex! + 2]).toBe("Git output:")
+      expect(texts.slice(secondFetchIndex! + 3).join("\n")).toContain("master")
+    } finally {
+      await advancer.cleanup()
+      await bare.cleanup()
+      await repository.cleanup()
+    }
+  })
+
   test("switches an existing tracking branch and reports upstream mismatches", async () => {
     const repository = await createTempRepository()
     try {
