@@ -60,6 +60,19 @@ describe("random tips", () => {
   })
 
   /**
+   * `Math.min(Math.max(0, NaN), n)` is `NaN`, which survives the old clamp and indexes to
+   * `undefined` — rendering a bare "Random tip: ". Non-finite picks (`NaN`, `Infinity`) are treated
+   * as `0` before clamping instead. A finite but out-of-range pick still clamps to the last tip, as
+   * before.
+   */
+  test("a non-finite pick does not render a bare 'Random tip: '", () => {
+    expect(randomTip(() => NaN)).toBe(COMMAND_LOG_TIPS[0]!)
+    expect(randomTip(() => Number.POSITIVE_INFINITY)).toBe(COMMAND_LOG_TIPS[0]!)
+    expect(randomTip(() => Number.NEGATIVE_INFINITY)).toBe(COMMAND_LOG_TIPS[0]!)
+    expect(randomTip(() => COMMAND_LOG_TIPS.length + 100)).toBe(COMMAND_LOG_TIPS.at(-1)!)
+  })
+
+  /**
    * The catalogue is the subset of lazygit's (command_log_panel.go:90-199) whose feature *and*
    * keybinding exist in githunk — a tip naming a key githunk does not bind would tell the user to
    * press nothing. This test is what keeps that true: rebinding a key breaks it rather than
@@ -67,13 +80,18 @@ describe("random tips", () => {
    */
   test("every key a tip names is still bound to the action the tip describes", () => {
     const registry = new BindingRegistry(GITHUNK_BINDINGS)
-    for (const [key, expected] of Object.entries(COMMAND_LOG_TIP_KEYS)) {
+    for (const expected of Object.values(COMMAND_LOG_TIP_KEYS)) {
       const bound = registry.bindings.some((binding) => binding.action === expected.action && binding.keys.includes(expected.key))
       expect(bound).toBe(true)
+      // This only proves the label isn't orphaned *somewhere* in the catalogue, not that the tip
+      // describing `expected.action` is the one carrying it: two entries can share a label
+      // ("enter" names both stashInspect and enterDirectory), so they are mutually satisfiable and
+      // this assertion cannot catch a mislabelled pair. The `bound` check above is what actually
+      // ties each entry to its action; this is a weaker "no dangling key" sanity check on top.
       expect(COMMAND_LOG_TIPS.some((tip) => tip.includes(`'${expected.label}'`))).toBe(true)
     }
     // Every pinned key must actually be referenced by a tip; an orphan entry means a tip was
     // dropped without its key, and the loop above would not notice.
-    expect(Object.keys(COMMAND_LOG_TIP_KEYS)).toHaveLength(9)
+    expect(Object.keys(COMMAND_LOG_TIP_KEYS)).toHaveLength(10)
   })
 })
