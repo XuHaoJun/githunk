@@ -1,4 +1,4 @@
-import type { CommandRecord } from "../domain/command"
+import { formatCommandLine, type CommandRecord } from "../domain/command"
 import { CommandLog } from "../app/command-log"
 
 export type GitRunOptions = {
@@ -64,7 +64,7 @@ export class GitRunner {
       this.cwd = options?.cwd ?? process.cwd()
       this.log = options?.log ?? new CommandLog()
     }
-    this.nextId = this.log.records().reduce((max, record) => Math.max(max, record.id), 0) + 1
+    this.nextId = 1
   }
 
   async run(args: readonly string[], options: GitRunOptions = {}): Promise<GitResult> {
@@ -134,7 +134,7 @@ export class GitRunner {
       stdout,
       stderr,
     }
-    if (options.dontLog !== true) this.log.append(record)
+    if (options.dontLog !== true) this.log.logCommand(formatCommandLine(["git", ...commandArgs]), true)
 
     const acceptedExitCodes = options.acceptedExitCodes ?? [0]
     if (!acceptedExitCodes.includes(exitCode)) {

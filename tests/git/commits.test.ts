@@ -65,8 +65,8 @@ describe("commit history loaders", () => {
     const file = await loadCommitFilePatch(runner, oid, "space name.txt")
     expect(file.files).toHaveLength(1)
     expect(file.text).toContain("+after")
-    const command = runner.log.records().at(-1)
-    expect(command?.args.slice(-2)).toEqual(["--", "space name.txt"])
+    const command = runner.log.lines().at(-1)
+    expect(command?.spans.map((span) => span.text).join("")).toEndWith('-- "space name.txt"')
   })
 
   test("loads a large 5000-line patch without file-list fallback", async () => {

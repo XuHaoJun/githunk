@@ -3,53 +3,21 @@ import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
 import { attachVerticalScrollbar, syncVerticalScrollbar } from "./common"
 import { setPlainPaneText } from "./pane-text"
 import type { FocusId } from "../focus"
-import type { CommandRecord } from "../../domain/command"
+import type { CommandLogLine } from "../../domain/command"
 
 export type CommandLogPaneHandle = {
   readonly id: FocusId
   readonly box: BoxRenderable
   readonly text: TextRenderable
   resize(width: number, height: number): void
-  update(records: readonly CommandRecord[]): void
+  update(lines: readonly CommandLogLine[]): void
   setFocused(focused: boolean): void
   scrollBy(delta: number): void
   scrollTo(position: number): void
   maxScrollY(): number
 }
 
-function escapeArg(value: string): string {
-  return JSON.stringify(value)
-}
-
-function formatRecord(record: CommandRecord): string {
-  const argv = record.args.map(escapeArg).join(" ")
-  const output: string[] = [
-    `${record.startedAt}  ${argv}`,
-    `exit ${record.exitCode}  ${record.durationMs}ms`,
-  ]
-  if (record.stdout) output.push(`stdout:\n${record.stdout.trimEnd()}`)
-  if (record.stderr) output.push(`stderr:\n${record.stderr.trimEnd()}`)
-  return output.join("\n")
-}
-/** Keep command output inspectable in a non-selectable, scrollable viewport. */
-export function tailCommandLogLines(records: readonly CommandRecord[], lineLimit: number): readonly string[] {
-  const limit = Math.max(1, Math.floor(lineLimit))
-  const selected: string[] = []
-  for (let index = records.length - 1; index >= 0; index -= 1) {
-    const block = formatRecord(records[index]!).split("\n")
-    if (selected.length === 0 && block.length > limit) {
-      selected.push(...block.slice(-limit))
-      break
-    }
-    if (selected.length + block.length + (selected.length === 0 ? 0 : 1) > limit) break
-    selected.unshift(...block)
-    if (index > 0) selected.unshift("")
-  }
-  return selected.slice(-limit)
-}
-
-
-export function createCommandLogPane(renderer: CliRenderer, records: readonly CommandRecord[]): CommandLogPaneHandle {
+export function createCommandLogPane(renderer: CliRenderer, lines: readonly CommandLogLine[]): CommandLogPaneHandle {
   const box = new BoxRenderable(renderer, {
     id: "command-log-pane",
     border: true,
@@ -64,7 +32,7 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
   })
   const text = new TextRenderable(renderer, {
     id: "command-log-text",
-    content: "No commands recorded",
+    content: "",
     fg: DEFAULT_FOREGROUND,
     selectable: false,
     wrapMode: "none",
@@ -80,7 +48,7 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
     originalLogMouseEvent?.(event as unknown as never)
   }
   const bar = attachVerticalScrollbar(box, text, "command-log")
-  let rendered: { readonly count: number; readonly newest: CommandRecord | undefined } | undefined
+  let rendered: { readonly count: number; readonly newest: CommandLogLine | undefined } | undefined
   const pane: CommandLogPaneHandle = {
     id: "command-log",
     box,
@@ -91,14 +59,13 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
       text.scrollY = text.maxScrollY
       syncVerticalScrollbar(bar, text)
     },
-    update(nextRecords: readonly CommandRecord[]) {
-      // The log keeps each command's whole stdout, so this text is as large as the biggest patch
-      // the app has run — and `CommandLog.records()` hands back the same array it appends to, so
-      // identity cannot detect a new record. Comparing the count and the newest record does, and
-      // skipping an unchanged log is what keeps it off the cost of every layout pass and refresh.
-      if (rendered !== undefined && rendered.count === nextRecords.length && rendered.newest === nextRecords[nextRecords.length - 1]) return
-      rendered = { count: nextRecords.length, newest: nextRecords[nextRecords.length - 1] }
-      setPlainPaneText(text, nextRecords.length === 0 ? "No commands recorded" : nextRecords.map(formatRecord).join("\n\n"))
+    update(nextLines: readonly CommandLogLine[]) {
+      // `CommandLog.lines()` hands back the same array it appends to, so identity cannot detect a
+      // new line. The count plus the newest line's identity can, and skipping an unchanged log is
+      // what keeps it off the cost of every layout pass and refresh.
+      if (rendered !== undefined && rendered.count === nextLines.length && rendered.newest === nextLines[nextLines.length - 1]) return
+      rendered = { count: nextLines.length, newest: nextLines[nextLines.length - 1] }
+      setPlainPaneText(text, nextLines.map((line) => line.spans.map((span) => span.text).join("")).join("\n"))
       text.scrollY = text.maxScrollY
       syncVerticalScrollbar(bar, text)
     },
@@ -121,6 +88,6 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
       return text.maxScrollY
     },
   }
-  pane.update(records)
+  pane.update(lines)
   return pane
 }

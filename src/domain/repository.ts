@@ -1,6 +1,6 @@
 import type { StashEntry } from "./stash"
 import type { UpstreamRequired } from "../git/sync"
-import type { CommandRecord } from "./command"
+import type { CommandLogLine } from "./command"
 import type { CommitSummary } from "./commit"
 import type { BranchListing } from "./branch"
 import type { PullRequest } from "./pull-request"
@@ -67,6 +67,6 @@ export type AppModel = {
     readonly reason: string
   }
   readonly banner?: string
-  readonly commandLog: readonly CommandRecord[]
+  readonly commandLog: readonly CommandLogLine[]
   readonly title: string
 }

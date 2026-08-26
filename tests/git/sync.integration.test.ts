@@ -24,7 +24,7 @@ describe("synchronization operations", () => {
       expect(missingPull).toMatchObject({ kind: "upstream-required", branch, operation: "pull" })
       if (missingPull.kind === "upstream-required") {
         await pull(runner, { upstream: missingPull.candidates[0] ?? { remote: "origin", branch } })
-        expect(runner.log.records().at(-1)?.args).toEqual(["pull", "origin", branch])
+        expect(runner.log.lines().at(-1)?.spans.map((span) => span.text).join("")).toBe(`  git pull origin ${branch}`)
       }
       const missing = await push(runner)
       expect(missing.kind).toBe("upstream-required")

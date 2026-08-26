@@ -72,7 +72,7 @@ export function backgroundOptionsFromEnv(env: Record<string, string | undefined>
 export function createApp(options: CreateAppOptions): App {
   // `gh` is a network call, so it is wired only where a background routine will drive it: an app
   // built without background routines (tests, one-shot embeddings) never spawns it.
-  const ghRunner = options.background?.enabled === true ? createGhRunner(options.repositoryRoot, options.runner.log) : undefined
+  const ghRunner = options.background?.enabled === true ? createGhRunner(options.repositoryRoot) : undefined
   const controller = new AppController({
     repositoryRoot: options.repositoryRoot,
     runner: options.runner,

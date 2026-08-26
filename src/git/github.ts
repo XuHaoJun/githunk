@@ -1,6 +1,4 @@
-import type { CommandRecord } from "../domain/command"
 import type { PullRequest, PullRequestChecksState, PullRequestState } from "../domain/pull-request"
-import type { CommandLog } from "../app/command-log"
 
 /**
  * Pull requests via the `gh` CLI.
@@ -123,15 +121,13 @@ export async function loadPullRequests(runner: GhRunner): Promise<readonly PullR
 }
 
 /**
- * A `gh` runner that logs like the git runner does, so `gh pr list` shows up in the command log
- * next to the git commands it sits beside. `gh` is a network call, so it is never on a hot path;
- * only the background refresh drives it.
+ * A `gh` runner. `gh pr list` is a background query — only the background refresh drives it — and
+ * lazygit keeps queries out of the command log entirely (80 `DontLog()` calls, e.g.
+ * pkg/commands/git_commands/status.go:98). So this deliberately does not log, and the log stays
+ * what lazygit's is: the user's own actions.
  */
-export function createGhRunner(cwd: string, log?: CommandLog, nextId?: () => number): GhRunner {
-  let fallbackId = 1_000_000
+export function createGhRunner(cwd: string): GhRunner {
   return async (args: readonly string[]): Promise<ProcessResult> => {
-    const startedAt = new Date()
-    const startedAtMs = Date.now()
     let stdout = ""
     let stderr = ""
     let exitCode = -1
@@ -150,21 +146,6 @@ export function createGhRunner(cwd: string, log?: CommandLog, nextId?: () => num
       ])
     } catch (error) {
       stderr = error instanceof Error ? error.message : String(error)
-    }
-    if (log !== undefined) {
-      const record: CommandRecord = {
-        id: nextId === undefined ? fallbackId++ : nextId(),
-        cwd,
-        // The program name is part of `args` here, unlike a git record, so the log line reads as
-        // the command someone could rerun.
-        args: ["gh", ...args],
-        startedAt: startedAt.toISOString(),
-        durationMs: Date.now() - startedAtMs,
-        exitCode,
-        stdout,
-        stderr,
-      }
-      log.append(record)
     }
     return { exitCode, stdout, stderr }
   }

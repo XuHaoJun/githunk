@@ -22,12 +22,12 @@ describe("CommitMutations", () => {
     const message = "subject Ω\n\nbody 中文"
     await new CommitMutations(runner).commit(message)
     expect((await repo.git(["log", "-1", "--format=%B"])).stdout).toBe(`${message}\n\n`)
-    expect(runner.log.records().at(-1)?.args).toEqual(["commit", "-F", "-"])
+    expect(runner.log.lines().at(-1)?.spans.map((span) => span.text).join("")).toBe("  git commit -F -")
   })
 
   test("rejects an empty message before invoking Git", async () => {
     await expect(new CommitMutations(runner).commit(" \n\t")).rejects.toBeInstanceOf(EmptyCommitMessageError)
-    expect(runner.log.records()).toHaveLength(0)
+    expect(runner.log.lines()).toHaveLength(0)
   })
 
   test("fails with no staged changes", async () => {
@@ -43,14 +43,19 @@ describe("CommitMutations", () => {
     expect((await repo.git(["log", "-1", "--format=%B"])).stdout).toBe("edited\n\nbody\n\n")
   })
 
-  test("keeps hook stderr in the command log and propagates hook failure", async () => {
+  test("propagates hook failure with the failing stderr on the rejected record", async () => {
     await repo.write("file.txt", "hook\n")
     await repo.git(["add", "--", "file.txt"])
     await repo.write(".git/hooks/commit-msg", "#!/bin/sh\necho hook failed >&2\nexit 1\n")
     await Bun.write(`${repo.path}/.git/hooks/commit-msg`, "#!/bin/sh\necho hook failed >&2\nexit 1\n")
     await Bun.spawn(["chmod", "+x", `${repo.path}/.git/hooks/commit-msg`]).exited
-    await expect(new CommitMutations(runner).commit("hook")).rejects.toBeInstanceOf(GitCommandError)
-    expect(runner.log.records().at(-1)?.stderr).toContain("hook failed")
+    try {
+      await new CommitMutations(runner).commit("hook")
+      throw new Error("expected GitCommandError")
+    } catch (error) {
+      expect(error).toBeInstanceOf(GitCommandError)
+      expect((error as GitCommandError).record.stderr).toContain("hook failed")
+    }
   })
 
   test("serializes exported helper calls sharing one runner", async () => {
@@ -58,6 +63,6 @@ describe("CommitMutations", () => {
     await repo.git(["add", "--", "file.txt"])
     await Promise.all([commit(runner, "first"), amend(runner, "second")])
     expect((await repo.git(["log", "-1", "--format=%s"])).stdout.trim()).toBe("second")
-    expect(runner.log.records().filter((record) => record.args[0] === "commit")).toHaveLength(2)
+    expect(runner.log.lines().filter((line) => line.spans.map((span) => span.text).join("").startsWith("  git commit"))).toHaveLength(2)
   })
 })

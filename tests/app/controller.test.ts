@@ -95,7 +95,7 @@ describe("AppController", () => {
       stdout: "",
       stderr: "scope unavailable",
     })
-    runner.log.append(error.record)
+    runner.log.logAction("scope unavailable")
     const controller = new AppController({
       runner,
       load: async (target) => {
@@ -133,7 +133,7 @@ describe("AppController", () => {
     expect(controller.state.files.map((file) => file.path)).toEqual(["old.ts"])
     expect(controller.state.patches[0]?.text).toBe("old patch")
     expect(controller.state.banner).toBe("scope unavailable")
-    expect(controller.state.commandLog.at(-1)?.stderr).toBe("scope unavailable")
+    expect(controller.state.commandLog.at(-1)?.spans.map((span) => span.text).join("")).toBe("scope unavailable")
   })
 
   test("refreshes after each toggle-all mutation and exposes the first failure", async () => {

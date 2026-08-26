@@ -148,9 +148,9 @@ describe("listBranches process count", () => {
     }
     const runner = new GitRunner(repository.path)
 
-    const before = runner.log.records().length
+    const before = runner.log.lines().length
     const listing = await listBranches(runner)
-    const spawned = runner.log.records().length - before
+    const spawned = runner.log.lines().length - before
 
     expect(listing.remotes.map((remote) => remote.name).sort()).toEqual(["backup", "fork", "mirror", "origin", "upstream"])
     expect(listing.remotes.find((remote) => remote.name === "fork")!.fetchUrl).toBe("https://example.com/fork.git")

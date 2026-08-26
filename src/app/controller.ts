@@ -238,7 +238,7 @@ export class AppController {
       reviewStatuses: Object.create(null) as Record<string, ReviewFileState>,
       reviewSummary: { reviewed: 0, invalidated: 0, commits: 0, files: 0, additions: 0, deletions: 0 },
       loading: false,
-      commandLog: runner?.log.records() ?? [],
+      commandLog: runner?.log.lines() ?? [],
       title: titleFor(target),
       commits: [],
     }
@@ -274,14 +274,14 @@ export class AppController {
       this.pullRequestList = await this.loadPullRequestList()
     } catch {
       this.pullRequestList = []
-      this.currentState = { ...this.currentState, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
       return
     }
     const listing = this.currentState.branches
     this.currentState = {
       ...this.currentState,
       pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? []),
-      commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
     }
   }
 
@@ -323,7 +323,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         branches: branchesResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     } else {
       const error = branchesResult.reason
@@ -332,14 +332,14 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: branchWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     }
     if (stashesResult.status === "fulfilled") {
       this.currentState = {
         ...this.currentState,
         stashes: stashesResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     } else {
       const error = stashesResult.reason
@@ -348,14 +348,14 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: stashWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     }
     if (tagsResult.status === "fulfilled") {
       this.currentState = {
         ...this.currentState,
         tags: tagsResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     } else {
       const error = tagsResult.reason
@@ -364,7 +364,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: tagWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     }
     // A reflog is optional data (a fresh repo, `core.logAllRefUpdates=false` or an expired
@@ -373,7 +373,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         reflog: reflogResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     } else {
       const error = reflogResult.reason
@@ -382,7 +382,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: reflogWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     }
     // Worktrees and submodules are optional data too — a repository can have neither, and
@@ -392,7 +392,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         worktrees: worktreesResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     } else {
       const error = worktreesResult.reason
@@ -401,14 +401,14 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: worktreeWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     }
     if (submodulesResult.status === "fulfilled") {
       this.currentState = {
         ...this.currentState,
         submodules: submodulesResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     } else {
       const error = submodulesResult.reason
@@ -417,7 +417,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: submoduleWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     }
     const target = this.currentState.reviewTarget
@@ -432,23 +432,23 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: branchWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     }
     if (stashWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: stashWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner: stashWarning, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
     }
     if (tagWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: tagWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner: tagWarning, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
     }
     if (reflogWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: reflogWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner: reflogWarning, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
     }
     if (worktreeWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: worktreeWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner: worktreeWarning, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
     }
     if (submoduleWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: submoduleWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner: submoduleWarning, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
     }
     // The branch list just changed, so the cached pull requests need re-keying against it.
     this.rebuildPullRequests()
@@ -471,7 +471,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         branches,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
       this.rebuildPullRequests()
       return undefined
@@ -482,7 +482,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
       return banner
     }
@@ -541,13 +541,13 @@ export class AppController {
       try {
         const result = await this.requireRunnerOperation((runner) => pullSync(runner, options))
         if (result.kind === "upstream-required") {
-          this.currentState = { ...this.currentState, upstreamChoice: result, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+          this.currentState = { ...this.currentState, upstreamChoice: result, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
           return
         }
         await this.refresh()
       } catch (error) {
         const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
-        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
         throw error
       }
     })
@@ -569,14 +569,14 @@ export class AppController {
       try {
         const result = await this.requireRunnerOperation((runner) => pushSync(runner, options))
         if (result.kind === "upstream-required") {
-          this.currentState = { ...this.currentState, upstreamChoice: result, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+          this.currentState = { ...this.currentState, upstreamChoice: result, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
           return result
         }
         await this.refresh()
         return result
       } catch (error) {
         const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
-        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
         throw error
       }
     })
@@ -606,13 +606,13 @@ export class AppController {
             ...listing,
             remotes: listing.remotes.map((candidate) => candidate.name === remote ? { ...candidate, branches } : candidate),
           },
-          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
         }
       } catch (error) {
         const banner = error instanceof GitCommandError
           ? (error.record.stderr || error.message)
           : error instanceof Error ? error.message : String(error)
-        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
         throw error
       }
     })
@@ -625,7 +625,7 @@ export class AppController {
         ...previousState,
         commits: history.commits,
         ...(history.warning === undefined ? {} : { banner: history.warning }),
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
     })
   }
@@ -652,7 +652,7 @@ export class AppController {
           this.currentState = {
             ...this.currentState,
             banner: mismatch.message,
-            commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+            commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
           }
           return result
         }
@@ -666,7 +666,7 @@ export class AppController {
         this.currentState = {
           ...this.currentState,
           banner,
-          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
         }
         throw error
       }
@@ -734,7 +734,7 @@ export class AppController {
     this.currentState = {
       ...this.currentState,
       banner,
-      commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
     }
   }
 
@@ -773,7 +773,7 @@ export class AppController {
           basePicker: picker,
           loading: false,
           ...(storeWarning === undefined ? {} : { banner: storeWarning }),
-          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
         }
         return
       }
@@ -924,7 +924,7 @@ export class AppController {
         this.currentState = {
           ...this.currentState,
           banner,
-          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
         }
         throw error
       }
@@ -955,7 +955,7 @@ export class AppController {
         this.currentState = {
           ...this.currentState,
           banner,
-          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
         }
         throw error
       }
@@ -1066,7 +1066,7 @@ export class AppController {
         reviewSummary: review.summary,
         commits: history.commits,
         loading: false,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
       }
       this.priorStashStateForRefresh = undefined
@@ -1078,7 +1078,7 @@ export class AppController {
       this.currentState = {
         ...previousState,
         banner,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
       this.priorStashStateForRefresh = undefined
     }
@@ -1107,12 +1107,12 @@ export class AppController {
         reviewSummary: review.summary,
         loading: false,
         title: titleFor(target, this.currentState.branch),
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
         ...(review.warning === undefined ? {} : { banner: review.warning }),
       }
     } catch (error) {
       const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
-      this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.lines() ?? this.currentState.commandLog }
     }
   }
   private async refreshBranchTarget(baseRef: string): Promise<boolean> {
@@ -1154,7 +1154,7 @@ export class AppController {
         reviewSummary: this.reviewSummaryFor(review.statuses, snapshot.files, snapshot.commitCount),
         commits: history.commits,
         loading: false,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
         ...(selectionId === undefined ? {} : { selectionId }),
         ...(focusId === undefined ? {} : { focusId }),
@@ -1169,7 +1169,7 @@ export class AppController {
         ...this.currentState,
         loading: false,
         banner,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        commandLog: this.runner?.log.lines() ?? this.currentState.commandLog,
       }
       return false
     }

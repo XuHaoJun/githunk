@@ -233,10 +233,10 @@ describe("v0.1 review workflow acceptance", () => {
     await expectGit(seed.path, ["push", "--quiet", "origin", "main"])
     await controller.fetch("origin")
     expect((await expectGit(clonePath, ["rev-parse", "refs/remotes/origin/main"])).stdout.trim()).toBe(remoteAheadOid)
-    expect(controller.state.commandLog.findLast((record) => record.args.join(" ") === "fetch origin" && record.exitCode === 0)).toBeDefined()
+    expect(controller.state.commandLog.findLast((line) => line.spans.map((span) => span.text).join("") === "  git fetch origin")).toBeDefined()
     await controller.pull()
     expect((await expectGit(clonePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(remoteAheadOid)
-    expect(controller.state.commandLog.findLast((record) => record.args.join(" ") === "pull" && record.exitCode === 0)).toBeDefined()
+    expect(controller.state.commandLog.findLast((line) => line.spans.map((span) => span.text).join("") === "  git pull")).toBeDefined()
 
     await writeFile(join(clonePath, "sync-local.txt"), "local push\n")
     await controller.refresh()
@@ -245,7 +245,7 @@ describe("v0.1 review workflow acceptance", () => {
     const localPushOid = (await expectGit(clonePath, ["rev-parse", "HEAD"])).stdout.trim()
     await controller.push()
     expect((await expectGit(barePath, ["rev-parse", "refs/heads/main"])).stdout.trim()).toBe(localPushOid)
-    expect(controller.state.commandLog.findLast((record) => record.args.join(" ") === "push" && record.exitCode === 0)).toBeDefined()
+    expect(controller.state.commandLog.findLast((line) => line.spans.map((span) => span.text).join("") === "  git push")).toBeDefined()
 
     const viewBeforeFailure = {
       title: controller.state.title,
@@ -262,8 +262,7 @@ describe("v0.1 review workflow acceptance", () => {
     expect(controller.state.commandLog.length).toBeGreaterThan(viewBeforeFailure.commandLogLength)
     expect(controller.state.banner).toBeTruthy()
     const failedCommand = controller.state.commandLog.at(-1)
-    expect(failedCommand?.args).toEqual(["fetch", "missing-remote"])
-    expect(failedCommand?.exitCode).not.toBe(0)
+    expect(failedCommand?.spans.map((span) => span.text).join("")).toBe("  git fetch missing-remote")
     expect(secondAgentOid).toMatch(/^[0-9a-f]{40}$/)
   })
 })

@@ -23,8 +23,8 @@ describe("GitRunner", () => {
 
     expect(result.stdout.trim()).toBe(repo.path)
     expect(result.exitCode).toBe(0)
-    expect(log.records()).toHaveLength(1)
-    expect(log.records()[0]).toMatchObject({ cwd: repo.path, args: ["rev-parse", "--show-toplevel"], exitCode: 0 })
+    expect(log.lines()).toHaveLength(1)
+    expect(log.lines()[0]?.spans.map((span) => span.text).join("")).toBe("  git rev-parse --show-toplevel")
   })
 
   test("delivers stdin to Git", async () => {
@@ -47,8 +47,8 @@ describe("GitRunner", () => {
     await expect(runner.run(["rev-parse", "--verify", "missing-ref"])).rejects.toMatchObject({
       record: { exitCode: 128, args: ["rev-parse", "--verify", "missing-ref"], cwd: repo.path },
     })
-    expect(log.records()).toHaveLength(1)
-    expect(log.records()[0]?.stderr).toContain("fatal")
+    expect(log.lines()).toHaveLength(1)
+    expect(log.lines()[0]?.spans.map((span) => span.text).join("")).toBe("  git rev-parse --verify missing-ref")
   })
 
   test("passes filenames as arguments without shell interpretation", async () => {
@@ -57,7 +57,7 @@ describe("GitRunner", () => {
 
     const result = await runner.run(["status", "--short", "--", filename])
     expect(result.stdout).toContain(filename)
-    expect(log.records()).toHaveLength(1)
+    expect(log.lines()).toHaveLength(1)
   })
 
   test("uses the configured working directory", async () => {

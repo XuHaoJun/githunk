@@ -53,11 +53,11 @@ describe("loadRepoConfig", () => {
     await repository.git(["config", "branch.master.remote", "origin"])
     await repository.git(["config", "branch.master.merge", "refs/heads/master"])
     const runner = new GitRunner(repository.path)
-    const before = runner.log.records().length
+    const before = runner.log.lines().length
 
     const config = await loadRepoConfig(runner)
 
-    expect(runner.log.records().length - before).toBe(1)
+    expect(runner.log.lines().length - before).toBe(1)
     expect(config.remotes.get("origin")).toEqual({
       fetchUrl: "https://example.com/repo.git",
       pushUrl: "ssh://git@example.com/repo.git",
