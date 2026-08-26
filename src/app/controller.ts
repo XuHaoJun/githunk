@@ -17,7 +17,7 @@ import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
 import { CommitMutations } from "../git/commit-mutations"
 import { checkoutRemoteTracking, createBranch, deleteBranch, fetchRemote, listBranches, listRemoteBranches, renameBranch, switchLocal, type CheckoutRemoteTrackingOptions, type CheckoutRemoteTrackingResult, type DeleteBranchOptions, type RemoteBranchSelection } from "../git/branches"
 import { listStashes, loadStash, createStash as createGitStash, applyStash as applyGitStash, popStash as popGitStash, dropStash as dropGitStash } from "../git/stash"
-import { fetch as fetchSync, pull as pullSync, push as pushSync, type PullOptions, type PushOptions, type PushResult } from "../git/sync"
+import { fetch as fetchSync, pull as pullSync, push as pushSync, type FetchOptions, type PullOptions, type PushOptions, type PushResult } from "../git/sync"
 import type { StashCreateOptions, StashDropOptions, StashEntry } from "../domain/stash"
 import type { TagPreview, TagSummary } from "../domain/tag"
 import { listTags, loadTagPreview } from "../git/tags"
@@ -531,7 +531,7 @@ export class AppController {
       await this.refreshStashTarget(ref)
     })
   }
-  async fetch(remote?: string, options: { readonly background?: boolean } = {}): Promise<void> {
+  async fetch(remote?: string, options: FetchOptions = {}): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
     await this.runMutation(() => this.requireRunnerOperation((runner) => fetchSync(runner, remote, options)))
   }
