@@ -115,6 +115,7 @@
 - Modify: `tests/ui/branch-status.test.ts`
 - Modify: `tests/ui/files-tree-pane.test.ts`
 - Modify: `tests/ui/commit-graph.test.ts`
+- Modify: `tests/ui/reflog-tab.integration.test.ts`
 
 **Interfaces:**
 - `ListColumn.color`, `ListColumnSegment.color`, `GraphSegment.color`, and branch/icon color fields accept `ColorInput`.
