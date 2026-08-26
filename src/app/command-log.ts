@@ -4,6 +4,16 @@ import type { CommandLogLine, CommandLogSpan, CommandLogStyle } from "../domain/
 const GIT_OUTPUT_HEADING = "Git output:"
 
 /**
+ * lazygit's `prefixWriter` (pkg/gui/extras_panel.go:100-119): the first write emits the magenta
+ * `Git output:` heading, later writes do not. One of these per command, exactly as `getCmdWriter()`
+ * hands out a fresh one per command (`:96-97`) — so two commands' output can never end up under a
+ * single heading.
+ */
+export type CommandLogOutputWriter = {
+  write(text: string): void
+}
+
+/**
  * The command log is lazygit's `extras` view: an append-only stream of styled lines, not a list of
  * command records.
  *
@@ -16,16 +26,6 @@ const GIT_OUTPUT_HEADING = "Git output:"
  * Every write here is one or more *logical* lines. Wrapping is the pane's business, because only
  * the pane knows its width — see src/ui/panes/command-log-text.ts.
  */
-/**
- * lazygit's `prefixWriter` (pkg/gui/extras_panel.go:100-119): the first write emits the magenta
- * `Git output:` heading, later writes do not. One of these per command, exactly as `getCmdWriter()`
- * hands out a fresh one per command (`:96-97`) — so two commands' output can never end up under a
- * single heading.
- */
-export type CommandLogOutputWriter = {
-  write(text: string): void
-}
-
 export class CommandLog {
   private readonly lineList: CommandLogLine[] = []
   private lineId = 0
