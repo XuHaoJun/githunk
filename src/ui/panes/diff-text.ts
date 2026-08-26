@@ -2,25 +2,18 @@ import { StyledText, dim, fg, type TextChunk, type TextRenderable } from "@opent
 import type { DiffDisplayLine, DiffDisplayLineStyle } from "../../domain/diff/document"
 import { ANSI_CYAN, ANSI_GREEN, ANSI_RED } from "../theme"
 import { paneTextBuffer, type PaneStyleDefinition, type PaneTextBuffer } from "./pane-text"
+import { createViewportHighlights, type ViewportHighlights } from "./viewport-highlights"
 
 /**
  * Pushes a rendered diff into a pane's text viewport, colouring only the rows the viewport shows.
  *
- * The text itself goes in unstyled and whole (see ./pane-text for why that is the cheap route),
- * so OpenTUI keeps owning scrolling, wrapping and selection over the complete patch. Only the
- * colours are lazy. That is lazygit's property too: its main view never processes more of a diff
- * than it is about to display (pkg/gui/view_helpers.go:22 `linesToReadFromCmdTask`).
+ * The text itself goes in unstyled and whole and only the rows near the viewport carry colour;
+ * ./viewport-highlights owns that mechanism and explains the bargain. This file owns what is the
+ * diff's own: the styles, the row-to-style mapping, and the chunk fallback.
  */
 
 /** Column bound for "to the end of the row"; the native buffer clamps it to the real width. */
 const ROW_END_COLS = 1_000_000
-
-/**
- * Rows painted beyond the viewport on each side. The window is recomputed from the pane's own
- * `scrollY`/`height`, which a lifecycle pass reads *before* layout runs, so a resize can be one
- * frame late; a screenful of slack keeps that invisible.
- */
-const MARGIN_ROWS = 32
 
 /** Registered once per pane. The definitions mirror what the chunk fallback below paints. */
 const STYLE_DEFINITIONS: Readonly<Record<"gutter" | Exclude<DiffDisplayLineStyle, "plain">, PaneStyleDefinition>> = {
@@ -39,27 +32,13 @@ export type DiffTextContent = {
   readonly displayLines: readonly DiffDisplayLine[]
 }
 
-type DiffTextState = {
-  readonly buffer: PaneTextBuffer
-  readonly styleIds: Readonly<Record<string, number>>
-  text: string
-  displayLines: readonly DiffDisplayLine[]
-  firstDiffRow: number
-  /**
-   * Visual row → document line, from the pane's `lineInfo`. Only wrapping makes the two differ,
-   * so it changes with the text or the wrap width — never with the scroll offset, which is why it
-   * is cached: materialising it costs ~3 ms on a 75k-line patch, and scrolling asks every row.
-   */
-  rowSources: readonly number[] | undefined
-  rowSourcesWidth: number
-  appliedScrollY: number
-  appliedHeight: number
-  /** Inclusive row range currently carrying highlights, or undefined when none do. */
-  painted: { from: number; to: number } | undefined
+/** What one paint needs: the rows' styles, and where in the pane the first of them sits. */
+type DiffPaint = {
+  readonly displayLines: readonly DiffDisplayLine[]
+  readonly firstDiffRow: number
 }
 
-const states = new WeakMap<TextRenderable, DiffTextState>()
-const hooked = new WeakSet<TextRenderable>()
+const painters = new WeakMap<TextRenderable, ViewportHighlights<DiffPaint>>()
 
 function registerStyles(buffer: PaneTextBuffer): Readonly<Record<string, number>> {
   const ids: Record<string, number> = {}
@@ -83,69 +62,6 @@ function countRows(value: string): number {
 function joined(content: DiffTextContent): { readonly text: string; readonly firstDiffRow: number } {
   const preamble = content.preamble.length === 0 || content.preamble.endsWith("\n") ? content.preamble : `${content.preamble}\n`
   return { text: `${preamble}${content.body}`, firstDiffRow: countRows(preamble) }
-}
-
-/** Repaints the highlight window when the viewport has moved since the last paint. */
-function paintWindow(text: TextRenderable, force: boolean): void {
-  const state = states.get(text)
-  if (state === undefined) return
-  const height = Math.max(1, Math.floor(text.height))
-  const scrollY = Math.max(0, Math.floor(text.scrollY))
-  if (!force && state.painted !== undefined && state.appliedScrollY === scrollY && state.appliedHeight === height) return
-
-  const width = Math.max(1, Math.floor(text.width))
-  if (state.rowSources === undefined || state.rowSourcesWidth !== width) {
-    // A wrapped row above the viewport shifts every row below it, so the window is derived from
-    // the row-to-line map rather than from `scrollY` directly.
-    state.rowSources = text.lineInfo.lineSources
-    state.rowSourcesWidth = width
-  }
-  const sources = state.rowSources
-  const lastRow = Math.max(0, Math.min(scrollY + height - 1, sources.length - 1))
-  const firstLine = sources[Math.min(scrollY, lastRow)] ?? scrollY
-  const lastLine = sources[lastRow] ?? lastRow
-  const from = Math.max(0, firstLine - MARGIN_ROWS)
-  const to = lastLine + MARGIN_ROWS
-
-  const paintRow = (row: number): void => {
-    const display = state.displayLines[row - state.firstDiffRow]
-    if (display === undefined) return
-    if (display.gutterCols > 0) state.buffer.addHighlight(row, { start: 0, end: display.gutterCols, styleId: state.styleIds.gutter! })
-    if (display.style !== "plain") state.buffer.addHighlight(row, { start: display.gutterCols, end: ROW_END_COLS, styleId: state.styleIds[display.style]! })
-  }
-
-  // Rows already painted stay painted: a highlight costs ~46 µs to add, so scrolling by a row must
-  // touch a row, not a screenful. Clearing the whole buffer is free by comparison, so a jump that
-  // leaves the painted band behind starts over.
-  const previous = state.painted
-  if (previous === undefined || previous.to < from || previous.from > to) {
-    state.buffer.clearAllHighlights()
-    for (let row = from; row <= to; row++) paintRow(row)
-  } else {
-    for (let row = previous.from; row < from; row++) state.buffer.clearRow(row)
-    for (let row = to + 1; row <= previous.to; row++) state.buffer.clearRow(row)
-    for (let row = from; row < previous.from; row++) paintRow(row)
-    for (let row = previous.to + 1; row <= to; row++) paintRow(row)
-  }
-  state.painted = { from, to }
-  state.appliedScrollY = scrollY
-  state.appliedHeight = height
-}
-
-/**
- * Follows the viewport for the rest of the pane's life. Every scroll path — keys, wheel, scrollbar
- * drag, reveal, resize — ends in a render, and OpenTUI runs registered lifecycle passes at the top
- * of one, so this is the single place that cannot be bypassed.
- */
-function hookLifecycle(text: TextRenderable): void {
-  if (hooked.has(text)) return
-  hooked.add(text)
-  const host = text as unknown as { onLifecyclePass?: (() => void) | null }
-  const previous = host.onLifecyclePass
-  host.onLifecyclePass = () => {
-    previous?.call(text)
-    paintWindow(text, false)
-  }
 }
 
 function plainChunk(value: string): TextChunk {
@@ -195,34 +111,23 @@ export function installDiffText(text: TextRenderable, content: DiffTextContent):
     return
   }
   const { text: full, firstDiffRow } = joined(content)
-  let state = states.get(text)
-  if (state === undefined) {
-    state = {
+  const paint: DiffPaint = { displayLines: content.displayLines, firstDiffRow }
+  let painter = painters.get(text)
+  if (painter === undefined) {
+    const styleIds = registerStyles(buffer)
+    painter = createViewportHighlights<DiffPaint>(text, {
       buffer,
-      styleIds: registerStyles(buffer),
-      text: "",
-      displayLines: content.displayLines,
-      firstDiffRow,
-      rowSources: undefined,
-      rowSourcesWidth: -1,
-      appliedScrollY: -1,
-      appliedHeight: -1,
-      painted: undefined,
-    }
-    states.set(text, state)
-    hookLifecycle(text)
+      content: paint,
+      paintLine: (row: number, current: DiffPaint): void => {
+        const display = current.displayLines[row - current.firstDiffRow]
+        if (display === undefined) return
+        if (display.gutterCols > 0) buffer.addHighlight(row, { start: 0, end: display.gutterCols, styleId: styleIds.gutter! })
+        if (display.style !== "plain") buffer.addHighlight(row, { start: display.gutterCols, end: ROW_END_COLS, styleId: styleIds[display.style]! })
+      },
+    })
+    painters.set(text, painter)
   }
-  state.displayLines = content.displayLines
-  state.firstDiffRow = firstDiffRow
-  const changed = state.text !== full
-  if (changed) {
-    state.text = full
-    buffer.setText(full)
-    state.rowSources = undefined
-    // setText drops the buffer's highlights with the text it styled.
-    state.painted = undefined
-  }
-  paintWindow(text, changed)
+  painter.install(full, paint)
 }
 
 /**
@@ -230,8 +135,5 @@ export function installDiffText(text: TextRenderable, content: DiffTextContent):
  * this only drops the diff's highlights so they cannot bleed into it.
  */
 export function releaseDiffText(text: TextRenderable): void {
-  const state = states.get(text)
-  if (state === undefined) return
-  state.buffer.clearAllHighlights()
-  states.delete(text)
+  painters.get(text)?.release()
 }

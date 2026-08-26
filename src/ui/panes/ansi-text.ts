@@ -1,6 +1,6 @@
 import { StyledText, bold as boldChunk, dim as dimChunk, fg as fgChunk, type TextChunk, type TextRenderable } from "@opentui/core"
 import type { AnsiSpan } from "../ansi"
-import { paneTextBuffer, type PaneTextBuffer } from "./pane-text"
+import { onPaneLifecyclePass, paneTextBuffer, type PaneTextBuffer } from "./pane-text"
 
 /**
  * Pushes a git command's own coloured output into a pane's text viewport, colouring only the rows
@@ -130,15 +130,14 @@ function paintWindow(text: TextRenderable, force: boolean): void {
   state.appliedHeight = height
 }
 
+/**
+ * Follows the viewport for the rest of the pane's life. The cast that reaches OpenTUI's lifecycle
+ * hook lives in ./pane-text, the one file allowed to touch its internals.
+ */
 function hookLifecycle(text: TextRenderable): void {
   if (hooked.has(text)) return
   hooked.add(text)
-  const host = text as unknown as { onLifecyclePass?: (() => void) | null }
-  const previous = host.onLifecyclePass
-  host.onLifecyclePass = () => {
-    previous?.call(text)
-    paintWindow(text, false)
-  }
+  onPaneLifecyclePass(text, () => paintWindow(text, false))
 }
 
 /**
