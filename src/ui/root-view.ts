@@ -3570,11 +3570,21 @@ export class RootView {
         key: "f",
         label: "Focus command log",
         onPress: () => {
-          // `SetShowExtrasWindow(true)` then push the context: you can ask to focus a hidden log
-          // (extras_panel.go:40-46).
-          this.focusManager.setLogVisible(true)
+          // lazygit's handleFocusCommandLog (extras_panel.go:40-46) is a transient runtime
+          // reveal, not a persisted choice: it calls SetShowExtrasWindow(true) then pushes the
+          // context, but unlike `t`'s OnPress (:24-27) it never assigns
+          // gui.c.GetAppState().HideCommandLog nor calls SaveAppStateAndLogError(). So `f` shows a
+          // hidden log for this session only; on the next launch visibility reverts to whatever
+          // `t` last persisted. Do NOT add a notifyGeometry() call here to "restore" persistence —
+          // that would re-introduce the bug where pressing `f` once makes the log visible on every
+          // subsequent launch.
+          //
+          // Bare-assign logVisible (the same shape applyPersistedGeometry uses above) rather than
+          // setLogVisible(true), so the onChange cascade — refreshCommandLog, applyFocus, pane
+          // renders, recomputeLayout, syncPreviewForFocus — fires once, via focus() below, instead
+          // of once per call.
+          this.focusManager.logVisible = true
           this.focusManager.focus("command-log")
-          this.notifyGeometry()
         },
       },
     ])
