@@ -81,9 +81,10 @@ export class GitRunner {
 
   async run(args: readonly string[], options: GitRunOptions = {}): Promise<GitResult> {
     const commandArgs = [...args]
-    // `readOnly` marks exactly githunk's reads — all 65 call sites outside this file were audited —
-    // so it is what decides whether the command is logged, unless the caller says otherwise. See
-    // the `dontLog` doc comment.
+    // `readOnly` marks exactly githunk's reads, so it is what decides whether the command is
+    // logged, unless the caller says otherwise. Every `run()` call site in `src/git/` and
+    // `src/main.ts` passes `readOnly: true` for a read and omits it for a mutation. See the
+    // `dontLog` doc comment.
     const shouldLog = options.dontLog === undefined ? options.readOnly !== true : !options.dontLog
     // Before the spawn, as lazygit's `logCmdObj` is (cmd_obj_runner.go:196-203): the point is to
     // see what is running, not what has run. The argv is prefixed with `git` and *not* with
@@ -161,13 +162,20 @@ export class GitRunner {
     const accepted = acceptedExitCodes.includes(exitCode)
     if (shouldLog) {
       if (options.streamOutput === true) {
-        // lazygit's cmdWriter receives both streams (cmd_obj_runner.go:230,258).
+        // lazygit's cmdWriter receives both streams interleaved as they arrive
+        // (cmd_obj_runner.go:229-230,257). githunk buffers the whole command instead of
+        // streaming it, so stdout and stderr can only be concatenated after the fact, not
+        // interleaved — for push/pull this also means the block's *order* differs from lazygit's,
+        // not just its timing: progress (stderr) and the summary (stdout) land as two runs rather
+        // than interleaved lines.
         writer.write(`${stdout}${stderr}`)
       } else if (!accepted) {
         // githunk's one deviation from lazygit here, which raises an error popup instead and writes
         // nothing. githunk has no popup — a failed mutation surfaces as a pane bottomTitle — and
-        // PRD 6.7 requires that command failures remain inspectable.
-        writer.write(stderr)
+        // PRD 6.7 requires that command failures remain inspectable. Prefer stderr, since that is
+        // where a failure is conventionally reported; fall back to stdout so a command that reports
+        // failure there does not log an empty block.
+        writer.write(stderr.length > 0 ? stderr : stdout)
       }
     }
     if (!accepted) {

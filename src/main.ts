@@ -23,7 +23,7 @@ export async function startApp(): Promise<number> {
   let repositoryRoot: string
 
   try {
-    repositoryRoot = (await runner.run(["rev-parse", "--show-toplevel"])).stdout.trim()
+    repositoryRoot = (await runner.run(["rev-parse", "--show-toplevel"], { readOnly: true })).stdout.trim()
   } catch (error) {
     const detail = error instanceof GitCommandError ? error.record.stderr.trim() : String(error)
     process.stderr.write(`githunk: not inside a Git repository. Start it from a repository or pass a repository path.\n${detail}\n`)
