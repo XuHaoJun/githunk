@@ -66,11 +66,38 @@ Command strings are built by a new `formatCommandLine(argv)` that copies `CmdObj
 
 ### 4.1 The `dontLog` sweep
 
-Every read path is marked `dontLog: true`, matching lazygit's `DontLog()` set: `src/git/status.ts`, `commits.ts`, `branches.ts`, `stash.ts`, `diff.ts`, `config.ts`, `refs-snapshot.ts`, `tags.ts`, `worktrees.ts`, `submodules.ts`, `ref-log.ts`, `reflog.ts`, `base-inference.ts`, `branch-review.ts`, and the `gh` queries in `github.ts`.
+lazygit marks its 80 read paths one at a time. githunk does not need to, because it already
+distinguishes reads structurally: every read in `src/git/` passes `readOnly: true`, and every
+mutation omits it. Auditing all 65 `run()` call sites outside `runner.ts` confirms the split is
+exact — the `readOnly` set is `status.ts`, `commits.ts`, `branches.ts:41,45,72,101,182`,
+`stash.ts:19,31`, `diff.ts`, `config.ts:86`, `refs-snapshot.ts:25,26`, `tags.ts`,
+`worktrees.ts:176,209`, `submodules.ts:109`, `ref-log.ts`, `reflog.ts`, `base-inference.ts`,
+`branch-review.ts:28-31,45`, `commit-mutations.ts:54`, `editor.ts:148` and `commit-status.ts:27`;
+the non-`readOnly` set is exactly the mutations (`mutations.ts:35,42,49,50,83`,
+`commit-mutations.ts:40,48`, `stash.ts:59,63,68`, `branches.ts:174,179,184,193,199,205,264,268`,
+`sync.ts:68,75,81,89,95`).
 
-The background fetch is suppressed and the foreground fetch is not, copying `FetchBackgroundCmdObj` (`sync.go:77-84`, `DontLog().FailOnCredentialRequest()`) against `FetchCmdObj` (`sync.go:65-70`). `src/app/background.ts` therefore passes `dontLog: true` for its fetch and its working-tree refresh; `RefsWatcher`'s 2-second polling is a query and is suppressed too.
+So the sweep is one rule in `GitRunner.run`: **`readOnly: true` implies `dontLog`**, with an
+explicit `dontLog` still able to override in either direction. This yields the same set lazygit's
+80 `DontLog()` calls yield, and makes it an invariant rather than a thing each new loader has to
+remember. `commit-status.ts:27`'s existing explicit `dontLog: true` becomes redundant but stays, as
+documentation of intent.
 
-After the sweep, an idle githunk writes nothing to the log.
+Two paths need more than the rule:
+
+- **Background fetch.** `git fetch` writes refs, so it is not `readOnly`, and lazygit suppresses
+  the background one while logging the foreground one — `FetchBackgroundCmdObj` uses
+  `DontLog().FailOnCredentialRequest()` (`sync.go:77-84`) against `FetchCmdObj` (`sync.go:65-70`).
+  `src/git/sync.ts`'s `fetch(runner, remote?)` gains a `{ background?: boolean }` option that sets
+  `dontLog`; `AppController.fetch` threads it; `create-app.ts:327-337` passes
+  `{ background: true }`. The foreground `fetch` action keeps logging.
+- **`gh`.** `createGhRunner` currently logs unconditionally, and its doc comment
+  (`github.ts:126-129`) says that is the point. But `gh pr list` is a background query — that same
+  comment notes only the background refresh drives it — so under lazygit's rule it must not appear.
+  `createGhRunner` stops logging and the comment is rewritten to say why.
+
+`RefsWatcher`'s 2-second poll goes through `refs-snapshot.ts:25,26`, both `readOnly`, so the rule
+already covers it. After the sweep an idle githunk writes nothing to the log.
 
 ### 4.2 Action labels
 
@@ -107,7 +134,7 @@ githunk-only actions that run no git command — `markFileReviewed`, `markFocuse
 
 ### 4.3 Command output
 
-`GitRunner.run` calls `log.logCommand(formatCommandLine(args), true)` before spawning, unless `dontLog` is set. `createGhRunner` does the same; its argv already carries the program name.
+`GitRunner.run` calls `log.logCommand(formatCommandLine(args), true)` before spawning, unless §4.1's rule suppresses it. `createGhRunner` no longer logs at all, per §4.1.
 
 Streamed output is copied for the commands lazygit streams. lazygit's `Git output:` block appears only for commands built with a credential strategy or `StreamOutput()` (`cmd_obj_runner.go:234-246`), which in practice is push, pull and foreground fetch (`sync.go:44,110,124,132`). githunk writes those commands' combined output through `logOutput`.
 
@@ -251,7 +278,9 @@ Integration:
 
 ## 12. Files Touched
 
-`src/domain/command.ts`, `src/app/command-log.ts`, `src/app/log-actions.ts` (new), `src/app/controller.ts`, `src/app/background.ts`, `src/app/refs-watcher.ts`, `src/git/runner.ts`, `src/git/github.ts`, the 14 read paths in `src/git/` from §4.1, `src/ui/panes/command-log-pane.ts`, `src/ui/action-menu.ts` (new), `src/ui/bindings.ts`, `src/ui/focus.ts`, `src/ui/layout.ts`, `src/ui/ui-state-store.ts`, `src/ui/root-view.ts`, `docs/lazygit-compatibility-v0.1.md`.
+`src/domain/command.ts`, `src/app/command-log.ts`, `src/app/log-actions.ts` (new), `src/app/command-log-tips.ts` (new), `src/app/controller.ts`, `src/app/create-app.ts`, `src/git/runner.ts`, `src/git/sync.ts`, `src/git/github.ts`, `src/ui/panes/command-log-pane.ts`, `src/ui/panes/command-log-text.ts` (new), `src/ui/action-menu.ts` (new), `src/ui/bindings.ts`, `src/ui/focus.ts`, `src/ui/layout.ts`, `src/ui/ui-state-store.ts`, `src/ui/root-view.ts`, `docs/lazygit-compatibility-v0.1.md`.
+
+The 14 read paths listed in §4.1 are **not** touched: the `readOnly`-implies-`dontLog` rule covers them without an edit.
 
 ## 13. Parity Matrix Update
 
