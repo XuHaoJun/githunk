@@ -124,9 +124,6 @@ export function mainActionAvailability(document: DiffDocument | undefined, targe
   return { canStageLines: true, canDiscardLines: true }
 }
 
-export function mainPaneCommitAvailable(model: AppModel): boolean {
-  return model.reviewTarget.kind === "working-tree" && model.reviewTarget.scope === "staged"
-}
 
 export function changeLineIndexes(document: DiffDocument, startUtf16: number, endUtf16: number): readonly number[] {
   return document.lines.flatMap((line, index) => {

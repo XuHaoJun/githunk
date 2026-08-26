@@ -11,7 +11,7 @@ export const ACTIONS = [
   // list and document navigation
   "next", "previous", "page-next", "page-previous", "goto-top", "goto-bottom",
   "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
-  "hunk-next", "hunk-previous", "tab-next", "tab-previous",
+  "hunk-next", "hunk-previous", "tab-next", "tab-previous", "scope-next", "scope-previous",
   // review targets
   "mode-branch", "mode-working-tree", "mark-reviewed",
   // working tree
@@ -345,6 +345,10 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["main"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["main"] },
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["main"], available: inCommit },
+  // The working-tree scope ring (all → staged → unstaged) is githunk's PRD §8.1 review-target
+  // selector; Main is the only context whose `[`/`]` are free, since side windows use them for tabs.
+  { keys: ["]"], action: "scope-next", description: "next scope", contexts: ["main"], displayOnScreen: true, available: writable, menuDescription: "cycle the working-tree scope: all, staged, unstaged" },
+  { keys: ["["], action: "scope-previous", description: "previous scope", contexts: ["main"], available: writable },
 
   // ---- files pane ----
   { keys: ["space"], action: "stage-file", description: "stage", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "stage or unstage the selected file or directory" },

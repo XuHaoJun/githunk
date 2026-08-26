@@ -439,17 +439,20 @@ describe("lazygit core UI acceptance", () => {
     expect(tagPreamble).toContain("release one")
     expect(view.mainContent?.ansi?.text ?? "").toMatch(/[0-9a-f]{7}/)
 
-    // 7. Main and Files do not consume [/]
+    // 7. Main's brackets drive the working-tree scope ring; Files' brackets cycle its own tabs
     await harness.pressKey("0")
     await harness.flush()
     const tabBeforeMainBracket = view.activeBranchesTab
-    await harness.pressKey("[")
-    await harness.flush()
-    expect(view.activeBranchesTab).toBe(tabBeforeMainBracket)
-    await harness.pressKey("]")
-    await harness.flush()
-    expect(view.activeBranchesTab).toBe(tabBeforeMainBracket)
     const targetBeforeBracket = JSON.stringify(app.controller.state.reviewTarget)
+    await harness.pressKey("[")
+    await harness.settle()
+    expect(view.activeBranchesTab).toBe(tabBeforeMainBracket)
+    expect(JSON.stringify(app.controller.state.reviewTarget))
+      .toBe(JSON.stringify({ kind: "working-tree", scope: "unstaged" }))
+    await harness.pressKey("]")
+    await harness.settle()
+    expect(view.activeBranchesTab).toBe(tabBeforeMainBracket)
+    expect(JSON.stringify(app.controller.state.reviewTarget)).toBe(targetBeforeBracket)
     await harness.pressKey("2")
     await harness.flush()
     await harness.pressKey("[")

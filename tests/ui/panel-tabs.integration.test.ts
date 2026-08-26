@@ -41,20 +41,21 @@ describe("panel 3 tabs and RemoteBranches child", () => {
     await harness.pressKey("[")
     expect(harness.app.view!.activeBranchesTab).toBe("branches")
 
-    // Bracket in Main must not change tab and must not change reviewTarget
+    // Bracket in Main must not change tab, but now cycles the working-tree scope ring.
     await harness.pressKey("0")
     const beforeMain = harness.app.view!.activeBranchesTab
-    const targetBeforeMainBracket = harness.app.controller.state.reviewTarget
     await harness.pressKey("]")
+    await harness.settle()
     expect(harness.app.view!.activeBranchesTab).toBe(beforeMain)
-    expect(harness.app.controller.state.reviewTarget).toEqual(targetBeforeMainBracket)
+    const scopedTarget = harness.app.controller.state.reviewTarget
+    expect(scopedTarget).toEqual({ kind: "working-tree", scope: "staged" })
 
     // Bracket in Files cycles panel 2's own tabs and leaves panel 3 alone.
     await harness.pressKey("2")
     await harness.pressKey("]")
     expect(harness.app.view!.activeFilesTab).toBe("worktrees")
     expect(harness.app.view!.activeBranchesTab).toBe(beforeMain)
-    expect(harness.app.controller.state.reviewTarget).toEqual(beforeTarget)
+    expect(harness.app.controller.state.reviewTarget).toEqual(scopedTarget)
     await harness.pressKey("[")
     expect(harness.app.view!.activeFilesTab).toBe("files")
 
@@ -62,13 +63,13 @@ describe("panel 3 tabs and RemoteBranches child", () => {
     await harness.pressKey("3")
     await harness.pressKey("]")
     expect(harness.app.view!.activeBranchesTab).toBe("remotes")
-    expect(harness.app.controller.state.reviewTarget).toEqual(beforeTarget)
+    expect(harness.app.controller.state.reviewTarget).toEqual(scopedTarget)
   })
 
-  test("scope-next and scope-previous are unhandled in the tabless main pane", async () => {
+  test("main pane binds brackets to the scope ring while tabbed panels keep tab cycling", async () => {
     const registry = createRegistry()
-    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
-    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
+    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBe("scope-next")
+    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBe("scope-previous")
     // Every tabbed panel binds them to its own tab cycle instead.
     expect(registry.dispatch({ name: "]" }, { context: "files" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "files" })).toBe("tab-previous")

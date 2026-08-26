@@ -120,13 +120,15 @@ describe("panel 2 tabs", () => {
     await harness.pressKey("[")
     expect(view.activeFilesTab).toBe("files")
 
+    // Main's brackets belong to the working-tree scope ring and never touch panel 2's tabs.
     await harness.pressKey("0")
     await harness.pressKey("]")
+    await harness.settle()
     expect(view.activeFilesTab).toBe("files")
 
     const registry = createRegistry()
-    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
-    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
+    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBe("scope-next")
+    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBe("scope-previous")
     expect(registry.dispatch({ name: "]" }, { context: "files" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "files" })).toBe("tab-previous")
   })

@@ -119,9 +119,13 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     height: options.height ?? 40,
     useMouse: true,
     enableMouseMovement: true,
-    // Matches src/main.ts's real renderer configuration explicitly, rather than relying on the
-    // library default of `true` for the same value: ctrl+c must behave the same way under test
-    // as it does in the shipped app.
+    // Matches src/main.ts's real renderer configuration explicitly, rather than relying on
+    // library defaults for the same values: ctrl+c must behave the same way under test as it
+    // does in the shipped app, and the kitty keyboard protocol is ON by default in
+    // CliRenderer (`useKittyKeyboard ?? true`), so the mocks must encode modifier keys the
+    // same way a real terminal reports them — without it, ctrl+Enter degrades to a bare \r
+    // and the commit dialog cannot be confirmed from a test.
+    kittyKeyboard: true,
     exitOnCtrlC: true,
   })
 

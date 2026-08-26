@@ -81,8 +81,10 @@ describe("panel 4 Reflog tab", () => {
     await harness.pressKey("[")
     expect(view.activeCommitsTab).toBe("commits")
 
+    // Main's brackets belong to the working-tree scope ring and never touch panel 4's tabs.
     await harness.pressKey("0")
     await harness.pressKey("]")
+    await harness.settle()
     expect(view.activeCommitsTab).toBe("commits")
     // Panel 2 has its own tabs: the bracket cycles those and leaves panel 4 where it was.
     await harness.pressKey("2")
@@ -91,8 +93,8 @@ describe("panel 4 Reflog tab", () => {
     expect(view.activeFilesTab).toBe("worktrees")
 
     const registry = createRegistry()
-    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
-    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
+    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBe("scope-next")
+    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBe("scope-previous")
     expect(registry.dispatch({ name: "]" }, { context: "commits" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "commits" })).toBe("tab-previous")
   })

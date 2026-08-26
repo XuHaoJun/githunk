@@ -152,6 +152,11 @@ describe("BindingRegistry availability-aware resolution", () => {
     expect(registry.dispatch({ name: "escape" }, { context: "commits", model: workingTree, ui: ui() })).toBe("back")
     expect(registry.dispatch({ name: "escape" }, { context: "commits", model: commit, ui: ui() })).toBe("commit-back")
   })
+  test("bracket keys cycle the working-tree scope in main but switch tabs in side windows", () => {
+    expect(registry.dispatch({ name: "]" }, { context: "main", model: workingTree, ui: ui() })).toBe("scope-next")
+    expect(registry.dispatch({ name: "[" }, { context: "main", model: workingTree, ui: ui() })).toBe("scope-previous")
+    expect(registry.dispatch({ name: "]" }, { context: "files", model: workingTree, ui: ui() })).toBe("tab-next")
+  })
 
   test("resolves to undefined when the only binding for a key is unavailable", () => {
     const onlyUnavailable = new BindingRegistry([
@@ -283,23 +288,24 @@ describe("GITHUNK_BINDINGS", () => {
     expect(registry.dispatch({ name: "l" }, { context: "main" })).toBe("hunk-next")
   })
 
-  test("moves the main scope toggle off tab and onto bracket keys in branches pane", () => {
+  test("keeps tabs in side windows and restores the scope ring on main's brackets", () => {
     expect(registry.dispatch({ name: "tab" }, { context: "main" })).toBe("pane-next")
-    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
-    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
-    // Panel 2 has tabs of its own now (lazygit's `{files, worktrees, submodules}` group), so the
-    // brackets cycle there too — only the tabless main pane leaves them unbound.
+    // Main is the only tabless window, so its `[`/`]` belong to the PRD §8.1 scope ring.
+    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBe("scope-next")
+    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBe("scope-previous")
+    // Panel 2 has tabs of its own now (lazygit's `{files, worktrees, submodules}` group), so
+    // the brackets cycle there too.
     expect(registry.dispatch({ name: "]" }, { context: "files" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "files" })).toBe("tab-previous")
     expect(registry.dispatch({ name: "]" }, { context: "branches" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "branches" })).toBe("tab-previous")
   })
 
-  test("adds tab-next and tab-previous and deletes scope-next/scope-previous", () => {
+  test("adds tab-next and tab-previous alongside the restored scope actions", () => {
     expect(ACTIONS).toContain("tab-next")
     expect(ACTIONS).toContain("tab-previous")
-    expect(ACTIONS).not.toContain("scope-next")
-    expect(ACTIONS).not.toContain("scope-previous")
+    expect(ACTIONS).toContain("scope-next")
+    expect(ACTIONS).toContain("scope-previous")
   })
 
   test("declares paging, jumping, main scrolling, screen modes and the menu", () => {
@@ -347,11 +353,11 @@ describe("GITHUNK_BINDINGS", () => {
     expect(hints).toContain("reviewed: r")
   })
 
-  test("hides line actions in the All scope, where they are unavailable", () => {
+  test("hides line actions in the All scope but advertises the scope ring", () => {
     const all = model({ reviewTarget: { kind: "working-tree", scope: "all" } })
     const hints = registry.hintsFor("main", all, ui({ focus: "main", mainScope: "all" }), 300)
     expect(hints).not.toContain("stage: space")
-    expect(hints).not.toContain("scope: ")
+    expect(hints).toContain("scope: ]")
   })
 
 

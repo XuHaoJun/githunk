@@ -41,7 +41,7 @@ import { parseAnsi } from "./ansi"
 import { NO_BRANCHES_FOR_REMOTE, NO_REMOTES, remotePreviewText } from "./panes/remotes-pane"
 import { NO_TAGS, tagPreamble } from "./panes/tags-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
-import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, createFilesPane, createFilesTreeState, fileHasUnstagedChanges, filesPaneCommitAvailable, filesTreeRows } from "./panes/files-pane"
+import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, anyStagedChanges, createFilesPane, createFilesTreeState, fileHasUnstagedChanges, filesTreeRows } from "./panes/files-pane"
 import { NO_WORKTREES_THIS_REPO, selectedWorktreeFrom, worktreePreviewText, worktreeRows } from "./panes/worktrees-pane"
 import { NO_SUBMODULES, selectedSubmoduleFrom, submodulePreviewText, submoduleRows } from "./panes/submodules-pane"
 import {
@@ -58,8 +58,8 @@ import {
   type FileTreeState,
 } from "./file-tree"
 import { submoduleFullName } from "../domain/submodule"
-import type { ChangedFile } from "../domain/review-target"
-import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
+import type { ChangedFile, WorkingTreeScope } from "../domain/review-target"
+import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { commitFileRows } from "./panes/commit-files-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
@@ -100,6 +100,10 @@ const FILES_TAB_ORDER = ["files", "worktrees", "submodules"] as const
 const BRANCHES_TAB_ORDER = ["branches", "remotes", "tags"] as const
 /** Panel 4's tab keys, in the same order as `COMMITS_TABS`' labels. */
 const COMMITS_TAB_ORDER = ["commits", "reflog"] as const
+
+/** Ring order for the `[` / `]` scope-cycle keys in the main pane (PRD §8.1 review targets). */
+const SCOPE_ORDER: readonly WorkingTreeScope[] = ["all", "staged", "unstaged"]
+
 export type RootViewOptions = {
   readonly sidePanelRatio?: number
   readonly logHeight?: number
@@ -117,6 +121,7 @@ export type RootViewOptions = {
   readonly onToggleAllFiles?: () => Promise<void>
   readonly onModeChange?: (mode: "working-tree" | "branch") => Promise<void>
   readonly onChooseBase?: (baseRef: string) => Promise<void>
+  readonly onScopeChange?: (scope: WorkingTreeScope) => Promise<void>
   readonly onCancelBase?: () => Promise<void>
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
@@ -205,6 +210,7 @@ export class RootView {
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
   private readonly onModeChange: ((mode: "working-tree" | "branch") => Promise<void>) | undefined
   private readonly onChooseBase: ((baseRef: string) => Promise<void>) | undefined
+  private readonly onScopeChange: ((scope: WorkingTreeScope) => Promise<void>) | undefined
   private readonly onCancelBase: (() => Promise<void>) | undefined
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
@@ -232,6 +238,8 @@ export class RootView {
   private readonly onAmendMessage: ((message: string) => Promise<void>) | undefined
   private readonly onCurrentCommitMessage: (() => Promise<string>) | undefined
   private commitDialog: CommitDialog | undefined
+  /** Arms the second-press stage-everything confirmation of withEnsureCommittableFiles. */
+  private pendingStageAllCommit: boolean = false
   private readonly onMarkFocusedFileReviewed: ((path?: string) => Promise<void>) | undefined
   private readonly onRefresh: (() => Promise<void>) | undefined
   private readonly onSwitchLocalBranch: ((branch: string) => Promise<void>) | undefined
@@ -306,6 +314,7 @@ export class RootView {
     this.onStageFile = options.onStageFile
     this.onApplyStash = options.onApplyStash
     this.onModeChange = options.onModeChange
+    this.onScopeChange = options.onScopeChange
     this.onQuit = options.onQuit
     this.onGeometryChange = options.onGeometryChange
     this.onMutationSettled = options.onMutationSettled
@@ -965,6 +974,8 @@ export class RootView {
       case "stash-inspect": this.actionStashInspect(); return
       case "commit": this.actionCommit(); return
       case "amend": this.actionAmend(); return
+      case "scope-next": this.actionScopeCycle("next"); return
+      case "scope-previous": this.actionScopeCycle("previous"); return
       case "fetch": this.actionFetch(); return
       case "pull": this.actionPull(); return
       case "push": this.actionPush(); return
@@ -2075,26 +2086,74 @@ export class RootView {
 
   private actionCommit(): void {
     if (this.mutationInFlight || this.onCommitMessage === undefined) return
-    const commitAvailable = this.focusManager.active === "files"
-      ? filesPaneCommitAvailable(this.model)
-      : this.focusManager.active === "main" && mainPaneCommitAvailable(this.model)
-    if (!commitAvailable) {
-      this.panes.main.box.bottomTitle = "Commit is available in Files or Main staged scope"
-      return
-    }
-    this.openCommitDialog("commit", "")
+    if (!this.commitAttemptAvailable()) return
+    this.withEnsureCommittableFiles(() => this.openCommitDialog("commit", ""))
   }
 
   private actionAmend(): void {
     if (this.mutationInFlight || this.onAmendMessage === undefined || this.onCurrentCommitMessage === undefined) return
-    const commitAvailable = this.focusManager.active === "files"
-      ? filesPaneCommitAvailable(this.model)
-      : this.focusManager.active === "main" && mainPaneCommitAvailable(this.model)
-    if (!commitAvailable) {
-      this.panes.main.box.bottomTitle = "Commit is available in Files or Main staged scope"
+    if (!this.commitAttemptAvailable()) return
+    this.withEnsureCommittableFiles(() => this.openAmendDialog())
+  }
+
+  /**
+   * Committing targets the index, which only exists for a working-tree review; branch, commit
+   * and stash reviews are read-only (AppController.ensureWorkingTreeMutation refuses the same set).
+   */
+  private commitAttemptAvailable(): boolean {
+    if (this.model.reviewTarget.kind !== "working-tree") {
+      this.panes.main.box.bottomTitle = this.model.reviewTarget.kind === "stash" ? "Stash Review is read-only" : "Branch Review is read-only"
+      return false
+    }
+    const active = this.focusManager.active
+    if (active !== "files" && active !== "main") {
+      this.panes.main.box.bottomTitle = "Commit is available in Files or Main"
+      return false
+    }
+    return true
+  }
+
+  /**
+   * lazygit's WithEnsureCommittableFiles commits whatever the index holds and, when nothing is
+   * staged, prompts to stage everything before retrying the handler
+   * (pkg/gui/controllers/helpers/working_tree_helper.go:229-258). Githunk's confirmation idiom
+   * is a second press of the same key, as with file discard and stash drop.
+   */
+  private withEnsureCommittableFiles(retry: () => void): void {
+    if (anyStagedChanges(this.model)) {
+      this.pendingStageAllCommit = false
+      retry()
       return
     }
-    this.openAmendDialog()
+    if (this.model.files.length === 0) {
+      this.panes.main.box.bottomTitle = "No changes to commit"
+      return
+    }
+    if (!this.pendingStageAllCommit) {
+      this.pendingStageAllCommit = true
+      this.panes.main.box.bottomTitle = "Nothing staged — press the same key again to stage everything"
+      this.root.requestRender()
+      return
+    }
+    this.pendingStageAllCommit = false
+    if (this.onToggleAllFiles === undefined) return
+    this.runUiMutation(async () => {
+      await this.onToggleAllFiles!()
+      retry()
+    })
+  }
+
+  private actionScopeCycle(direction: "next" | "previous"): void {
+    if (this.mutationInFlight) {
+      this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
+      return
+    }
+    if (this.onScopeChange === undefined) return
+    if (this.model.reviewTarget.kind !== "working-tree") return
+    this.invalidateRemoteCheckout()
+    const index = SCOPE_ORDER.indexOf(this.model.reviewTarget.scope)
+    const nextIndex = direction === "next" ? (index + 1) % SCOPE_ORDER.length : (index - 1 + SCOPE_ORDER.length) % SCOPE_ORDER.length
+    this.runUiMutation(() => this.onScopeChange!(SCOPE_ORDER[nextIndex]!))
   }
 
   private actionFetch(): void {

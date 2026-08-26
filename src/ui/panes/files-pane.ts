@@ -160,6 +160,11 @@ export function fileLineActionReason(file: ChangedFile): string | undefined {
   return reasonFor(file)
 }
 
-export function filesPaneCommitAvailable(model: AppModel): boolean {
-  return model.reviewTarget.kind === "working-tree" && model.reviewTarget.scope === "staged"
+/**
+ * lazygit commits whatever the index holds regardless of which Files view is showing
+ * (`WithEnsureCommittableFiles`, pkg/gui/controllers/helpers/working_tree_helper.go:229):
+ * any staged file anywhere in the model is committable from every working-tree scope.
+ */
+export function anyStagedChanges(model: AppModel): boolean {
+  return model.reviewTarget.kind === "working-tree" && model.files.some(fileHasStagedChanges)
 }

@@ -99,7 +99,7 @@ describe("root view dispatch", () => {
     expect(view.commitsContextKind).toBe("commit-files")
   })
 
-  test("bracket keys change the main scope and tab no longer does", async () => {
+  test("bracket keys cycle the working-tree scope while Main is focused, and Tab does not", async () => {
     harness = await createShellHarness()
 
     await harness.pressKey("0")
@@ -109,9 +109,18 @@ describe("root view dispatch", () => {
     await harness.pressKey("0")
     await harness.pressKey("]")
     await harness.settle()
-    // After Task 5, bracket only switches tabs in a focused multi-tab window (branches);
-    // in Main it is unhandled and does not change scope/title.
-    expect(harness.app.controller.state.title).toBe(before)
+    expect(harness.app.controller.state.reviewTarget).toEqual({ kind: "working-tree", scope: "staged" })
+    expect(harness.app.controller.state.title).toBe("Working Tree — Staged")
+    await harness.pressKey("]")
+    await harness.settle()
+    expect(harness.app.controller.state.reviewTarget).toEqual({ kind: "working-tree", scope: "unstaged" })
+    expect(harness.app.controller.state.title).toBe("Working Tree — Unstaged")
+    await harness.pressKey("[")
+    await harness.settle()
+    expect(harness.app.controller.state.reviewTarget).toEqual({ kind: "working-tree", scope: "staged" })
+    await harness.pressKey("[")
+    await harness.settle()
+    expect(harness.app.controller.state.reviewTarget).toEqual({ kind: "working-tree", scope: "all" })
   })
 
   test("[ moves the scope the opposite way from ]", async () => {

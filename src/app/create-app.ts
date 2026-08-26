@@ -162,6 +162,9 @@ export function createApp(options: CreateAppOptions): App {
     onModeChange: async (mode) => {
       try { await controller.switchMode(mode) } finally { view.update(controller.state) }
     },
+    onScopeChange: async (scope) => {
+      try { await controller.setWorkingTreeScope(scope) } finally { view.update(controller.state) }
+    },
     onChooseBase: async (baseRef) => {
       try { await controller.chooseBase(baseRef) } finally { view.update(controller.state) }
     },
