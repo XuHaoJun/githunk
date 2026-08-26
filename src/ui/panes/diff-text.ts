@@ -117,7 +117,6 @@ export function installDiffText(text: TextRenderable, content: DiffTextContent):
     const styleIds = registerStyles(buffer)
     painter = createViewportHighlights<DiffPaint>(text, {
       buffer,
-      content: paint,
       paintLine: (row: number, current: DiffPaint): void => {
         const display = current.displayLines[row - current.firstDiffRow]
         if (display === undefined) return

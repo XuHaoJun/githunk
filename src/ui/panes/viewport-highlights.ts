@@ -31,8 +31,6 @@ const MARGIN_LINES = 32
 
 export type ViewportHighlightSpec<Content> = {
   readonly buffer: PaneTextBuffer
-  /** The content the first paint describes; replaced by every `install`. */
-  readonly content: Content
   /** Paints one logical line's highlights. A line with nothing to paint is a no-op. */
   readonly paintLine: (line: number, content: Content) => void
 }
@@ -53,7 +51,12 @@ export type ViewportHighlights<Content> = {
 
 export function createViewportHighlights<Content>(text: TextRenderable, spec: ViewportHighlightSpec<Content>): ViewportHighlights<Content> {
   const { buffer, paintLine } = spec
-  let content = spec.content
+  /**
+   * The content the next paint describes. Assigned by `install` before it sets `active`, and `paint`
+   * returns while `!active`, so it is read only after it has been written — which is why the spec
+   * carries no initial value to be the one thing nothing can ever observe.
+   */
+  let content!: Content
   let installed = ""
   let active = false
   /**

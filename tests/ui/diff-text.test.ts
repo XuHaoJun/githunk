@@ -104,3 +104,40 @@ describe("diff text installation", () => {
     }
   })
 })
+
+/**
+ * The band around the viewport is 32 logical lines wider than the viewport on each side, so on any
+ * document shorter than that — or with a preamble ahead of the patch — it asks for lines the diff
+ * does not describe: rows before `firstDiffRow` (a negative index into `displayLines`) and rows past
+ * its end. `installDiffText`'s `paintLine` answers those with nothing rather than failing, which is
+ * the only reason a short diff renders at all.
+ */
+describe("diff text band edges", () => {
+  test("paints only the rows the diff describes when the band overruns both ends", async () => {
+    const setup = await createTestRenderer({ width: 40, height: 14 })
+    try {
+      const text = new TextRenderable(setup.renderer, { id: "main-text", content: "", width: 34, height: 12, selectable: true })
+      setup.renderer.root.add(text)
+      text.wrapMode = "char"
+      const rendered = renderDiff(parseDiff(patchText(2)))
+      installDiffText(text, { preamble: "commit abcdef0\nAuthor: Ada\n", body: rendered.displayText, displayLines: rendered.displayLines })
+      await setup.flush()
+
+      const frame = setup.captureSpans()
+      expect(text.plainText.split("\n").slice(0, 2)).toEqual(["commit abcdef0", "Author: Ada"])
+      // The preamble carries no diff style: `displayLines[-2]` and `[-1]` are nothing to paint.
+      expect(frame.lines[0]!.spans[0]!.fg.intent).toBe("rgb")
+      expect(frame.lines[1]!.spans[0]!.fg.intent).toBe("rgb")
+      // The patch's own rows are still coloured: hunk header cyan, then deletion red and addition
+      // green after their dim gutters.
+      expect(frame.lines[6]!.spans[0]!.fg.intent).toBe("indexed")
+      expect(frame.lines[7]!.spans[1]!.fg.intent).toBe("indexed")
+      expect(frame.lines[8]!.spans[1]!.fg.intent).toBe("indexed")
+      expect(frame.lines[7]!.spans[1]!.fg.slot).not.toBe(frame.lines[8]!.spans[1]!.fg.slot)
+      // And the band's other end — rows 9 through 40 do not exist.
+      expect(frame.lines[9]!.spans[0]!.fg.intent).toBe("rgb")
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+})

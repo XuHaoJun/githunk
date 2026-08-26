@@ -56,9 +56,10 @@ export type CommandLogHighlight = {
  * The only multi-span line is `Random tip: <tip>`, so the label/tip boundary is the one column this
  * file measures. It is measured in **display cells** (../cell-width), which is the unit
  * `addHighlight`'s columns count: probed against OpenTUI 0.5.6 by highlighting `[0, 8)` of
- * `"中 tip: GREEN"` and of `"🎲 tip: GREEN"` and getting back `"中 tip: "` and `"🎲 tip: "` — 6 code
- * points each, 7 and 8 UTF-16 units, 8 cells each. Under code-point or UTF-16 semantics the label's
- * trailing space would fall to the tip's colour.
+ * `"中 tip: GREEN"` and of `"🎲 tip: GREEN"` and getting back `"中 tip: "` and `"🎲 tip: "` — 7 code
+ * points each, 7 and 8 UTF-16 units, 8 cells each. Code points end either label at column 7 — where
+ * the `[0, 7)` probe stopped, on `"中 tip:"` — handing the label's trailing space to the tip's
+ * colour; UTF-16 units do that to 中's label too, and only coincide with cells for the emoji's.
  */
 export function commandLogLineHighlights(line: CommandLogLine): readonly CommandLogHighlight[] {
   if (line.spans.length === 0) return []
@@ -105,7 +106,6 @@ export function installCommandLogText(text: TextRenderable, lines: readonly Comm
     const styleIds = registerStyles(buffer)
     painter = createViewportHighlights<readonly CommandLogLine[]>(text, {
       buffer,
-      content: lines,
       paintLine: (index: number, current: readonly CommandLogLine[]): void => {
         const line = current[index]
         if (line === undefined) return
