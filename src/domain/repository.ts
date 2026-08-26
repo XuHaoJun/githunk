@@ -1,6 +1,7 @@
 import type { StashEntry } from "./stash"
 import type { UpstreamRequired } from "../git/sync"
 import type { CommandLogLine } from "./command"
+import type { CommandLogWriteKind } from "../app/command-log"
 import type { CommitSummary } from "./commit"
 import type { BranchListing } from "./branch"
 import type { PullRequest } from "./pull-request"
@@ -68,5 +69,12 @@ export type AppModel = {
   }
   readonly banner?: string
   readonly commandLog: readonly CommandLogLine[]
+  /**
+   * The autoscroll transition the log's most recent write implies — lazygit assigns
+   * `Autoscroll = true` in `LogAction`/`LogCommand` (pkg/gui/command_log_panel.go:38,62) and not in
+   * the `prefixWriter` or the header (pkg/gui/extras_panel.go:109-119,
+   * command_log_panel.go:70-85), so the pane needs to know which one it just received.
+   */
+  readonly commandLogWriteKind?: CommandLogWriteKind
   readonly title: string
 }

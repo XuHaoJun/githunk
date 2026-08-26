@@ -127,4 +127,51 @@ describe("CommandLog", () => {
     expect(first).toBe(log.lines())
     expect(log.lines()).toHaveLength(1)
   })
+
+  /**
+   * `lastWriteKind()` feeds `AppModel.commandLogWriteKind`, which `RootView` uses to pick the
+   * autoscroll transition (src/ui/panes/command-log-scroll.ts) a new write implies — lazygit
+   * assigns `Autoscroll = true` only in `LogAction`/`LogCommand`
+   * (pkg/gui/command_log_panel.go:38,62), never in the `prefixWriter` or the header.
+   */
+  describe("lastWriteKind", () => {
+    test("starts as append-header, because the first write is the startup header", () => {
+      expect(new CommandLog().lastWriteKind()).toBe("append-header")
+    })
+
+    test("logAction and logCommand report append-entry", () => {
+      const log = new CommandLog()
+      log.logIntro("intro")
+      log.logAction("Stage file")
+      expect(log.lastWriteKind()).toBe("append-entry")
+      log.logCommand("git add -- a.ts", true)
+      expect(log.lastWriteKind()).toBe("append-entry")
+    })
+
+    test("outputWriter().write reports append-output", () => {
+      const log = new CommandLog()
+      log.logCommand("git push", true)
+      expect(log.lastWriteKind()).toBe("append-entry")
+      log.outputWriter().write("Enumerating objects: 3\n")
+      expect(log.lastWriteKind()).toBe("append-output")
+    })
+
+    test("logIntro and logTip report append-header", () => {
+      const log = new CommandLog()
+      log.logAction("Stage file")
+      log.logIntro("You can hide/focus this panel by pressing '@'")
+      expect(log.lastWriteKind()).toBe("append-header")
+      log.logAction("Stage file")
+      log.logTip("Random tip", "Press '@' to hide this")
+      expect(log.lastWriteKind()).toBe("append-header")
+    })
+
+    test("an empty write is a no-op, so it leaves the prior kind alone", () => {
+      const log = new CommandLog()
+      log.logCommand("git push", true)
+      expect(log.lastWriteKind()).toBe("append-entry")
+      log.outputWriter().write("")
+      expect(log.lastWriteKind()).toBe("append-entry")
+    })
+  })
 })

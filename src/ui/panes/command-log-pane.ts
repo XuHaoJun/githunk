@@ -2,6 +2,7 @@ import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
 import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
 import { attachVerticalScrollbar, syncVerticalScrollbar } from "./common"
 import { installCommandLogText } from "./command-log-text"
+import { autoscrollAfter, type CommandLogScrollInput } from "./command-log-scroll"
 import type { FocusId } from "../focus"
 import type { CommandLogLine } from "../../domain/command"
 
@@ -15,6 +16,10 @@ export type CommandLogPaneHandle = {
   scrollBy(delta: number): void
   scrollTo(position: number): void
   maxScrollY(): number
+  /** lazygit's `view.Autoscroll` (pkg/gui/extras_panel.go). */
+  autoscroll: boolean
+  /** Applies one of lazygit's autoscroll transitions and re-pins the viewport if it is armed. */
+  applyScrollInput(input: CommandLogScrollInput): void
 }
 
 export function createCommandLogPane(renderer: CliRenderer, lines: readonly CommandLogLine[]): CommandLogPaneHandle {
@@ -43,16 +48,10 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     width: "100%",
   })
   box.add(text)
-  const originalLogMouseEvent = (text as unknown as { onMouseEvent?: (event: import("@opentui/core").MouseEvent) => void }).onMouseEvent?.bind(text)
-  ;(text as unknown as { onMouseEvent: (event: import("@opentui/core").MouseEvent) => void }).onMouseEvent = (event: import("@opentui/core").MouseEvent) => {
-    if ((event as unknown as { type: string }).type === "scroll") {
-      event.preventDefault()
-      return
-    }
-    originalLogMouseEvent?.(event as unknown as never)
-  }
   const bar = attachVerticalScrollbar(box, text, "command-log")
   let rendered: { readonly count: number; readonly newest: CommandLogLine | undefined } | undefined
+  // `gui.Views.Extras.Autoscroll = true` at startup (pkg/gui/views.go:149).
+  let autoscroll = true
   const pane: CommandLogPaneHandle = {
     id: "command-log",
     box,
@@ -60,7 +59,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     resize(width: number, height: number) {
       text.width = Math.max(1, Math.floor(width) - 2)
       text.height = Math.max(1, Math.floor(height) - 2)
-      text.scrollY = text.maxScrollY
+      if (autoscroll) text.scrollY = text.maxScrollY
       syncVerticalScrollbar(bar, text)
     },
     update(nextLines: readonly CommandLogLine[]) {
@@ -70,7 +69,10 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
       if (rendered !== undefined && rendered.count === nextLines.length && rendered.newest === nextLines[nextLines.length - 1]) return
       rendered = { count: nextLines.length, newest: nextLines[nextLines.length - 1] }
       installCommandLogText(text, nextLines)
-      text.scrollY = text.maxScrollY
+      // Only when armed. lazygit's autoscroll is a view flag, not a property of writing
+      // (pkg/gui/extras_panel.go:48-94); the caller decides whether an append armed it, because
+      // only the caller knows whether it was an entry or the output under one.
+      if (autoscroll) text.scrollY = text.maxScrollY
       syncVerticalScrollbar(bar, text)
     },
     setFocused(focused: boolean) {
@@ -90,6 +92,20 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     },
     maxScrollY() {
       return text.maxScrollY
+    },
+    get autoscroll() {
+      return autoscroll
+    },
+    set autoscroll(value: boolean) {
+      autoscroll = value
+    },
+    applyScrollInput(input: CommandLogScrollInput) {
+      autoscroll = autoscrollAfter(autoscroll, input)
+      if (autoscroll) {
+        text.scrollY = text.maxScrollY
+        syncVerticalScrollbar(bar, text)
+        box.requestRender()
+      }
     },
   }
   pane.update(lines)

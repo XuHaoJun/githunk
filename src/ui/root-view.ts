@@ -41,6 +41,7 @@ import { parseAnsi } from "./ansi"
 import { NO_BRANCHES_FOR_REMOTE, NO_REMOTES, remotePreviewText } from "./panes/remotes-pane"
 import { NO_TAGS, tagPreamble } from "./panes/tags-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
+import type { CommandLogScrollInput } from "./panes/command-log-scroll"
 import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, anyStagedChanges, createFilesPane, createFilesTreeState, fileHasUnstagedChanges, filesTreeRows } from "./panes/files-pane"
 import { NO_WORKTREES_THIS_REPO, selectedWorktreeFrom, worktreePreviewText, worktreeRows } from "./panes/worktrees-pane"
 import { NO_SUBMODULES, selectedSubmoduleFrom, submodulePreviewText, submoduleRows } from "./panes/submodules-pane"
@@ -201,6 +202,8 @@ export class RootView {
   private model: AppModel
   private readonly panes: Record<Exclude<FocusId, "command-log">, PaneHandle>
   private readonly commandLog: CommandLogPaneHandle
+  private renderedCommandLogLength = 0
+  private commandLogFocused = false
   private readonly clipboard: ClipboardService
   private readonly verticalSplitter: SplitterHandle
   private readonly horizontalSplitter: SplitterHandle
@@ -588,8 +591,20 @@ export class RootView {
     this.syncPreviewForFocus(this.focusManager.active === "main" ? this.focusManager.lastSide : this.focusManager.active)
     // A hidden log is not worth rendering: it holds every command's whole stdout, so the text is
     // as large as the biggest patch the session has run. `applyFocus` renders it when it opens.
-    if (this.focusManager.logVisible) this.commandLog.update(model.commandLog)
+    if (this.focusManager.logVisible) {
+      const grew = model.commandLog.length > this.renderedCommandLogLength
+      this.renderedCommandLogLength = model.commandLog.length
+      if (grew) this.commandLog.applyScrollInput(this.commandLogWriteKind())
+      this.commandLog.update(model.commandLog)
+    }
     this.recomputeLayout()
+  }
+  /**
+   * Which autoscroll transition the log's newest lines imply. `RootView` has no reference to the
+   * `CommandLog`, only to the snapshot it produced, so `AppModel` carries the kind.
+   */
+  private commandLogWriteKind(): CommandLogScrollInput {
+    return this.model.commandLogWriteKind ?? "append-entry"
   }
   private clearDiscardState(): void {
     this.discardPending = false
@@ -3483,7 +3498,12 @@ export class RootView {
 
   private applyFocus(active: FocusId): void {
     for (const pane of Object.values(this.panes)) pane.setFocused(pane.id === active)
-    this.commandLog.setFocused(active === "command-log")
+    // lazygit re-arms autoscroll when the command log loses focus
+    // (pkg/gui/controllers/command_log_controller.go:29-33).
+    const wasFocused = this.commandLogFocused
+    this.commandLogFocused = active === "command-log"
+    if (wasFocused && !this.commandLogFocused) this.commandLog.applyScrollInput("focus-lost")
+    this.commandLog.setFocused(this.commandLogFocused)
   }
 
   private recomputeLayout(): void {
