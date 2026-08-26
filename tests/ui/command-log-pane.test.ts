@@ -39,28 +39,47 @@ describe("command log pane", () => {
   test("update() is a no-op when the line count and newest line are unchanged", async () => {
     const setup = await createTestRenderer({ width: 80, height: 24 })
     try {
-      const lines: readonly CommandLogLine[] = [{ id: 1, spans: [{ text: "Stage file", style: "action" }] }]
+      const lines: readonly CommandLogLine[] = Array.from({ length: 6 }, (_unused, index) => ({
+        id: index + 1,
+        spans: [{ text: `  git add -- ${index}.ts`, style: "command" as const }],
+      }))
       const pane = createCommandLogPane(setup.renderer, lines)
-      pane.scrollBy(-5)
+      // Resized so the log is taller than the viewport on purpose: without it `maxScrollY` is 1 and
+      // this test would discriminate only by accident. Six lines in a three-row viewport gives a
+      // scrolled-up position that a stray `scrollY = maxScrollY` would visibly undo.
+      pane.resize(40, 5)
+      expect(pane.maxScrollY()).toBeGreaterThan(1)
+      pane.scrollBy(-2)
       const scrollBefore = pane.text.scrollY
+      expect(scrollBefore).toBeLessThan(pane.maxScrollY())
       // Same array reference and same content: CommandLog.lines() hands back the same backing
       // array it appends to, so this is the shape a real refresh sees before a new line lands.
       pane.update(lines)
       expect(pane.text.scrollY).toBe(scrollBefore)
-      expect(pane.text.plainText).toBe("Stage file")
+      expect(pane.text.plainText).toBe(lines.map((entry) => entry.spans[0]!.text).join("\n"))
     } finally {
       setup.renderer.destroy()
     }
   })
 
-  test("update() re-flattens and scrolls to bottom when a new line is appended", async () => {
+  test("update() re-flattens and scrolls to the bottom when a new line is appended", async () => {
     const setup = await createTestRenderer({ width: 80, height: 24 })
     try {
-      const first: readonly CommandLogLine[] = [{ id: 1, spans: [{ text: "Stage file", style: "action" }] }]
+      const first: readonly CommandLogLine[] = Array.from({ length: 6 }, (_unused, index) => ({
+        id: index + 1,
+        spans: [{ text: `  git add -- ${index}.ts`, style: "command" as const }],
+      }))
       const pane = createCommandLogPane(setup.renderer, first)
-      const second: readonly CommandLogLine[] = [...first, { id: 2, spans: [{ text: "  git add -- a.ts", style: "command" }] }]
+      pane.resize(40, 5)
+      pane.scrollBy(-3)
+      expect(pane.text.scrollY).toBeLessThan(pane.maxScrollY())
+      const second: readonly CommandLogLine[] = [...first, { id: 7, spans: [{ text: "  git commit", style: "command" }] }]
       pane.update(second)
-      expect(pane.text.plainText).toBe("Stage file\n  git add -- a.ts")
+      expect(pane.text.plainText).toBe(second.map((entry) => entry.spans[0]!.text).join("\n"))
+      // lazygit's extras view is created with `Autoscroll = true` (pkg/gui/views.go:149), so a new
+      // line must pull the viewport back to the bottom.
+      expect(pane.maxScrollY()).toBeGreaterThan(0)
+      expect(pane.text.scrollY).toBe(pane.maxScrollY())
     } finally {
       setup.renderer.destroy()
     }

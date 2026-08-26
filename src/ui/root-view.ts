@@ -89,7 +89,8 @@ import type { CommitSummary } from "../domain/commit"
 const PANE_TITLES: Readonly<Record<FocusId, string>> = {
   main: "Main", status: "Review", files: "Files",
   branches: "Branches", commits: "Commits", stash: "Stash",
-  "command-log": "Command Log",
+  // `Tr.CommandLog` (pkg/i18n/english.go:1928) — lowercase "log", as the pane's own title reads.
+  "command-log": "Command log",
 }
 
 function paneTitleFor(focus: FocusId): string {
