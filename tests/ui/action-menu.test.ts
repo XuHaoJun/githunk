@@ -159,7 +159,7 @@ describe("createActionMenu", () => {
     }
   })
 
-  test("enter fires the item under the cursor", async () => {
+  test("return fires the item under the cursor", async () => {
     const setup = await createTestRenderer({ width: 80, height: 24 })
     try {
       const calls: string[] = []
@@ -167,6 +167,26 @@ describe("createActionMenu", () => {
       menu.openMenu("Command log", menuItems(calls))
       menu.handleKey("j")
       expect(menu.handleKey("return")).toBe(true)
+      expect(calls).toEqual(["f"])
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+
+  /**
+   * The production path: `RootView.handleModalKey` only ever passes `"enter"`, already normalized
+   * to githunk's canonical key name before routing here (`root-view.ts:1069-1071`) — `"return"`
+   * above exists only for callers that dispatch raw OpenTUI key names. Without this test, the only
+   * covered name was the uncovered-in-production one.
+   */
+  test("enter fires the item under the cursor", async () => {
+    const setup = await createTestRenderer({ width: 80, height: 24 })
+    try {
+      const calls: string[] = []
+      const menu = createActionMenu(setup.renderer)
+      menu.openMenu("Command log", menuItems(calls))
+      menu.handleKey("j")
+      expect(menu.handleKey("enter")).toBe(true)
       expect(calls).toEqual(["f"])
     } finally {
       setup.renderer.destroy()

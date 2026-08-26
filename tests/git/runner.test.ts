@@ -117,7 +117,7 @@ describe("GitRunner", () => {
   /**
    * lazygit writes command output into the panel only for the commands it streams — the ones with a
    * credential strategy, i.e. push/pull/fetch (cmd_obj_runner.go:234-246,
-   * git_commands/sync.go:44,110,124,132) — behind `prefixWriter`'s magenta `Git output:`
+   * git_commands/sync.go:44,110,69) — behind `prefixWriter`'s magenta `Git output:`
    * (extras_panel.go:96-98).
    */
   test("streamOutput puts the output under a Git output: heading", async () => {

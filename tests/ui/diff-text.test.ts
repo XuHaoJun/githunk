@@ -125,7 +125,14 @@ describe("diff text installation", () => {
       for (let repeat = 0; repeat < 20; repeat++) pane.install()
       const elapsed = performance.now() - started
 
-      expect(elapsed, `20 re-installs took ${elapsed.toFixed(1)}ms`).toBeLessThan(20)
+      // A no-op re-install should cost microseconds (an early-return content check, nothing more),
+      // so 20 of them finishing well under a real install's own budget (250ms above) still catches
+      // a regression that made re-installing redo the paint: that would cost on the order of a
+      // single full install per repeat, i.e. tens of ms *each*, blowing past this by 10x or more.
+      // The bare `< 20` bound this replaced failed spuriously twice across ~22 full-suite runs —
+      // scheduler/GC jitter, not a regression — which is exactly what CLAUDE.md's "never commit
+      // red" gate should not tolerate from a flake.
+      expect(elapsed, `20 re-installs took ${elapsed.toFixed(1)}ms`).toBeLessThan(150)
       expect(pane.text.scrollY).toBe(500)
     } finally {
       pane.destroy()

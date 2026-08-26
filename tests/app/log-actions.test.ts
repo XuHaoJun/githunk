@@ -123,6 +123,16 @@ describe("action labels", () => {
     expect(actions(log)).toEqual([LOG_ACTIONS.applyPatch])
   })
 
+  /**
+   * The two tests above only assert the logged action against `LOG_ACTIONS.applyPatch` itself —
+   * the constant against itself — so a typo in the constant's value (unlike every other label,
+   * which is pinned verbatim somewhere in this file, e.g. `toContain("Unstage file")` above) would
+   * never be caught. `english.go:2215`.
+   */
+  test("LOG_ACTIONS.applyPatch is the literal lazygit label", () => {
+    expect(LOG_ACTIONS.applyPatch).toBe("Apply patch")
+  })
+
   test("commit and amend log their own labels", async () => {
     const { controller, log } = harness()
     await controller.refresh()

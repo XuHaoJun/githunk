@@ -87,7 +87,14 @@ describe("command log", () => {
     const app = createApp({ repositoryRoot: repo.path, runner: new GitRunner({ cwd: repo.path, log }) })
     await app.refresh()
     await expect(app.controller.deleteBranch("no-such-branch")).rejects.toThrow()
-    expect(texts()).toContain("Git output:")
-    expect(texts().some((text) => text.length > 0 && !text.startsWith("  ") && text !== "Git output:" && text !== "Delete local branch")).toBe(true)
+    // Assert the actual stderr body, not just the heading's presence: the seeded header and
+    // random tip satisfy a "some non-blank, non-command line exists" predicate on their own,
+    // before any command has even run, so that shape of assertion passes whether or not the
+    // heading is ever followed by real output. Asserting the specific stderr text lands AFTER
+    // the heading is what a dropped-body regression (e.g. `outputWriter()` writing only the
+    // heading) actually fails.
+    const headingIndex = texts().indexOf("Git output:")
+    expect(headingIndex).toBeGreaterThanOrEqual(0)
+    expect(texts().slice(headingIndex + 1).join("\n")).toContain("not found")
   })
 })

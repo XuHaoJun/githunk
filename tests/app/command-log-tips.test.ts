@@ -81,7 +81,14 @@ describe("random tips", () => {
   test("every key a tip names is still bound to the action the tip describes", () => {
     const registry = new BindingRegistry(GITHUNK_BINDINGS)
     for (const expected of Object.values(COMMAND_LOG_TIP_KEYS)) {
-      const bound = registry.bindings.some((binding) => binding.action === expected.action && binding.keys.includes(expected.key))
+      // The tip text interpolates `.label` (see COMMAND_LOG_TIPS below), not `.key` — so `.label`,
+      // not `.key`, is what must actually be a bound key for `.action`. Checking `.key` here (as
+      // this used to) was tautological: every entry's `.key` and `.label` are the same literal, so
+      // a `.label` that silently drifted from the real key would still pass — the tip text is built
+      // from `.label` via template literal, and the old check never consulted `.label` at all.
+      // Proven by mutation: `pagePrevious: { key: ",", label: "X" }` (an unbound key) passed
+      // 987/0 before this fix; the derived-from-BindingRegistry check below catches it.
+      const bound = registry.bindings.some((binding) => binding.action === expected.action && binding.keys.includes(expected.label))
       expect(bound).toBe(true)
       // This only proves the label isn't orphaned *somewhere* in the catalogue, not that the tip
       // describing `expected.action` is the one carrying it: two entries can share a label

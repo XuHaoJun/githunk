@@ -162,8 +162,10 @@ describe("installCommandLogText", () => {
 
   test("asks for lines past the end of the log and paints nothing there", async () => {
     // The band is 32 logical lines wider than the viewport on each side, so on any log shorter than
-    // that it asks for lines that do not exist — and after a *shorter* log replaces a longer one the
-    // incremental path asks again, for the lines the previous band still covered. `paintLine`
+    // that it asks for lines that do not exist — and after a *shorter* log replaces a longer one,
+    // `install` (viewport-highlights.ts) sets `painted = undefined` for the changed text, so
+    // `paint(true)` takes the FULL clear-and-repaint path, not the incremental one: it repaints the
+    // whole band from scratch, including the lines past the new, shorter log's end. `paintLine`
     // answers those with nothing rather than failing, which is the only reason a short log renders.
     const setup = await createTestRenderer({ width: 30, height: 8 })
     try {
