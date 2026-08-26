@@ -60,7 +60,11 @@ Choosing spans per logical line, rather than accumulating an ANSI string and rep
 
 Command strings are built by a new `formatCommandLine(argv)` that copies `CmdObj.ToString()` (`cmd_obj.go:64-75`): join with spaces, wrapping an argument in double quotes **only if it contains a space**. This replaces the current `JSON.stringify`-per-argument, which quotes everything and escapes backslashes.
 
-`logOutput` writes the magenta `Git output:` heading once per command, then the raw text as `output` lines, matching `prefixWriter`'s write-prefix-once behaviour (`extras_panel.go:100-119`).
+`outputWriter()` returns a per-command writer whose first `write` emits the magenta `Git output:`
+heading and whose later writes do not — a direct copy of `getCmdWriter()` handing out a fresh
+`prefixWriter` per command (`extras_panel.go:96-119`). The state is per writer, not per log,
+because that is where lazygit keeps it: two commands writing output each get their own heading,
+which a flag on the log cannot express once writes interleave.
 
 ## 4. What Reaches the Log
 

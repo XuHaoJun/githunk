@@ -670,15 +670,17 @@ EOF
 ### Task 3: `readOnly` implies `dontLog`, plus streamed and failed output
 
 **Files:**
+- Modify: `src/app/command-log.ts` (replace `logOutput` with `outputWriter`)
 - Modify: `src/git/runner.ts:4-30` (options), `:70-145` (`run`)
 - Modify: `src/git/sync.ts:67-95`
+- Modify: `tests/app/command-log.test.ts`, `tests/git/commit-mutations.integration.test.ts`, `tests/acceptance/review-workflow.integration.test.ts`
 - Modify: `src/app/controller.ts:534-536`
 - Modify: `src/app/create-app.ts:327-337`
 - Test: `tests/git/runner.test.ts`
 
 **Interfaces:**
 - Consumes: `CommandLog.logCommand` / `logOutput` from Task 2, `formatCommandLine` from Task 1.
-- Produces: `GitRunOptions.streamOutput?: boolean`. `fetch(runner, remote?, options?: FetchOptions)` where `FetchOptions = { readonly background?: boolean }`. `AppController.fetch(remote?: string, options?: { readonly background?: boolean })`.
+- Produces: `GitRunOptions.streamOutput?: boolean`. `fetch(runner, remote?, options?: FetchOptions)` where `FetchOptions = { readonly background?: boolean }`. `AppController.fetch(remote?: string, options?: { readonly background?: boolean })`. `CommandLogOutputWriter` and `CommandLog.outputWriter(): CommandLogOutputWriter`, replacing `CommandLog.logOutput` and its per-log heading flag.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -803,6 +805,8 @@ Then rewrite the top of `run()` and the tail after the record is built:
     // `--no-pager`, so the line matches what lazygit's `CmdObj.ToString()` shows for the same
     // command (its builder prepends only `git`, git_cmd_obj_builder.go:57-59).
     if (shouldLog) this.log.logCommand(formatCommandLine(["git", ...commandArgs]), true)
+    // One writer per command, so two commands' output can never share a heading. See Step 3a.
+    const writer = this.log.outputWriter()
     const startedAt = new Date()
 ```
 
@@ -815,12 +819,12 @@ and replace the accepted-exit-code tail:
     if (shouldLog) {
       if (options.streamOutput === true) {
         // lazygit's cmdWriter receives both streams (cmd_obj_runner.go:230,258).
-        this.log.logOutput(`${stdout}${stderr}`)
+        writer.write(`${stdout}${stderr}`)
       } else if (!accepted) {
         // githunk's one deviation from lazygit here, which raises an error popup instead and writes
         // nothing. githunk has no popup — a failed mutation surfaces as a pane bottomTitle — and
         // PRD 6.7 requires that command failures remain inspectable.
-        this.log.logOutput(stderr)
+        writer.write(stderr)
       }
     }
     if (!accepted) {
@@ -831,9 +835,77 @@ and replace the accepted-exit-code tail:
   }
 ```
 
+- [ ] **Step 3a: Make the `Git output:` heading per-command, not per-log**
+
+Task 2 built `logOutput(text)` with an `outputHeadingWritten` flag on the `CommandLog`, cleared by
+`logCommand`, and a comment claiming that is what lazygit's `prefixWriter.prefixWritten` does. It is
+not. `getCmdWriter()` constructs a **fresh** `prefixWriter` per command
+(`pkg/gui/extras_panel.go:96-97`), so `prefixWritten` is per-command state: two commands writing
+output each get their own heading. A flag on the log only behaves the same while commands never
+interleave, and `logCommand(A) → logCommand(B) → logOutput(A) → logOutput(B)` files both commands'
+output under one heading.
+
+Replace the flag with a writer, copying `getCmdWriter` and `prefixWriter` directly. In
+`src/app/command-log.ts`, delete the `outputHeadingWritten` field, its assignment in `logCommand`,
+and the whole `logOutput` method, and add:
+
+```ts
+/**
+ * lazygit's `prefixWriter` (pkg/gui/extras_panel.go:100-119): the first write emits the magenta
+ * `Git output:` heading, later writes do not. One of these per command, exactly as `getCmdWriter()`
+ * hands out a fresh one per command (`:96-97`) — so two commands' output can never end up under a
+ * single heading.
+ */
+export type CommandLogOutputWriter = {
+  write(text: string): void
+}
+```
+
+```ts
+  /** lazygit's `getCmdWriter()` (pkg/gui/extras_panel.go:96-98): a fresh writer per command. */
+  outputWriter(): CommandLogOutputWriter {
+    let prefixWritten = false
+    return {
+      write: (text: string): void => {
+        if (text.length === 0) return
+        if (!prefixWritten) {
+          prefixWritten = true
+          // The `\n\n` of lazygit's prefix: one line ends, one blank line, then the heading.
+          this.push([])
+          this.push([{ style: "output-heading", text: GIT_OUTPUT_HEADING }])
+        }
+        // Trailing blank lines only: git's output almost always ends in a newline, and an empty
+        // final row under the heading reads as a rendering bug. Interior blanks are the command's.
+        for (const line of text.replace(/\n+$/, "").split("\n")) this.push([{ style: "output", text: line }])
+      },
+    }
+  }
+```
+
+Migrate `tests/app/command-log.test.ts`'s three `logOutput` tests to `outputWriter()`. Two of them
+keep asserting exactly what they assert now, through one writer. The third — "writes the heading
+again for the next command" — becomes the stronger claim the new shape actually supports, and must
+fail against the old flag-based code:
+
+```ts
+  test("two interleaved commands each get their own heading", () => {
+    const log = new CommandLog()
+    log.logCommand("git push", true)
+    const push = log.outputWriter()
+    log.logCommand("git pull", true)
+    const pull = log.outputWriter()
+    push.write("from push\n")
+    pull.write("from pull\n")
+    expect(texts(log.lines()).filter((text) => text === "Git output:")).toHaveLength(2)
+  })
+```
+
+Run that test against the Task 2 code first and confirm it reports 1 heading, not 2 — that is the
+RED proving the defect was real, and it belongs in your report.
+
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `bun test tests/git/runner.test.ts`
+Run: `bun test tests/git/runner.test.ts tests/app/command-log.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Mark the streamed commands and the background fetch**
@@ -896,6 +968,25 @@ In `src/app/create-app.ts`, the background refresher's `fetch` (line 328):
 ```
 
 Leave `create-app.ts:264`'s foreground `controller.fetch()` alone.
+
+- [ ] **Step 6a: Fix the assertions this task moves the ground under**
+
+Three test sites, all consequences of this task rather than new work:
+
+1. `tests/acceptance/review-workflow.integration.test.ts:255-256` pins
+   `commandLog.at(-1)` to `"  git fetch missing-remote"`. That was true while the command was logged
+   *after* it ran; now the command is logged before the spawn and its failure output after, so the
+   last line is output. Assert on the command line's presence and on the `Git output:` heading
+   following it, rather than on `at(-1)`.
+2. `tests/git/commit-mutations.integration.test.ts:52` dropped its hook-stderr-in-log assertion in
+   Task 2 on the grounds that failure output was not yet implemented. It is now: re-assert that the
+   failing hook's `hook failed` reaches the log under `Git output:`, alongside the existing
+   assertion that it reaches `GitCommandError.record.stderr`.
+3. While you are in that file, `tests/git/commit-mutations.integration.test.ts:44-51` wraps the
+   rejection in a `try` whose own `throw new Error("expected GitCommandError")` is caught by its own
+   `catch`, so the test fails by the wrong assertion with a misleading message. Replace it with
+   `await expect(...).rejects.toBeInstanceOf(GitCommandError)` plus a separate `.rejects.toMatchObject`
+   for the stderr.
 
 - [ ] **Step 7: Run the gate**
 
