@@ -11,6 +11,7 @@ import { absolutePath, resolveEditCommand } from "../git/editor"
 import { isAbsolute, resolve } from "node:path"
 import { IndexWatcher } from "./index-watcher"
 import { LOG_ACTIONS } from "./log-actions"
+import { seedCommandLog } from "./command-log-tips"
 
 export type CreateAppOptions = {
   readonly repositoryRoot: string
@@ -81,6 +82,11 @@ export function createApp(options: CreateAppOptions): App {
   // `gh` is a network call, so it is wired only where a background routine will drive it: an app
   // built without background routines (tests, one-shot embeddings) never spawns it.
   const ghRunner = options.background?.enabled === true ? createGhRunner(options.repositoryRoot) : undefined
+  // `printCommandLogHeader` runs at startup (pkg/gui/command_log_panel.go:70-85), before the gui's
+  // first render; seeding here — before the controller's first `commandLogSnapshot()` — means the
+  // controller's very first `AppModel` already carries it, in the headless path (no `renderer`)
+  // as much as the full one, since the header is data rather than a timer or a subprocess.
+  seedCommandLog(options.runner.log)
   const controller = new AppController({
     repositoryRoot: options.repositoryRoot,
     runner: options.runner,
