@@ -1,7 +1,7 @@
 import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
 import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
 import { attachVerticalScrollbar, syncVerticalScrollbar } from "./common"
-import { setPlainPaneText } from "./pane-text"
+import { installCommandLogText } from "./command-log-text"
 import type { FocusId } from "../focus"
 import type { CommandLogLine } from "../../domain/command"
 
@@ -24,7 +24,8 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     borderColor: DEFAULT_FOREGROUND,
     focusedBorderColor: ANSI_GREEN,
     titleColor: DEFAULT_FOREGROUND,
-    title: "Command Log",
+    // `Tr.ExtrasTitle` / `Tr.CommandLog` (pkg/i18n/english.go:1928,1946) — lowercase "log".
+    title: "Command log",
     position: "absolute",
     width: "100%",
     height: "100%",
@@ -35,7 +36,10 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     content: "",
     fg: DEFAULT_FOREGROUND,
     selectable: false,
-    wrapMode: "none",
+    // lazygit sets `Wrap = true` on the extras view (pkg/gui/views.go:150); gocui wraps at
+    // character boundaries, which is `"char"` here. Letting OpenTUI wrap is also what lets
+    // command-log-text.ts colour rows without measuring character width.
+    wrapMode: "char",
     width: "100%",
   })
   box.add(text)
@@ -65,7 +69,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
       // what keeps it off the cost of every layout pass and refresh.
       if (rendered !== undefined && rendered.count === nextLines.length && rendered.newest === nextLines[nextLines.length - 1]) return
       rendered = { count: nextLines.length, newest: nextLines[nextLines.length - 1] }
-      setPlainPaneText(text, nextLines.map((line) => line.spans.map((span) => span.text).join("")).join("\n"))
+      installCommandLogText(text, nextLines)
       text.scrollY = text.maxScrollY
       syncVerticalScrollbar(bar, text)
     },
