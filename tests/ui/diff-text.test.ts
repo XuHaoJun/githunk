@@ -4,6 +4,7 @@ import { createTestRenderer } from "@opentui/core/testing"
 import { parseDiff } from "../../src/domain/diff/parse"
 import { renderDiff } from "../../src/domain/diff/render"
 import { installDiffText } from "../../src/ui/panes/diff-text"
+import { paneTextBuffer } from "../../src/ui/panes/pane-text"
 
 /** A one-file patch with `lines` changed rows, as `git diff` would emit it. */
 function patchText(lines: number): string {
@@ -59,6 +60,33 @@ async function millisecondsPerScroll(lines: number): Promise<number> {
     return (performance.now() - started) / steps
   } finally {
     pane.destroy()
+  }
+}
+
+/**
+ * Average wall time of one width-change frame — a horizontal splitter drag — with the painter
+ * installed or with the same text written straight into the buffer and nothing following the
+ * viewport.
+ */
+async function millisecondsPerDragFrame(lines: number, painted: boolean): Promise<number> {
+  const setup = await createTestRenderer({ width: 120, height: 40 })
+  try {
+    const text = new TextRenderable(setup.renderer, { id: "main-text", content: "", width: 118, height: 38, selectable: true })
+    setup.renderer.root.add(text)
+    text.wrapMode = "char"
+    const rendered = renderDiff(parseDiff(patchText(lines)))
+    if (painted) installDiffText(text, { preamble: "", body: rendered.displayText, displayLines: rendered.displayLines })
+    else paneTextBuffer(text)!.setText(rendered.displayText)
+    await setup.flush()
+    const steps = 20
+    const started = performance.now()
+    for (let step = 0; step < steps; step++) {
+      text.width = 118 - step
+      await setup.flush()
+    }
+    return (performance.now() - started) / steps
+  } finally {
+    setup.renderer.destroy()
   }
 }
 
@@ -139,5 +167,20 @@ describe("diff text band edges", () => {
     } finally {
       setup.renderer.destroy()
     }
+  })
+})
+
+describe("diff text under a splitter drag", () => {
+  test("a drag frame costs no more with the painter than without one", async () => {
+    // The width guard in ./viewport-highlights re-materialises the row-to-line map once per distinct
+    // width, which during a drag is once per frame. What this measures is whether the *document*
+    // enters that per-frame cost: a painter repainting all 20k lines would cost ~1s a frame, orders
+    // of magnitude over the baseline. What it deliberately does not resolve is the map itself —
+    // OpenTUI re-wraps the whole document on a width change either way, and at 60fps the renderer's
+    // own frame cadence is ~16ms, so the map's few milliseconds are invisible here. That cost is
+    // known, accepted and documented at the guard; this test is the bound on the rest.
+    const plain = await millisecondsPerDragFrame(20000, false)
+    const withPainter = await millisecondsPerDragFrame(20000, true)
+    expect(withPainter, `${withPainter.toFixed(1)}ms per drag frame painted vs ${plain.toFixed(1)}ms plain`).toBeLessThan(plain * 2 + 6)
   })
 })
