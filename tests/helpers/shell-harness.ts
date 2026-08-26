@@ -7,6 +7,7 @@ import { createApp, type App } from "../../src/app/create-app"
 import { GitRunner } from "../../src/git/runner"
 import { createTempRepository, type TempRepository } from "./temp-repository"
 import type { FocusId } from "../../src/ui/focus"
+import type { UiState as PersistedUiState } from "../../src/ui/ui-state-store"
 
 async function createTempBareRepository(): Promise<TempRepository> {
   const path = await mkdtemp(join(tmpdir(), "githunk-bare-"))
@@ -60,6 +61,8 @@ export type ShellHarnessOptions = {
   readonly setup?: (repository: TempRepository, fetchBare: TempRepository, pushBare: TempRepository) => Promise<void>
   /** Alias for setup. */
   readonly setupRepository?: (repository: TempRepository, fetchBare: TempRepository, pushBare: TempRepository) => Promise<void>
+  /** Observe every geometry change RootView reports, e.g. to assert what gets persisted. */
+  readonly onGeometryChange?: (state: PersistedUiState) => void
 }
 
 export type ShellHarness = {
@@ -141,6 +144,7 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     runner: new GitRunner(repository.path),
     renderer: setup.renderer,
     onQuit: () => { quitCalled = true },
+    ...(options.onGeometryChange === undefined ? {} : { onGeometryChange: options.onGeometryChange }),
   })
   await app.refresh()
   await setup.flush()

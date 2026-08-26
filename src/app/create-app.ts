@@ -18,6 +18,13 @@ export type CreateAppOptions = {
   readonly onQuit?: () => void
   readonly onEditFile?: (path: string, line?: number) => Promise<void>
   /**
+   * Fired every time RootView reports a geometry change (`RootViewOptions.onGeometryChange`),
+   * in addition to (not instead of) the persistence write this function always performs. Exists
+   * so a test can observe exactly what gets persisted and when — e.g. that the command-log menu's
+   * `t` item persists visibility while `f` does not (pkg/gui/extras_panel.go:19-29 vs :40-46).
+   */
+  readonly onGeometryChange?: (state: PersistedUiState) => void
+  /**
    * lazygit's background routines: `git fetch` every 60s and a working-tree refresh every 10s
    * (pkg/gui/background.go). Off by default here because the tests and one-shot embeddings that
    * build an app must not start timers; `src/main.ts` turns it on.
@@ -309,7 +316,10 @@ export function createApp(options: CreateAppOptions): App {
     onFilterBranches: async () => undefined,
     onEditFile: editFile,
     onQuit: () => options.onQuit?.(),
-    onGeometryChange: (state) => { latestGeometry = state },
+    onGeometryChange: (state) => {
+      latestGeometry = state
+      options.onGeometryChange?.(state)
+    },
     // Whatever githunk just did to the repository is now the baseline for ref polling. Index events
     // remain queued because the watcher cannot attribute a concurrent index write safely.
     onMutationSettled: () => { void refsWatcher.resync() },

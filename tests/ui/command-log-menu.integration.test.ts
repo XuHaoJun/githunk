@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
+import type { UiState as PersistedUiState } from "../../src/ui/ui-state-store"
 
 /**
  * lazygit's `@` opens a menu (pkg/gui/keybindings.go:171-174 -> pkg/gui/extras_panel.go:12-38)
@@ -125,5 +126,50 @@ describe("@ opens the command log menu", () => {
     await harness.flush()
     expect(view.focusManager.logVisible).toBe(true)
     expect(view.focusManager.active).toBe("command-log")
+  })
+
+  /**
+   * `t`'s `OnPress` (extras_panel.go:19-29) assigns `gui.c.GetAppState().HideCommandLog = !show`
+   * and calls `SaveAppStateAndLogError()` — the persisted choice a later launch reads back.
+   * `RootView.onGeometryChange` (root-view.ts:113) is githunk's equivalent write path;
+   * `create-app.ts` forwards every call to `UiStateStore.save`, and now also to a caller-supplied
+   * observer so a test can see exactly what would have been persisted.
+   */
+  test("@ then t persists the new visibility (extras_panel.go:24-27's SaveAppStateAndLogError)", async () => {
+    const geometryChanges: PersistedUiState[] = []
+    harness = await createShellHarness({ onGeometryChange: (state) => geometryChanges.push(state) })
+    const view = harness.app.view!
+    expect(view.focusManager.logVisible).toBe(false)
+    expect(geometryChanges).toHaveLength(0)
+
+    await harness.pressKey("@")
+    await harness.pressKey("t")
+    await harness.flush()
+
+    expect(view.focusManager.logVisible).toBe(true)
+    expect(geometryChanges.length).toBeGreaterThan(0)
+    expect(geometryChanges.at(-1)?.commandLogVisible).toBe(true)
+  })
+
+  /**
+   * `handleFocusCommandLog` (extras_panel.go:40-46), which `f`'s `OnPress` is, never assigns
+   * `HideCommandLog` and never calls `SaveAppStateAndLogError()` — unlike `t`'s `OnPress`
+   * (:24-27). So `f` must show and focus the log for this session without writing anything to
+   * persisted UI state; the next launch should still read back whatever `t` last chose. Before the
+   * fix, `f`'s `onPress` called `this.notifyGeometry()` after `setLogVisible(true)`, which would
+   * have made this test fail with `geometryChanges` non-empty and `commandLogVisible: true`.
+   */
+  test("@ then f shows and focuses the log WITHOUT persisting it (extras_panel.go:40-46 has no SaveAppStateAndLogError)", async () => {
+    const geometryChanges: PersistedUiState[] = []
+    harness = await createShellHarness({ onGeometryChange: (state) => geometryChanges.push(state) })
+    const view = harness.app.view!
+
+    await harness.pressKey("@")
+    await harness.pressKey("f")
+    await harness.flush()
+
+    expect(view.focusManager.logVisible).toBe(true)
+    expect(view.focusManager.active).toBe("command-log")
+    expect(geometryChanges).toHaveLength(0)
   })
 })
