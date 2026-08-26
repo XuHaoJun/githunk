@@ -48,8 +48,14 @@ describe("GitRunner", () => {
       record: { exitCode: 128, args: ["rev-parse", "--verify", "missing-ref"], cwd: repo.path },
     })
     // The command line itself, plus its failure output under "Git output:" — see "a failed
-    // command's stderr lands under the same heading" below for the shape of that.
-    expect(log.lines()[0]?.spans.map((span) => span.text).join("")).toBe("  git rev-parse --verify missing-ref")
+    // command's stderr lands under the same heading" below for the shape of that. Pinned here as
+    // an exact count: command line, blank line, heading, one stderr line ("fatal: Needed a single
+    // revision").
+    const texts = log.lines().map((line) => line.spans.map((span) => span.text).join(""))
+    expect(texts).toHaveLength(4)
+    expect(texts[0]).toBe("  git rev-parse --verify missing-ref")
+    expect(texts[1]).toBe("")
+    expect(texts[2]).toBe("Git output:")
   })
 
   test("passes filenames as arguments without shell interpretation", async () => {
