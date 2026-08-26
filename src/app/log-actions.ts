@@ -16,8 +16,17 @@ export const LOG_ACTIONS = {
   stageAllFiles: "Stage all files",
   /** files_controller.go:921-960 -> toggleStaged(:559); english.go:2175 */
   unstageAllFiles: "Unstage all files",
-  /** files_controller.go:1744; english.go:2173 */
-  discardAllChangesInFile: "Discard all changes in selected file(s)",
+  /**
+   * files_controller.go:1770; english.go:2174. githunk's `discardFile` runs `git restore --
+   * <path>` (`src/git/mutations.ts:50`), which without `--staged` restores the worktree from the
+   * index, leaving staged content untouched — and `src/ui/root-view.ts:1511` refuses discard on
+   * purely-staged content outright. That is lazygit's *unstaged* discard
+   * (`DiscardAllUnstagedChangesInFile`, :2174), not its all-changes one (`DiscardAllChangesInFile`,
+   * :2173, `files_controller.go:1744`), so this uses the unstaged label. The missing "in" before
+   * "selected" is upstream's own typo in `english.go:2174` — reproduced verbatim for parity, not a
+   * mistake to "fix" here.
+   */
+  discardAllUnstagedChangesInFile: "Discard all unstaged changes selected file(s)",
   /**
    * staging_controller.go:239-265; english.go:2215. Both staging and discarding a selection:
    * `DiscardSelection` (:213) routes through `applySelectionAndRefresh(true)` into the same

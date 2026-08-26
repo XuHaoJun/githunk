@@ -90,11 +90,12 @@ describe("action labels", () => {
     expect(actions(log)).toContain("Unstage file")
   })
 
-  test("discardFile logs lazygit's plural label verbatim", async () => {
+  test("discardFile logs lazygit's unstaged label verbatim, typo included", async () => {
     const { controller, log } = harness()
     await controller.refresh()
     await controller.discardFile("a.ts")
-    expect(actions(log)).toContain("Discard all changes in selected file(s)")
+    // english.go:2174 omits "in" before "selected" — that's upstream's typo, reproduced verbatim.
+    expect(actions(log)).toContain("Discard all unstaged changes selected file(s)")
   })
 
   test("commit and amend log their own labels", async () => {

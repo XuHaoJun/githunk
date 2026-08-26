@@ -942,7 +942,7 @@ export class AppController {
 
   async discardFile(path: string, untracked = false): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
-    this.logAction(LOG_ACTIONS.discardAllChangesInFile)
+    this.logAction(LOG_ACTIONS.discardAllUnstagedChangesInFile)
     await this.runMutation(() => this.mutations?.discardFile(path, untracked))
   }
 
