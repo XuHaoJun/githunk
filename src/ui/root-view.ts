@@ -2575,7 +2575,7 @@ export class RootView {
 
   /**
    * `inlineStatus` attributes the operation to one list row for its duration, which is lazygit's
-   * `WithInlineStatus` (inline_status_helper.go:66-97): the row itself says `Pulling ●∙∙` instead of
+   * `WithInlineStatus` (inline_status_helper.go:65-95): the row itself says `Pulling ●∙∙` instead of
    * showing ahead/behind counts that the operation is in the middle of invalidating.
    */
   private runUiMutation(
@@ -2698,7 +2698,7 @@ export class RootView {
   /**
    * The selected node's own patch, as lazygit's files pane renders it: a file row diffs that file
    * and a directory row diffs its subtree (`pathsForDiff` →
-   * `WorktreeFileDiffCmdObj`, pkg/gui/controllers/files_controller.go:366). Sliced out of the
+   * `WorktreeFileDiffCmdObj`, pkg/gui/controllers/files_controller.go:373). Sliced out of the
    * already-parsed tree patch instead of re-running git, and re-parsed standalone so line staging
    * and selection see a patch `git apply` accepts.
    */

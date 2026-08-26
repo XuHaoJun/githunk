@@ -40,7 +40,7 @@ export const LOG_ACTIONS = {
   amendCommit: "Amend commit",
   /** sync_controller.go:197; english.go:2193 */
   push: "Push",
-  /** sync_controller.go:167; english.go:2194 */
+  /** sync_controller.go:119; english.go:2194 */
   pull: "Pull",
   /** files_controller.go:1541 — a hardcoded string in lazygit, not an `Actions` entry. */
   fetch: "Fetch",

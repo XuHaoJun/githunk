@@ -35,7 +35,7 @@ export type GitRunOptions = {
    * Writes the command's output into the log under a magenta `Git output:` heading. lazygit does
    * this for the commands it streams — the ones with a credential strategy, so push, pull and
    * foreground fetch (pkg/commands/oscommands/cmd_obj_runner.go:234-246,
-   * pkg/commands/git_commands/sync.go:44,110,124,132) — via `getCmdWriter`
+   * pkg/commands/git_commands/sync.go:44,110,69) — via `getCmdWriter`
    * (pkg/gui/extras_panel.go:96-98).
    */
   readonly streamOutput?: boolean
@@ -86,10 +86,11 @@ export class GitRunner {
     // `src/main.ts` passes `readOnly: true` for a read and omits it for a mutation. See the
     // `dontLog` doc comment.
     const shouldLog = options.dontLog === undefined ? options.readOnly !== true : !options.dontLog
-    // Before the spawn, as lazygit's `logCmdObj` is (cmd_obj_runner.go:196-203): the point is to
-    // see what is running, not what has run. The argv is prefixed with `git` and *not* with
-    // `--no-pager`, so the line matches what lazygit's `CmdObj.ToString()` shows for the same
-    // command (its builder prepends only `git`, git_cmd_obj_builder.go:57-59).
+    // Before the spawn, as lazygit's pre-spawn `logCmdObj` call site is (cmd_obj_runner.go:250-252;
+    // `logCmdObj` itself is :201-203): the point is to see what is running, not what has run. The
+    // argv is prefixed with `git` and *not* with `--no-pager`, so the line matches what lazygit's
+    // `CmdObj.ToString()` shows for the same command (its builder prepends only `git`,
+    // git_commands/git_command_builder.go:141).
     if (shouldLog) this.log.logCommand(formatCommandLine(["git", ...commandArgs]), true)
     // One writer per command, so two commands' output can never share a heading. See Step 3a.
     const writer = this.log.outputWriter()

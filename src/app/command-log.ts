@@ -38,7 +38,7 @@ export class CommandLog {
    *
    * githunk's view cannot observe writes, only the `AppModel` snapshots they land in, and one
    * controller action produces many snapshots but exactly one `view.update`
-   * (src/app/create-app.ts:244). So "the kind of the most recent write" is lossy: a mutation logs
+   * (src/app/create-app.ts:246). So "the kind of the most recent write" is lossy: a mutation logs
    * its command line and then its output, which makes the output the batch's last write and drops
    * the arm. A count is not lossy — the view arms whenever the count it sees exceeds the count it
    * last saw, which is idempotent, order-independent and immune to how many snapshots a batch

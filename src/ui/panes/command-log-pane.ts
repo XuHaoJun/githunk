@@ -49,7 +49,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
   })
   box.add(text)
   // The same local-default suppression every other pane gets from `createPane`
-  // (src/ui/panes/common.ts:168-175). OpenTUI 0.5.6's `TextBufferRenderable.onMouseEvent` scrolls
+  // (src/ui/panes/common.ts:177-184). OpenTUI 0.5.6's `TextBufferRenderable.onMouseEvent` scrolls
   // the view itself on a wheel event and never consults `defaultPrevented`
   // (node_modules/@opentui/core/chunk-bun-da1keqyp.js:2814-2833), so the handler has to be replaced
   // rather than merely prevented. It deliberately does *not* `stopPropagation()`:

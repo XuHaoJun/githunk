@@ -9,7 +9,7 @@ export const SPLITTER_SIZE = 1
 export const DEFAULT_SIDE_PANEL_RATIO = 0.3333
 /**
  * `Gui.CommandLogSize`, default 8 (pkg/config/user_config.go:918), plus the 2-row frame
- * `getExtrasWindowSize` adds (window_arrangement_helper.go:415-417). githunk's `logHeight` is a
+ * `getExtrasWindowSize` adds (window_arrangement_helper.go:414). githunk's `logHeight` is a
  * total including the border, so the default content area is 8 rows as lazygit's is.
  */
 export const DEFAULT_LOG_HEIGHT = 10
