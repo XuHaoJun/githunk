@@ -42,7 +42,7 @@
 
 - [ ] **Step 3: Implement semantic tokens**
 
-  Import `RGBA` from `@opentui/core`; construct ANSI tokens with `RGBA.fromIndex`, defaults with `RGBA.defaultForeground`/`RGBA.defaultBackground`, and literal PR colors with `RGBA.fromInts`. Add Ghostty fallback palette values, `indexedColor`, and `configureTerminalPalette`; use a full 256-color query in `src/main.ts` before `createApp` so the fallback matches lazygit when OpenTUI cannot emit indexed colors directly.
+  Import `RGBA` from `@opentui/core`; construct ANSI tokens with `RGBA.fromIndex`, defaults with `RGBA.defaultForeground`/`RGBA.defaultBackground`, and literal PR colors with `RGBA.fromInts`. Add Ghostty fallback palette values, `indexedColor`, and `configureTerminalPalette`; use a full 256-color query in `src/main.ts` before `createApp` on direct terminals, but skip it whenever zellij is detected because OSC replies can leak into the parent shell.
 
 - [ ] **Step 4: Run the token test and verify it passes**
 

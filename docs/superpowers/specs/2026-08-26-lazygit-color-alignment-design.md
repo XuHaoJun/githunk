@@ -90,7 +90,7 @@ Not included:
 
 This change removes the old string-hex theme contract. TypeScript compilation must fail until every caller is migrated, which is intentional and bounded by the repository.
 
-Startup queries the terminal palette through `CliRenderer.getPalette({ size: 256 })` before creating the app. A successful query supplies the fallback RGB values for terminals or multiplexers that cannot render indexed colors directly; a failed query falls back to Ghostty's built-in palette in this environment. Indexed/default intent is still preserved for terminals that support it.
+Startup queries the terminal palette through `CliRenderer.getPalette({ size: 256 })` before creating the app on direct terminals. Zellij is explicitly excluded because its OSC 4 replies can leak into the parent shell; zellij uses Ghostty's built-in fallback palette in this environment. A successful direct-terminal query supplies fallback RGB values for multiplexers that cannot render indexed colors directly, while indexed/default intent remains preserved where supported.
 
 Truecolor SGR values are never quantized. Unsupported/malformed SGR values keep the existing parser behavior: consume the sequence and leave the current style unchanged.
 
