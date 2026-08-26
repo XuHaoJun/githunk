@@ -78,6 +78,7 @@ import { FilterInput } from "./filter-input"
 import { normalizeKey } from "./keymap"
 import { createHintsBar, reviewStatusText, type HintsBarHandle } from "./hints-bar"
 import { createKeybindingMenu, type KeybindingMenuHandle } from "./keybinding-menu"
+import { createActionMenu, type ActionMenuHandle } from "./action-menu"
 import { createSplitter, type SplitterAxis, type SplitterHandle } from "./splitter"
 import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
@@ -208,6 +209,7 @@ export class RootView {
   private readonly horizontalSplitter: SplitterHandle
   private readonly hintsBar: HintsBarHandle
   private readonly keybindingMenu: KeybindingMenuHandle
+  private readonly actionMenu: ActionMenuHandle
   private readonly onStageFile: ((path: string) => Promise<void>) | undefined
   private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
   private readonly onDiscardFile: ((path: string, untracked: boolean) => Promise<void>) | undefined
@@ -472,10 +474,12 @@ export class RootView {
     this.root.add(this.horizontalSplitter.box)
     this.hintsBar = createHintsBar(renderer)
     this.keybindingMenu = createKeybindingMenu(renderer)
+    this.actionMenu = createActionMenu(renderer)
     this.commitMessagePanel = createCommitMessagePanel(renderer)
     this.root.add(this.hintsBar.hints)
     this.root.add(this.hintsBar.status)
     this.root.add(this.keybindingMenu.box)
+    this.root.add(this.actionMenu.box)
     this.root.add(this.commitMessagePanel.box)
     renderer.root.add(this.root)
 
@@ -623,6 +627,7 @@ export class RootView {
   }
   private modalInputActive(): boolean {
     return this.branchFilterActive || this.commitDialog !== undefined || this.commitMessagePanel.visible || this.copyMenuOpen ||
+      this.actionMenu.isOpen() ||
       this.menuOpen ||
       this.model.upstreamChoice !== undefined || this.model.basePicker !== undefined ||
       this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined ||
@@ -979,7 +984,7 @@ export class RootView {
       case "focus-branches": this.focusManager.focus("branches"); return
       case "focus-commits": this.focusManager.focus("commits"); return
       case "focus-stash": this.focusManager.focus("stash"); return
-      case "command-log": this.focusManager.handleKey("@"); return
+      case "command-log": this.openCommandLogMenu(); return
       case "pane-next": this.focusManager.cycle("next"); return
       case "pane-previous": this.focusManager.cycle("previous"); return
       case "next": this.actionMoveCursor("next"); return
@@ -1058,6 +1063,13 @@ export class RootView {
   }
 
   private handleModalKey(key: KeyEvent): void {
+    if (this.actionMenu.isOpen()) {
+      // `key.name` is already githunk's canonical name here (RootView.handleKey normalizes
+      // before routing to the modal path, keymap.ts:31-33), so only "enter" is live — "return"
+      // in action-menu.ts:105 exists for callers that dispatch raw OpenTUI key names.
+      if (this.actionMenu.handleKey(key.name)) this.recomputeLayout()
+      return
+    }
     if (this.menuOpen) {
       if (key.name === "escape" || key.name === "?") {
         this.menuOpen = false
@@ -3530,9 +3542,43 @@ export class RootView {
     this.focusManager.focus("main")
   }
 
+  /**
+   * Shared by the horizontal splitter's double-click gesture (the counterpart to the vertical
+   * splitter's double-click collapse, see toggleSideCollapsed above) and the command-log menu's
+   * `t` item (pkg/gui/extras_panel.go:19-29): if the log is shown and focused, pop focus back to
+   * the last side pane first — otherwise focus would point at a window that just disappeared —
+   * then flip visibility and persist it exactly as `gui.c.GetAppState().HideCommandLog = !show;
+   * SaveAppStateAndLogError()` does (:26-27).
+   */
   private toggleCommandLog(): void {
-    this.focusManager.handleKey("@")
+    if (this.focusManager.logVisible && this.focusManager.active === "command-log") {
+      this.focusManager.focus(this.focusManager.lastSide)
+    }
+    this.focusManager.setLogVisible(!this.focusManager.logVisible)
     this.notifyGeometry()
+  }
+
+  /**
+   * lazygit's `@` menu (pkg/gui/extras_panel.go:12-38). Labels are `Tr.CommandLog`,
+   * `Tr.ToggleShowCommandLog` and `Tr.FocusCommandLog` verbatim
+   * (pkg/i18n/english.go:1946,1949-1950).
+   */
+  private openCommandLogMenu(): void {
+    this.actionMenu.openMenu("Command log", [
+      { key: "t", label: "Toggle show/hide command log", onPress: () => this.toggleCommandLog() },
+      {
+        key: "f",
+        label: "Focus command log",
+        onPress: () => {
+          // `SetShowExtrasWindow(true)` then push the context: you can ask to focus a hidden log
+          // (extras_panel.go:40-46).
+          this.focusManager.setLogVisible(true)
+          this.focusManager.focus("command-log")
+          this.notifyGeometry()
+        },
+      },
+    ])
+    this.recomputeLayout()
   }
 
 
@@ -3657,6 +3703,8 @@ export class RootView {
       )
     }
     this.keybindingMenu.box.visible = this.menuOpen
+    if (menuHost !== undefined) this.actionMenu.layout(menuHost, this.geometry.terminalHeight)
+    else this.actionMenu.close()
     this.commitMessagePanel.layout(this.geometry.terminalWidth, this.geometry.terminalHeight)
     this.root.requestRender()
   }

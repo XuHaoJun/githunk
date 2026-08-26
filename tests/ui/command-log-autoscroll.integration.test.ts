@@ -56,7 +56,10 @@ describe("command log autoscroll", () => {
   test("wheel over the log scrolls it once, at every other pane's rate, and clears autoscroll", async () => {
     harness = await harnessWithUpstream()
     const view = harness.app.view!
+    // `@` opens the command-log menu (pkg/gui/extras_panel.go:12-38); `t` toggles it shown
+    // without moving focus, the same as its "show, don't focus" half in the old direct cycle.
     await harness.pressKey("@")
+    await harness.pressKey("t")
     await harness.flush()
     // Three pulls' worth of log lines, so the log overflows its window with room to scroll up in:
     // one mutation (-2 rows) is only distinguishable from two (-3) with headroom for three.
@@ -93,6 +96,7 @@ describe("command log autoscroll", () => {
     harness = await harnessWithUpstream()
     const view = harness.app.view!
     await harness.pressKey("@")
+    await harness.pressKey("t")
     await harness.flush()
     // Enough log to be scrollable, so the disarmed state is a real scrolled-up viewport.
     await pull(harness)
@@ -120,8 +124,10 @@ describe("command log autoscroll", () => {
    */
   test("j/k step the log one line and clear autoscroll, the same as the wheel", async () => {
     harness = await harnessWithUpstream()
+    // `@` opens the command-log menu (pkg/gui/extras_panel.go:12-38); `f` forces it visible and
+    // focused in one step, the same as the old direct cycle's "show, then focus" pair of presses.
     await harness.pressKey("@")
-    await harness.pressKey("@")
+    await harness.pressKey("f")
     await harness.flush()
     await pull(harness)
     await pull(harness)
@@ -130,6 +136,7 @@ describe("command log autoscroll", () => {
     // The three pulls above ran while focus kept bouncing to "branches" (pull() presses "3"), so
     // refocus the log before driving it by keyboard.
     await harness.pressKey("@")
+    await harness.pressKey("f")
     await harness.flush()
     expect(view.focusManager.active).toBe("command-log")
     expect(view.commandLogAutoscroll).toBe(true)
@@ -152,7 +159,7 @@ describe("command log autoscroll", () => {
   test("`<`, `.`, `,` and `>` jump and page the log through the matching autoscroll transition", async () => {
     harness = await harnessWithUpstream()
     await harness.pressKey("@")
-    await harness.pressKey("@")
+    await harness.pressKey("f")
     await harness.flush()
     // More than the wheel test needs: a page is the pane's visible height, so the scrollable
     // extent has to clear that by a comfortable margin for "a page lands short of the bottom" to
@@ -160,6 +167,7 @@ describe("command log autoscroll", () => {
     for (let i = 0; i < 6; i += 1) await pull(harness)
     const view = harness.app.view!
     await harness.pressKey("@")
+    await harness.pressKey("f")
     await harness.flush()
     expect(view.focusManager.active).toBe("command-log")
     expect(view.commandLogAutoscroll).toBe(true)
@@ -205,6 +213,7 @@ describe("command log autoscroll", () => {
   test("dragging or clicking the command log's scrollbar clears autoscroll", async () => {
     harness = await harnessWithUpstream()
     await harness.pressKey("@")
+    await harness.pressKey("t")
     await harness.flush()
     await pull(harness)
     await pull(harness)
@@ -256,6 +265,7 @@ describe("command log autoscroll", () => {
   test("reopening the log after a hidden mutation re-pins to the bottom immediately", async () => {
     harness = await harnessWithUpstream()
     await harness.pressKey("@")
+    await harness.pressKey("t")
     await harness.flush()
     await pull(harness)
     await pull(harness)
@@ -278,6 +288,7 @@ describe("command log autoscroll", () => {
     await pull(harness)
 
     await harness.pressKey("@")
+    await harness.pressKey("t")
     await harness.flush()
     expect(view.focusManager.logVisible).toBe(true)
     expect(view.commandLogAutoscroll).toBe(true)

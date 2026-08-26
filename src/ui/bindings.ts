@@ -289,7 +289,9 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["3"], action: "focus-branches", description: "branches pane" },
   { keys: ["4"], action: "focus-commits", description: "commits pane" },
   { keys: ["5"], action: "focus-stash", description: "stash pane" },
-  { keys: ["@"], action: "command-log", description: "log", menuDescription: "show, focus or hide the command log" },
+  // `Tr.OpenCommandLogMenu` (pkg/i18n/english.go:1853) behind Universal.ExtrasMenu, default "@"
+  // (pkg/config/user_config.go:1072, pkg/gui/keybindings.go:171-174).
+  { keys: ["@"], action: "command-log", description: "log", menuDescription: "view command log options" },
   { keys: ["l", "right", "tab"], action: "pane-next", description: "pane", displayKeys: "h/l", displayOnScreen: true, menuDescription: "focus the next pane" },
   { keys: ["h", "left", "shift+tab"], action: "pane-previous", description: "previous pane", menuDescription: "focus the previous pane" },
   { keys: [{ name: "+" }], action: "screen-mode-next", description: "zoom in", menuDescription: "enlarge the focused region" },

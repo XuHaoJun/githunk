@@ -158,8 +158,9 @@ describe("mouse parity - row selection and wheel routing", () => {
   test("wheel over Command Log scrolls only log", async () => {
     harness = await createShellHarness({ width: 120, height: 40 })
     const view = harness.app.view!
-    // show command log via @
+    // `@` opens the command-log menu (pkg/gui/extras_panel.go:12-38); `t` toggles it shown.
     await harness.pressKey("@")
+    await harness.pressKey("t")
     await harness.flush()
     // need some log entries: harness already has some? we can just check scroll doesn't affect other panes
     const logBox = view.paneTextGeometry("command-log")
