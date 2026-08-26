@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { GitRunner } from "../../src/git/runner"
 import { REPO_CONFIG_KEY_PATTERN, loadRepoConfig, parseRepoConfig } from "../../src/git/config"
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
+import { recordingRunner } from "../helpers/recording-runner"
 
 describe("parseRepoConfig", () => {
   test("splits git's NUL-framed key/value records into remotes and branch upstreams", () => {
@@ -56,16 +57,10 @@ describe("loadRepoConfig", () => {
 
     // loadRepoConfig's read is readOnly, so it is no longer logged (readOnly implies dontLog) — spy
     // on run() calls directly to count spawned processes instead of reading the command log.
-    let spawned = 0
-    const countingRunner: Pick<GitRunner, "run"> = {
-      run: (args, options) => {
-        spawned++
-        return runner.run(args, options)
-      },
-    }
+    const countingRunner = recordingRunner(runner)
     const config = await loadRepoConfig(countingRunner)
 
-    expect(spawned).toBe(1)
+    expect(countingRunner.calls.length).toBe(1)
     expect(config.remotes.get("origin")).toEqual({
       fetchUrl: "https://example.com/repo.git",
       pushUrl: "ssh://git@example.com/repo.git",

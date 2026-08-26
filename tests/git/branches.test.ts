@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { GitRunner } from "../../src/git/runner"
 import { listBranches } from "../../src/git/branches"
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
+import { recordingRunner } from "../helpers/recording-runner"
 
 describe("branch and remote loaders", () => {
   let repository: TempRepository | undefined
@@ -150,18 +151,12 @@ describe("listBranches process count", () => {
 
     // listBranches's reads are readOnly, so they are no longer logged (readOnly implies dontLog) —
     // spy on run() calls directly to count spawned processes instead of reading the command log.
-    let spawned = 0
-    const countingRunner: Pick<GitRunner, "run"> = {
-      run: (args, options) => {
-        spawned++
-        return runner.run(args, options)
-      },
-    }
+    const countingRunner = recordingRunner(runner)
     const listing = await listBranches(countingRunner)
 
     expect(listing.remotes.map((remote) => remote.name).sort()).toEqual(["backup", "fork", "mirror", "origin", "upstream"])
     expect(listing.remotes.find((remote) => remote.name === "fork")!.fetchUrl).toBe("https://example.com/fork.git")
     // One `for-each-ref` for the branches and one `config --get-regexp` for everything else.
-    expect(spawned).toBe(2)
+    expect(countingRunner.calls.length).toBe(2)
   })
 })
