@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { TextRenderable, type RGBA } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
-import { ROW_END_COLS, commandLogRowHighlights, installCommandLogText } from "../../src/ui/panes/command-log-text"
+import { LINE_END_COLS, commandLogLineHighlights, installCommandLogText } from "../../src/ui/panes/command-log-text"
 import type { CommandLogLine } from "../../src/domain/command"
 
 function line(id: number, ...spans: readonly (readonly [string, CommandLogLine["spans"][number]["style"]])[]): CommandLogLine {
@@ -9,69 +9,57 @@ function line(id: number, ...spans: readonly (readonly [string, CommandLogLine["
 }
 
 /**
- * The pane lets OpenTUI wrap and paints per *visual* row, so `lineSources` — OpenTUI's visual row →
- * logical line map (as src/ui/panes/diff-text.ts:104-108 uses it) — is the input. A single-span
- * line paints whole, which is why wide characters never need measuring here.
+ * The pane lets OpenTUI wrap and paints whole *logical* lines — the unit
+ * `PaneTextBuffer.addHighlight` addresses — so a line, not a visual row, is the input. A single-span
+ * line paints whole, which is why only the random tip's label/tip boundary needs measuring.
  */
-describe("commandLogRowHighlights", () => {
-  const lines: readonly CommandLogLine[] = [
-    line(1, ["You can hide/focus this panel by pressing '@'", "intro"]),
-    line(2),
-    line(3, ["Random tip: ", "tip-label"], ["press '@' to hide this panel", "tip"]),
-    line(4, ["Stage file", "action"]),
-    line(5, ["  git add -- a.ts", "command"]),
-  ]
-
-  test("paints a single-span row across the whole row", () => {
-    expect(commandLogRowHighlights(lines, [0, 1, 2, 3, 4], 0)).toEqual([
-      { start: 0, end: ROW_END_COLS, style: "intro" },
+describe("commandLogLineHighlights", () => {
+  test("paints a single-span line across the whole line", () => {
+    expect(commandLogLineHighlights(line(1, ["You can hide/focus this panel by pressing '@'", "intro"]))).toEqual([
+      { start: 0, end: LINE_END_COLS, style: "intro" },
     ])
-    expect(commandLogRowHighlights(lines, [0, 1, 2, 3, 4], 3)).toEqual([
-      { start: 0, end: ROW_END_COLS, style: "action" },
+    expect(commandLogLineHighlights(line(4, ["Stage file", "action"]))).toEqual([
+      { start: 0, end: LINE_END_COLS, style: "action" },
     ])
   })
 
   test("paints a blank line as nothing", () => {
-    expect(commandLogRowHighlights(lines, [0, 1, 2, 3, 4], 1)).toEqual([])
+    expect(commandLogLineHighlights(line(2))).toEqual([])
   })
 
-  test("splits the tip row at the label's code-point boundary", () => {
-    expect(commandLogRowHighlights(lines, [0, 1, 2, 3, 4], 2)).toEqual([
+  test("splits the tip line at the label's boundary", () => {
+    const tip = line(3, ["Random tip: ", "tip-label"], ["press '@' to hide this panel", "tip"])
+    expect(commandLogLineHighlights(tip)).toEqual([
       { start: 0, end: 12, style: "tip-label" },
-      { start: 12, end: ROW_END_COLS, style: "tip" },
+      { start: 12, end: LINE_END_COLS, style: "tip" },
     ])
   })
 
-  test("paints a continuation row of a single-span line in that line's style", () => {
-    // Row 5 and row 6 both wrapped out of logical line index 4.
-    expect(commandLogRowHighlights(lines, [0, 1, 2, 3, 4, 4], 5)).toEqual([
-      { start: 0, end: ROW_END_COLS, style: "command" },
+  test("measures the label in display cells, not code points or UTF-16 units", () => {
+    // `addHighlight`'s columns are display cells. Probed against OpenTUI 0.5.6 directly: with
+    // `"中 tip: GREEN"` installed, highlighting `[0, 8)` came back as `"中 tip: "` — 6 code points
+    // and 7 UTF-16 units, but 8 cells, because 中 occupies two columns. `"🎲 tip: GREEN"` behaves
+    // the same way (6 code points, 8 UTF-16 units, 8 cells). Under either of the other two units
+    // the label's trailing space would be handed to the tip's colour; the render-level test below
+    // pins that end to end.
+    expect(commandLogLineHighlights(line(1, ["🎲 tip: ", "tip-label"], ["go", "tip"]))).toEqual([
+      { start: 0, end: 8, style: "tip-label" },
+      { start: 8, end: LINE_END_COLS, style: "tip" },
     ])
-  })
-
-  test("paints a continuation row of the tip line in the trailing span's style", () => {
-    expect(commandLogRowHighlights(lines, [0, 1, 2, 2, 3, 4], 3)).toEqual([
-      { start: 0, end: ROW_END_COLS, style: "tip" },
-    ])
-  })
-
-  test("yields nothing for a row past the end of the map or the lines", () => {
-    expect(commandLogRowHighlights(lines, [0, 1, 2, 3, 4], 9)).toEqual([])
-    expect(commandLogRowHighlights(lines, [0, 1, 2, 3, 4, 5], 5)).toEqual([])
-  })
-
-  test("counts the label in code points, not UTF-16 units", () => {
-    // "🎲 tip: " is 8 UTF-16 units (the die is a surrogate pair) but 7 code points — [...string]
-    // walks code points, so a naive `.length` here would silently pass a UTF-16-counted brief and
-    // fail this comment's own claim.
-    const emoji: readonly CommandLogLine[] = [line(1, ["🎲 tip: ", "tip-label"], ["go", "tip"])]
-    expect(commandLogRowHighlights(emoji, [0], 0)).toEqual([
-      { start: 0, end: 7, style: "tip-label" },
-      { start: 7, end: ROW_END_COLS, style: "tip" },
+    expect(commandLogLineHighlights(line(2, ["中 tip: ", "tip-label"], ["go", "tip"]))).toEqual([
+      { start: 0, end: 8, style: "tip-label" },
+      { start: 8, end: LINE_END_COLS, style: "tip" },
     ])
   })
 })
 
+/**
+ * A `command`/`output` row is *unobservable* as painted: lazygit's `theme.DefaultTextColor` is
+ * `style.FgDefault` (pkg/theme/theme.go:11), so the style those rows carry resolves to the very
+ * colour the renderable already has, and a correctly painted row is byte-identical to an unpainted
+ * one. What this still discriminates is the failure that matters here — a row painted with the
+ * *wrong* style, which comes back `indexed` rather than `default`.
+ */
 function expectDefault(color: RGBA): void {
   expect(color.intent).toBe("default")
 }
@@ -85,10 +73,9 @@ function expectIndexed(color: RGBA, slot: number): void {
  * `OpenTUI`'s `TextBuffer.addHighlight` addresses a *logical* (pre-wrap) line, not the visual row
  * `lineInfo.lineSources` is indexed by (confirmed against 0.5.6: `TextBufferRenderable` keeps a
  * pre-wrap `textBuffer` the highlight calls hit, separate from the wrapped `textBufferView` that
- * produces `lineInfo`). `installCommandLogText`'s `paintWindow` therefore paints a logical line only
- * from its first visual row and walks a mid-wrap `from` back to that row — these tests exercise that
- * translation against a real wrapped render, the thing a pure test of `commandLogRowHighlights`
- * cannot see.
+ * produces `lineInfo`), and its columns are display cells. `installCommandLogText` therefore paints
+ * per logical line, in that line's own cell columns — these tests exercise that against a real
+ * wrapped render, the thing a pure test of `commandLogLineHighlights` cannot see.
  */
 describe("installCommandLogText", () => {
   test("colours every logical line correctly when an earlier line wraps", async () => {
@@ -144,6 +131,30 @@ describe("installCommandLogText", () => {
       expectIndexed(frame.lines[2]!.spans[0]!.fg, 2)
     } finally {
       setup.renderer.destroy()
+    }
+  })
+
+  test("keeps a wide-character label's trailing space in the label's colour", async () => {
+    // The production consequence of the column unit. `"🎲 tip: "` is 8 cells but 6 code points and
+    // 8 UTF-16 units; `"中 tip: "` is 8 cells, 6 code points and 7 UTF-16 units. Measuring either of
+    // the other two would end the label a cell early and hand its trailing space to the tip's green.
+    for (const label of ["🎲 tip: ", "中 tip: "]) {
+      const setup = await createTestRenderer({ width: 40, height: 6 })
+      try {
+        const text = new TextRenderable(setup.renderer, { id: "log-text", content: "", width: 30, height: 4, selectable: false, wrapMode: "char" })
+        setup.renderer.root.add(text)
+        installCommandLogText(text, [{ id: 1, spans: [{ text: label, style: "tip-label" }, { text: "GREEN", style: "tip" }] }])
+        ;(text as unknown as { requestRender?: () => void }).requestRender?.()
+        await setup.flush()
+
+        const spans = setup.captureSpans().lines[0]!.spans
+        expect(spans[0]!.text, `label ${JSON.stringify(label)}`).toBe(label)
+        expectIndexed(spans[0]!.fg, 3)
+        expect(spans[1]!.text.startsWith("GREEN")).toBe(true)
+        expectIndexed(spans[1]!.fg, 2)
+      } finally {
+        setup.renderer.destroy()
+      }
     }
   })
 })

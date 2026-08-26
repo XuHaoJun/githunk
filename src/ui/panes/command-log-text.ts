@@ -1,5 +1,6 @@
 import type { TextRenderable } from "@opentui/core"
 import type { CommandLogLine, CommandLogStyle } from "../../domain/command"
+import { cellWidth } from "../cell-width"
 import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, DEFAULT_FOREGROUND } from "../theme"
 import { paneTextBuffer, type PaneStyleDefinition, type PaneTextBuffer } from "./pane-text"
 
@@ -9,16 +10,16 @@ import { paneTextBuffer, type PaneStyleDefinition, type PaneTextBuffer } from ".
  * and only the rows near the viewport carry highlights.
  *
  * lazygit sets `Wrap = true` on the extras view (pkg/gui/views.go:150) and gocui wraps at character
- * boundaries; the pane sets `wrapMode: "char"` to match. Letting the widget wrap is what keeps this
- * file free of column arithmetic: nothing in githunk measures East Asian width, and every log line
- * but the random tip carries a single span, so its rows paint whole.
+ * boundaries; the pane sets `wrapMode: "char"` to match. Letting the widget wrap is what keeps the
+ * column arithmetic here to a single boundary: every log line but the random tip carries one span,
+ * so it paints whole, and the tip's label/tip split is the only column this file has to measure.
  */
 
-/** Column bound for "to the end of the row"; the native buffer clamps it to the real width. */
-export const ROW_END_COLS = 1_000_000
+/** Column bound for "to the end of the line"; the native buffer clamps it to the real width. */
+export const LINE_END_COLS = 1_000_000
 
-/** Rows painted beyond the viewport on each side, as in diff-text.ts:23. */
-const MARGIN_ROWS = 32
+/** Logical lines painted beyond the viewport on each side, as in diff-text.ts:23. */
+const MARGIN_LINES = 32
 
 /**
  * lazygit's colours. `command` is `theme.DefaultTextColor`, which is `style.FgDefault`
@@ -41,41 +42,37 @@ const STYLE_DEFINITIONS: Readonly<Record<CommandLogStyle, PaneStyleDefinition>> 
   tip: { fg: ANSI_GREEN },
 }
 
-export type CommandLogRowHighlight = {
+export type CommandLogHighlight = {
   readonly start: number
   readonly end: number
   readonly style: CommandLogStyle
 }
 
 /**
- * The highlights one *visual* row needs. `lineSources` is OpenTUI's visual row → logical line map.
+ * The highlights one *logical* (pre-wrap) line needs, in that line's own column space.
  *
- * A row belonging to a single-span line paints whole, so wrapping and character width are the
- * widget's problem, not this function's. The only multi-span line is `Random tip: <tip>`: its first
- * row splits at the label's code-point boundary, and any row it wrapped onto takes the trailing
- * span's style — the label cannot reach a continuation row, being the first thing on the line.
+ * Logical lines are the unit because that is what `PaneTextBuffer.addHighlight` addresses (see
+ * `paintLine`), and a highlight reaching `LINE_END_COLS` therefore covers every visual row the line
+ * wrapped onto — wrapping is the widget's problem, not this function's.
+ *
+ * The only multi-span line is `Random tip: <tip>`, so the label/tip boundary is the one column this
+ * file measures. It is measured in **display cells** (../cell-width), which is the unit
+ * `addHighlight`'s columns count: probed against OpenTUI 0.5.6 by highlighting `[0, 8)` of
+ * `"中 tip: GREEN"` and of `"🎲 tip: GREEN"` and getting back `"中 tip: "` and `"🎲 tip: "` — 6 code
+ * points each, 7 and 8 UTF-16 units, 8 cells each. Under code-point or UTF-16 semantics the label's
+ * trailing space would fall to the tip's colour.
  */
-export function commandLogRowHighlights(
-  lines: readonly CommandLogLine[],
-  lineSources: readonly number[],
-  row: number,
-): readonly CommandLogRowHighlight[] {
-  const source = lineSources[row]
-  if (source === undefined) return []
-  const line = lines[source]
-  if (line === undefined || line.spans.length === 0) return []
+export function commandLogLineHighlights(line: CommandLogLine): readonly CommandLogHighlight[] {
+  if (line.spans.length === 0) return []
   const last = line.spans[line.spans.length - 1]!
-  if (line.spans.length === 1) return [{ start: 0, end: ROW_END_COLS, style: last.style }]
-  if (lineSources[row - 1] === source) return [{ start: 0, end: ROW_END_COLS, style: last.style }]
+  if (line.spans.length === 1) return [{ start: 0, end: LINE_END_COLS, style: last.style }]
 
-  const highlights: CommandLogRowHighlight[] = []
+  const highlights: CommandLogHighlight[] = []
   let column = 0
   for (const [index, span] of line.spans.entries()) {
-    // Code points, not UTF-16 units: an astral character is one column's worth of text as far as
-    // the buffer's column indexing is concerned.
-    const width = [...span.text].length
     const isLast = index === line.spans.length - 1
-    highlights.push({ start: column, end: isLast ? ROW_END_COLS : column + width, style: span.style })
+    const width = cellWidth(span.text)
+    highlights.push({ start: column, end: isLast ? LINE_END_COLS : column + width, style: span.style })
     column += width
   }
   return highlights
@@ -86,12 +83,12 @@ type CommandLogTextState = {
   readonly styleIds: Readonly<Record<CommandLogStyle, number>>
   text: string
   lines: readonly CommandLogLine[]
-  /** Visual row → logical line, cached per wrap width exactly as diff-text.ts:104-108 does. */
+  /** Visual row → logical line, cached per wrap width exactly as diff-text.ts:97-102 does. */
   rowSources: readonly number[] | undefined
   rowSourcesWidth: number
   appliedScrollY: number
   appliedHeight: number
-  /** Inclusive visual-row range currently carrying highlights, or undefined when none do. */
+  /** Inclusive logical-line range currently carrying highlights, or undefined when none do. */
   painted: { from: number; to: number } | undefined
 }
 
@@ -107,25 +104,15 @@ function registerStyles(buffer: PaneTextBuffer): Readonly<Record<CommandLogStyle
 }
 
 /**
- * Paints (or clears) one *visual* row, but only when it is the first visual row of its logical
- * line.
+ * Repaints the highlight band when the viewport has moved since the last paint.
  *
- * `PaneTextBuffer.addHighlight`/`clearRow` reach OpenTUI's `TextBuffer.addHighlight` /
- * `clearLineHighlights`, which the type declarations (and, checked empirically against 0.5.6's
- * TextBufferRenderable — its `textBuffer` is the pre-wrap buffer, kept separate from the wrapped
- * `textBufferView` that produces `lineInfo`) address by *logical* line, not by the visual row
- * `lineSources` is indexed by. `commandLogRowHighlights`'s last span always ends at `ROW_END_COLS`,
- * and that bound reaches the end of the whole logical line — confirmed the same way — so one call
- * from the line's first visual row already colours every row it wraps onto. Calling it again from a
- * continuation row would be a second, overlapping highlight on the same logical line with no
- * documented precedence between the two, so continuation rows are skipped rather than repainted.
+ * Everything here counts *logical* lines, not visual rows. `PaneTextBuffer.addHighlight`/`clearRow`
+ * reach OpenTUI's `TextBuffer.addHighlight` / `clearLineHighlights`, which address the pre-wrap
+ * buffer — checked empirically against 0.5.6, whose `TextBufferRenderable` keeps that buffer
+ * separate from the wrapped `textBufferView` that produces `lineInfo`. So the band is derived from
+ * the row-to-line map the way diff-text.ts:104-108 derives it, and a line painted once is coloured
+ * on every visual row it wrapped onto.
  */
-function firstVisualRowOf(sources: readonly number[], row: number): number | undefined {
-  const source = sources[row]
-  if (source === undefined || sources[row - 1] === source) return undefined
-  return source
-}
-
 function paintWindow(text: TextRenderable, force: boolean): void {
   const state = states.get(text)
   if (state === undefined) return
@@ -139,37 +126,31 @@ function paintWindow(text: TextRenderable, force: boolean): void {
     state.rowSourcesWidth = width
   }
   const sources = state.rowSources
-  let from = Math.max(0, scrollY - MARGIN_ROWS)
-  // A row is only ever painted from its logical line's first visual row (see firstVisualRowOf). If
-  // `from` lands mid-wrap, that first row sits above it and this window would never reach it, so
-  // `from` is walked back to the line's own start.
-  while (from > 0 && sources[from - 1] === sources[from]) from--
-  const to = Math.min(sources.length - 1, scrollY + height - 1 + MARGIN_ROWS)
+  const lastRow = Math.max(0, Math.min(scrollY + height - 1, sources.length - 1))
+  const firstLine = sources[Math.min(scrollY, lastRow)] ?? scrollY
+  const lastLine = sources[lastRow] ?? lastRow
+  const from = Math.max(0, firstLine - MARGIN_LINES)
+  const to = lastLine + MARGIN_LINES
 
-  const paintRow = (row: number): void => {
-    const source = firstVisualRowOf(sources, row)
-    if (source === undefined) return
-    for (const highlight of commandLogRowHighlights(state.lines, sources, row)) {
-      state.buffer.addHighlight(source, { start: highlight.start, end: highlight.end, styleId: state.styleIds[highlight.style] })
+  const paintLine = (line: number): void => {
+    const entry = state.lines[line]
+    if (entry === undefined) return
+    for (const highlight of commandLogLineHighlights(entry)) {
+      state.buffer.addHighlight(line, { start: highlight.start, end: highlight.end, styleId: state.styleIds[highlight.style] })
     }
   }
-  const clearRow = (row: number): void => {
-    const source = firstVisualRowOf(sources, row)
-    if (source === undefined) return
-    state.buffer.clearRow(source)
-  }
 
-  // Rows already painted stay painted: a highlight costs ~46 µs to add, so scrolling by a row must
-  // touch a row, not a screenful (diff-text.ts:120-133).
+  // Lines already painted stay painted: a highlight costs ~46 µs to add, so scrolling by a row must
+  // touch a line, not a screenful (diff-text.ts:117-129).
   const previous = state.painted
   if (previous === undefined || previous.to < from || previous.from > to) {
     state.buffer.clearAllHighlights()
-    for (let row = from; row <= to; row++) paintRow(row)
+    for (let line = from; line <= to; line++) paintLine(line)
   } else {
-    for (let row = previous.from; row < from; row++) clearRow(row)
-    for (let row = to + 1; row <= previous.to; row++) clearRow(row)
-    for (let row = from; row < previous.from; row++) paintRow(row)
-    for (let row = previous.to + 1; row <= to; row++) paintRow(row)
+    for (let line = previous.from; line < from; line++) state.buffer.clearRow(line)
+    for (let line = to + 1; line <= previous.to; line++) state.buffer.clearRow(line)
+    for (let line = from; line < previous.from; line++) paintLine(line)
+    for (let line = previous.to + 1; line <= to; line++) paintLine(line)
   }
   state.painted = { from, to }
   state.appliedScrollY = scrollY

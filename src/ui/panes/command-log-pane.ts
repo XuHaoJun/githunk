@@ -38,7 +38,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     selectable: false,
     // lazygit sets `Wrap = true` on the extras view (pkg/gui/views.go:150); gocui wraps at
     // character boundaries, which is `"char"` here. Letting OpenTUI wrap is also what lets
-    // command-log-text.ts colour rows without measuring character width.
+    // command-log-text.ts colour whole logical lines instead of laying out visual rows itself.
     wrapMode: "char",
     width: "100%",
   })
