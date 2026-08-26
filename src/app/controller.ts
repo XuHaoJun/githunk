@@ -30,6 +30,7 @@ import { listWorktrees } from "../git/worktrees"
 import type { SubmoduleConfig } from "../domain/submodule"
 import { listSubmodules } from "../git/submodules"
 import { MutationQueue } from "./mutation-queue"
+import { LOG_ACTIONS } from "./log-actions"
 export type WorkingTreeLoader = (
   target: Extract<ReviewTarget, { readonly kind: "working-tree" }>,
   options?: { readonly background?: boolean },
@@ -502,22 +503,30 @@ export class AppController {
     await this.switchLocalBranch(branch)
   }
   async switchLocalBranch(branch: string): Promise<void> {
+    this.logAction(LOG_ACTIONS.checkoutBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => switchLocal(runner, branch)))
   }
 
   async createBranch(branch: string, startPoint?: string): Promise<void> {
+    this.logAction(LOG_ACTIONS.createBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => createBranch(runner, branch, startPoint)))
   }
   async createStash(message: string, options: StashCreateOptions): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    // `handleStashSave`'s caller picks the label from which stash variant was invoked
+    // (files_controller.go:1300 vs :1282/:1482 -> :1516). githunk has no staged-only stash, but
+    // does have the untracked-files distinction lazygit labels separately here.
+    this.logAction(options.includeUntracked ? LOG_ACTIONS.stashIncludeUntrackedChanges : LOG_ACTIONS.stashAllChanges)
     await this.runMutation(() => this.requireRunnerOperation((runner) => createGitStash(runner, message, options)).then(() => undefined))
   }
   async applyStash(ref: string): Promise<void> {
     if (!this.ensureStashOperation()) return
+    this.logAction(LOG_ACTIONS.applyStash)
     await this.runMutation(() => this.requireRunnerOperation((runner) => applyGitStash(runner, ref)))
   }
   async popStash(ref: string): Promise<void> {
     if (!this.ensureStashOperation()) return
+    this.logAction(LOG_ACTIONS.popStash)
     await this.runMutation(async () => {
       await this.requireRunnerOperation((runner) => popGitStash(runner, ref))
       if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
@@ -528,6 +537,7 @@ export class AppController {
   }
   async dropStash(ref: string, options: StashDropOptions): Promise<void> {
     if (!this.ensureStashOperation()) return
+    this.logAction(LOG_ACTIONS.dropStash)
     await this.runMutation(async () => {
       await this.requireRunnerOperation((runner) => dropGitStash(runner, ref, options))
       if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
@@ -544,10 +554,14 @@ export class AppController {
   }
   async fetch(remote?: string, options: FetchOptions = {}): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    // The background fetch is `DontLog()` in lazygit (git_commands/sync.go:81): no command line
+    // and no action label, so a 60-second timer does not bury what the user actually ran.
+    if (options.background !== true) this.logAction(LOG_ACTIONS.fetch)
     await this.runMutation(() => this.requireRunnerOperation((runner) => fetchSync(runner, remote, options)))
   }
   async pull(options: PullOptions = {}): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.pull)
     await this.mutationQueue.run(async () => {
       try {
         const result = await this.requireRunnerOperation((runner) => pullSync(runner, options))
@@ -567,6 +581,11 @@ export class AppController {
   async chooseUpstream(remote: string, branch: string): Promise<void> {
     const choice = this.currentState.upstreamChoice
     if (choice === undefined) return
+    // Setting the upstream is a distinct intent lazygit labels separately
+    // (remote_branches_controller.go:187, `Actions.SetBranchUpstream`; english.go:2210) before the
+    // pull/push it then performs; `pull`/`push` below add their own label, so this is deliberately
+    // the only site that logs twice per keypress.
+    this.logAction(LOG_ACTIONS.setBranchUpstream)
     const upstream = { remote, branch }
     if (choice.operation === "pull") {
       await this.pull({ upstream })
@@ -576,6 +595,7 @@ export class AppController {
   }
   async push(options: PushOptions = {}): Promise<PushResult> {
     if (!this.ensureWorkingTreeMutation()) return { kind: "pushed" }
+    this.logAction(LOG_ACTIONS.push)
     return this.mutationQueue.run(async () => {
       try {
         const result = await this.requireRunnerOperation((runner) => pushSync(runner, options))
@@ -594,14 +614,17 @@ export class AppController {
   }
 
   async deleteBranch(branch: string, options?: DeleteBranchOptions): Promise<void> {
+    this.logAction(LOG_ACTIONS.deleteLocalBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => deleteBranch(runner, branch, options)))
   }
 
   async renameBranch(oldName: string, newName: string): Promise<void> {
+    this.logAction(LOG_ACTIONS.renameBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => renameBranch(runner, oldName, newName)))
   }
 
   async fetchRemote(remote: string): Promise<void> {
+    this.logAction(LOG_ACTIONS.fetch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => fetchRemote(runner, remote)))
   }
 
@@ -644,6 +667,7 @@ export class AppController {
 
 
   async checkoutRemoteTracking(remoteRef: string | RemoteBranchSelection, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult | undefined> {
+    this.logAction(LOG_ACTIONS.checkoutBranch)
     return this.runBranchMutation(() => this.requireRunnerOperation((runner) => typeof remoteRef === "string"
       ? checkoutRemoteTracking(runner, remoteRef, options)
       : checkoutRemoteTracking(runner, remoteRef, options)))
@@ -874,11 +898,13 @@ export class AppController {
   }
   async commit(message: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.commit)
     await this.runMutation(() => this.commitMutations?.commit(message))
   }
 
   async amend(message: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.amendCommit)
     await this.runMutation(() => this.commitMutations?.amend(message))
   }
 
@@ -892,26 +918,31 @@ export class AppController {
   }
   async stageFile(path: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.stageFile)
     await this.runMutation(() => this.mutations?.stageFile(path))
   }
 
   async unstageFile(path: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.unstageFile)
     await this.runMutation(() => this.mutations?.unstageFile(path))
   }
 
   async applySelection(document: DiffDocument, includedLineIndexes: readonly number[], options: SelectionMutationOptions): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.applyPatch)
     await this.runMutation(() => this.mutations?.applySelection(document, includedLineIndexes, options))
   }
 
   async discardSelection(document: DiffDocument, includedLineIndexes: readonly number[], options?: Omit<SelectionMutationOptions, "reverse"> & { readonly reverse?: false }): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.applyPatch)
     await this.runMutation(() => this.mutations?.discardSelection(document, includedLineIndexes, options))
   }
 
   async discardFile(path: string, untracked = false): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.discardAllChangesInFile)
     await this.runMutation(() => this.mutations?.discardFile(path, untracked))
   }
 
@@ -921,6 +952,7 @@ export class AppController {
     await this.mutationQueue.run(async () => {
       const files = this.currentState.files
       const shouldStage = files.some((file) => file.untracked || file.worktreeStatus !== ".")
+      this.logAction(shouldStage ? LOG_ACTIONS.stageAllFiles : LOG_ACTIONS.unstageAllFiles)
       try {
         for (const file of files) {
           if (shouldStage) await this.mutations?.stageFile(file.path)
@@ -951,6 +983,20 @@ export class AppController {
     if (this.currentState.reviewTarget.kind === "working-tree" || this.currentState.reviewTarget.kind === "stash") return true
     this.currentState = { ...this.currentState, banner: "Branch Review is read-only" }
     return false
+  }
+
+  /**
+   * lazygit's `LogAction`, called from its UI controllers — the layer where one user intent
+   * becomes N git commands (pkg/gui/controllers/files_controller.go:544,559;
+   * pkg/gui/controllers/stash_controller.go:127,141,169;
+   * pkg/gui/controllers/sync_controller.go:167,197). This controller is githunk's equivalent: its
+   * mutation methods map one-to-one onto user intents, where `root-view.ts` corresponds to
+   * lazygit's keybinding table and views.
+   *
+   * Always after the guard, so a mutation the target refuses logs nothing.
+   */
+  private logAction(action: string): void {
+    this.runner?.log.logAction(action)
   }
 
   private async runMutation(operation: () => Promise<void> | undefined): Promise<void> {

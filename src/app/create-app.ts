@@ -10,6 +10,7 @@ import { loadRefsSnapshot } from "../git/refs-snapshot"
 import { absolutePath, resolveEditCommand } from "../git/editor"
 import { isAbsolute, resolve } from "node:path"
 import { IndexWatcher } from "./index-watcher"
+import { LOG_ACTIONS } from "./log-actions"
 
 export type CreateAppOptions = {
   readonly repositoryRoot: string
@@ -314,7 +315,13 @@ export function createApp(options: CreateAppOptions): App {
       }
     },
     onFilterBranches: async () => undefined,
-    onEditFile: editFile,
+    onEditFile: async (path, line) => {
+      // `LogAction(Tr.Actions.OpenFile)` (pkg/gui/controllers/helpers/files_helper.go:78). Logged
+      // at the wiring, not inside the default `editFile` above, so it fires whether the default or
+      // an injected `options.onEditFile` runs.
+      options.runner.log.logAction(LOG_ACTIONS.openFile)
+      await editFile(path, line)
+    },
     onQuit: () => options.onQuit?.(),
     onGeometryChange: (state) => {
       latestGeometry = state

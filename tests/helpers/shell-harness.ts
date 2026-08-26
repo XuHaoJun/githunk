@@ -71,6 +71,8 @@ export type ShellHarnessOptions = {
    * (pkg/config/user_config.go:901).
    */
   readonly logVisible?: boolean
+  /** Overrides the default (real editor-spawning) `editFile`, e.g. to observe the edit without spawning a process. */
+  readonly onEditFile?: (path: string, line?: number) => Promise<void>
 }
 
 export type ShellHarness = {
@@ -160,6 +162,7 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     renderer: setup.renderer,
     onQuit: () => { quitCalled = true },
     ...(options.onGeometryChange === undefined ? {} : { onGeometryChange: options.onGeometryChange }),
+    ...(options.onEditFile === undefined ? {} : { onEditFile: options.onEditFile }),
   })
   await app.refresh()
   await setup.flush()
