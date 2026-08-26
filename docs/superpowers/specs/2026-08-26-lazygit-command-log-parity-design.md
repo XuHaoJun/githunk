@@ -173,8 +173,8 @@ lazygit's state machine, copied from `extras_panel.go:48-94` and `command_log_co
 
 - `logAction` and `logCommand` set autoscroll on (`command_log_panel.go:38,62`), so a command that runs while the user is reading scrollback does yank the viewport back to the bottom. That is lazygit's behaviour and is copied, not softened;
 - `logOutput` does **not** touch the flag. lazygit's `prefixWriter` writes straight to the view (`extras_panel.go:109-119`) and never assigns `Autoscroll`; it scrolls only because the `logCommand` that preceded it already turned the flag on. The header and random-tip writes likewise leave it alone (`command_log_panel.go:70-85`);
-- scrolling *up* by any means turns it off — wheel, `↑`/`k`, `,` page up, `<` goto top (`extras_panel.go:48,56,64,72,80`);
-- `>` goto bottom turns it on (`extras_panel.go:88-89`);
+- **every** explicit scroll turns it off, downward ones included — `scrollUpExtra` *and* `scrollDownExtra` both assign `Autoscroll = false`, as do `pageUpExtrasPanel`, `pageDownExtrasPanel` and `goToExtrasPanelTop` (`extras_panel.go:49,57,65,73,81`). So holding `j` to the bottom leaves autoscroll off; only the two cases below turn it back on;
+- `>` goto bottom turns it on — `goToExtrasPanelBottom` is the one scroll handler that assigns `true` (`extras_panel.go:88-89`);
 - losing focus turns it on (`command_log_controller.go:29-33`);
 - while the flag is off, the viewport holds still — until the next `logAction`/`logCommand`, per the first bullet.
 
