@@ -7,12 +7,14 @@ import { RootView } from "../ui/root-view"
 import { BackgroundRefresher, DEFAULT_EXTERNAL_CHANGE_INTERVAL_MS, DEFAULT_FETCH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from "./background"
 import { RefsWatcher } from "./refs-watcher"
 import { loadRefsSnapshot } from "../git/refs-snapshot"
+import { absolutePath, resolveEditCommand } from "../git/editor"
 
 export type CreateAppOptions = {
   readonly repositoryRoot: string
   readonly runner: GitRunner
   readonly renderer?: CliRenderer
   readonly onQuit?: () => void
+  readonly onEditFile?: (path: string, line?: number) => Promise<void>
   /**
    * lazygit's background routines: `git fetch` every 60s and a working-tree refresh every 10s
    * (pkg/gui/background.go). Off by default here because the tests and one-shot embeddings that
@@ -91,12 +93,51 @@ export function createApp(options: CreateAppOptions): App {
   const saveUiState = async (): Promise<void> => {
     if (latestGeometry !== undefined) await uiStateStore.save(latestGeometry)
   }
+  let view!: RootView
+  let refsWatcher!: RefsWatcher
+  const editFile = options.onEditFile ?? (async (path: string, line?: number): Promise<void> => {
+    const abs = absolutePath(options.repositoryRoot, path)
+    const { cmd, suspend } = await resolveEditCommand([abs], { ...(line === undefined ? {} : { line }), runner: options.runner, cwd: options.repositoryRoot })
+    const shouldSuspend = suspend && renderer !== undefined
+    if (shouldSuspend) {
+      try {
+        const maybeSuspend = renderer as unknown as { suspend?: () => void }
+        maybeSuspend.suspend?.()
+      } catch {}
+    }
+    try {
+      const proc = Bun.spawn(["sh", "-c", cmd], {
+        cwd: options.repositoryRoot,
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+        env: process.env as Record<string, string>,
+      })
+      await proc.exited
+      if (proc.exitCode !== 0 && proc.exitCode !== null) {
+        throw new Error(`editor exited with code ${proc.exitCode}`)
+      }
+    } finally {
+      if (shouldSuspend) {
+        try {
+          const maybeResume = renderer as unknown as { resume?: () => void }
+          maybeResume.resume?.()
+        } catch {}
+        try {
+          renderer.requestRender()
+        } catch {}
+      }
+    }
+    await controller.refresh()
+    view.update(controller.state)
+    await refsWatcher.resync()
+  })
   /**
    * Notices refs moving underneath the app. Declared ahead of the view because the view's
    * `onMutationSettled` re-seeds it; created unconditionally (it is inert until polled) so that
    * hook needs no branch.
    */
-  const refsWatcher = new RefsWatcher({
+  refsWatcher = new RefsWatcher({
     snapshot: () => loadRefsSnapshot(options.runner),
     onExternalChange: async () => {
       await controller.refresh()
@@ -105,7 +146,6 @@ export function createApp(options: CreateAppOptions): App {
     isBusy: () => view.isMutating,
   })
 
-  let view: RootView
   view = new RootView(renderer, controller.state, {
     onStageFile: async (path) => {
       try { await controller.stageFile(path) } finally { view.update(controller.state) }
@@ -222,6 +262,7 @@ export function createApp(options: CreateAppOptions): App {
       }
     },
     onFilterBranches: async () => undefined,
+    onEditFile: editFile,
     onQuit: () => options.onQuit?.(),
     onGeometryChange: (state) => { latestGeometry = state },
     // Whatever githunk just did to the repository is now the baseline, so the poller does not

@@ -7,7 +7,7 @@ import {
 } from "@opentui/core"
 import type { AppModel } from "../app/model"
 import type { CommitDetails } from "../domain/commit"
-import type { TagSummary } from "../domain/tag"
+import type { TagSummary, TagPreview } from "../domain/tag"
 import type { ReflogEntry } from "../domain/reflog"
 import {
   DEFAULT_LOG_HEIGHT,
@@ -123,7 +123,7 @@ export type RootViewOptions = {
   readonly onSelectFile?: (path: string) => void
   readonly loadCommitInspection?: (oid: string) => Promise<CommitDetails>
   readonly loadCommitFileInspection?: (oid: string, path: string) => Promise<DiffDocument>
-  readonly loadTagInspection?: (tag: TagSummary) => Promise<import("../domain/tag").TagPreview>
+  readonly loadTagInspection?: (tag: TagSummary) => Promise<TagPreview>
   readonly loadRefLogInspection?: (target: RefLogTarget) => Promise<string>
   readonly onPreviewError?: (error: unknown) => void
   readonly onMarkFocusedFileReviewed?: (path?: string) => Promise<void>
@@ -150,6 +150,7 @@ export type RootViewOptions = {
   readonly onInspectBranch?: (branch: string) => Promise<void>
   readonly onCheckoutRemoteTracking?: (selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>
   readonly onFilterBranches?: () => Promise<void>
+  readonly onEditFile?: (path: string, line?: number) => Promise<void>
   readonly onQuit?: () => void
 }
 
@@ -211,7 +212,7 @@ export class RootView {
   private readonly onSelectFile: ((path: string) => void) | undefined
   private readonly loadCommitInspection: ((oid: string) => Promise<CommitDetails>) | undefined
   private readonly loadCommitFileInspection: ((oid: string, path: string) => Promise<DiffDocument>) | undefined
-  private readonly loadTagInspection: ((tag: TagSummary) => Promise<import("../domain/tag").TagPreview>) | undefined
+  private readonly loadTagInspection: ((tag: TagSummary) => Promise<TagPreview>) | undefined
   private readonly loadRefLogInspection: ((target: RefLogTarget) => Promise<string>) | undefined
   /**
    * List row id → the operation currently running against it, lazygit's
@@ -252,6 +253,7 @@ export class RootView {
   private readonly onInspectBranch: ((branch: string) => Promise<void>) | undefined
   private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>) | undefined
   private readonly onFilterBranches: (() => Promise<void>) | undefined
+  private readonly onEditFile: ((path: string, line?: number) => Promise<void>) | undefined
   private copyMenuOpen = false
   private menuOpen = false
   private upstreamCursorIndex = 0
@@ -334,6 +336,7 @@ export class RootView {
     this.onBrowseRemote = options.onBrowseRemote
     this.onCheckoutRemoteTracking = options.onCheckoutRemoteTracking
     this.onFilterBranches = options.onFilterBranches
+    this.onEditFile = options.onEditFile
     this.loadCommitInspection = options.loadCommitInspection
     this.loadCommitFileInspection = options.loadCommitFileInspection
     this.loadTagInspection = options.loadTagInspection
@@ -747,6 +750,8 @@ export class RootView {
     } else {
       kind = undefined
     }
+    const selectedFileRow = this.selectedFileRow()
+    const mainDocument = getMainDocument(this.panes.main)
     return {
       focus: this.focusManager.active,
       currentSideWindow: this.focusManager.lastSide,
@@ -757,6 +762,9 @@ export class RootView {
       commitsTab: this.commitsPanel.activeTab,
       filesTab: this.filesPanel.activeTab,
       hasSelectedStash: this.stashState?.selectedId !== undefined && (this.model.stashes ?? []).some((s) => s.oid === this.stashState.selectedId),
+      hasSelectedFile: selectedFileRow?.kind === "file",
+      hasMainDocument: mainDocument !== undefined && mainDocument.files.length > 0,
+      hasSelectedCommitFile: this.commitsPanel.child !== undefined && this.commitsPanel.child.view.selectedId !== undefined,
     }
   }
 
@@ -933,6 +941,7 @@ export class RootView {
       case "discard-file": this.actionDiscardFile(); return
       case "stage-all": this.actionStageAll(); return
       case "mark-reviewed": this.actionMarkReviewed(); return
+      case "edit-file": void this.actionEditFile(); return
       case "inspect": this.actionInspect(); return
       case "stage-selection": this.actionStageSelection(); return
       case "discard-selection": this.actionDiscardSelection(); return
@@ -1450,6 +1459,138 @@ export class RootView {
       ? focusedPath
       : file?.path
     this.runUiMutation(() => this.onMarkFocusedFileReviewed!(reviewPath))
+  }
+  /**
+   * Opens the selected file in an external editor, mirroring lazygit's
+   * `Universal.Edit` (`e`) binding across Files, Staging and Commit Files
+   * (pkg/gui/controllers/files_controller.go:91, staging_controller.go:63,
+   * commits_files_controller.go:77, etc.). The Files pane edits the
+   * selected file, the Main pane edits the file at the hunk cursor (with
+   * `+line` when available), and the Commits drill-down edits the selected
+   * commit file. Directories are rejected explicitly, matching lazygit's
+   * `canEditFiles` guard.
+   */
+  private async actionEditFile(): Promise<void> {
+    if (this.mutationInFlight) return
+    if (this.onEditFile === undefined) {
+      const focus = this.focusManager.active
+      const box = focus === "files" ? this.panes.files.box : focus === "main" ? this.panes.main.box : focus === "commits" ? this.panes.commits.box : this.panes.main.box
+      box.bottomTitle = "Edit not available in this context"
+      return
+    }
+    const focus = this.focusManager.active
+    if (focus === "files") {
+      if (this.filesPanel.activeTab !== "files") {
+        this.panes.files.box.bottomTitle = "Edit is available in the Files tab"
+        return
+      }
+      const row = this.selectedFileRow()
+      if (row === undefined) {
+        this.panes.files.box.bottomTitle = "No file selected"
+        return
+      }
+      if (row.kind === "directory") {
+        this.panes.files.box.bottomTitle = "Cannot edit a directory; select a file"
+        return
+      }
+      const path = row.path
+      this.mutationInFlight = true
+      this.clearDiscardState()
+      this.panes.files.box.bottomTitle = `Opening ${path}…`
+      try {
+        await this.onEditFile(path)
+        this.panes.files.box.bottomTitle = undefined
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.panes.files.box.bottomTitle = message
+      } finally {
+        this.mutationInFlight = false
+        this.onMutationSettled?.()
+        this.root.requestRender()
+      }
+      return
+    }
+    if (focus === "main") {
+      const document = getMainDocument(this.panes.main)
+      if (document === undefined || document.files.length === 0) {
+        this.panes.main.box.bottomTitle = "No file in main view"
+        return
+      }
+      const target = getMainCursorTarget(this.panes.main)
+      let filePath: string | undefined
+      let line: number | undefined
+      if (target !== undefined) {
+        const file = document.files[target.fileIndex]
+        if (file !== undefined) {
+          filePath = file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
+          if (filePath !== undefined && target.hunkIndex !== undefined) {
+            const hunk = file.hunks[target.hunkIndex]
+            if (hunk !== undefined) line = hunk.newStart
+          }
+        }
+      }
+      if (filePath === undefined || filePath === "/dev/null") {
+        const fallbackRow = this.selectedFileRow()
+        if (fallbackRow?.kind === "file") filePath = fallbackRow.path
+        else filePath = document.files[0]?.newPath ?? document.files[0]?.oldPath
+      }
+      if (line === undefined && filePath !== undefined) {
+        const fileForLine = document.files.find((candidate) => (candidate.newPath ?? candidate.oldPath) === filePath) ?? document.files[0]
+        const firstHunk = fileForLine?.hunks[0]
+        if (firstHunk !== undefined) line = firstHunk.newStart
+      }
+      if (filePath === undefined || filePath === "/dev/null" || filePath.length === 0) {
+        this.panes.main.box.bottomTitle = "No file to edit"
+        return
+      }
+      this.mutationInFlight = true
+      this.clearDiscardState()
+      this.panes.main.box.bottomTitle = `Opening ${filePath}${line !== undefined ? `:${line}` : ""}…`
+      try {
+        await this.onEditFile(filePath, line)
+        this.panes.main.box.bottomTitle = undefined
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.panes.main.box.bottomTitle = message
+      } finally {
+        this.mutationInFlight = false
+        this.onMutationSettled?.()
+        this.root.requestRender()
+      }
+      return
+    }
+    if (focus === "commits") {
+      if (this.commitsPanel.child === undefined) {
+        this.panes.commits.box.bottomTitle = "Edit is available in commit files view (press Enter on a commit)"
+        return
+      }
+      const selectedId = this.commitsPanel.child.view.selectedId
+      if (selectedId === undefined) {
+        this.panes.commits.box.bottomTitle = "No file selected"
+        return
+      }
+      const filePath = selectedId.split("\u0000")[0]
+      if (filePath === undefined || filePath.length === 0 || filePath === "/dev/null") {
+        this.panes.commits.box.bottomTitle = "Cannot edit this entry"
+        return
+      }
+      this.mutationInFlight = true
+      this.clearDiscardState()
+      this.panes.commits.box.bottomTitle = `Opening ${filePath}…`
+      try {
+        await this.onEditFile(filePath)
+        this.panes.commits.box.bottomTitle = undefined
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.panes.commits.box.bottomTitle = message
+      } finally {
+        this.mutationInFlight = false
+        this.onMutationSettled?.()
+        this.root.requestRender()
+      }
+      return
+    }
+    this.panes.main.box.bottomTitle = "Edit not available in this panel"
   }
   private actionStageSelection(): void {
     if (this.mutationInFlight) return

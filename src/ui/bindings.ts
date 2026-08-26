@@ -15,7 +15,7 @@ export const ACTIONS = [
   // review targets
   "mode-branch", "mode-working-tree", "mark-reviewed",
   // working tree
-  "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection",
+  "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection", "edit-file",
   // file tree
   "toggle-file-tree", "collapse-files", "expand-files",
   // commits
@@ -49,6 +49,12 @@ export type UiState = {
   readonly filesTab?: "files" | "worktrees" | "submodules"
   /** Whether the stash pane currently has an entry selected. */
   readonly hasSelectedStash: boolean
+  /** Whether the Files pane has a file row selected (as opposed to a directory or empty). */
+  readonly hasSelectedFile?: boolean
+  /** Whether the main pane is showing a diff document that can be edited. */
+  readonly hasMainDocument?: boolean
+  /** Whether the Commits pane is drilled into commit files with a file selected. */
+  readonly hasSelectedCommitFile?: boolean
 }
 
 export type Binding = {
@@ -335,6 +341,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["h"], action: "hunk-previous", description: "previous hunk", contexts: ["main"] },
   { keys: ["space"], action: "stage-selection", description: "stage", contexts: ["main"], displayOnScreen: true, available: lineActions, menuDescription: "stage the selected lines" },
   { keys: ["d"], action: "discard-selection", description: "discard", contexts: ["main"], displayOnScreen: true, available: (model, ui) => lineActions(model, ui) && ui.mainScope !== "staged", menuDescription: "discard the selected lines" },
+  { keys: ["e"], action: "edit-file", description: "edit", contexts: ["main"], displayOnScreen: true, available: (_model, ui) => ui.hasMainDocument === true, menuDescription: "open the file in an external editor, at the selected hunk" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["main"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["main"] },
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["main"], available: inCommit },
@@ -343,6 +350,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["space"], action: "stage-file", description: "stage", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "stage or unstage the selected file or directory" },
   { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "discard the file's (or directory's) changes" },
   { keys: ["a"], action: "stage-all", description: "all", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "stage or unstage every file" },
+  { keys: ["e"], action: "edit-file", description: "edit", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "open the file in an external editor" },
   { keys: ["r"], action: "mark-reviewed", description: "reviewed", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "mark the file reviewed" },
   { keys: ["enter"], action: "inspect", description: "open", contexts: ["files"], displayOnScreen: true, menuDescription: "open the file in the main pane, or collapse a directory" },
   // pkg/config/user_config.go:1100-1106 — ToggleTreeView, CollapseAll, ExpandAll.
@@ -368,6 +376,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["branches"] },
 
   // ---- commits pane ----
+  { keys: ["e"], action: "edit-file", description: "edit", contexts: ["commits"], displayOnScreen: true, available: (_model, ui) => ui.hasSelectedCommitFile === true, menuDescription: "open the file in an external editor" },
   { keys: ["enter"], action: "commit-drilldown", description: "inspect", contexts: ["commits"], displayOnScreen: true, available: onCommitsTab, menuDescription: "inspect this commit on its own" },
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["commits"], displayOnScreen: true, available: inCommit },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["commits"] },
