@@ -8,13 +8,13 @@
  * changing the compare base) run no command, and lazygit labels nothing that runs no command.
  */
 export const LOG_ACTIONS = {
-  /** files_controller.go:544, called from toggleStaged (:509-565); english.go:2172 */
+  /** files_controller.go:544, called from toggleStaged (:509-565); english.go:2175 */
   stageFile: "Stage file",
-  /** files_controller.go:559, called from toggleStaged (:509-565); english.go:2174 */
+  /** files_controller.go:559, called from toggleStaged (:509-565); english.go:2177 */
   unstageFile: "Unstage file",
-  /** files_controller.go:921-960 -> toggleStaged(:544); english.go:2176 */
+  /** files_controller.go:921-960 -> toggleStaged(:544); english.go:2179 */
   stageAllFiles: "Stage all files",
-  /** files_controller.go:921-960 -> toggleStaged(:559); english.go:2175 */
+  /** files_controller.go:921-960 -> toggleStaged(:559); english.go:2178 */
   unstageAllFiles: "Unstage all files",
   /**
    * files_controller.go:1770; english.go:2174. githunk's `discardFile` runs `git restore --
