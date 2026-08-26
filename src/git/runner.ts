@@ -19,6 +19,14 @@ export type GitRunOptions = {
    */
   readonly optionalLocks?: boolean
   readonly acceptedExitCodes?: readonly number[]
+  /**
+   * Keeps the command out of the Command Log pane. lazygit's `DontLog()`
+   * (pkg/commands/oscommands/cmd_obj.go:118-128), which it sets on the plumbing behind a rendered
+   * value — the `rev-parse`/`rev-list` reachability queries that colour commit hashes, for one —
+   * so a 10s background refresh cannot bury the commands the user actually ran. The record is
+   * still returned to the caller and still raises `GitCommandError`.
+   */
+  readonly dontLog?: boolean
 }
 
 export type GitResult = {
@@ -126,7 +134,7 @@ export class GitRunner {
       stdout,
       stderr,
     }
-    this.log.append(record)
+    if (options.dontLog !== true) this.log.append(record)
 
     const acceptedExitCodes = options.acceptedExitCodes ?? [0]
     if (!acceptedExitCodes.includes(exitCode)) {

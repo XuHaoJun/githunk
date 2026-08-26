@@ -1,11 +1,17 @@
 import type { CliRenderer, StyledText } from "@opentui/core"
 import type { AppModel } from "../../app/model"
-import type { CommitSummary } from "../../domain/commit"
+import type { CommitStatus, CommitSummary } from "../../domain/commit"
 import { createPane, type PaneHandle } from "./common"
 import { commitGraphRows } from "../commit-graph"
 import { AUTHOR_COLUMN_WIDTH, authorColor, authorInitials } from "../author-style"
 import { createListState, renderListRows, selectListRow, type ListState, type ListRow } from "../list-view"
 import { COMMITS_JUMP_KEY, COMMITS_TABS } from "./reflog-pane"
+import {
+  COMMIT_HASH_DEFAULT_FG,
+  COMMIT_HASH_MERGED_FG,
+  COMMIT_HASH_PUSHED_FG,
+  COMMIT_HASH_UNPUSHED_FG,
+} from "../theme"
 
 const paneStates = new WeakMap<PaneHandle, ListState>()
 
@@ -34,6 +40,26 @@ export function formatRelativeTime(authoredAt: string, now: Date): string {
 }
 
 /**
+ * lazygit's `getHashColor` switch on `models.CommitStatus`
+ * (pkg/gui/presentation/commits.go:485-501). The hash is the panel's only signal for how far a
+ * commit has travelled, so a fixed colour would lose it: red is local-only, yellow is pushed but
+ * not yet on a main branch, green is merged. The diffed-commit and cherry-picked overrides
+ * (commits.go:503-511) need panels githunk does not have yet.
+ */
+function commitHashColor(status: CommitStatus | undefined) {
+  switch (status) {
+    case "unpushed":
+      return COMMIT_HASH_UNPUSHED_FG
+    case "pushed":
+      return COMMIT_HASH_PUSHED_FG
+    case "merged":
+      return COMMIT_HASH_MERGED_FG
+    default:
+      return COMMIT_HASH_DEFAULT_FG
+  }
+}
+
+/**
  * Lazygit column order (`pkg/gui/presentation/commits.go:displayCommit`):
  * hash → author initials → graph → subject, with the relative time trailing.
  * The graph's pipe colour is the author colour, exactly as lazygit's
@@ -49,7 +75,7 @@ export function buildCommitRows(commits: readonly CommitSummary[], now: Date): L
     return {
       id: commit.oid,
       columns: [
-        { text: shortHash, priority: 1, style: "yellow" },
+        { text: shortHash, priority: 1, color: commitHashColor(commit.status) },
         { text: initials, priority: 3, color: authorColor(commit.authorName) },
         { text: graph?.text ?? "", priority: 0, segments: graph?.segments ?? [] },
         { text: commit.subject, priority: 2, flex: true },

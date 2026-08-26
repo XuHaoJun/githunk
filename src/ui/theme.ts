@@ -89,6 +89,17 @@ export const TITLE_PREFIX_FRAME_RUNE = "─"
 /** lazygit's `style.FgBlue` reflog hash. */
 export const REFLOG_HASH_FG = ANSI_BLUE
 
+/**
+ * lazygit's commit-hash colours, keyed by `models.CommitStatus` in `getHashColor`
+ * (pkg/gui/presentation/commits.go:477-512): unpushed red, pushed yellow, merged green. A commit
+ * whose status githunk did not compute falls back to `theme.DefaultTextColor`, i.e. the terminal's
+ * default foreground (pkg/theme/theme.go:11).
+ */
+export const COMMIT_HASH_UNPUSHED_FG = ANSI_RED
+export const COMMIT_HASH_PUSHED_FG = ANSI_YELLOW
+export const COMMIT_HASH_MERGED_FG = ANSI_GREEN
+export const COMMIT_HASH_DEFAULT_FG = DEFAULT_FOREGROUND
+
 /** lazygit's branch recency and status colors. */
 export const BRANCH_RECENCY_FG = ANSI_CYAN
 export const BRANCH_RECENCY_CURRENT_FG = ANSI_GREEN

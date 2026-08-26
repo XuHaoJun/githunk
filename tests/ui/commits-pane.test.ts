@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { renderCommitRows } from "../../src/ui/panes/commits-pane"
 import type { CommitSummary } from "../../src/domain/commit"
+import {
+  COMMIT_HASH_DEFAULT_FG,
+  COMMIT_HASH_MERGED_FG,
+  COMMIT_HASH_PUSHED_FG,
+  COMMIT_HASH_UNPUSHED_FG,
+} from "../../src/ui/theme"
 
 const now = new Date("2026-08-25T00:00:00Z")
 
@@ -83,5 +89,26 @@ describe("commits pane rows", () => {
     expect(narrow.plainText).not.toContain("▸")
     // Subject words still partially visible (first commit subject starts with "First")
     expect(narrow.plainText).toContain("First")
+  })
+
+  /**
+   * lazygit's `getHashColor` (pkg/gui/presentation/commits.go:485-501). A fixed hash colour would
+   * throw away the panel's only signal for how far a commit has travelled.
+   */
+  test("colours the hash by commit status", () => {
+    const statuses = [
+      mkCommit({ oid: "aaa1234567890", subject: "local", status: "unpushed" }),
+      mkCommit({ oid: "bbb1234567890", subject: "on the remote", status: "pushed" }),
+      mkCommit({ oid: "ccc1234567890", subject: "on main", status: "merged" }),
+      mkCommit({ oid: "ddd1234567890", subject: "unknown" }),
+    ]
+    const result = renderCommitRows(statuses, { focused: false, width: 80, now })
+    const hashChunks = result.content.chunks.filter((chunk) => chunk.text.length === 8 && /^[a-f0-9]{8}$/.test(chunk.text))
+    expect(hashChunks.map((chunk) => chunk.fg)).toEqual([
+      COMMIT_HASH_UNPUSHED_FG,
+      COMMIT_HASH_PUSHED_FG,
+      COMMIT_HASH_MERGED_FG,
+      COMMIT_HASH_DEFAULT_FG,
+    ])
   })
 })
