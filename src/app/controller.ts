@@ -949,12 +949,18 @@ export class AppController {
 
   async toggleAllFiles(): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
-    // files_controller.go:555-557 returns NothingToStageForSubmodule before the LogAction at :559
-    // when there is nothing left to stage or unstage — a clean tree must not write an action line
-    // for a loop that iterates zero files.
-    if (this.currentState.files.length === 0) return
     await this.mutationQueue.run(async () => {
+      // files_controller.go:555-557 returns NothingToStageForSubmodule before the LogAction at
+      // :559 when there is nothing left to stage or unstage — a clean tree must not write an
+      // action line for a loop that iterates zero files. Checked here, inside the queued
+      // callback, against the `files` this callback actually uses: `MutationQueue.run` chains
+      // rather than rejects, so a working-tree background refresh (same queue) can still be in
+      // flight when the guard runs. Checking `this.currentState.files` before enqueueing reads a
+      // value that may go stale by the time this callback executes — e.g. the refresh empties
+      // `files` while this callback is queued behind it, and a check made before enqueueing would
+      // have already passed on the old, non-empty snapshot.
       const files = this.currentState.files
+      if (files.length === 0) return
       const shouldStage = files.some((file) => file.untracked || file.worktreeStatus !== ".")
       this.logAction(shouldStage ? LOG_ACTIONS.stageAllFiles : LOG_ACTIONS.unstageAllFiles)
       try {

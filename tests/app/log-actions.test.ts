@@ -268,6 +268,59 @@ describe("action labels", () => {
   })
 
   /**
+   * Carried fix from task 12's review of task 11: `toggleAllFiles` used to check
+   * `this.currentState.files.length === 0` *before* enqueueing onto `mutationQueue`
+   * (controller.ts, pre-fix), but read `this.currentState.files` again *inside* the queued
+   * callback. `MutationQueue.run` chains rather than rejects, and the 10-second working-tree
+   * background refresh (`refreshFiles`, controller.ts:474-478) shares the same queue — so a
+   * refresh in flight when the user presses `a` could pass the outer guard on a stale non-empty
+   * `files`, queue behind the refresh, have the refresh empty `files`, and then have the re-read
+   * inside the callback see `[]`: `shouldStage` is false on an empty array, so it logged "Unstage
+   * all files" for a zero-iteration loop — exactly what the guard exists to prevent
+   * (files_controller.go:555-557 / :559).
+   *
+   * This constructs that race deterministically: `refreshFiles()` is left in flight on a gated
+   * loader (so `currentState.files` is provably still non-empty when `toggleAllFiles()` is
+   * called), and only then released to complete with an empty snapshot before `toggleAllFiles`'s
+   * queued callback runs.
+   */
+  test("toggleAllFiles re-reads files after a same-queue refresh empties the tree, not before it", async () => {
+    const log = new CommandLog()
+    let releaseGate: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { releaseGate = resolve })
+    let loadCount = 0
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      runner: new GitRunner({ cwd: "/tmp/repo", log }),
+      load: async () => {
+        loadCount += 1
+        if (loadCount === 1) return snapshot([unstagedFile])
+        // The second load (refreshFiles' background refresh) pauses here until the test releases
+        // it, so `toggleAllFiles()` below is provably called while `currentState.files` is still
+        // the first load's non-empty snapshot.
+        await gate
+        return snapshot([])
+      },
+      loadBranch: async (baseRef) => branchSnapshot(baseRef),
+      inferBase: async () => ({ kind: "confident" as const, ref: "origin/main", oid: "base-oid", reason: "test" }),
+      mutations: stubMutations(),
+      commitMutations: { commit: async () => {}, amend: async () => {}, currentMessage: async () => "" } as never,
+    })
+    await controller.refresh()
+    expect(controller.state.files).toEqual([unstagedFile])
+
+    const refreshPromise = controller.refreshFiles()
+    // refreshFiles is awaiting `gate` inside the queue; currentState.files is still [unstagedFile].
+    const togglePromise = controller.toggleAllFiles()
+    releaseGate!()
+    await refreshPromise
+    await togglePromise
+
+    expect(controller.state.files).toEqual([])
+    expect(actions(log)).toEqual([])
+  })
+
+  /**
    * The remaining labelled methods reach real git directly (`requireRunnerOperation`), unlike
    * `stageFile` etc. above, which route through the injectable `GitMutations`/`CommitMutations`
    * seams. Against this harness's non-repository `/tmp/repo` the git command itself fails, but —
