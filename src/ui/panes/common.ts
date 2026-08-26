@@ -108,9 +108,17 @@ export function attachVerticalScrollbar(box: BoxRenderable, text: TextRenderable
     },
   })
   // Yoga lays out asynchronously: reading text.height straight after constructing or
-  // resizing is unreliable, but the size-change hooks fire once real dimensions exist.
-  // Content growth (which changes scrollHeight without resizing anything) is synced by
-  // the pane's update path instead.
+  // resizing is unreliable. Only `box.onSizeChange` is a reliable hook for "real dimensions
+  // exist now" — `BoxRenderable` doesn't override `Renderable.onResize`
+  // (node_modules/@opentui/core/chunk-node-ks0581vk.js:2488-2743 has no override in that
+  // range), so it inherits the base implementation that fires `onSizeChange`
+  // (chunk-node-ks0581vk.js:967-969). `text.onSizeChange` looks like the more direct hook but
+  // is dead: `TextBufferRenderable.onResize` (chunk-node-ks0581vk.js:3001-3007) overrides
+  // `onResize` without calling `super.onResize()`, so it never reaches the base method that
+  // fires `onSizeChange`. Wiring `sync` to both costs nothing here (it just never runs via the
+  // text side), and it stays as documentation-by-code that `box.onSizeChange` is the one doing
+  // the work. Content growth (which changes scrollHeight without resizing anything) is synced
+  // by the pane's update path instead.
   const sync = (): void => syncVerticalScrollbar(bar, text)
   box.onSizeChange = sync
   text.onSizeChange = sync

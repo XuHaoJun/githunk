@@ -71,6 +71,27 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
   let rendered: { readonly count: number; readonly newest: CommandLogLine | undefined } | undefined
   // `gui.Views.Extras.Autoscroll = true` at startup (pkg/gui/views.go:149).
   let autoscroll = true
+  // Closes the shrinking-direction gap left by resize()'s immediate pin (see the comment
+  // there): compose onto attachVerticalScrollbar's box.onSizeChange (it fires reliably on a
+  // real resize — chunk-node-ks0581vk.js:967-969,2488-2743 — unlike text.onSizeChange, which
+  // never fires at all, chunk-node-ks0581vk.js:3001-3007) a `queueMicrotask` that re-pins once
+  // the frame's Yoga traversal has actually finished. Both matter: box.onSizeChange itself
+  // fires *before* text's own `_heightValue` refreshes, because a parent's updateFromLayout()
+  // (and the resize hooks it fires) runs before it recurses into children's
+  // (chunk-node-ks0581vk.js:1120 vs. 1156-1158) — so reading text.height synchronously inside
+  // this handler would be exactly as stale as reading it synchronously inside resize(). Only
+  // deferring past the *end* of that synchronous traversal, via a microtask, reaches a point
+  // where text.height is fresh.
+  const originalBoxOnSizeChange = box.onSizeChange
+  box.onSizeChange = () => {
+    originalBoxOnSizeChange?.()
+    if (!autoscroll) return
+    queueMicrotask(() => {
+      if (!autoscroll) return
+      text.scrollY = text.maxScrollY
+      syncVerticalScrollbar(bar, text)
+    })
+  }
   const pane: CommandLogPaneHandle = {
     id: "command-log",
     box,
@@ -79,13 +100,23 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
       const contentHeight = Math.max(1, Math.floor(height) - 2)
       text.width = Math.max(1, Math.floor(width) - 2)
       text.height = contentHeight
-      // `text.maxScrollY` divides by `text.height`'s *getter*, which OpenTUI only refreshes from
-      // Yoga once per render pass (chunk-node-ks0581vk.js:909-921's `updateFromLayout`) — so right
-      // after the assignment above it would still read the pane's height from before this resize.
-      // That was invisible before Task 9, when a focus change never resized the log at all; now
-      // that a focused log can grow to `logCapacity` (getExtrasWindowSize's baseSize 1000 branch),
-      // pinning through the stale getter re-armed the *old*, smaller viewport's bottom instead of
-      // the new one. Compute the target from the content height just set instead.
+      // `text.maxScrollY` subtracts `text.height`'s *getter* from scrollHeight, and that getter
+      // only refreshes from Yoga once per render pass (chunk-node-ks0581vk.js:901-921's
+      // `updateFromLayout`, gated by `_lastLayoutFrame`) — so right after the assignment above it
+      // would still read the pane's height from before this resize. That was invisible before
+      // Task 9, when a focus change never resized the log at all; now that a focused log can grow
+      // to `logCapacity` (getExtrasWindowSize's baseSize 1000 branch), pinning through the stale
+      // getter re-armed the *old*, smaller viewport's bottom instead of the new one. Compute the
+      // target from the content height just set instead.
+      //
+      // That fixes growing exactly: the `scrollY` setter (chunk-node-ks0581vk.js:2847-2853) also
+      // clamps against the same stale getter, i.e. `min(target, scrollHeight - H_old)`, and for
+      // growing (`H_new > H_old`) the correct target `scrollHeight - H_new` is always ≤ that
+      // stale bound, so it passes through unclamped. Shrinking (`H_new < H_old`) is the opposite:
+      // the correct target *exceeds* the stale bound, so the setter clamps the pin short by
+      // `H_old - H_new` rows. The `box.onSizeChange` handler wired above closes that gap once
+      // `text.height` is actually fresh, by re-running this same assignment through
+      // `text.maxScrollY` instead of a locally computed target.
       if (autoscroll) text.scrollY = Math.max(0, text.scrollHeight - contentHeight)
       syncVerticalScrollbar(bar, text)
     },

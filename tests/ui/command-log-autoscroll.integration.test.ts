@@ -306,4 +306,53 @@ describe("command log autoscroll", () => {
     expect(view.commandLogAutoscroll).toBe(true)
     expect(view.paneScrollY("command-log")).toBe(view.commandLogMaxScrollY())
   })
+
+  /**
+   * Task 9 review, finding 1: `resize()`'s autoscroll pin is exact when the log *grows* (a
+   * focus gain), because the `scrollY` setter's own clamp uses the same stale `text.height`
+   * getter as the pin's target computation, and for growing the correct target is always ≤
+   * that stale bound. Shrinking (a focus loss) is the opposite — the correct target *exceeds*
+   * the stale bound, so the setter's clamp caps the pin short by `H_old - H_new` rows —
+   * findable only by inspecting scrollY immediately after the shrink, before any later content
+   * update's own (unclamped-by-the-bug) `text.scrollY = text.maxScrollY` assignment in
+   * `update()` gets a chance to paper over it once the getter has caught up on its own. This is
+   * that isolated check: it builds content first (so pull()'s own focus-changing "3" press
+   * isn't the transition under test), then focuses the log (a grow, already exact pre-fix) and
+   * defocuses it with nothing after but the defocus keypress itself.
+   */
+  test("losing focus shrinks the log and the autoscroll pin lands exactly at the new bottom", async () => {
+    harness = await harnessWithUpstream(20)
+    await harness.pressKey("@")
+    await harness.pressKey("t")
+    await harness.flush()
+    // Six pulls' worth of log lines: comfortably more than the largest content height this
+    // scenario ever shows (8 rows, focused, at this 20-row terminal — see below), so scrollY
+    // has real room to be wrong in.
+    for (let i = 0; i < 6; i += 1) await pull(harness)
+    const view = harness.app.view!
+
+    // Focus the log: getExtrasWindowSize's baseSize-1000 branch fills it to logCapacity (10
+    // total / 8 content rows at height 20 — bodyHeight=19, logCapacity=19-1-8=10). Growing is
+    // exact even pre-fix, so this step is not itself what the test is proving.
+    await harness.pressKey("@")
+    await harness.pressKey("f")
+    expect(view.focusManager.active).toBe("command-log")
+    expect(view.commandLogAutoscroll).toBe(true)
+
+    // Defocus with nothing else after it. Height 20 is under MIN_HEIGHT_FOR_FULL_LOG (40), so
+    // an unfocused-but-shown log takes the short-terminal branch regardless of the configured
+    // size: MIN_LOG_HEIGHT=3 total / 1 content row — a 7-row shrink (8 -> 1), chosen to be
+    // unmistakable rather than an off-by-one. Losing focus re-arms autoscroll (root-view.ts's
+    // "focus-lost" wiring, pkg/gui/controllers/command_log_controller.go:29-33), so resize()'s
+    // pin actually runs on this transition.
+    await harness.pressKey("3")
+
+    // commandLogMaxScrollY() is read after flush() (inside pressKey) has let frames elapse, so
+    // it reflects the genuinely fresh post-shrink height. Pre-fix, the setter's clamp used
+    // `text.height` from before this resize (8, not 1), capping the pin 7 rows short of this
+    // value; the fix's `box.onSizeChange` + `queueMicrotask` correction closes that gap.
+    expect(view.focusManager.active).not.toBe("command-log")
+    expect(view.commandLogAutoscroll).toBe(true)
+    expect(view.paneScrollY("command-log")).toBe(view.commandLogMaxScrollY())
+  })
 })
