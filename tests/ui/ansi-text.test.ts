@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { TextRenderable } from "@opentui/core"
+import { TextRenderable, type CapturedFrame } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { parseAnsi } from "../../src/ui/ansi"
 import { installAnsiText, releaseAnsiText } from "../../src/ui/panes/ansi-text"
-import { installDiffText } from "../../src/ui/panes/diff-text"
+import { installDiffText, releaseDiffText } from "../../src/ui/panes/diff-text"
 import { parseDiff } from "../../src/domain/diff/parse"
 import { renderDiff } from "../../src/domain/diff/render"
 
@@ -26,12 +26,13 @@ function logText(commits: number): string {
 async function pane(width = 120, height = 40): Promise<{
   readonly text: TextRenderable
   flush(): Promise<void>
+  captureSpans(): CapturedFrame
   destroy(): void
 }> {
   const setup = await createTestRenderer({ width, height })
   const text = new TextRenderable(setup.renderer, { id: "main-text", content: "", width: width - 2, height: height - 2, selectable: true })
   setup.renderer.root.add(text)
-  return { text, flush: () => setup.flush(), destroy: () => setup.renderer.destroy() }
+  return { text, flush: () => setup.flush(), captureSpans: () => setup.captureSpans(), destroy: () => setup.renderer.destroy() }
 }
 
 describe("installAnsiText", () => {
@@ -125,6 +126,59 @@ describe("installAnsiText", () => {
       installAnsiText(host.text, { preamble: "", body: parsed.text, spans: parsed.spans })
       await host.flush()
       expect(host.text.plainText).toContain("* commit 0000000")
+    } finally {
+      host.destroy()
+    }
+  })
+})
+
+/**
+ * `main-pane.ts:276-277` releases the *other* painter immediately before every `installAnsiText`,
+ * and `MainPreviewGate` does not dedupe identical content, so any refresh that re-resolves the same
+ * preview runs that pair again. Both painters write through the same underlying `textBuffer`, so a
+ * release that still cleared highlights after it had already been released would wipe the colours
+ * the live painter had installed — and the live painter's own no-op re-install has nothing to
+ * repaint. A release is therefore idempotent, which is what these tests pin.
+ */
+describe("releasing a painter twice", () => {
+  const commitLine = (frame: CapturedFrame): { readonly text: string; readonly intent: string; readonly slot: number } => {
+    const span = frame.lines[0]!.spans[0]!
+    return { text: span.text.trimEnd(), intent: span.fg.intent, slot: span.fg.slot }
+  }
+
+  test("leaves the other painter's installed colours alone", async () => {
+    const host = await pane()
+    try {
+      const rendered = renderDiff(parseDiff([
+        "diff --git a/a.txt b/a.txt",
+        "index 1111111..2222222 100644",
+        "--- a/a.txt",
+        "+++ b/a.txt",
+        "@@ -1,1 +1,1 @@",
+        "-before",
+        "+after",
+        "",
+      ].join("\n")))
+      installDiffText(host.text, { preamble: "", body: rendered.displayText, displayLines: rendered.displayLines })
+      await host.flush()
+
+      const parsed = parseAnsi(`${ESC}[33m* commit 0000000${ESC}[m\nplain body`)
+      // The main pane's own sequence, twice over, as a refresh re-resolving the same preview does.
+      releaseDiffText(host.text)
+      installAnsiText(host.text, { preamble: "", body: parsed.text, spans: parsed.spans })
+      await host.flush()
+      expect(commitLine(host.captureSpans())).toEqual({ text: "* commit 0000000", intent: "indexed", slot: 3 })
+
+      releaseDiffText(host.text)
+      installAnsiText(host.text, { preamble: "", body: parsed.text, spans: parsed.spans })
+      await host.flush()
+
+      // A width-only change is the cheapest forced repaint there is — a horizontal splitter drag.
+      // Until something forces one the frame still shows the stale (correct) colours, which is
+      // exactly why the wipe reached review.
+      host.text.width = 50
+      await host.flush()
+      expect(commitLine(host.captureSpans())).toEqual({ text: "* commit 0000000", intent: "indexed", slot: 3 })
     } finally {
       host.destroy()
     }

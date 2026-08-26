@@ -127,6 +127,14 @@ export function createViewportHighlights<Content>(text: TextRenderable, spec: Vi
       paint(changed)
     },
     release(): void {
+      // Releasing twice must not clear anything the second time. `main-pane.ts:276-277` releases the
+      // *other* painter immediately before every install, and `MainPreviewGate` does not dedupe
+      // identical content, so a refresh re-resolving the same preview runs that pair again — and
+      // both painters write through the same underlying `textBuffer`. Without this guard the stale
+      // release wiped the live painter's highlights, which its own no-op re-install (unchanged text,
+      // scroll and height) then had nothing to repaint. The painters this replaced were idempotent
+      // by accident, by deleting their state entry; this is the same property, stated.
+      if (!active) return
       buffer.clearAllHighlights()
       active = false
       // Reset to exactly what a first `install` would find, so re-installing after another painter
