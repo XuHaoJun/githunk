@@ -237,7 +237,8 @@ describe("action labels", () => {
    * files_controller.go:555-557 returns `NothingToStageForSubmodule` *before* the `LogAction` at
    * :559 when there is nothing left to stage or unstage — a clean tree must not write an action
    * line for a `for` loop that iterates zero files. `controller.ts`'s `toggleAllFiles` guards on
-   * `files.length === 0` for the same reason.
+   * `files.length === 0` for the same reason — inside its queued callback, not before enqueueing;
+   * see the race-reproduction test below for why that placement matters.
    */
   test("toggleAllFiles on a clean tree logs nothing", async () => {
     const { controller, log } = harness()
@@ -251,7 +252,7 @@ describe("action labels", () => {
 
   test("toggleAllFiles logs Unstage all files when everything is already staged", async () => {
     // shouldStage is `files.some((file) => file.untracked || file.worktreeStatus !== ".")`
-    // (controller.ts:954); a fully-staged file (worktreeStatus ".", not untracked) keeps that
+    // (controller.ts:964); a fully-staged file (worktreeStatus ".", not untracked) keeps that
     // false, landing on the "nothing left to stage" branch (files_controller.go:544 vs :559).
     const { controller, log } = harness([stagedFile])
     await controller.refresh()
@@ -280,9 +281,11 @@ describe("action labels", () => {
    * (files_controller.go:555-557 / :559).
    *
    * This constructs that race deterministically: `refreshFiles()` is left in flight on a gated
-   * loader (so `currentState.files` is provably still non-empty when `toggleAllFiles()` is
-   * called), and only then released to complete with an empty snapshot before `toggleAllFiles`'s
-   * queued callback runs.
+   * loader, and only then released to complete with an empty snapshot before `toggleAllFiles`'s
+   * queued callback runs. The `expect` immediately after starting `refreshFiles()` below is what
+   * makes "`currentState.files` is still non-empty when `toggleAllFiles()` is called" provable
+   * rather than merely asserted in this comment: `MutationQueue.run` defers its callback behind a
+   * `.then`, so nothing inside `load()` can have executed yet at that synchronous point.
    */
   test("toggleAllFiles re-reads files after a same-queue refresh empties the tree, not before it", async () => {
     const log = new CommandLog()
@@ -296,8 +299,9 @@ describe("action labels", () => {
         loadCount += 1
         if (loadCount === 1) return snapshot([unstagedFile])
         // The second load (refreshFiles' background refresh) pauses here until the test releases
-        // it, so `toggleAllFiles()` below is provably called while `currentState.files` is still
-        // the first load's non-empty snapshot.
+        // it; the `expect` right after `refreshFiles()` is called below is what proves
+        // `toggleAllFiles()` runs while `currentState.files` is still the first load's non-empty
+        // snapshot, not this comment.
         await gate
         return snapshot([])
       },
@@ -310,7 +314,10 @@ describe("action labels", () => {
     expect(controller.state.files).toEqual([unstagedFile])
 
     const refreshPromise = controller.refreshFiles()
-    // refreshFiles is awaiting `gate` inside the queue; currentState.files is still [unstagedFile].
+    // `refreshFiles()` only enqueues onto `mutationQueue` (a `.then` chain); its callback, and
+    // therefore the second `load()`, cannot have run yet at this synchronous point — so this
+    // proves currentState.files is still [unstagedFile] while toggleAllFiles() below runs.
+    expect(controller.state.files).toEqual([unstagedFile])
     const togglePromise = controller.toggleAllFiles()
     releaseGate!()
     await refreshPromise
