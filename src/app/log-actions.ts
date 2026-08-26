@@ -4,8 +4,14 @@
  * there's only one command under an action but there may be more"
  * (pkg/gui/command_log_panel.go:14-24).
  *
- * Only actions that reach git get one. githunk's own review actions (marking a file reviewed,
- * changing the compare base) run no command, and lazygit labels nothing that runs no command.
+ * Only actions that reach git get one here — githunk's own scoping choice, not a rule lazygit
+ * itself follows: lazygit labels its main-pane copy-to-clipboard even though it runs zero git
+ * commands (`Actions.CopySelectedTextToClipboard`, `patch_explorer_controller.go:343-351`;
+ * `english.go:2204`; same shape at `basic_commits_controller.go:294`). githunk's own review
+ * actions (marking a file reviewed, changing the compare base) are excluded on that same
+ * git-reaching basis. Whether githunk's `Ctrl+O`/`y` copy path (main-pane selection copy, the
+ * headline review extension) should get a matching label is a known, deliberately deferred gap —
+ * not covered by this round.
  */
 export const LOG_ACTIONS = {
   /** files_controller.go:544, called from toggleStaged (:509-565); english.go:2175 */

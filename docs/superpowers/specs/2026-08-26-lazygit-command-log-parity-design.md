@@ -119,7 +119,7 @@ lazygit calls `LogAction` from its UI controllers, because that is the layer whe
 | `commit` | `Commit` | `english.go:2192` |
 | `amend` | `Amend commit` | `amend_helper.go:22` |
 | `push` | `Push` | `sync_controller.go:197` |
-| `pull` | `Pull` | `sync_controller.go:167` |
+| `pull` | `Pull` | `sync_controller.go:119` |
 | `fetch`, `fetchRemote` | `Fetch` | `files_controller.go:1541` (a hardcoded string in lazygit, not an `Actions` entry) |
 | `switchLocalBranch`, `switchLocal`, `checkoutRemoteTracking` | `Checkout branch` | `branches_controller.go:417,516` |
 | `createBranch` | `Create branch` | `english.go:2142` |
@@ -134,7 +134,7 @@ lazygit calls `LogAction` from its UI controllers, because that is the layer whe
 
 `switchLocal` delegates to `switchLocalBranch`; only the outermost method logs, so one keypress never produces two labels.
 
-githunk-only actions that run no git command — `markFileReviewed`, `markFocusedFileReviewed`, `setBranchBase`, `switchMode`, `setWorkingTreeScope` — emit no label, because lazygit emits labels only for work that reaches git.
+githunk-only actions that run no git command — `markFileReviewed`, `markFocusedFileReviewed`, `setBranchBase`, `switchMode`, `setWorkingTreeScope` — emit no label. This is githunk's own scoping choice, not lazygit's rule: lazygit labels its main-pane copy-to-clipboard even though it runs zero git commands (`Actions.CopySelectedTextToClipboard`, `patch_explorer_controller.go:343-351`; `english.go:2204`; same shape at `basic_commits_controller.go:294`). Whether githunk's own main-pane copy path should get a matching label is a separate, deferred product decision — see `src/app/log-actions.ts`'s header comment.
 
 ### 4.3 Command output
 
@@ -244,12 +244,16 @@ Subsequent writes each start on a new line with no blank separator, because `Log
 
 lazygit's tip catalogue is parameterised on its own keybindings and features (`command_log_panel.go:90-199`). A tip naming a key githunk does not bind, or a feature githunk does not have, would instruct the user to press nothing. The catalogue is therefore the subset whose feature and key both exist, each copied verbatim with githunk's key substituted the way lazygit substitutes its own:
 
-Keybinding tips (5):
+Keybinding tips (7) — this section was originally written before the amend tip's rationale was
+corrected; it is superseded by the block comment at `src/app/command-log-tips.ts:36-63`, which is
+the source of record. Reproduced here for section 13:
 
+- "In flat file view, merge conflicts are sorted to the top. To switch to flat file view press the backtick key" (`command_log_panel.go:105-108`; githunk's `buildFlatTreeFromFiles`, `src/ui/file-tree.ts:237-253`, sorts merge conflicts to the top exactly as `pkg/gui/filetree/build_tree.go:138` does, and `toggle-file-tree` binds the same default key, backtick, `user_config.go:1100`)
 - `You can view the individual files of a stash entry by pressing '<enter>'` (`command_log_panel.go:124-127`; githunk binds `enter` to `stash-inspect`, `bindings.ts:393`)
 - `You can page through the items of a panel using ',' and '.'` (`:149-153`; `bindings.ts:300-301`)
 - `You can jump to the top/bottom of a panel using '<' and '>'` (`:154-157`; `bindings.ts:302-303`)
 - `To collapse/expand a directory, press '<enter>'` (`:158-161`; githunk's `enter` calls `toggleFileTreeCollapsedPath` on a directory row, `root-view.ts:1376-1379`, copying `files_controller.go:715`)
+- `You can amend the last commit with your new file changes by pressing 'A' in the files panel` (`:166-169`; **not** excluded, unlike the adjacent `:162-165` amend-to-commit tip below — githunk's `A` is *not* global in effect: `commitAttemptAvailable` (`root-view.ts:2184-2195`) permits it only when focus is Files or Main, so "press `A` in the files panel" is exactly true, reaching `git commit --amend -F -` via `actionAmend`. Same default key as lazygit's, `user_config.go:1090`)
 - `You can now navigate the side panels with 'l' and 'h'` (`:170-174`; `bindings.ts:293`)
 
 General-advice tips (6), verbatim and key-free (`command_log_panel.go:178-184`):
@@ -261,9 +265,7 @@ General-advice tips (6), verbatim and key-free (`command_log_panel.go:178-184`):
 - recovering an earlier state from the reflog;
 - the stash as a place for debugging snippets.
 
-Excluded, with the reason: force push, filter-commits-by-path, interactive rebase, undo/redo, reset options, push tag, diffing menu, drop commit, merge options, revert commit, bisect, custom commands, delta, bare-repo flags and the escape-a-mode tip's `quitOnTopLevelReturn` clause all name features githunk does not implement; the "join the team" and "raise an issue" tips point at lazygit's own project. The one remaining tip that githunk gains a feature for gets added at that time.
-
-`amend` is bound (`bindings.ts:325`) but lazygit's amend tip names `Files.AmendLastCommit` in the files panel; githunk's `A` is global, so the tip is excluded rather than reworded.
+Excluded, with the reason: force push, filter-commits-by-path, interactive rebase, undo/redo, reset options, push tag, diffing menu, drop commit, merge options, revert commit, bisect, custom commands, delta, bare-repo flags and the escape-a-mode tip's `quitOnTopLevelReturn` clause all name features githunk does not implement; the amend-to-commit tip (`Commits.AmendToCommit`, `:162-165`) is genuinely false of githunk — pressing `A` while a commit is selected in the commits panel does not amend that commit, since `commitAttemptAvailable` never permits `A` from the commits panel and githunk has no way to target an older commit for amending; the "join the team" and "raise an issue" tips point at lazygit's own project. The one remaining tip that githunk gains a feature for gets added at that time.
 
 ## 11. Testing
 

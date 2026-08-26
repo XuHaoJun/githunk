@@ -599,8 +599,10 @@ export class RootView {
     // the main view, the *side* context underneath it in the stack is the one asked to
     // re-render main — the main context itself has nothing to render.
     this.syncPreviewForFocus(this.focusManager.active === "main" ? this.focusManager.lastSide : this.focusManager.active)
-    // A hidden log is not worth rendering: it holds every command's whole stdout, so the text is
-    // as large as the biggest patch the session has run. `applyFocus` renders it when it opens.
+    // A hidden log is not worth rendering: nothing on screen needs the paint. The arm count
+    // `refreshCommandLog` compares against is deliberately not consumed while hidden (see its own
+    // comment), so a whole hidden burst still arms exactly once, on the next call after it
+    // reopens. `applyFocus` renders it when it opens.
     if (this.focusManager.logVisible) this.refreshCommandLog(model)
     this.recomputeLayout()
   }
@@ -609,7 +611,7 @@ export class RootView {
    * Applies the arm comparison and hands the log its current lines. lazygit arms autoscroll
    * inside `LogAction`/`LogCommand` (pkg/gui/command_log_panel.go:38,62) — at write time.
    * RootView only ever sees the last snapshot of a controller action (`view.update` fires once
-   * per controller call, src/app/create-app.ts:244), and a mutation logs its output *after* its
+   * per controller call, src/app/create-app.ts:246), and a mutation logs its output *after* its
    * command line, so arming on the newest write's kind would drop the arm for every batch that
    * ends in output. Arm on the count of arming writes having grown instead: idempotent and
    * independent of how many snapshots the batch took. Callers gate this on log visibility: while

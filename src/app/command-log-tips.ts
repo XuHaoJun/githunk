@@ -33,7 +33,9 @@ export const COMMAND_LOG_TIP_KEYS = {
 } as const
 
 /**
- * lazygit's tips, restricted to those whose feature and keybinding both exist in githunk.
+ * lazygit's tips, restricted to those whose feature and keybinding both exist in githunk: 13 of
+ * lazygit's ~30 (`command_log_panel.go:90-199`) — the 7 keybinding tips plus the 6 general-advice
+ * ones below.
  *
  * Excluded, and why: force push, filter-commits-by-path, interactive rebase, undo/redo, reset
  * options, push tag, the diffing menu, drop commit, merge options, revert commit, custom commands,
