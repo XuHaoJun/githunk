@@ -83,9 +83,10 @@ the non-`readOnly` set is exactly the mutations (`mutations.ts:35,42,49,50,83`,
 
 So the sweep is one rule in `GitRunner.run`: **`readOnly: true` implies `dontLog`**, with an
 explicit `dontLog` still able to override in either direction. This yields the same set lazygit's
-80 `DontLog()` calls yield, and makes it an invariant rather than a thing each new loader has to
-remember. `commit-status.ts:27`'s existing explicit `dontLog: true` becomes redundant but stays, as
-documentation of intent.
+76 `DontLog()` call sites yield (a naive `grep -c` finds 80; 4 of those are the declaration and its
+own comments, `cmd_obj.go:19,118,125,130`), and makes it an invariant rather than a thing each new
+loader has to remember. `commit-status.ts:27`'s existing explicit `dontLog: true` becomes redundant
+but stays, as documentation of intent.
 
 Two paths need more than the rule:
 

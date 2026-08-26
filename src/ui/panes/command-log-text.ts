@@ -3,7 +3,7 @@ import type { CommandLogLine, CommandLogStyle } from "../../domain/command"
 import { cellWidth } from "../cell-width"
 import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, DEFAULT_FOREGROUND } from "../theme"
 import { paneTextBuffer, type PaneStyleDefinition, type PaneTextBuffer } from "./pane-text"
-import { createViewportHighlights, type ViewportHighlights } from "./viewport-highlights"
+import { createViewportHighlights, LINE_END_COLS, type ViewportHighlights } from "./viewport-highlights"
 
 /**
  * Paints the command log's colours. The text goes in whole and unstyled and only the lines near the
@@ -15,9 +15,6 @@ import { createViewportHighlights, type ViewportHighlights } from "./viewport-hi
  * column arithmetic here to a single boundary: every log line but the random tip carries one span,
  * so it paints whole, and the tip's label/tip split is the only column this file has to measure.
  */
-
-/** Column bound for "to the end of the line"; the native buffer clamps it to the real width. */
-export const LINE_END_COLS = 1_000_000
 
 /**
  * lazygit's colours. `command` is `theme.DefaultTextColor`, which is `style.FgDefault`

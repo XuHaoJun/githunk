@@ -25,8 +25,8 @@ describe("command log", () => {
   }
 
   /**
-   * The whole point of the dontLog rule (src/git/runner.ts:84-88, reproducing lazygit's 80
-   * `DontLog()` calls per Task 2's audit): lazygit's log shows what the user did, not what the app
+   * The whole point of the dontLog rule (src/git/runner.ts:84-88, reproducing lazygit's 76
+   * `DontLog()` call sites per Task 2's audit): lazygit's log shows what the user did, not what the app
    * asked git about. A 10-second refresh used to bury the former under the latter — this is the
    * regression the whole plan exists to prevent, so it is asserted as a negative directly rather
    * than only positively (below) that the right things ARE logged.

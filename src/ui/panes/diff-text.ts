@@ -2,7 +2,7 @@ import { StyledText, dim, fg, type TextChunk, type TextRenderable } from "@opent
 import type { DiffDisplayLine, DiffDisplayLineStyle } from "../../domain/diff/document"
 import { ANSI_CYAN, ANSI_GREEN, ANSI_RED } from "../theme"
 import { paneTextBuffer, type PaneStyleDefinition, type PaneTextBuffer } from "./pane-text"
-import { createViewportHighlights, type ViewportHighlights } from "./viewport-highlights"
+import { createViewportHighlights, LINE_END_COLS, type ViewportHighlights } from "./viewport-highlights"
 
 /**
  * Pushes a rendered diff into a pane's text viewport, colouring only the rows the viewport shows.
@@ -11,9 +11,6 @@ import { createViewportHighlights, type ViewportHighlights } from "./viewport-hi
  * ./viewport-highlights owns that mechanism and explains the bargain. This file owns what is the
  * diff's own: the styles, the row-to-style mapping, and the chunk fallback.
  */
-
-/** Column bound for "to the end of the row"; the native buffer clamps it to the real width. */
-const ROW_END_COLS = 1_000_000
 
 /** Registered once per pane. The definitions mirror what the chunk fallback below paints. */
 const STYLE_DEFINITIONS: Readonly<Record<"gutter" | Exclude<DiffDisplayLineStyle, "plain">, PaneStyleDefinition>> = {
@@ -121,7 +118,7 @@ export function installDiffText(text: TextRenderable, content: DiffTextContent):
         const display = current.displayLines[row - current.firstDiffRow]
         if (display === undefined) return
         if (display.gutterCols > 0) buffer.addHighlight(row, { start: 0, end: display.gutterCols, styleId: styleIds.gutter! })
-        if (display.style !== "plain") buffer.addHighlight(row, { start: display.gutterCols, end: ROW_END_COLS, styleId: styleIds[display.style]! })
+        if (display.style !== "plain") buffer.addHighlight(row, { start: display.gutterCols, end: LINE_END_COLS, styleId: styleIds[display.style]! })
       },
     })
     painters.set(text, painter)

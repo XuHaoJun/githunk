@@ -38,7 +38,12 @@ function withoutRecordTerminator(value: string): string {
 }
 
 async function validateBranchName(runner: CommandRunner, name: string): Promise<void> {
-  await runner.run(["check-ref-format", "--branch", name], { readOnly: true })
+  // `dontLog: false` overrides the `readOnly`-implies-quiet default (runner.ts's `dontLog` doc
+  // comment) deliberately: `createBranch`/`renameBranch`/`deleteBranch` already log their action
+  // label before calling this, so a rejected name must still show *something* under that label —
+  // otherwise the log shows a yellow action with nothing under it, contradicting
+  // `AppController`'s "a mutation the target refuses logs nothing" guarantee (controller.ts).
+  await runner.run(["check-ref-format", "--branch", name], { readOnly: true, dontLog: false })
 }
 
 async function listRemoteNames(runner: CommandRunner): Promise<readonly string[]> {

@@ -232,6 +232,24 @@ describe("action labels", () => {
   })
 
   /**
+   * I7 fix: before it, `validateBranchName`'s `check-ref-format` read (`branches.ts:41`) was
+   * `readOnly: true` with no `dontLog` override, so — under the `readOnly`-implies-quiet default —
+   * a rejected name left the label logged with nothing under it: a yellow action with no command or
+   * output, contradicting the "a mutation the target refuses logs nothing" guarantee `logAction`'s
+   * comment used to (wrongly) claim. `check-ref-format` is now `dontLog: false`, so its own command
+   * line and failure both show up under the label instead.
+   */
+  test("createBranch with an invalid name logs the label and check-ref-format's own failure", async () => {
+    const { controller, log } = harness()
+    await controller.refresh()
+    await controller.createBranch("bad name").catch(() => {})
+    const texts = log.lines().map((line) => line.spans.map((span) => span.text).join(""))
+    expect(actions(log)).toEqual(["Create branch"])
+    expect(texts.some((text) => text.includes("check-ref-format"))).toBe(true)
+    expect(texts.join("\n")).toContain("not a valid branch name")
+  })
+
+  /**
    * githunk-only actions that run no git command get no label
    * (markFileReviewed, setBranchBase, switchMode into working-tree).
    */

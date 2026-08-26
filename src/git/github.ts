@@ -122,7 +122,7 @@ export async function loadPullRequests(runner: GhRunner): Promise<readonly PullR
 
 /**
  * A `gh` runner. `gh pr list` is a background query — only the background refresh drives it — and
- * lazygit keeps queries out of the command log entirely (80 `DontLog()` calls, e.g.
+ * lazygit keeps queries out of the command log entirely (76 `DontLog()` call sites, e.g.
  * pkg/commands/git_commands/status.go:98). So this deliberately does not log, and the log stays
  * what lazygit's is: the user's own actions.
  */

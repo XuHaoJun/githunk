@@ -21,8 +21,10 @@ export type GitRunOptions = {
   readonly acceptedExitCodes?: readonly number[]
   /**
    * Keeps the command out of the Command Log pane, or forces it in. lazygit's `DontLog()`
-   * (pkg/commands/oscommands/cmd_obj.go:118-128), which it sets on 80 commands by hand — every
-   * loader and query, plus the background fetch (git_commands/sync.go:81).
+   * (pkg/commands/oscommands/cmd_obj.go:118-128), which it sets by hand at 76 call sites (a naive
+   * recursive grep for the literal text finds 80 hits; 4 of those are the declaration and its own
+   * comments, cmd_obj.go:19,118,125,130) — every loader and query, plus the background fetch
+   * (git_commands/sync.go:81).
    *
    * githunk defaults it from `readOnly` instead: a read is never logged and a write always is,
    * which reproduces lazygit's set as a structural invariant rather than something each new loader
@@ -168,8 +170,14 @@ export class GitRunner {
         // streaming it, so stdout and stderr can only be concatenated after the fact, not
         // interleaved — for push/pull this also means the block's *order* differs from lazygit's,
         // not just its timing: progress (stderr) and the summary (stdout) land as two runs rather
-        // than interleaved lines.
-        writer.write(`${stdout}${stderr}`)
+        // than interleaved lines. The `\n` between them is required, not cosmetic: without it,
+        // whenever stdout does not itself end in a newline, its last line and stderr's first line
+        // concatenate into one row instead of two. When stdout does already end in a newline (as
+        // git output almost always does) this adds one blank separator row between the blocks —
+        // `outputWriter().write` (command-log.ts) only collapses a *trailing* run of newlines, and
+        // this one is not trailing whenever stderr is non-empty — a small price for never gluing
+        // stdout's last line to stderr's first the way the bare concatenation used to.
+        writer.write(`${stdout}\n${stderr}`)
       } else if (!accepted) {
         // githunk's one deviation from lazygit here, which raises an error popup instead and writes
         // nothing. githunk has no popup — a failed mutation surfaces as a pane bottomTitle — and

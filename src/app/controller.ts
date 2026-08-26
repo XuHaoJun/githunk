@@ -1003,7 +1003,14 @@ export class AppController {
    * mutation methods map one-to-one onto user intents, where `root-view.ts` corresponds to
    * lazygit's keybinding table and views.
    *
-   * Always after the guard, so a mutation the target refuses logs nothing.
+   * Called after the cheap, synchronous guards (wrong `reviewTarget` kind and the like), but
+   * *before* any validation that itself needs a git command — `validateBranchName`'s
+   * `check-ref-format` (`src/git/branches.ts:41`) chief among them. So a mutation can still log
+   * its label and then be refused: an invalid branch name reaches `createBranch`/`renameBranch`/
+   * `deleteBranch`'s label before `check-ref-format` rejects it, and `push`/`pull` resolving
+   * `{kind:"upstream-required"}` or `checkoutRemoteTracking` returning `mismatch` do the same from
+   * reads only. What *is* guaranteed: that check-ref-format read is `dontLog: false`, so its own
+   * failure is logged under the label rather than leaving it orphaned above nothing.
    */
   private logAction(action: string): void {
     this.runner?.log.logAction(action)

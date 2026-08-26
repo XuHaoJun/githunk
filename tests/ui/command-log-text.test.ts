@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { TextRenderable, type RGBA } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
-import { LINE_END_COLS, commandLogLineHighlights, installCommandLogText } from "../../src/ui/panes/command-log-text"
+import { commandLogLineHighlights, installCommandLogText } from "../../src/ui/panes/command-log-text"
+import { LINE_END_COLS } from "../../src/ui/panes/viewport-highlights"
 import type { CommandLogLine } from "../../src/domain/command"
 
 function line(id: number, ...spans: readonly (readonly [string, CommandLogLine["spans"][number]["style"]])[]): CommandLogLine {

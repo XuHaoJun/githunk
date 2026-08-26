@@ -29,6 +29,13 @@ import { onPaneLifecyclePass, type PaneTextBuffer } from "./pane-text"
  */
 const MARGIN_LINES = 32
 
+/**
+ * Column bound for "to the end of the line/row"; the native buffer clamps it to the real width.
+ * Shared by ./diff-text and ./command-log-text — the two files the highlight extraction above was
+ * meant to unify — rather than each defining its own copy of the same magic constant.
+ */
+export const LINE_END_COLS = 1_000_000
+
 export type ViewportHighlightSpec<Content> = {
   readonly buffer: PaneTextBuffer
   /** Paints one logical line's highlights. A line with nothing to paint is a no-op. */
