@@ -44,6 +44,25 @@ hints bar, screen modes, draggable dividers). Automated coverage lives in
 - [ ] With `.git/githunk/ui-state-v1.json` present, `git status` stays clean (the state file lives under `.git/`, never in the worktree).
 - [ ] On a branch with commits, the Commits pane (`4`) lists them instead of showing an empty pane.
 
+## Command log parity (2026-08 lazygit command log parity plan)
+
+Closes out the 13-task plan that rebuilt the lower-right command log to match lazygit's `extras`
+view (`pkg/gui/command_log_panel.go`). `tests/acceptance/command-log.integration.test.ts` is the
+end-to-end acceptance test; it drives a real `git` process through a headless `createApp`, the same
+pattern `review-workflow.integration.test.ts` uses.
+
+| Criterion | Evidence | Status |
+| --- | --- | --- |
+| A background refresh puts no loader command in the log (the `readOnly`-implies-`dontLog` rule, reproducing lazygit's 80 `DontLog()` calls) | `tests/acceptance/command-log.integration.test.ts`: "a refresh puts no loader command in the log" — asserted as a negative (`status`, `for-each-ref`, `log`, etc. never appear), which the test shows failing against a deliberately re-logged loader before confirming it passes on the real code | Automated |
+| A real mutation logs its action above its command, in order (`pkg/gui/command_log_panel.go:14-24`) | Same file: "staging then committing logs each action above its command, in order" — `Stage file` / `  git add -- a.txt` / `Commit` / `  git commit -F -` against a real repository | Automated |
+| The startup header is the first line of every session's log, guarding against a repeat of the Task 3 `src/main.ts` bootstrap-read regression (`src/main.ts` itself has no tests) | Same file: "the header is the first thing in the log"; seeding order additionally pinned by `tests/app/create-app.test.ts` (fails if `seedCommandLog` is deleted or moved after construction) | Automated |
+| A failed command's stderr stays inspectable under `Git output:` (PRD §6.7); a successful command's output produces no such block | Same file: "a failed command's output is inspectable, a successful one's is not" — uses `deleteBranch` against a nonexistent branch, since `push()` against this environment's remote-less temp repository resolves `{ kind: "upstream-required" }` rather than rejecting | Automated |
+| Command log title text (`Command log`), its green focus colour, the command line's ambient default-foreground colour, and the magenta `Git output:` heading over a default-foreground failure body | Task 4 report, "Smoke test — observed, not simulated": drove a real `tmux` session against `bun run src/main.ts`, staged a file and forced a push failure, captured raw SGR codes | Manual smoke observed |
+| Command log action/intro/tip colours; live line wrapping in the running app | Task 4 report: nothing called `logAction`/`logIntro`/`logTip` at the point Task 4 ran (that wiring lands in later tasks), and nothing wrapped at the terminal widths driven — explicitly **not** observed live, covered only by the unit/pane tests (`tests/ui/command-log-text.test.ts`, `tests/ui/command-log-pane.test.ts`) | Not tested |
+| `@` opens the Command log menu; `t` toggles, `f` focuses, `Escape` closes | Task 8 report, Concerns: "No interactive manual smoke test was possible in this environment (non-interactive shell, no TTY)" — `bun run start` was only confirmed to boot under `/dev/null` stdin; the `@`/`t`/`f`/escape behaviour itself was never watched on a real terminal. Separately covered by `tests/ui/command-log-menu.integration.test.ts` and `tests/ui/action-menu.test.ts`, which is a different claim | Not tested |
+| Command log keybindings (`,`/`.`/`<`/`>` page and jump), autoscroll arming/clearing, `getExtrasWindowSize`-equivalent sizing, default visibility | `tests/ui/command-log-scroll.test.ts`, `tests/ui/command-log-autoscroll.integration.test.ts`, `tests/ui/layout.test.ts` (`DEFAULT_LOG_HEIGHT`/`MIN_LOG_HEIGHT`/focused-expand branches), `tests/ui/ui-state-store.integration.test.ts` and `tests/ui/command-log-menu.integration.test.ts` (`commandLogVisible` default and persistence) | Automated |
+| Random-tip catalogue is a documented subset of lazygit's tips | `src/app/command-log-tips.ts`'s block comment records the 13-of-~30 subset and the reasons for every exclusion (feature or keybinding absent from githunk); `tests/app/command-log-tips.test.ts` pins the key table | Automated |
+
 ## Release gates
 
 - [x] `bun test tests/acceptance/review-workflow.integration.test.ts` — 1 pass, 75 assertions.
