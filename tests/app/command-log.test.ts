@@ -129,49 +129,56 @@ describe("CommandLog", () => {
   })
 
   /**
-   * `lastWriteKind()` feeds `AppModel.commandLogWriteKind`, which `RootView` uses to pick the
-   * autoscroll transition (src/ui/panes/command-log-scroll.ts) a new write implies — lazygit
-   * assigns `Autoscroll = true` only in `LogAction`/`LogCommand`
-   * (pkg/gui/command_log_panel.go:38,62), never in the `prefixWriter` or the header.
+   * `autoscrollArms()` feeds `AppModel.commandLogAutoscrollArms`, which `RootView` compares against
+   * the count it last rendered to decide whether to arm autoscroll — lazygit assigns
+   * `Autoscroll = true` only in `LogAction`/`LogCommand` (pkg/gui/command_log_panel.go:38,62),
+   * never in the per-command output writer or the header. A count rather than the newest write's
+   * kind, because one controller action produces many snapshots and only the last reaches the view
+   * (src/app/create-app.ts:244), so a mutation's trailing output must not be able to hide the
+   * command line that preceded it.
    */
-  describe("lastWriteKind", () => {
-    test("starts as append-header, because the first write is the startup header", () => {
-      expect(new CommandLog().lastWriteKind()).toBe("append-header")
+  describe("autoscrollArms", () => {
+    test("starts at zero, before any write", () => {
+      expect(new CommandLog().autoscrollArms()).toBe(0)
     })
 
-    test("logAction and logCommand report append-entry", () => {
+    test("logAction and logCommand each arm once", () => {
+      const log = new CommandLog()
+      log.logAction("Stage file")
+      expect(log.autoscrollArms()).toBe(1)
+      log.logCommand("git add -- a.ts", true)
+      expect(log.autoscrollArms()).toBe(2)
+      log.logCommand("git rev-parse HEAD", false)
+      expect(log.autoscrollArms()).toBe(3)
+    })
+
+    test("outputWriter().write never arms, so a command's own output cannot hide it", () => {
+      const log = new CommandLog()
+      log.logCommand("git push", true)
+      expect(log.autoscrollArms()).toBe(1)
+      log.outputWriter().write("Enumerating objects: 3\n")
+      log.outputWriter().write("")
+      // The batch's *last* write was output, but the count still says one write armed — which is
+      // the whole reason this is a count and not the last write's kind.
+      expect(log.autoscrollArms()).toBe(1)
+    })
+
+    test("logIntro and logTip never arm", () => {
+      const log = new CommandLog()
+      log.logIntro("You can hide/focus this panel by pressing '@'")
+      log.logTip("Random tip", "Press '@' to hide this")
+      expect(log.autoscrollArms()).toBe(0)
+    })
+
+    test("is monotonic across a whole burst, however it is interleaved", () => {
       const log = new CommandLog()
       log.logIntro("intro")
-      log.logAction("Stage file")
-      expect(log.lastWriteKind()).toBe("append-entry")
-      log.logCommand("git add -- a.ts", true)
-      expect(log.lastWriteKind()).toBe("append-entry")
-    })
-
-    test("outputWriter().write reports append-output", () => {
-      const log = new CommandLog()
+      log.logAction("Push")
       log.logCommand("git push", true)
-      expect(log.lastWriteKind()).toBe("append-entry")
-      log.outputWriter().write("Enumerating objects: 3\n")
-      expect(log.lastWriteKind()).toBe("append-output")
-    })
-
-    test("logIntro and logTip report append-header", () => {
-      const log = new CommandLog()
-      log.logAction("Stage file")
-      log.logIntro("You can hide/focus this panel by pressing '@'")
-      expect(log.lastWriteKind()).toBe("append-header")
-      log.logAction("Stage file")
-      log.logTip("Random tip", "Press '@' to hide this")
-      expect(log.lastWriteKind()).toBe("append-header")
-    })
-
-    test("an empty write is a no-op, so it leaves the prior kind alone", () => {
-      const log = new CommandLog()
-      log.logCommand("git push", true)
-      expect(log.lastWriteKind()).toBe("append-entry")
-      log.outputWriter().write("")
-      expect(log.lastWriteKind()).toBe("append-entry")
+      log.outputWriter().write("Everything up-to-date\n")
+      log.logCommand("git status --porcelain=v2", true)
+      log.outputWriter().write("1 .M ...\n")
+      expect(log.autoscrollArms()).toBe(3)
     })
   })
 })

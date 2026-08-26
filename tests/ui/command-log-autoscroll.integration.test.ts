@@ -79,4 +79,34 @@ describe("command log autoscroll", () => {
     expect(view.paneScrollY("command-log")).toBe(before - 2)
     expect(view.commandLogAutoscroll).toBe(false)
   })
+
+  /**
+   * The regression finding 2 describes. lazygit arms autoscroll inside `LogCommand` itself
+   * (pkg/gui/command_log_panel.go:62) — at write time — and the per-command output writer that runs
+   * straight afterwards never touches the flag (pkg/gui/extras_panel.go:109-119). githunk's view
+   * cannot see writes, only the `AppModel` a controller action ends with (`view.update` fires once
+   * per controller call, src/app/create-app.ts:244), so a mutation that logs its command and then
+   * its output must still arm — the output being the batch's last write is not information the view
+   * is allowed to lose.
+   */
+  test("a mutation re-arms autoscroll even though its output was the batch's last write", async () => {
+    harness = await harnessWithUpstream()
+    const view = harness.app.view!
+    await harness.pressKey("@")
+    await harness.flush()
+    // Enough log to be scrollable, so the disarmed state is a real scrolled-up viewport.
+    await pull(harness)
+    await pull(harness)
+    const logBox = view.paneTextGeometry("command-log")
+    if (!logBox) throw new Error("the command log window is not laid out")
+    await harness.mockMouse.scroll(logBox.screenX + 1, logBox.screenY + 1, "up")
+    await harness.flush()
+    expect(view.commandLogAutoscroll).toBe(false)
+    expect(view.paneScrollY("command-log")).toBeLessThan(view.commandLogMaxScrollY())
+
+    await pull(harness)
+
+    expect(view.commandLogAutoscroll).toBe(true)
+    expect(view.paneScrollY("command-log")).toBe(view.commandLogMaxScrollY())
+  })
 })

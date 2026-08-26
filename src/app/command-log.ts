@@ -14,13 +14,6 @@ export type CommandLogOutputWriter = {
 }
 
 /**
- * Which autoscroll transition a write to the log implies — a strict subset of
- * `CommandLogScrollInput` (src/ui/panes/command-log-scroll.ts), because the domain has no reason
- * to name a scroll or a resize.
- */
-export type CommandLogWriteKind = "append-entry" | "append-output" | "append-header"
-
-/**
  * The command log is lazygit's `extras` view: an append-only stream of styled lines, not a list of
  * command records.
  *
@@ -37,20 +30,30 @@ export class CommandLog {
   private readonly lineList: CommandLogLine[] = []
   private lineId = 0
   /**
-   * Which autoscroll transition the most recent write implies. lazygit assigns `Autoscroll = true`
-   * in `LogAction` and `LogCommand` (pkg/gui/command_log_panel.go:38,62) and nowhere else — not in
-   * the `prefixWriter` (pkg/gui/extras_panel.go:109-119), not in the header
-   * (command_log_panel.go:70-85) — so the pane has to know which one it just received. Starts as
-   * `"append-header"`, because the first write is the startup header.
+   * How many *arming* writes the log has taken, ever. lazygit assigns `Autoscroll = true` inside
+   * `LogAction` and `LogCommand` (pkg/gui/command_log_panel.go:38,62) and nowhere else — not in the
+   * per-command output writer (pkg/gui/extras_panel.go:109-119), not in the header
+   * (command_log_panel.go:70-85) — so the flag is armed at write time, before anything can observe
+   * it.
+   *
+   * githunk's view cannot observe writes, only the `AppModel` snapshots they land in, and one
+   * controller action produces many snapshots but exactly one `view.update`
+   * (src/app/create-app.ts:244). So "the kind of the most recent write" is lossy: a mutation logs
+   * its command line and then its output, which makes the output the batch's last write and drops
+   * the arm. A count is not lossy — the view arms whenever the count it sees exceeds the count it
+   * last saw, which is idempotent, order-independent and immune to how many snapshots a batch
+   * takes. Monotonic and never reset, because 42 `commandLogSnapshot()` call sites read it per
+   * action and any consume-and-reset design would be drained by the wrong reader.
    */
-  private lastWrite: CommandLogWriteKind = "append-header"
+  private arms = 0
 
   lines(): readonly CommandLogLine[] {
     return this.lineList
   }
 
-  lastWriteKind(): CommandLogWriteKind {
-    return this.lastWrite
+  /** See `arms`: the number of writes that armed lazygit's `Autoscroll`, monotonic. */
+  autoscrollArms(): number {
+    return this.arms
   }
 
   /**
@@ -58,7 +61,7 @@ export class CommandLog {
    * groups the commands logged under it, typically one but sometimes several.
    */
   logAction(action: string): void {
-    this.lastWrite = "append-entry"
+    this.arms += 1
     for (const text of action.split("\n")) this.push([{ style: "action", text }])
   }
 
@@ -68,7 +71,7 @@ export class CommandLog {
    * shell — and magenta when not, "to communicate that" in lazygit's words.
    */
   logCommand(cmdStr: string, commandLine: boolean): void {
-    this.lastWrite = "append-entry"
+    this.arms += 1
     const style: CommandLogStyle = commandLine ? "command" : "internal"
     // `"  " + strings.ReplaceAll(cmdStr, "\n", "\n  ")` (command_log_panel.go:57).
     for (const text of `  ${cmdStr.replaceAll("\n", "\n  ")}`.split("\n")) this.push([{ style, text }])
@@ -80,7 +83,6 @@ export class CommandLog {
     return {
       write: (text: string): void => {
         if (text.length === 0) return
-        this.lastWrite = "append-output"
         if (!prefixWritten) {
           prefixWritten = true
           // The `\n\n` of lazygit's prefix: one line ends, one blank line, then the heading.
@@ -100,7 +102,6 @@ export class CommandLog {
    * (pkg/i18n/english.go:1951).
    */
   logIntro(text: string): void {
-    this.lastWrite = "append-header"
     this.push([{ style: "intro", text }])
     this.push([])
   }
@@ -111,7 +112,6 @@ export class CommandLog {
    * write supplies it, because `LogAction`/`LogCommand` prefix rather than suffix theirs.
    */
   logTip(label: string, tip: string): void {
-    this.lastWrite = "append-header"
     const [first, ...rest] = tip.split("\n")
     this.push([
       { style: "tip-label", text: `${label}: ` },

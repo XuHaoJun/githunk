@@ -41,7 +41,6 @@ import { parseAnsi } from "./ansi"
 import { NO_BRANCHES_FOR_REMOTE, NO_REMOTES, remotePreviewText } from "./panes/remotes-pane"
 import { NO_TAGS, tagPreamble } from "./panes/tags-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
-import type { CommandLogScrollInput } from "./panes/command-log-scroll"
 import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, anyStagedChanges, createFilesPane, createFilesTreeState, fileHasUnstagedChanges, filesTreeRows } from "./panes/files-pane"
 import { NO_WORKTREES_THIS_REPO, selectedWorktreeFrom, worktreePreviewText, worktreeRows } from "./panes/worktrees-pane"
 import { NO_SUBMODULES, selectedSubmoduleFrom, submodulePreviewText, submoduleRows } from "./panes/submodules-pane"
@@ -202,7 +201,7 @@ export class RootView {
   private model: AppModel
   private readonly panes: Record<Exclude<FocusId, "command-log">, PaneHandle>
   private readonly commandLog: CommandLogPaneHandle
-  private renderedCommandLogLength = 0
+  private renderedCommandLogArms = 0
   private commandLogFocused = false
   private readonly clipboard: ClipboardService
   private readonly verticalSplitter: SplitterHandle
@@ -592,19 +591,20 @@ export class RootView {
     // A hidden log is not worth rendering: it holds every command's whole stdout, so the text is
     // as large as the biggest patch the session has run. `applyFocus` renders it when it opens.
     if (this.focusManager.logVisible) {
-      const grew = model.commandLog.length > this.renderedCommandLogLength
-      this.renderedCommandLogLength = model.commandLog.length
-      if (grew) this.commandLog.applyScrollInput(this.commandLogWriteKind())
+      // lazygit arms autoscroll inside `LogAction`/`LogCommand` (pkg/gui/command_log_panel.go:38,62)
+      // — at write time. RootView only ever sees the last snapshot of a controller action
+      // (`view.update` fires once per controller call, src/app/create-app.ts:244), and a mutation
+      // logs its output *after* its command line, so arming on the newest write's kind would drop
+      // the arm for every batch that ends in output. Arm on the count of arming writes having grown
+      // instead: idempotent and independent of how many snapshots the batch took. The comparison
+      // lives inside the visible branch deliberately — while the log is hidden the count is not
+      // consumed, so a whole hidden burst arms exactly once on the next visible update.
+      const arms = model.commandLogAutoscrollArms ?? 0
+      if (arms > this.renderedCommandLogArms) this.commandLog.applyScrollInput("append-entry")
+      this.renderedCommandLogArms = arms
       this.commandLog.update(model.commandLog)
     }
     this.recomputeLayout()
-  }
-  /**
-   * Which autoscroll transition the log's newest lines imply. `RootView` has no reference to the
-   * `CommandLog`, only to the snapshot it produced, so `AppModel` carries the kind.
-   */
-  private commandLogWriteKind(): CommandLogScrollInput {
-    return this.model.commandLogWriteKind ?? "append-entry"
   }
   private clearDiscardState(): void {
     this.discardPending = false
@@ -684,6 +684,10 @@ export class RootView {
   /** The command log pane's `view.Autoscroll` (pkg/gui/extras_panel.go:48-94), for tests. */
   get commandLogAutoscroll(): boolean {
     return this.commandLog.autoscroll
+  }
+  /** The command log's scroll extent, for tests asserting an armed viewport is pinned. */
+  commandLogMaxScrollY(): number {
+    return this.commandLog.maxScrollY()
   }
   paneScrollY(id: FocusId): number {
     if (id === "command-log") return this.commandLog.text.scrollY

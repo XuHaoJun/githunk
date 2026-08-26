@@ -239,7 +239,7 @@ export class AppController {
       reviewSummary: { reviewed: 0, invalidated: 0, commits: 0, files: 0, additions: 0, deletions: 0 },
       loading: false,
       commandLog: runner?.log.lines() ?? [],
-      ...(runner?.log === undefined ? {} : { commandLogWriteKind: runner.log.lastWriteKind() }),
+      ...(runner?.log === undefined ? {} : { commandLogAutoscrollArms: runner.log.autoscrollArms() }),
       title: titleFor(target),
       commits: [],
     }
@@ -250,12 +250,12 @@ export class AppController {
 
   /**
    * The log snapshot every state assignment shares. `exactOptionalPropertyTypes` is why
-   * `commandLogWriteKind` comes back absent rather than `undefined` when there is no runner.
+   * `commandLogAutoscrollArms` comes back absent rather than `undefined` when there is no runner.
    */
-  private commandLogSnapshot(): Pick<AppModel, "commandLog" | "commandLogWriteKind"> {
+  private commandLogSnapshot(): Pick<AppModel, "commandLog" | "commandLogAutoscrollArms"> {
     const log = this.runner?.log
     if (log === undefined) return { commandLog: this.currentState.commandLog }
-    return { commandLog: log.lines(), commandLogWriteKind: log.lastWriteKind() }
+    return { commandLog: log.lines(), commandLogAutoscrollArms: log.autoscrollArms() }
   }
 
   /**
