@@ -76,9 +76,17 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     box,
     text,
     resize(width: number, height: number) {
+      const contentHeight = Math.max(1, Math.floor(height) - 2)
       text.width = Math.max(1, Math.floor(width) - 2)
-      text.height = Math.max(1, Math.floor(height) - 2)
-      if (autoscroll) text.scrollY = text.maxScrollY
+      text.height = contentHeight
+      // `text.maxScrollY` divides by `text.height`'s *getter*, which OpenTUI only refreshes from
+      // Yoga once per render pass (chunk-node-ks0581vk.js:909-921's `updateFromLayout`) — so right
+      // after the assignment above it would still read the pane's height from before this resize.
+      // That was invisible before Task 9, when a focus change never resized the log at all; now
+      // that a focused log can grow to `logCapacity` (getExtrasWindowSize's baseSize 1000 branch),
+      // pinning through the stale getter re-armed the *old*, smaller viewport's bottom instead of
+      // the new one. Compute the target from the content height just set instead.
+      if (autoscroll) text.scrollY = Math.max(0, text.scrollHeight - contentHeight)
       syncVerticalScrollbar(bar, text)
     },
     update(nextLines: readonly CommandLogLine[]) {

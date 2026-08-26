@@ -25,8 +25,8 @@ describe("command log autoscroll", () => {
    * output by the per-command writer (never an arming write). Reads are not logged at all
    * (src/git/runner.ts:88), so a plain refresh cannot produce log lines.
    */
-  async function harnessWithUpstream(): Promise<ShellHarness> {
-    const created = await createShellHarness({ commits: ["base commit"] })
+  async function harnessWithUpstream(height?: number): Promise<ShellHarness> {
+    const created = await createShellHarness({ commits: ["base commit"], ...(height === undefined ? {} : { height }) })
     remoteBare = await createTempRepository()
     await remoteBare.git(["config", "core.bare", "true"])
     await created.repository.git(["remote", "add", "origin", remoteBare.path])
@@ -98,7 +98,10 @@ describe("command log autoscroll", () => {
     await harness.pressKey("@")
     await harness.pressKey("t")
     await harness.flush()
-    // Enough log to be scrollable, so the disarmed state is a real scrolled-up viewport.
+    // Enough log to be scrollable, so the disarmed state is a real scrolled-up viewport. Three
+    // pulls, not two: DEFAULT_LOG_HEIGHT's content area is 8 rows now (window_arrangement_helper.go
+    // :415-417's frame made it 10 total), one row taller than before Task 9.
+    await pull(harness)
     await pull(harness)
     await pull(harness)
     const logBox = view.paneTextGeometry("command-log")
@@ -123,16 +126,20 @@ describe("command log autoscroll", () => {
    * binding table lookup.
    */
   test("j/k step the log one line and clear autoscroll, the same as the wheel", async () => {
-    harness = await harnessWithUpstream()
+    // A shorter terminal than the module default: a focused log now fills the available space
+    // (getExtrasWindowSize's baseSize 1000 branch, window_arrangement_helper.go:404-406), so a
+    // full-height 40-row terminal gives it ~28 content rows — too tall for three pulls' worth of
+    // log lines to overflow. Shrinking the terminal keeps the same pull count meaningful.
+    harness = await harnessWithUpstream(20)
     // `@` opens the command-log menu (pkg/gui/extras_panel.go:12-38); `f` forces it visible and
     // focused in one step, the same as the old direct cycle's "show, then focus" pair of presses.
     await harness.pressKey("@")
     await harness.pressKey("f")
     await harness.flush()
-    await pull(harness)
-    await pull(harness)
-    await pull(harness)
     const view = harness.app.view!
+    await pull(harness)
+    await pull(harness)
+    await pull(harness)
     // The three pulls above ran while focus kept bouncing to "branches" (pull() presses "3"), so
     // refocus the log before driving it by keyboard.
     await harness.pressKey("@")
@@ -157,7 +164,9 @@ describe("command log autoscroll", () => {
   })
 
   test("`<`, `.`, `,` and `>` jump and page the log through the matching autoscroll transition", async () => {
-    harness = await harnessWithUpstream()
+    // See the j/k test above: a focused log now fills the available space, so the module default
+    // of 40 rows leaves ~28 content rows — too tall for the six pulls below to overflow.
+    harness = await harnessWithUpstream(20)
     await harness.pressKey("@")
     await harness.pressKey("f")
     await harness.flush()
@@ -267,6 +276,9 @@ describe("command log autoscroll", () => {
     await harness.pressKey("@")
     await harness.pressKey("t")
     await harness.flush()
+    // Three pulls, not two — see the "re-arms" test above for why DEFAULT_LOG_HEIGHT's content
+    // area needs one more pull's worth of lines to overflow since Task 9.
+    await pull(harness)
     await pull(harness)
     await pull(harness)
     const view = harness.app.view!
