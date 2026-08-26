@@ -1,0 +1,258 @@
+# Lazygit Command Log Parity Design
+
+**Status:** Approved design
+**Date:** 2026-08-26
+**Reference:** vendored `learn-projects/lazygit/`
+**Scope:** Replace githunk's `CommandRecord`-list command log with lazygit's action/command stream, and make what reaches the log match lazygit's `DontLog()` set
+
+## 1. Goal
+
+Make the lower-right command log read exactly like lazygit's `extras` view:
+
+- an append-only stream of yellow action labels and indented command strings, not a list of formatted `CommandRecord`s;
+- only user-driven writes reach it — every loader and query is suppressed, as is the background fetch;
+- lazygit's colours, indentation, quoting, wrapping, header, random tip, autoscroll state machine, keybindings, window sizing and default visibility.
+
+This is a deliberate breaking change. `CommandLog.records()` is removed, `AppModel.commandLog` changes type, the persisted `commandLogVisible` default flips to `true`, `DEFAULT_LOG_HEIGHT` changes from 8 to 10, and `@` stops being a three-way cycle. Callers and tests migrate together; no compatibility shims are kept.
+
+## 2. Current State and the Gap
+
+`src/app/command-log.ts` is a `CommandRecord[]` append list. `src/ui/panes/command-log-pane.ts:24-33` formats each record as an ISO timestamp, the argv with every argument `JSON.stringify`-quoted, an `exit N  Xms` line, and full `stdout:`/`stderr:` blocks, all in one colour.
+
+lazygit's log is a different thing. `pkg/gui/command_log_panel.go:25-68` defines two write kinds — `LogAction`, a yellow un-indented label, and `LogCommand(cmdStr, commandLine)`, indented two spaces in the default text colour when the string is something you could paste into a shell and magenta when it is not. Command output only ever reaches the panel for streamed commands, behind a magenta `Git output:` prefix (`pkg/gui/extras_panel.go:96-119`). There is no timestamp, exit code or duration anywhere.
+
+The larger gap is *what* gets logged. lazygit calls `DontLog()` on 80 command objects — every loader and query (`pkg/commands/git_commands/status.go:98,135,140`; `commit_loader.go:294,571,605`; `branch.go:69,82,111,127,169,180,235,241,294,311,348`; `stash_loader.go:36,71`; `file_loader.go:133,213,228`; `commit_file_loader.go:38`; `config.go:83`; `blame.go:32`) plus the background fetch (`sync.go:81`). githunk uses `dontLog` exactly once (`src/git/commit-status.ts:27`), so its 10-second working-tree refresh buries the user's own commands under `status`, `log`, `for-each-ref`, `diff` and `stash list`. This, more than colour or format, is why the pane does not read like lazygit's.
+
+## 3. Data Model
+
+`src/domain/command.ts` gains the display types:
+
+```ts
+export type CommandLogStyle =
+  | "action" | "command" | "internal" | "output" | "intro" | "tip-label" | "tip"
+
+export type CommandLogSpan = { readonly style: CommandLogStyle; readonly text: string }
+
+/** One logical line. The pane wraps it to its own width. */
+export type CommandLogLine = { readonly id: number; readonly spans: readonly CommandLogSpan[] }
+```
+
+`CommandRecord` stays as `GitRunner.run`'s return value and `GitCommandError`'s payload; it is no longer retained by the log.
+
+`src/app/command-log.ts` becomes an append-only line list whose write API mirrors lazygit's:
+
+| githunk | lazygit |
+| --- | --- |
+| `logAction(action)` | `LogAction` (`command_log_panel.go:25-44`) |
+| `logCommand(cmdStr, commandLine)` | `LogCommand` (`command_log_panel.go:46-68`) |
+| `logOutput(text)` | `getCmdWriter` / `prefixWriter` (`extras_panel.go:96-119`) |
+| `logIntro(text)` / `logTip(label, tip)` | `printCommandLogHeader` (`command_log_panel.go:70-85`) |
+| `lines()` | the gocui view's line buffer |
+| `nextId()` | — (id counter, moved off `GitRunner`) |
+
+`records()` is removed. lazygit retains only strings (`gui.GuiLog = append(gui.GuiLog, cmdStr)`), and keeping whole `stdout` for every command was costing memory proportional to the largest patch the app had ever produced for content the pane no longer renders.
+
+Choosing spans per logical line, rather than accumulating an ANSI string and reparsing it through `src/ui/panes/ansi-text.ts`, is the faithful choice rather than a deviation: gocui parses each `Fprint` incrementally into its own attributed line buffer and never reparses what is already there. A growing-string design would be `O(total)` per append, which lazygit is not.
+
+### 3.1 Write semantics, copied
+
+`logCommand` indents embedded newlines: `"  " + cmdStr.replaceAll("\n", "\n  ")` (`command_log_panel.go:57`), so a multi-line command string has every line indented two spaces. `commandLine === false` selects the `internal` style; `true` selects `command`.
+
+Command strings are built by a new `formatCommandLine(argv)` that copies `CmdObj.ToString()` (`cmd_obj.go:64-75`): join with spaces, wrapping an argument in double quotes **only if it contains a space**. This replaces the current `JSON.stringify`-per-argument, which quotes everything and escapes backslashes.
+
+`logOutput` writes the magenta `Git output:` heading once per command, then the raw text as `output` lines, matching `prefixWriter`'s write-prefix-once behaviour (`extras_panel.go:100-119`).
+
+## 4. What Reaches the Log
+
+### 4.1 The `dontLog` sweep
+
+Every read path is marked `dontLog: true`, matching lazygit's `DontLog()` set: `src/git/status.ts`, `commits.ts`, `branches.ts`, `stash.ts`, `diff.ts`, `config.ts`, `refs-snapshot.ts`, `tags.ts`, `worktrees.ts`, `submodules.ts`, `ref-log.ts`, `reflog.ts`, `base-inference.ts`, `branch-review.ts`, and the `gh` queries in `github.ts`.
+
+The background fetch is suppressed and the foreground fetch is not, copying `FetchBackgroundCmdObj` (`sync.go:77-84`, `DontLog().FailOnCredentialRequest()`) against `FetchCmdObj` (`sync.go:65-70`). `src/app/background.ts` therefore passes `dontLog: true` for its fetch and its working-tree refresh; `RefsWatcher`'s 2-second polling is a query and is suppressed too.
+
+After the sweep, an idle githunk writes nothing to the log.
+
+### 4.2 Action labels
+
+lazygit calls `LogAction` from its UI controllers, because that is the layer where one user intent becomes N git commands. githunk's equivalent layer is `AppController`, whose mutation methods map one-to-one onto user intents (`stageFile()` runs `git add`); `src/ui/root-view.ts` corresponds to lazygit's keybinding table and views, not to its controllers. `AppController` is also unit-testable without a renderer, which the label assertions need.
+
+`AppController` gains a private `logAction(label)` that forwards to `this.runner?.log.logAction(label)`, called as the first statement of each mutation. Labels live in a new `src/app/log-actions.ts`, copied verbatim from `pkg/i18n/english.go:2128-2254`:
+
+| `AppController` method | Label | lazygit call site |
+| --- | --- | --- |
+| `stageFile` | `Stage file` | `files_controller.go:625` -> `:544` |
+| `unstageFile` | `Unstage file` | `files_controller.go:625` -> `:559` |
+| `toggleAllFiles` | `Stage all files` / `Unstage all files` | `files_controller.go:960` -> `:544,559`, chosen by the same `shouldStage` test |
+| `discardFile` | `Discard all changes in selected file(s)` | `files_controller.go:1744`; `english.go:2173` |
+| `applySelection`, `discardSelection` | `Apply patch` | `staging_controller.go:265,332`; `english.go:2215` |
+| `commit` | `Commit` | `english.go:2192` |
+| `amend` | `Amend commit` | `amend_helper.go:22` |
+| `push` | `Push` | `sync_controller.go:197` |
+| `pull` | `Pull` | `sync_controller.go:167` |
+| `fetch`, `fetchRemote` | `Fetch` | `files_controller.go:1541` (a hardcoded string in lazygit, not an `Actions` entry) |
+| `switchLocalBranch`, `switchLocal`, `checkoutRemoteTracking` | `Checkout branch` | `branches_controller.go:417,516` |
+| `createBranch` | `Create branch` | `english.go:2142` |
+| `deleteBranch` | `Delete local branch` | `english.go:2137` |
+| `renameBranch` | `Rename branch` | `english.go:2141` |
+| `chooseUpstream` | `Set branch upstream` | `english.go:2210` |
+| `createStash` | `Stash all changes` / `Stash staged changes` | `files_controller.go:1516`; `english.go:2196,2198`, chosen by `StashCreateOptions` |
+| `applyStash` | `Apply stash` | `stash_controller.go:127` |
+| `popStash` | `Pop stash` | `stash_controller.go:141` |
+| `dropStash` | `Drop stash` | `stash_controller.go:169` |
+| edit-file (`src/git/editor.ts` path) | `Open file` | `files_helper.go:78` |
+
+`switchLocal` delegates to `switchLocalBranch`; only the outermost method logs, so one keypress never produces two labels.
+
+githunk-only actions that run no git command — `markFileReviewed`, `markFocusedFileReviewed`, `setBranchBase`, `switchMode`, `setWorkingTreeScope` — emit no label, because lazygit emits labels only for work that reaches git.
+
+### 4.3 Command output
+
+`GitRunner.run` calls `log.logCommand(formatCommandLine(args), true)` before spawning, unless `dontLog` is set. `createGhRunner` does the same; its argv already carries the program name.
+
+Streamed output is copied for the commands lazygit streams. lazygit's `Git output:` block appears only for commands built with a credential strategy or `StreamOutput()` (`cmd_obj_runner.go:234-246`), which in practice is push, pull and foreground fetch (`sync.go:44,110,124,132`). githunk writes those commands' combined output through `logOutput`.
+
+**Deviation.** githunk additionally calls `logOutput(stderr)` when a non-streamed command exits non-zero. lazygit does not: it raises an error popup instead. githunk has no error popup — a failed mutation surfaces as a pane `bottomTitle` string — and PRD §6.7 requires that "command failures must remain inspectable". This is githunk's own design constraint, so the deviation is retained and recorded in the parity matrix.
+
+## 5. Rendering
+
+Styles, copied from `command_log_panel.go` and `theme/theme.go:11`:
+
+| Style | Colour | lazygit |
+| --- | --- | --- |
+| `action` | `ANSI_YELLOW` | `style.FgYellow` (`command_log_panel.go:41`) |
+| `command` | `DEFAULT_FOREGROUND` | `theme.DefaultTextColor` = `style.FgDefault` (`theme.go:11`) |
+| `internal` | `ANSI_MAGENTA` | `style.FgMagenta` (`command_log_panel.go:55`) |
+| `output` | `DEFAULT_FOREGROUND`; its `Git output:` heading `ANSI_MAGENTA` | `style.FgMagenta` (`extras_panel.go:97`) |
+| `intro` | `ANSI_CYAN` | `style.FgCyan` (`command_log_panel.go:75`) |
+| `tip-label` | `ANSI_YELLOW` | `style.FgYellow` (`command_log_panel.go:81`) |
+| `tip` | `ANSI_GREEN` | `style.FgGreen` (`command_log_panel.go:82`) |
+
+lazygit sets `Wrap = true` on the view (`views.go:150`). githunk keeps `wrapMode: "none"` on the `TextRenderable` and wraps in a pure function instead, because `PaneTextBuffer.addHighlight(row, …)` addresses display rows and needs a one-to-one mapping to colour them. The visible result is the same: soft-wrapped continuation rows carry no extra indent, matching gocui. Wrapping is recomputed on resize.
+
+```ts
+export function commandLogDisplayLines(
+  lines: readonly CommandLogLine[],
+  width: number,
+): readonly CommandLogDisplayLine[]
+```
+
+The pane paints only rows near the viewport, as `src/ui/panes/diff-text.ts` does. Change detection keeps the existing shape — `lines()` returns the live array, so identity cannot detect an append; the pane compares the line count and the identity of the last line, and additionally re-wraps when the width changed.
+
+The pane title becomes `Command log` (`english.go:1928`).
+
+## 6. Autoscroll
+
+lazygit's state machine, copied from `extras_panel.go:48-94` and `command_log_controller.go:29-33`, with the flag living on the pane as `view.Autoscroll` does on the view:
+
+- `logAction` and `logCommand` set autoscroll on (`command_log_panel.go:38,62`), so a command that runs while the user is reading scrollback does yank the viewport back to the bottom. That is lazygit's behaviour and is copied, not softened;
+- `logOutput` does **not** touch the flag. lazygit's `prefixWriter` writes straight to the view (`extras_panel.go:109-119`) and never assigns `Autoscroll`; it scrolls only because the `logCommand` that preceded it already turned the flag on. The header and random-tip writes likewise leave it alone (`command_log_panel.go:70-85`);
+- scrolling *up* by any means turns it off — wheel, `↑`/`k`, `,` page up, `<` goto top (`extras_panel.go:48,56,64,72,80`);
+- `>` goto bottom turns it on (`extras_panel.go:88-89`);
+- losing focus turns it on (`command_log_controller.go:29-33`);
+- while the flag is off, the viewport holds still — until the next `logAction`/`logCommand`, per the first bullet.
+
+Two current behaviours are removed: `update()` unconditionally assigning `text.scrollY = text.maxScrollY` (`command-log-pane.ts:102`), and the wheel handler that swallows scroll events with `preventDefault` (`command-log-pane.ts:74-81`).
+
+## 7. Keybindings
+
+New `command-log` context bindings, copied from `keybindings.go:249-295`:
+
+| Keys | Action | lazygit |
+| --- | --- | --- |
+| wheel up / wheel down | scroll, autoscroll off / off | `keybindings.go:249-258` |
+| `k` `↑` / `j` `↓` | scroll, autoscroll off / off | `keybindings.go:259-269` |
+| `,` / `.` | page up / page down, autoscroll off | `keybindings.go:270-279` |
+| `<` / `>` | goto top (off) / goto bottom (on) | `keybindings.go:280-289` |
+| left click | focus the command log | `keybindings.go:290-295` |
+
+`,` `.` `<` `>` already exist as global bindings (`src/ui/bindings.ts:300-303`); they gain `command-log` context entries so the pane handles them with the correct autoscroll side effect. Scrolling down with `j`/`↓`/wheel does **not** re-enable autoscroll, matching `scrollDownExtra` (`extras_panel.go:56-61`) — only `>` and losing focus do.
+
+## 8. The `@` Menu
+
+`@` opens a menu instead of cycling. `src/ui/action-menu.ts` is a new pane: a titled box listing items as `key  label`, driven through the existing `modal` binding context, with `j`/`k` navigation, `enter` to activate the highlighted item, `escape` to dismiss, and each item's own key as a direct accelerator.
+
+`@` opens the `Command log` menu (`extras_panel.go:12-38`) with two items, labels verbatim from `english.go:1949-1950`:
+
+- `t` — `Toggle show/hide command log`. Copies `extras_panel.go:19-29`: if the log is shown *and* focused, pop focus back to the parent side context first, then flip visibility and persist it.
+- `f` — `Focus command log`. Copies `handleFocusCommandLog` (`extras_panel.go:40-46`): force the log visible, then focus it.
+
+`FocusManager.handleKey`'s `@` branch (`src/ui/focus.ts:46-59`) is deleted. `COMMAND_LOG_FOCUS_ID` stays in the `h`/`l`/tab cycle only while the log is visible, as today.
+
+## 9. Sizing and Default Visibility
+
+`getExtrasWindowSize` (`window_arrangement_helper.go:403-417`) is copied:
+
+```
+focused            -> fill the available space   (lazygit: baseSize 1000)
+terminal height<40 -> 1 content row              (lazygit: baseSize 1)
+otherwise          -> the configured size        (lazygit: Gui.CommandLogSize, default 8)
+frame              -> +2 in every case
+```
+
+githunk's `logHeight` is already a total including the border, so:
+
+- `DEFAULT_LOG_HEIGHT` changes from 8 to 10, making the default content area 8 rows as lazygit's is. The current 8 yields 6.
+- terminal height below 40 clamps `logHeight` to `MIN_LOG_HEIGHT`, which is already 3 = 1 + 2.
+- `focus === "command-log"` sets `logHeight` to the full `logCapacity`. `computeLayout` already receives `focus`, so this is local to `src/ui/layout.ts`.
+
+The draggable splitter is **not** a deviation. lazygit's `commandLogSize` is itself a user setting (`user_config.go:191`); githunk's drag sets the same value with the mouse and stores it in `.git/githunk/ui-state-v1.json` instead of a YAML config. The dragged value substitutes for the constant in the third branch only; the focused and short-terminal branches override it exactly as they override lazygit's constant. `root-view.ts` persists the requested `logHeight`, not the computed geometry, so a focused expansion is never written back.
+
+Default visibility flips to shown, copying `ShowCommandLog: true` (`user_config.go:901`) and `gui.ShowExtrasWindow = userConfig.Gui.ShowCommandLog && !GetAppState().HideCommandLog` (`gui.go:523`): `defaultUiState().commandLogVisible` becomes `true`, and the `logVisible` default in `RootView` follows. A persisted `false` still wins, matching lazygit's `HideCommandLog`.
+
+## 10. Header and Random Tip
+
+On startup the log is seeded, copying `printCommandLogHeader` (`command_log_panel.go:70-85`):
+
+1. an `intro` line, `You can hide/focus this panel by pressing '@'` — `CommandLogHeader` (`english.go:1951`) formatted with the `ExtrasMenu` key;
+2. a blank line, from the format string's trailing `\n` plus `Fprintln`;
+3. when tips are enabled, `Random tip: <tip>` — a `tip-label` span, `": "`, then a `tip` span (`command_log_panel.go:78-83`). Enabled by default, copying `ShowRandomTip: true` (`user_config.go:909`).
+
+Subsequent writes each start on a new line with no blank separator, because `LogAction` and `LogCommand` prefix `"\n"` rather than suffixing it (`command_log_panel.go:41,65`).
+
+lazygit's tip catalogue is parameterised on its own keybindings and features (`command_log_panel.go:90-199`). A tip naming a key githunk does not bind, or a feature githunk does not have, would instruct the user to press nothing. The catalogue is therefore the subset whose feature and key both exist, each copied verbatim with githunk's key substituted the way lazygit substitutes its own:
+
+Keybinding tips (5):
+
+- `You can view the individual files of a stash entry by pressing '<enter>'` (`command_log_panel.go:124-127`; githunk binds `enter` to `stash-inspect`, `bindings.ts:393`)
+- `You can page through the items of a panel using ',' and '.'` (`:149-153`; `bindings.ts:300-301`)
+- `You can jump to the top/bottom of a panel using '<' and '>'` (`:154-157`; `bindings.ts:302-303`)
+- `To collapse/expand a directory, press '<enter>'` (`:158-161`; githunk's `enter` calls `toggleFileTreeCollapsedPath` on a directory row, `root-view.ts:1376-1379`, copying `files_controller.go:715`)
+- `You can now navigate the side panels with 'l' and 'h'` (`:170-174`; `bindings.ts:293`)
+
+General-advice tips (6), verbatim and key-free (`command_log_panel.go:178-184`):
+
+- the `git commit` / saving your game one;
+- separating refactor commits from feature commits;
+- experimenting on a throwaway branch;
+- reading your own diff before requesting review;
+- recovering an earlier state from the reflog;
+- the stash as a place for debugging snippets.
+
+Excluded, with the reason: force push, filter-commits-by-path, interactive rebase, undo/redo, reset options, push tag, diffing menu, drop commit, merge options, revert commit, bisect, custom commands, delta, bare-repo flags and the escape-a-mode tip's `quitOnTopLevelReturn` clause all name features githunk does not implement; the "join the team" and "raise an issue" tips point at lazygit's own project. The one remaining tip that githunk gains a feature for gets added at that time.
+
+`amend` is bound (`bindings.ts:325`) but lazygit's amend tip names `Files.AmendLastCommit` in the files panel; githunk's `A` is global, so the tip is excluded rather than reworded.
+
+## 11. Testing
+
+Pure unit tests, no renderer:
+
+- `formatCommandLine` — the space-only quoting rule from `CmdObj.ToString()`, including arguments with quotes, backslashes and empty strings.
+- `CommandLog` write API — span styles per kind, the two-space indent applied to every line of a multi-line command string, `Git output:` written once per command.
+- `commandLogDisplayLines` — wrapping at a width, continuation rows carrying no indent, spans split correctly across a wrap boundary, wide characters.
+- the autoscroll state machine — each input from §6 against the flag and viewport.
+- `computeLayout` — the three sizing branches from §9, tested directly against `computeLayout` per the repo convention.
+- `defaultUiState()` visibility, and a persisted `false` overriding it.
+
+Integration:
+
+- `tests/git/sync.integration.test.ts:27` currently asserts on `runner.log.records().at(-1)?.args`; it moves to asserting the last `command` line's text.
+- a new acceptance test drives stage → commit through the shell harness and asserts the log contains `Stage file`, `  git add …`, `Commit`, `  git commit …` in order, **and** that no `status`, `log`, `for-each-ref` or `diff` line appears — the §4.1 sweep is the change most likely to regress silently.
+- a test that a failing command's stderr appears under `Git output:` (§4.3 deviation) and that a succeeding one's stdout does not.
+
+## 12. Files Touched
+
+`src/domain/command.ts`, `src/app/command-log.ts`, `src/app/log-actions.ts` (new), `src/app/controller.ts`, `src/app/background.ts`, `src/app/refs-watcher.ts`, `src/git/runner.ts`, `src/git/github.ts`, the 14 read paths in `src/git/` from §4.1, `src/ui/panes/command-log-pane.ts`, `src/ui/action-menu.ts` (new), `src/ui/bindings.ts`, `src/ui/focus.ts`, `src/ui/layout.ts`, `src/ui/ui-state-store.ts`, `src/ui/root-view.ts`, `docs/lazygit-compatibility-v0.1.md`.
+
+## 13. Parity Matrix Update
+
+Row 13 ("Lower-right review / command-log area") splits. The command log's content, colours, autoscroll, keybindings, `@` menu, sizing and default visibility become `compatible`. Two things stay recorded as githunk extensions: the draggable horizontal splitter as the input method for lazygit's `commandLogSize`, and the §4.3 failure-output block. The random-tip subset is recorded with the excluded-tips list from §10.
