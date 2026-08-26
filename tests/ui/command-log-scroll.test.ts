@@ -7,7 +7,7 @@ import { autoscrollAfter, type CommandLogScrollInput } from "../../src/ui/panes/
  * does not re-arm it — only `>` and losing focus do.
  */
 describe("autoscrollAfter", () => {
-  const clears: readonly CommandLogScrollInput[] = ["scroll-up", "scroll-down", "page-up", "page-down", "goto-top"]
+  const clears: readonly CommandLogScrollInput[] = ["scroll-up", "scroll-down", "page-up", "page-down", "goto-top", "scrollbar"]
   const arms: readonly CommandLogScrollInput[] = ["append-entry", "goto-bottom", "focus-lost"]
   const leaves: readonly CommandLogScrollInput[] = ["append-output", "append-header", "resize"]
 

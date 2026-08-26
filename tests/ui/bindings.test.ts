@@ -329,6 +329,26 @@ describe("GITHUNK_BINDINGS", () => {
     expect(registry.dispatch({ name: "?" })).toBe("keybinding-menu")
   })
 
+  /**
+   * lazygit binds all of these on the extras view (pkg/gui/keybindings.go:249-295). They exist
+   * globally in githunk already, but the command log needs its own entries so the handler can apply
+   * the matching autoscroll transition rather than just moving the viewport.
+   */
+  test("the command log binds paging and jump keys in its own context", () => {
+    for (const [key, action] of [[",", "page-previous"], [".", "page-next"], ["<", "goto-top"], [">", "goto-bottom"]] as const) {
+      const binding = registry.resolve({ name: key }, { context: "command-log", model: model(), ui: ui() })
+      expect(binding?.action).toBe(action)
+      expect(binding?.contexts).toContain("command-log")
+    }
+  })
+
+  test("the command log still binds j/k and the arrows", () => {
+    expect(registry.dispatch({ name: "j" }, { context: "command-log" })).toBe("next")
+    expect(registry.dispatch({ name: "k" }, { context: "command-log" })).toBe("previous")
+    expect(registry.dispatch({ name: "down" }, { context: "command-log" })).toBe("next")
+    expect(registry.dispatch({ name: "up" }, { context: "command-log" })).toBe("previous")
+  })
+
   test("keeps the per-pane meanings of space, d, enter, r, g, n and f", () => {
     expect(registry.dispatch({ name: "space" }, { context: "files" })).toBe("stage-file")
     expect(registry.dispatch({ name: "space" }, { context: "main" })).toBe("stage-selection")

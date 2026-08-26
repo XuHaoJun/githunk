@@ -395,8 +395,16 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["stash"] },
 
   // ---- command log ----
+  // lazygit binds these on the extras view (pkg/gui/keybindings.go:249-295). They duplicate the
+  // global entries above so that the handler can apply lazygit's autoscroll transition, which
+  // differs per key: every scroll clears the flag except goto-bottom, which sets it
+  // (pkg/gui/extras_panel.go:49,57,65,73,81,89).
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["command-log"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["command-log"] },
+  { keys: ["."], action: "page-next", description: "page down", contexts: ["command-log"] },
+  { keys: [","], action: "page-previous", description: "page up", contexts: ["command-log"] },
+  { keys: [">", "end"], action: "goto-bottom", description: "go to bottom", contexts: ["command-log"] },
+  { keys: ["<", "home"], action: "goto-top", description: "go to top", contexts: ["command-log"] },
 
   // ---- status pane ----
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["status"] },

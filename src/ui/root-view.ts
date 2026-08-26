@@ -480,7 +480,12 @@ export class RootView {
     renderer.root.add(this.root)
 
     this.focusManager.onChange = (focus, logVisible) => {
-      if (logVisible) this.commandLog.update(this.model.commandLog)
+      // Route through the same arm comparison `update(model)` uses (see the comment there), not a
+      // bare `commandLog.update`: a wheel scroll does not require focus (task 5), so the
+      // focus-lost re-arm never fires for a log that was scrolled and then hidden. Skipping the
+      // comparison on reopen left it wherever that scroll ended, instead of re-pinning to the
+      // bottom for any mutation that logged output while it was hidden.
+      if (logVisible) this.refreshCommandLog(this.model)
       this.pendingClick = undefined
       this.cancelGesture()
       this.clearDiscardState()
@@ -590,21 +595,26 @@ export class RootView {
     this.syncPreviewForFocus(this.focusManager.active === "main" ? this.focusManager.lastSide : this.focusManager.active)
     // A hidden log is not worth rendering: it holds every command's whole stdout, so the text is
     // as large as the biggest patch the session has run. `applyFocus` renders it when it opens.
-    if (this.focusManager.logVisible) {
-      // lazygit arms autoscroll inside `LogAction`/`LogCommand` (pkg/gui/command_log_panel.go:38,62)
-      // — at write time. RootView only ever sees the last snapshot of a controller action
-      // (`view.update` fires once per controller call, src/app/create-app.ts:244), and a mutation
-      // logs its output *after* its command line, so arming on the newest write's kind would drop
-      // the arm for every batch that ends in output. Arm on the count of arming writes having grown
-      // instead: idempotent and independent of how many snapshots the batch took. The comparison
-      // lives inside the visible branch deliberately — while the log is hidden the count is not
-      // consumed, so a whole hidden burst arms exactly once on the next visible update.
-      const arms = model.commandLogAutoscrollArms ?? 0
-      if (arms > this.renderedCommandLogArms) this.commandLog.applyScrollInput("append-entry")
-      this.renderedCommandLogArms = arms
-      this.commandLog.update(model.commandLog)
-    }
+    if (this.focusManager.logVisible) this.refreshCommandLog(model)
     this.recomputeLayout()
+  }
+
+  /**
+   * Applies the arm comparison and hands the log its current lines. lazygit arms autoscroll
+   * inside `LogAction`/`LogCommand` (pkg/gui/command_log_panel.go:38,62) — at write time.
+   * RootView only ever sees the last snapshot of a controller action (`view.update` fires once
+   * per controller call, src/app/create-app.ts:244), and a mutation logs its output *after* its
+   * command line, so arming on the newest write's kind would drop the arm for every batch that
+   * ends in output. Arm on the count of arming writes having grown instead: idempotent and
+   * independent of how many snapshots the batch took. Callers gate this on log visibility: while
+   * the log is hidden the count is not consumed, so a whole hidden burst arms exactly once on the
+   * next call, whether that is the next `update(model)` or the log's own reopening.
+   */
+  private refreshCommandLog(model: AppModel): void {
+    const arms = model.commandLogAutoscrollArms ?? 0
+    if (arms > this.renderedCommandLogArms) this.commandLog.applyScrollInput("append-entry")
+    this.renderedCommandLogArms = arms
+    this.commandLog.update(model.commandLog)
   }
   private clearDiscardState(): void {
     this.discardPending = false
@@ -1307,6 +1317,13 @@ export class RootView {
         // not, and nothing at all on a pane holding no patch (a branch's commit graph).
         this.scrollMainBy(direction === "next" ? 1 : -1)
         return
+      case "command-log":
+        // `scrollUpExtra`/`scrollDownExtra` (pkg/gui/keybindings.go:249-258) scroll one line and
+        // both clear `Autoscroll`, even scrolling down (pkg/gui/extras_panel.go:49,57) — holding
+        // `j` to the bottom does not re-arm it, only `>` does.
+        this.commandLog.scrollBy(direction === "next" ? 1 : -1)
+        this.commandLog.applyScrollInput(direction === "next" ? "scroll-down" : "scroll-up")
+        return
       default:
         return
     }
@@ -1359,6 +1376,13 @@ export class RootView {
       return
     }
     const step = this.focusedPageStep()
+    if (this.focusManager.active === "command-log") {
+      // `pageUpExtrasPanel`/`pageDownExtrasPanel` scroll by `PageDelta()` — the pane's visible
+      // height — and both clear `Autoscroll` (pkg/gui/extras_panel.go:65,73, view_trait.go:87-96).
+      this.commandLog.scrollBy(direction === "next" ? step : -step)
+      this.commandLog.applyScrollInput(direction === "next" ? "page-down" : "page-up")
+      return
+    }
     for (let moved = 0; moved < step; moved += 1) this.actionMoveCursor(direction)
   }
 
@@ -1367,6 +1391,18 @@ export class RootView {
       // `handleGotoTop`/`handleGotoBottom` scroll by the whole content height, which the pane's
       // own clamping turns into "as far as it goes" — view_selection_controller.go:81-97.
       this.scrollMainBy(edge === "bottom" ? this.panes.main.text.scrollHeight : -this.panes.main.text.scrollHeight)
+      return
+    }
+    if (this.focusManager.active === "command-log") {
+      // `goToExtrasPanelTop` scrolls to 0 and clears `Autoscroll` (pkg/gui/extras_panel.go:81,89);
+      // `goToExtrasPanelBottom` sets it instead, and the pane re-pins to the bottom once armed, so
+      // no separate scroll call is needed here.
+      if (edge === "top") {
+        this.commandLog.scrollTo(0)
+        this.commandLog.applyScrollInput("goto-top")
+      } else {
+        this.commandLog.applyScrollInput("goto-bottom")
+      }
       return
     }
     // Lists are short enough that repeating the single-step move is simpler
@@ -2940,6 +2976,35 @@ export class RootView {
     }
     return undefined
   }
+
+  /**
+   * Shared by every scrollbar-drag gesture site (mouse down on the track, drag, and up): maps a
+   * screen Y onto the pane's scroll range and jumps there. lazygit has no scrollbar over the
+   * extras view — this is one of githunk's three documented review extensions
+   * (docs/lazygit-compatibility-v0.1.md) — so there is no parity behaviour to copy for it clearing
+   * the command log's autoscroll. It does so anyway, by the same principle the rest of the FSM
+   * already encodes: every explicit user scroll clears the flag, only an explicit jump-to-bottom
+   * arms it, and a scrollbar drag is an explicit user scroll
+   * (src/ui/panes/command-log-scroll.ts's `"scrollbar"` input).
+   */
+  private scrollPaneByScrollbarPosition(paneId: FocusId, eventY: number): void {
+    const barPane = paneId === "command-log" ? this.commandLog as unknown as PaneHandle : (this.panes as Record<string, PaneHandle>)[paneId]
+    const bar = barPane ? paneScrollbar(barPane.text) : undefined
+    const win = (this.geometry.windows as Record<string, { x0: number; y0: number; x1: number; y1: number } | undefined>)[paneId === "command-log" ? "log" : paneId]
+    if (!bar || !win || !barPane) return
+    const barScreenY = (bar as unknown as { screenY: number }).screenY
+    const barHeight = (bar as unknown as { height: number }).height as number
+    const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
+    const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
+    const relative = eventY - trackStart
+    const clamped = Math.max(0, Math.min(trackSize, relative))
+    const ratio = trackSize === 0 ? 0 : clamped / trackSize
+    const range = Math.max(0, bar.scrollSize - bar.viewportSize)
+    const newPos = Math.round(ratio * range)
+    barPane.scrollTo(newPos)
+    if (paneId === "command-log") this.commandLog.applyScrollInput("scrollbar")
+  }
+
   private findPaneAtPoint(x: number, y: number): { id: FocusId; winName: WindowName } | undefined {
     const windows = this.geometry.windows as unknown as Record<string, { x0: number; y0: number; x1: number; y1: number } | undefined>
     const order: Array<[FocusId, WindowName]> = [
@@ -3209,41 +3274,16 @@ export class RootView {
           return
         }
         if (owner.kind === "scrollbar") {
-          const barPane = owner.paneId === "command-log" ? this.commandLog as unknown as PaneHandle : (this.panes as Record<string, PaneHandle>)[owner.paneId]
-          const bar = barPane ? paneScrollbar(barPane.text) : undefined
-          const win = (this.geometry.windows as Record<string, { x0:number; y0:number; x1:number; y1:number } | undefined>)[owner.paneId === "command-log" ? "log" : owner.paneId]
           if (event.type === "drag") {
             this.pendingClick = undefined
             this.lastSplitterPress = undefined
-            if (bar && win && barPane) {
-              const barScreenY = (bar as unknown as { screenY:number }).screenY
-              const barHeight = (bar as unknown as { height:number }).height as number
-              const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
-              const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
-              const relative = event.y - trackStart
-              const clamped = Math.max(0, Math.min(trackSize, relative))
-              const ratio = trackSize === 0 ? 0 : clamped / trackSize
-              const range = Math.max(0, bar.scrollSize - bar.viewportSize)
-              const newPos = Math.round(ratio * range)
-              barPane.scrollTo(newPos)
-            }
+            this.scrollPaneByScrollbarPosition(owner.paneId, event.y)
             event.preventDefault()
             event.stopPropagation()
             return
           }
           if (event.type === "up") {
-            if (bar && win && barPane) {
-              const barScreenY = (bar as unknown as { screenY:number }).screenY
-              const barHeight = (bar as unknown as { height:number }).height as number
-              const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
-              const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
-              const relative = event.y - trackStart
-              const clamped = Math.max(0, Math.min(trackSize, relative))
-              const ratio = trackSize === 0 ? 0 : clamped / trackSize
-              const range = Math.max(0, bar.scrollSize - bar.viewportSize)
-              const newPos = Math.round(ratio * range)
-              barPane.scrollTo(newPos)
-            }
+            this.scrollPaneByScrollbarPosition(owner.paneId, event.y)
             this.gestureOwner = undefined
             event.preventDefault()
             event.stopPropagation()
@@ -3278,21 +3318,7 @@ export class RootView {
           this.pendingClick = undefined
           this.lastSplitterPress = undefined
           this.gestureOwner = { kind: "scrollbar", paneId: scrollbarHit }
-          const barPane = scrollbarHit === "command-log" ? this.commandLog as unknown as PaneHandle : (this.panes as Record<string, PaneHandle>)[scrollbarHit]
-          const bar = barPane ? paneScrollbar(barPane.text) : undefined
-          const win = (this.geometry.windows as Record<string, { x0:number; y0:number; x1:number; y1:number } | undefined>)[scrollbarHit === "command-log" ? "log" : scrollbarHit]
-          if (bar && win && barPane) {
-            const barScreenY = (bar as unknown as { screenY:number }).screenY
-            const barHeight = (bar as unknown as { height:number }).height as number
-            const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
-            const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
-            const relative = event.y - trackStart
-            const clamped = Math.max(0, Math.min(trackSize, relative))
-            const ratio = trackSize === 0 ? 0 : clamped / trackSize
-            const range = Math.max(0, bar.scrollSize - bar.viewportSize)
-            const newPos = Math.round(ratio * range)
-            barPane.scrollTo(newPos)
-          }
+          this.scrollPaneByScrollbarPosition(scrollbarHit, event.y)
           event.preventDefault()
           event.stopPropagation()
           return
