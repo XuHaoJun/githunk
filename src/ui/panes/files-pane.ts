@@ -1,4 +1,4 @@
-import type { CliRenderer } from "@opentui/core"
+import type { CliRenderer, ColorInput } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import type { ChangedFile } from "../../domain/review-target"
 import { createPane, type PaneHandle } from "./common"
@@ -71,7 +71,7 @@ export function createFilesTreeState(model: AppModel, mode: FileTreeMode = "tree
  * green when the node's only changes are staged, yellow when it has both, otherwise the list's
  * own foreground — pkg/gui/presentation/files.go:133-138. `undefined` means the default.
  */
-function nameColorFor(row: FileTreeRow<ChangedFile>): string | undefined {
+function nameColorFor(row: FileTreeRow<ChangedFile>): ColorInput | undefined {
   const hasStaged = someFileInNode(row.node, fileHasStagedChanges)
   if (!hasStaged) return undefined
   const allStaged = everyFileInNode(row.node, (file) => !fileHasUnstagedChanges(file))
@@ -83,10 +83,10 @@ function nameColorFor(row: FileTreeRow<ChangedFile>): string | undefined {
  * it is a `?` (the unstaged colour) or a space (the row's own colour); the unstaged character is
  * the unstaged colour unless it is a space.
  */
-function statusSegments(status: string, nameColor: string | undefined): readonly ListColumnSegment[] {
+function statusSegments(status: string, nameColor: ColorInput | undefined): readonly ListColumnSegment[] {
   const staged = status[0] ?? " "
   const unstaged = status[1] ?? " "
-  const colorFor = (char: string, base: string): ListColumnSegment =>
+  const colorFor = (char: string, base: ColorInput): ListColumnSegment =>
     char === " "
       ? { text: char, ...(nameColor === undefined ? {} : { color: nameColor }) }
       : { text: char, color: char === "?" ? UNSTAGED_CHANGES_FG : base }

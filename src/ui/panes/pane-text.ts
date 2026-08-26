@@ -1,4 +1,4 @@
-import type { TextRenderable } from "@opentui/core"
+import type { ColorInput, TextRenderable } from "@opentui/core"
 
 /**
  * The one place that reaches into OpenTUI's text internals.
@@ -16,7 +16,7 @@ import type { TextRenderable } from "@opentui/core"
 
 export type PaneHighlight = { readonly start: number; readonly end: number; readonly styleId: number }
 
-export type PaneStyleDefinition = { readonly fg?: string; readonly bold?: boolean; readonly dim?: boolean }
+export type PaneStyleDefinition = { readonly fg?: ColorInput; readonly bold?: boolean; readonly dim?: boolean }
 
 export type PaneTextBuffer = {
   /** Replaces the whole buffer. Drops any highlights, and does not touch the scroll offset. */

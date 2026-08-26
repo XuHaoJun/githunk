@@ -1,3 +1,5 @@
+import type { ColorInput } from "@opentui/core"
+
 import type { LocalBranch } from "../domain/branch"
 import { itemOperationLabel, type ItemOperation } from "../domain/item-operation"
 import { loaderFrame } from "./loader"
@@ -19,7 +21,7 @@ import {
 
 export type BranchStatusCell = {
   readonly text: string
-  readonly color: string
+  readonly color: ColorInput
 }
 
 /** lazygit's `tr.UpstreamGone` — pkg/i18n/english.go:2007. */

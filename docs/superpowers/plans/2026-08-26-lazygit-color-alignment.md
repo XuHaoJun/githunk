@@ -157,6 +157,7 @@
 - Modify: `tests/ui/pane-tabs.integration.test.ts`
 - Modify: `tests/ui/files-tabs.integration.test.ts`
 - Modify: `tests/ui/commit-flow.integration.test.ts`
+- Create: `tests/ui/pane-colors.test.ts`
 
 **Interfaces:**
 - Base pane text renderables use `DEFAULT_FOREGROUND`.

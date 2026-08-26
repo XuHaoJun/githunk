@@ -27,25 +27,6 @@ export const ANSI_BRIGHT_MAGENTA = indexed(13)
 export const ANSI_BRIGHT_CYAN = indexed(14)
 export const ANSI_BRIGHT_WHITE = indexed(15)
 
-/** ANSI colours 0-255, retained as indexed intent for SGR and lazygit theme rendering. */
-export const ANSI_PALETTE: readonly RGBA[] = [
-  ANSI_BLACK,
-  ANSI_RED,
-  ANSI_GREEN,
-  ANSI_YELLOW,
-  ANSI_BLUE,
-  ANSI_MAGENTA,
-  ANSI_CYAN,
-  ANSI_WHITE,
-  ANSI_BRIGHT_BLACK,
-  ANSI_BRIGHT_RED,
-  ANSI_BRIGHT_GREEN,
-  ANSI_BRIGHT_YELLOW,
-  ANSI_BRIGHT_BLUE,
-  ANSI_BRIGHT_MAGENTA,
-  ANSI_BRIGHT_CYAN,
-  ANSI_BRIGHT_WHITE,
-]
 
 /** lazygit's `default` foreground/background values, resolved by the terminal. */
 export const DEFAULT_FOREGROUND = RGBA.defaultForeground()

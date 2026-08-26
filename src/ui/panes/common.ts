@@ -1,7 +1,7 @@
 import { BoxRenderable, ScrollBarRenderable, TextRenderable, type CliRenderer, type StyledText } from "@opentui/core"
 import type { FocusId } from "../focus"
 import { PaneTabsBoxRenderable, buildPaneTabsStrip, paneTabsPlainTitle } from "../pane-tabs"
-
+import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
 /** Static half of a tabbed pane: the panel's jump label and its tab labels. */
 export type PaneTabsConfig = {
   readonly jumpKey: string
@@ -147,8 +147,9 @@ export function createPane(
   const box = new BoxClass(renderer, {
     id: `${id}-pane`,
     border: true,
-    borderColor: "#555555",
-    focusedBorderColor: "#ffffff",
+    borderColor: DEFAULT_FOREGROUND,
+    focusedBorderColor: ANSI_GREEN,
+    titleColor: DEFAULT_FOREGROUND,
     title,
     position: "absolute",
     width: "100%",
@@ -158,6 +159,7 @@ export function createPane(
   const text = new TextRenderable(renderer, {
     id: `${id}-text`,
     content,
+    fg: DEFAULT_FOREGROUND,
     selectable,
     wrapMode: "none",
     width: "100%",
@@ -199,8 +201,8 @@ export function createPane(
       syncVerticalScrollbar(bar, text)
     },
     setFocused(focused: boolean) {
-      box.borderColor = focused ? "#ffffff" : "#555555"
-      box.titleColor = focused ? "#ffffff" : "#aaaaaa"
+      box.borderColor = focused ? ANSI_GREEN : DEFAULT_FOREGROUND
+      box.titleColor = focused && tabsConfig === undefined ? ANSI_GREEN : DEFAULT_FOREGROUND
       box.requestRender()
     },
     ...(tabsConfig === undefined ? {} : {

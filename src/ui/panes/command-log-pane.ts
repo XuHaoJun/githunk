@@ -1,8 +1,9 @@
 import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
+import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
 import { attachVerticalScrollbar, syncVerticalScrollbar } from "./common"
 import { setPlainPaneText } from "./pane-text"
-import type { CommandRecord } from "../../domain/command"
 import type { FocusId } from "../focus"
+import type { CommandRecord } from "../../domain/command"
 
 export type CommandLogPaneHandle = {
   readonly id: FocusId
@@ -52,8 +53,9 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
   const box = new BoxRenderable(renderer, {
     id: "command-log-pane",
     border: true,
-    borderColor: "#555555",
-    focusedBorderColor: "#ffffff",
+    borderColor: DEFAULT_FOREGROUND,
+    focusedBorderColor: ANSI_GREEN,
+    titleColor: DEFAULT_FOREGROUND,
     title: "Command Log",
     position: "absolute",
     width: "100%",
@@ -63,6 +65,7 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
   const text = new TextRenderable(renderer, {
     id: "command-log-text",
     content: "No commands recorded",
+    fg: DEFAULT_FOREGROUND,
     selectable: false,
     wrapMode: "none",
     width: "100%",
@@ -100,8 +103,8 @@ export function createCommandLogPane(renderer: CliRenderer, records: readonly Co
       syncVerticalScrollbar(bar, text)
     },
     setFocused(focused: boolean) {
-      box.borderColor = focused ? "#ffffff" : "#555555"
-      box.titleColor = focused ? "#ffffff" : "#aaaaaa"
+      box.borderColor = focused ? ANSI_GREEN : DEFAULT_FOREGROUND
+      box.titleColor = focused ? ANSI_GREEN : DEFAULT_FOREGROUND
       box.requestRender()
     },
     scrollBy(delta: number) {

@@ -1,5 +1,6 @@
-import { StyledText, cyan, dim, green, red, type TextChunk, type TextRenderable } from "@opentui/core"
+import { StyledText, dim, fg, type TextChunk, type TextRenderable } from "@opentui/core"
 import type { DiffDisplayLine, DiffDisplayLineStyle } from "../../domain/diff/document"
+import { ANSI_CYAN, ANSI_GREEN, ANSI_RED } from "../theme"
 import { paneTextBuffer, type PaneStyleDefinition, type PaneTextBuffer } from "./pane-text"
 
 /**
@@ -24,9 +25,9 @@ const MARGIN_ROWS = 32
 /** Registered once per pane. The definitions mirror what the chunk fallback below paints. */
 const STYLE_DEFINITIONS: Readonly<Record<"gutter" | Exclude<DiffDisplayLineStyle, "plain">, PaneStyleDefinition>> = {
   gutter: { dim: true },
-  addition: { fg: "green" },
-  deletion: { fg: "red" },
-  "hunk-header": { fg: "cyan" },
+  addition: { fg: ANSI_GREEN },
+  deletion: { fg: ANSI_RED },
+  "hunk-header": { fg: ANSI_CYAN },
   metadata: { dim: true },
 }
 
@@ -152,9 +153,9 @@ function plainChunk(value: string): TextChunk {
 }
 
 function styledChunk(style: DiffDisplayLineStyle, value: string): TextChunk {
-  if (style === "addition") return green(value)
-  if (style === "deletion") return red(value)
-  if (style === "hunk-header") return cyan(value)
+  if (style === "addition") return fg(ANSI_GREEN)(value)
+  if (style === "deletion") return fg(ANSI_RED)(value)
+  if (style === "hunk-header") return fg(ANSI_CYAN)(value)
   if (style === "metadata") return dim(value)
   return plainChunk(value)
 }

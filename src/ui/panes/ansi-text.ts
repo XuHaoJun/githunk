@@ -46,7 +46,9 @@ const states = new WeakMap<TextRenderable, AnsiTextState>()
 const hooked = new WeakSet<TextRenderable>()
 
 function styleKey(span: AnsiSpan): string {
-  return `${span.fg ?? "-"}|${span.bold === true ? "b" : "-"}${span.dim === true ? "d" : "-"}`
+  const color = span.fg
+  const colorKey = color === undefined ? "-" : `${color.intent}:${color.slot}:${color.toInts().join(",")}`
+  return `${colorKey}|${span.bold === true ? "b" : "-"}${span.dim === true ? "d" : "-"}`
 }
 
 function styleIdFor(state: AnsiTextState, span: AnsiSpan): number {

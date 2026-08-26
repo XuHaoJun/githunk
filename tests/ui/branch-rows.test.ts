@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import type { ListColumn } from "../../src/ui/list-view"
 import { localBranchRows } from "../../src/ui/panes/branches-pane"
 import { pullRequestIcon } from "../../src/ui/pull-request-icon"
 import { parsePullRequests } from "../../src/git/github"
@@ -80,7 +81,7 @@ describe("localBranchRows", () => {
 
   test("the branch status cell carries lazygit's tick and arrows, not git's raw track string", () => {
     const rows = localBranchRows(modelWith(branches), "", { now })
-    const statusOf = (id: string): { text: string; color?: string } | undefined => {
+    const statusOf = (id: string): ListColumn | undefined => {
       const row = rows.find((candidate) => candidate.id === id)!
       return row.columns.find((column) => column.text === "✓" || column.text.startsWith("↓") || column.text.startsWith("↑"))
     }

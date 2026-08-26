@@ -1,3 +1,5 @@
+import type { ColorInput } from "@opentui/core"
+
 import type { PullRequest, PullRequestChecksState, PullRequestState } from "../domain/pull-request"
 import {
   PR_CHECKS_FAILING_FG,
@@ -24,10 +26,10 @@ import {
 export type PullRequestIcon = {
   readonly text: string
   /** Absent for `EXPECTED` checks, whose `style.FgDefault` is the row's own colour. */
-  readonly color?: string
+  readonly color?: ColorInput
 }
 
-const STATE_COLOR: Readonly<Record<PullRequestState, string>> = {
+const STATE_COLOR: Readonly<Record<PullRequestState, ColorInput>> = {
   OPEN: PR_OPEN_FG,
   CLOSED: PR_CLOSED_FG,
   MERGED: PR_MERGED_FG,
