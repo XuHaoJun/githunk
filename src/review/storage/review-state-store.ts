@@ -4,6 +4,7 @@ import { LocalStateFile } from "../../storage/local-state-file"
 import {
   emptyReviewDatabaseV2,
   parseReviewDatabaseV2,
+  serializeReviewArtifactV1,
   serializeReviewDatabaseV2,
   type PersistedReviewState,
   type ReviewDatabaseV2,
@@ -95,7 +96,8 @@ export class ReviewStateStore {
     const timer = setTimeout(() => {
       this.draftTimers.delete(reviewId)
       const pending = this.draftPending.get(reviewId)
-      this.draftPending.delete(reviewId)
+      const hasPending = this.draftPending.has(reviewId)
+      if (!hasPending) return
       this.enqueue(async () => {
         const current = await this.readDatabase()
         const existingReview = current.reviews[reviewId]
@@ -119,8 +121,11 @@ export class ReviewStateStore {
         const nextDb: ReviewDatabaseV2 = { ...current, reviews: nextReviews }
         const text = serializeReviewDatabaseV2(nextDb) + "\n"
         await this.file.writeText(text)
+        if (this.draftPending.get(reviewId) === pending) {
+          this.draftPending.delete(reviewId)
+        }
       }).catch(() => {
-        // Failed draft write retains in-memory state; flush will retry pending if needed
+        // Retain pending for flush retry
       })
     }, 500)
     this.draftTimers.set(reviewId, timer)
@@ -135,7 +140,6 @@ export class ReviewStateStore {
 
     const promises: Promise<void>[] = []
     for (const [reviewId, draft] of pendingEntries) {
-      this.draftPending.delete(reviewId)
       const p = this.enqueue(async () => {
         const current = await this.readDatabase()
         const existingReview = current.reviews[reviewId]
@@ -159,6 +163,9 @@ export class ReviewStateStore {
         const nextDb: ReviewDatabaseV2 = { ...current, reviews: nextReviews }
         const text = serializeReviewDatabaseV2(nextDb) + "\n"
         await this.file.writeText(text)
+        if (this.draftPending.get(reviewId) === draft) {
+          this.draftPending.delete(reviewId)
+        }
       })
       promises.push(p)
     }
@@ -186,5 +193,5 @@ export function artifactDigestForText(text: string): string {
 }
 
 export function artifactTextForDigest(artifact: ReviewArtifactV1): string {
-  return JSON.stringify(artifact) + "\n"
+  return serializeReviewArtifactV1(artifact) + "\n"
 }

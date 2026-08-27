@@ -218,8 +218,6 @@ export async function recoverSubmission(input: {
       const existing = current.reviews[reviewId]
       if (!existing || !existing.submissionInProgress) return current
       if (existing.submissionInProgress.artifactId !== marker.artifactId) return current
-      // If already finalized (marker cleared but lastSubmission matches), skip
-      if (existing.submissionInProgress === null) return current
       const finalized: PersistedReviewState = {
         ...existing,
         lastSubmission: {
