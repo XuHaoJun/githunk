@@ -1,17 +1,20 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
+import { filterItems } from "../../app/filter"
 import { createPane, type PaneHandle } from "./common"
 import { createListState, renderListRows, setListRows, type ListRow, type ListState } from "../list-view"
 
-export function stashRows(model: AppModel): ListRow[] {
+export function stashRows(model: AppModel, filter = ""): ListRow[] {
   const stashes = model.stashes ?? []
-  return stashes.map((stash) => {
+  const rows: ListRow[] = stashes.map((stash) => {
     const columns: ListRow["columns"] = [
       { text: stash.ref, priority: 1 },
       { text: stash.message, priority: 2 },
     ]
     return { id: stash.oid, columns }
   })
+  if (filter.length === 0) return rows
+  return [...filterItems(filter, rows, (row) => `${row.columns[0]?.text ?? ""} ${row.columns[1]?.text ?? ""}`)]
 }
 
 function stashDisplayRows(model: AppModel, rows: readonly ListRow[]): readonly { readonly kind: "message"; readonly text: string }[] | undefined {
