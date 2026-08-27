@@ -1,6 +1,6 @@
 # Branch Review Workspace — Design
 
-**Status:** Draft for written review  
+**Status:** Approved
 **Date:** 2026-08-27  
 **Branch:** `redesign/branch-review-workspace`  
 **Supersedes:** the Branch Review portions of `docs/githunk-prd-v0.1.md` and `docs/superpowers/specs/2026-08-24-githunk-review-shell-ux-design.md`
@@ -71,6 +71,8 @@ The first release will not implement:
 - a generic provider interface with no first consumer.
 
 Working Tree Review and the ordinary repository workspace remain separate products. This design does not rewrite their mutation flows.
+
+Working Tree and Stash review coverage currently share the combined v1 store with Branch Review. The cutover must preserve their observable coverage behavior without preserving the combined schema: move their restricted fingerprint/store logic to `working-tree-review-state-v1.json`, accept only working-tree and stash targets, and start that file empty. No record from the combined `review-state-v1.json` is migrated. This storage isolation is part of deleting Branch Review ownership, not a redesign of Working Tree Review.
 
 ## 5. Product model
 
@@ -602,8 +604,9 @@ The implementation removes obsolete code rather than routing around it. At minim
 - `branchReviewTarget` from the repository `AppModel`;
 - Branch Review ownership of `reviewStatuses` and `reviewSummary` in `AppController`;
 - the old `openBranchReview` and `refreshBranchTarget` state-publication path;
-- `src/review/fingerprint.ts` target-key semantics;
-- the v1 Branch Review state reader and writer;
+- the combined `src/review/fingerprint.ts` and `src/review/store.ts` target/storage semantics;
+- the combined v1 review-state reader and writer, replaced by a restricted working-tree/stash store at `working-tree-review-state-v1.json`;
+- the `branch` variant of the repository `ReviewTarget`; dedicated Branch Review uses `ReviewIdentity` instead;
 - Branch Review-specific read-only mutation guards in `root-view.ts`;
 - old Branch Review mode rendering in Status, Files, Main, and Commits panes;
 - old Branch Review controller/UI tests and fixtures whose contracts no longer exist.
@@ -723,6 +726,7 @@ The redesign is complete only when all statements are true:
 18. The old Branch Review state, UI path, types, tests, and v1 migration code are absent.
 19. `@pierre/diffs` is isolated behind the Git/document adapter and `zod` behind storage/artifact boundaries.
 20. Core, Git integration, conformance, TUI acceptance, and the behavioral smoke scenario pass.
+21. Working Tree and Stash coverage retain their observable behavior through the restricted store and never read Branch Review v1 records.
 
 ## 18. Risks and chosen responses
 
