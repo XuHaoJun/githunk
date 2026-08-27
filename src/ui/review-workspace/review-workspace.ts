@@ -191,7 +191,9 @@ export class ReviewWorkspace {
         }
         if (hitSidebar) {
           const sidebarHeight = Math.max(1, this.sidebarBox.height - 2)
-          const maxStart = Math.max(0, this.sidebarText.content.split("\n").length - sidebarHeight)
+          const stateForWheel = this.controller.state
+          const fileRowCount = stateForWheel ? reviewFileRows(stateForWheel).length : this.sidebarText.content.split("\n").length
+          const maxStart = Math.max(0, fileRowCount - sidebarHeight)
           this.sidebarViewportStart = Math.max(0, Math.min(maxStart, this.sidebarViewportStart + delta))
           this.render(this.controller.state)
           event.preventDefault()
@@ -283,6 +285,12 @@ export class ReviewWorkspace {
     } catch {}
     try {
       this.unsubscribe?.()
+    } catch {}
+    try {
+      this.renderer.keyInput.off("keypress", this.handleKey)
+    } catch {}
+    try {
+      this.sidebarBox.onMouseDown = undefined
     } catch {}
     try {
       this.root.onMouse = undefined
@@ -384,17 +392,11 @@ export class ReviewWorkspace {
         return true
       }
       // While composer is open, other keys are considered handled to keep focus inside (tab containment)
-      // But allow typing simulation via setBody etc; for generic key handling we still consume to prevent focus switch
-      // Only tab/ctrl+s/escape are actionable; others are not handled here but should not bubble to workspace commands
-      // For test parity, we treat any key while composer open as composer-handled if it's a composer control navigation
-      // Otherwise return true to block workspace commands but not consume typing — we delegate typing to composer methods via tests
-      // So we block workspace command resolution while composer open except for tab/escape/ctrl+s
-      // Check if key would be a workspace command; if composer is open, block it
-      const cmdWhileComposer = resolveReviewCommand(normalized, this.focus) ?? resolveReviewCommand(normalized, "any")
-      if (cmdWhileComposer) {
-        // Block workspace commands while composer open (tab containment)
-        return true
-      }
+      const cmdWhileComposer = resolveReviewCommand(normalized, this.focus)
+      if (cmdWhileComposer) return true
+      const anyCmdWhileComposer = resolveReviewCommand(normalized, "any")
+      if (anyCmdWhileComposer) return true
+      return true
     }
 
     // Escape priority: draft > range > filter > workspace
