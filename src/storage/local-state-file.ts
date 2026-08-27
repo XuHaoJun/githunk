@@ -1,4 +1,4 @@
-import { mkdir, open, rename, stat, unlink, lstat } from "node:fs/promises"
+import { mkdir, open, rename, stat, unlink, lstat, link } from "node:fs/promises"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { randomUUID } from "node:crypto"
 import type { GitRunner } from "../git/runner"
@@ -10,6 +10,8 @@ export type LocalStateFileOptions = {
   /** Noun for the symlink-refusal error message, e.g. "review-state". Defaults to "state". */
   readonly pathKind?: string
 }
+
+export type CreateExclusiveResult = { ok: true } | { ok: false; reason: "already-exists" }
 
 async function assertNoSymlinkInPath(path: string, pathKind: string): Promise<void> {
   const absolute = resolve(path)
@@ -78,16 +80,81 @@ export class LocalStateFile {
     await rename(temporary, path)
     try {
       const directory = await open(dirname(path), "r")
-      try { await directory.sync() } finally { await directory.close() }
+      try {
+        await directory.sync()
+      } finally {
+        await directory.close()
+      }
     } catch {
       // Directory fsync is not available on every supported filesystem.
     }
     const mode = (await stat(path)).mode & 0o777
     if (mode !== 0o600) {
       const fix = await open(path, "r+")
-      try { await fix.chmod(0o600); await fix.sync() } finally { await fix.close() }
+      try {
+        await fix.chmod(0o600)
+        await fix.sync()
+      } finally {
+        await fix.close()
+      }
     }
     await unlink(temporary).catch(() => undefined)
+  }
+
+  async createTextExclusive(text: string): Promise<CreateExclusiveResult> {
+    const path = await this.resolvePath()
+    await assertNoSymlinkInPath(path, this.pathKind)
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+    const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`
+    await assertNoSymlinkInPath(temporary, this.pathKind)
+    const handle = await open(temporary, "wx", 0o600)
+    try {
+      await handle.writeFile(text, "utf8")
+      await handle.chmod(0o600)
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+
+    try {
+      await link(temporary, path)
+    } catch (error) {
+      if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "EEXIST") {
+        await unlink(temporary).catch(() => undefined)
+        return { ok: false, reason: "already-exists" }
+      }
+      await unlink(temporary).catch(() => undefined)
+      throw error
+    }
+
+    // Creation succeeded: unlink temp (now duplicate link) and sync directory
+    await unlink(temporary).catch(() => undefined)
+    try {
+      const directory = await open(dirname(path), "r")
+      try {
+        await directory.sync()
+      } finally {
+        await directory.close()
+      }
+    } catch {
+      // Directory fsync is not available on every supported filesystem.
+    }
+    // Ensure mode 0600 on final path (link inherits temp mode, but verify)
+    try {
+      const mode = (await stat(path)).mode & 0o777
+      if (mode !== 0o600) {
+        const fix = await open(path, "r+")
+        try {
+          await fix.chmod(0o600)
+          await fix.sync()
+        } finally {
+          await fix.close()
+        }
+      }
+    } catch {
+      // stat may fail on exotic FS; ignore
+    }
+    return { ok: true }
   }
 
   async quarantine(): Promise<string> {
