@@ -37,7 +37,7 @@ export function createPromptPopup(renderer: CliRenderer): PromptPopupHandle {
     id: "prompt-popup",
     border: true,
     borderStyle: "rounded",
-    borderColor: POPUP_FOREGROUND,
+    borderColor: TAB_ACTIVE_FG,
     focusedBorderColor: TAB_ACTIVE_FG,
     titleColor: POPUP_FOREGROUND,
     title: "",

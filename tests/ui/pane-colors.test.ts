@@ -38,7 +38,10 @@ describe("lazygit pane color semantics", () => {
     try {
       const menu = createKeybindingMenu(setup.renderer)
       expect(menu.box.backgroundColor.intent).toBe("default")
-      expect(menu.box.borderColor.intent).toBe("default")
+      // Popups are modal and always show the active (green) border, matching
+      // lazygit's ActiveBorderColor for the current popup context.
+      expect(menu.box.borderColor.intent).toBe("indexed")
+      expect(menu.box.borderColor.slot).toBe(2)
     } finally {
       setup.renderer.destroy()
     }

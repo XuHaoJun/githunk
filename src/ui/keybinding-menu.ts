@@ -29,9 +29,10 @@ export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandl
   const POPUP_FOREGROUND = RGBA.defaultForeground()
   const POPUP_Z_INDEX = 100
   const box = new BoxRenderable(renderer, {
+    id: "keybinding-menu",
     border: true,
     borderStyle: "rounded",
-    borderColor: POPUP_FOREGROUND,
+    borderColor: TAB_ACTIVE_FG,
     focusedBorderColor: TAB_ACTIVE_FG,
     titleColor: POPUP_FOREGROUND,
     title: "Keybindings",

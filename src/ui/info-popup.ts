@@ -19,7 +19,7 @@ export function createInfoPopup(renderer: CliRenderer, id = "info-popup"): InfoP
     id,
     border: true,
     borderStyle: "rounded",
-    borderColor: POPUP_FOREGROUND,
+    borderColor: TAB_ACTIVE_FG,
     focusedBorderColor: TAB_ACTIVE_FG,
     titleColor: POPUP_FOREGROUND,
     title: "",
