@@ -30,8 +30,9 @@ export const ACTIONS = [
   "copy-menu", "copy-exact",
   // generic
   "filter", "inspect", "back", "modal-cancel", "modal-confirm", "filter-backspace", "quit",
+  // search (lazygit's n/N for ISearchable contexts, pkg/gocui/gui.go:303)
+  "search-next", "search-previous",
 ] as const
-
 export type Action = (typeof ACTIONS)[number]
 
 export type BindingContext = FocusId | "global" | "modal"
@@ -375,6 +376,13 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["f"], action: "fetch-remote", description: "fetch", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "remote", menuDescription: "fetch the selected remote" },
   { keys: ["enter"], action: "inspect", description: "view commits", contexts: ["branches"], displayOnScreen: true, menuDescription: "view commits" },
   { keys: ["/"], action: "filter", description: "filter", contexts: ["branches"], displayOnScreen: true },
+  { keys: ["/"], action: "filter", description: "filter", contexts: ["files"], displayOnScreen: true },
+  { keys: ["/"], action: "filter", description: "filter", contexts: ["stash"], displayOnScreen: true },
+  { keys: ["/"], action: "filter", description: "filter", contexts: ["commits"], displayOnScreen: true },
+  { keys: ["/"], action: "filter", description: "filter", contexts: ["main"], displayOnScreen: true },
+  // Lazygit's Next/Prev match for searchable contexts (pkg/gocui/gui.go:303, pkg/gui/types/context.go:147)
+  { keys: ["n"], action: "search-next", description: "next match", contexts: ["commits", "main"] },
+  { keys: ["N"], action: "search-previous", description: "previous match", contexts: ["commits", "main"] },
   { keys: ["]"], action: "tab-next", description: "next tab", contexts: ["files", "branches", "commits"], displayOnScreen: true, menuDescription: "next tab" },
   { keys: ["["], action: "tab-previous", description: "previous tab", contexts: ["files", "branches", "commits"], displayOnScreen: true, menuDescription: "previous tab" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["branches"] },

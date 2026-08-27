@@ -1,4 +1,5 @@
 import type { CommitDetails } from "../../domain/commit"
+import { filterItems } from "../../app/filter"
 import type { ListRow } from "../list-view"
 
 function statusForFile(oldPath: string | undefined, newPath: string | undefined): string {
@@ -8,10 +9,10 @@ function statusForFile(oldPath: string | undefined, newPath: string | undefined)
   return "M"
 }
 
-export function commitFileRows(details: CommitDetails): ListRow[] {
+export function commitFileRows(details: CommitDetails, filter = ""): ListRow[] {
   const files = details.document.files
   if (files.length === 0) return []
-  return files.map((file) => {
+  const rows = files.map((file) => {
     const newPath = file.newPath ?? file.oldPath ?? ""
     const oldPath = file.oldPath ?? ""
     const id = `${newPath}\u0000${oldPath}`
@@ -25,8 +26,9 @@ export function commitFileRows(details: CommitDetails): ListRow[] {
     ]
     return { id, columns }
   })
+  if (filter.length === 0) return rows
+  return [...filterItems(filter, rows, (row) => row.columns[1]?.text ?? row.id)]
 }
-
 export function commitFileIdForPath(newPath: string, oldPath?: string): string {
   return `${newPath}\u0000${oldPath ?? ""}`
 }
