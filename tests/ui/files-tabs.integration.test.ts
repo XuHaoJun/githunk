@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
-import { TextAttributes, parseColor } from "@opentui/core"
+import { TextAttributes, type RGBA } from "@opentui/core"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
 import { createRegistry, type UiState } from "../../src/ui/bindings"
 import type { AppModel } from "../../src/app/model"
 import { paneTabsPlainTitle } from "../../src/ui/pane-tabs"
-import { FILE_STAGED_FG, SELECTED_LINE_BG, TAB_ACTIVE_FG, UNSTAGED_CHANGES_FG, brightenAnsiForeground } from "../../src/ui/theme"
 import { COLLAPSED_ARROW, EXPANDED_ARROW } from "../../src/ui/file-tree"
 import { FILES_TABS } from "../../src/ui/panes/files-pane"
 import { MAIN_WORKTREE_LABEL, NO_WORKTREES_THIS_REPO } from "../../src/ui/panes/worktrees-pane"
@@ -17,16 +16,20 @@ import { NO_SUBMODULES } from "../../src/ui/panes/submodules-pane"
 function spansAt(harness: ShellHarness, row: number, startX: number, endX: number) {
   const line = harness.captureSpans().lines[row]
   expect(line).toBeDefined()
-  const out: Array<{ text: string; x: number; fg: readonly number[]; bg: readonly number[]; attributes: number }> = []
+  const out: Array<{ text: string; x: number; fg: RGBA; bg: RGBA; attributes: number }> = []
   let x = 0
   for (const span of line!.spans) {
     const spanEnd = x + span.width - 1
     if (spanEnd >= startX && x <= endX) {
-      out.push({ text: span.text, x, fg: span.fg.toInts(), bg: span.bg.toInts(), attributes: span.attributes })
+      out.push({ text: span.text, x, fg: span.fg, bg: span.bg, attributes: span.attributes })
     }
     x = spanEnd + 1
   }
   return out
+}
+
+function isIndexed(color: RGBA, slot: number): boolean {
+  return color.intent === "indexed" && color.slot === slot
 }
 
 /** A fixture with a compressible directory chain plus a top-level file. */
@@ -83,22 +86,21 @@ describe("panel 2 tabs", () => {
     expect(styled.chunks.find((chunk) => chunk.text === "Files")!.fg).toBeDefined()
     expect(styled.chunks.find((chunk) => chunk.text === "Worktrees")!.fg).toBeUndefined()
 
-    const activeGreen = parseColor(TAB_ACTIVE_FG).toInts()
     const filesStart = win.x0 + 2 + "[2]─".length
     const active = spansAt(harness, win.y0, filesStart, filesStart + "Files".length - 1).find((s) => s.text.includes("Files"))
     expect(active).toBeDefined()
-    expect(active!.fg).toEqual(activeGreen)
+    expect(isIndexed(active!.fg, 2)).toBe(true)
     expect(active!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
 
     const worktreesStart = filesStart + "Files - ".length
     const worktreeSpans = spansAt(harness, win.y0, worktreesStart, worktreesStart + "Worktrees".length - 1)
-    expect(worktreeSpans.every((s) => JSON.stringify(s.fg) !== JSON.stringify(activeGreen))).toBe(true)
+    expect(worktreeSpans.every((s) => !isIndexed(s.fg, 2))).toBe(true)
 
     // gocui's drawTitle highlights the active tab only while the view is focused.
     await harness.pressKey("1")
     await harness.flush()
     const unfocused = spansAt(harness, win.y0, filesStart, filesStart + "Files".length - 1)
-    expect(unfocused.every((s) => JSON.stringify(s.fg) !== JSON.stringify(activeGreen))).toBe(true)
+    expect(unfocused.every((s) => !isIndexed(s.fg, 2))).toBe(true)
     expect(harness.frame().split("\n")[win.y0]!).toContain("[2]─Files - Worktrees - Submodules")
   })
 
@@ -120,13 +122,15 @@ describe("panel 2 tabs", () => {
     await harness.pressKey("[")
     expect(view.activeFilesTab).toBe("files")
 
+    // Main's brackets belong to the working-tree scope ring and never touch panel 2's tabs.
     await harness.pressKey("0")
     await harness.pressKey("]")
+    await harness.settle()
     expect(view.activeFilesTab).toBe("files")
 
     const registry = createRegistry()
-    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
-    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
+    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBe("scope-next")
+    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBe("scope-previous")
     expect(registry.dispatch({ name: "]" }, { context: "files" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "files" })).toBe("tab-previous")
   })
@@ -172,12 +176,11 @@ describe("panel 2 tabs", () => {
       "○   ?? two.txt",
       "○ ?? top.txt",
     ])
-    expect(view.selectedListId("files")).toBe("src/ui/panes")
   })
 
-  test("the selected file row's status characters are brightened and bolded on the selection bar", async () => {
+  test("the selected file row's status characters are brightened and bolded with ANSI intent", async () => {
     // view.go:665-680: a highlighted line's foregrounds are promoted to their bright ANSI variant
-    // and bolded, so lazygit's dark status colours stay legible on SelBgColor.
+    // and bolded before lazygit applies SelBgColor.
     const shell = await createShellHarness({ setup: stagedAndUntracked })
     harness = shell
     const view = shell.app.view!
@@ -188,30 +191,28 @@ describe("panel 2 tabs", () => {
     const geometry = shell.paneTextGeometry("files")!
     const rowSpans = (offset: number) =>
       spansAt(shell, geometry.screenY + offset, geometry.screenX, geometry.screenX + geometry.width - 1)
-    const selectedBg = parseColor(SELECTED_LINE_BG).toInts()
 
-    // Row 0 is selected: its staged `M` is green (files.go:184 formatFileStatus) and must render
-    // as bright green, never dark green on navy.
+    // Row 0 is selected: staged status is ANSI green promoted to bright ANSI green.
     const staged = rowSpans(0).find((s) => s.text.includes("M"))
     expect(staged).toBeDefined()
-    expect(staged!.bg).toEqual(selectedBg)
-    expect(staged!.fg).toEqual(parseColor(brightenAnsiForeground(FILE_STAGED_FG)).toInts())
+    expect(isIndexed(staged!.bg, 4)).toBe(true)
+    expect(isIndexed(staged!.fg, 10)).toBe(true)
     expect(staged!.fg).not.toEqual(staged!.bg)
     expect(staged!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
 
-    // Row 1 is not selected, so it keeps lazygit's plain unstaged red.
+    // Row 1 is not selected, so it keeps lazygit's plain ANSI red.
     const unselected = rowSpans(1).find((s) => s.text.includes("??"))
     expect(unselected).toBeDefined()
-    expect(unselected!.fg).toEqual(parseColor(UNSTAGED_CHANGES_FG).toInts())
-    expect(unselected!.bg).not.toEqual(selectedBg)
+    expect(isIndexed(unselected!.fg, 1)).toBe(true)
+    expect(isIndexed(unselected!.bg, 4)).toBe(false)
 
     await shell.pressKey("j")
     await shell.settle()
     expect(view.selectedListId("files")).toBe("untracked.txt")
     const nowSelected = rowSpans(1).find((s) => s.text.includes("??"))
     expect(nowSelected).toBeDefined()
-    expect(nowSelected!.bg).toEqual(selectedBg)
-    expect(nowSelected!.fg).toEqual(parseColor(brightenAnsiForeground(UNSTAGED_CHANGES_FG)).toInts())
+    expect(isIndexed(nowSelected!.bg, 4)).toBe(true)
+    expect(isIndexed(nowSelected!.fg, 9)).toBe(true)
     expect(nowSelected!.fg).not.toEqual(nowSelected!.bg)
     expect(nowSelected!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
   })

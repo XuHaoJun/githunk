@@ -142,21 +142,33 @@ describe("AppController branch mode", () => {
     await controller.switchMode("branch")
     expect(controller.state.banner).toBe("review state was quarantined")
   })
-  test("inspects commits for the selected local or remote branch", async () => {
+  test("loads local branch commits from an unambiguous full ref without changing state", async () => {
     const seenRanges: string[] = []
     const controller = new AppController({
       repositoryRoot: "/tmp/repo",
       load: async (target) => workingSnapshot(target.scope),
       loadCommits: async (range) => {
         seenRanges.push(range)
-        return []
+        return [{ oid: range, shortOid: range.slice(0, 8), parentOids: [], authorName: "A", authoredAt: "2026-01-01T00:00:00Z", subject: range, body: "" }]
       },
     })
-    await controller.inspectBranch("feature/local")
-    await controller.inspectBranch("origin/feature/remote")
-    expect(seenRanges).toEqual(["feature/local", "origin/feature/remote"])
+    const beforeCommits = controller.state.commits
+    const local = await controller.loadBranchCommits("feature/local")
+    expect(seenRanges).toEqual(["refs/heads/feature/local"])
+    expect(local[0]?.subject).toBe("refs/heads/feature/local")
+    expect(controller.state.commits).toBe(beforeCommits)
   })
-  test("uses the inspected branch as commit origin when returning from a commit", async () => {
+  test("keeps remote branch inspection state behavior", async () => {
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async (target) => workingSnapshot(target.scope),
+      loadCommits: async (range) => [{ oid: "remote-oid", shortOid: "remote", parentOids: [], authorName: "A", authoredAt: "2026-01-01T00:00:00Z", subject: range, body: "" }],
+    })
+    await controller.inspectBranch("origin/feature/remote")
+    expect(controller.state.commits?.[0]?.subject).toBe("origin/feature/remote")
+  })
+
+  test("loads commit details without changing the branch review target", async () => {
     const seenBases: string[] = []
     const details: CommitDetails = {
       oid: "commit-1",
@@ -182,7 +194,6 @@ describe("AppController branch mode", () => {
       inferBase: async () => ({ kind: "confident" as const, ref: "origin/main", oid: "base-oid", reason: "test" }),
     })
     await controller.switchMode("branch")
-    await controller.inspectBranch("feature/local")
     const loaded = await controller.loadCommitInspection("commit-1")
     expect(loaded.oid).toBe("commit-1")
     expect(controller.state.reviewTarget.kind).not.toBe("commit")

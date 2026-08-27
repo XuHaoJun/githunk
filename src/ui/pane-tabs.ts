@@ -41,6 +41,10 @@ export function paneTabsTitlePrefix(jumpKey: string): string {
 export function paneTabsPlainTitle(input: PaneTabsGeometry): string {
   return `${paneTabsTitlePrefix(input.jumpKey)}${input.tabs.join(TAB_SEPARATOR)}`
 }
+/** The unstyled title used while a transient child replaces a tab strip. */
+export function buildPanePlainTitle(jumpKey: string, title: string): StyledText {
+  return new StyledText([plainChunk(`${paneTabsTitlePrefix(jumpKey)}${title}`)])
+}
 
 function plainChunk(text: string): TextChunk {
   return { __isChunk: true as const, text } as unknown as TextChunk

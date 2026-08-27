@@ -7,10 +7,14 @@ import {
   previousScreenMode,
   ratioForMouseX,
   widthOf,
+  DEFAULT_LOG_HEIGHT,
   DEFAULT_SIDE_PANEL_RATIO,
   MIN_LEFT_WIDTH,
+  MIN_LOG_HEIGHT,
+  MIN_MAIN_HEIGHT,
   MIN_MAIN_WIDTH,
   SIDE_WINDOWS,
+  SPLITTER_SIZE,
   STATUS_PANE_HEIGHT,
   FOLDED_PANE_HEIGHT,
 } from "../../src/ui/layout"
@@ -114,6 +118,47 @@ describe("computeLayout command log", () => {
   test("clamps an oversized log request", () => {
     const layout = computeLayout({ width: 120, height: 20 }, { logVisible: true, logHeight: 999 })
     expect(heightOf(layout.windows.main)).toBeGreaterThanOrEqual(8)
+  })
+
+  /**
+   * `getExtrasWindowSize` (pkg/gui/controllers/helpers/window_arrangement_helper.go:403-417):
+   * focused -> 1000 ("my way of saying 'fill the available space'"), terminal height < 40 -> 1,
+   * otherwise Gui.CommandLogSize (default 8, pkg/config/user_config.go:918) — and +2 for the frame
+   * in every case. githunk's logHeight is a total including the border, so those are 8+2 and 1+2.
+   */
+  test("an unfocused log takes the configured height plus its frame", () => {
+    const geometry = computeLayout({ width: 200, height: 60 }, { logVisible: true, focus: "files" })
+    expect(geometry.logHeight).toBe(DEFAULT_LOG_HEIGHT)
+    expect(DEFAULT_LOG_HEIGHT).toBe(10)
+  })
+
+  test("a focused log fills the space the main pane can spare", () => {
+    const geometry = computeLayout({ width: 200, height: 60 }, { logVisible: true, focus: "command-log" })
+    const bodyHeight = 60 - 1
+    expect(geometry.logHeight).toBe(bodyHeight - SPLITTER_SIZE - MIN_MAIN_HEIGHT)
+    expect(geometry.logHeight).toBeGreaterThan(DEFAULT_LOG_HEIGHT)
+  })
+
+  test("a terminal shorter than 40 rows gives the log one content row", () => {
+    const geometry = computeLayout({ width: 200, height: 39 }, { logVisible: true, focus: "files" })
+    expect(geometry.logHeight).toBe(MIN_LOG_HEIGHT)
+    expect(MIN_LOG_HEIGHT).toBe(3)
+  })
+
+  test("focus still wins in a short terminal, as baseSize 1000 beats baseSize 1", () => {
+    const geometry = computeLayout({ width: 200, height: 39 }, { logVisible: true, focus: "command-log" })
+    expect(geometry.logHeight).toBeGreaterThan(MIN_LOG_HEIGHT)
+  })
+
+  test("a dragged height substitutes for lazygit's constant, and is still clamped", () => {
+    const tall = computeLayout({ width: 200, height: 60 }, { logVisible: true, focus: "files", logHeight: 20 })
+    expect(tall.logHeight).toBe(20)
+    const overflowing = computeLayout({ width: 200, height: 60 }, { logVisible: true, focus: "files", logHeight: 500 })
+    expect(overflowing.logHeight).toBe(59 - SPLITTER_SIZE - MIN_MAIN_HEIGHT)
+  })
+
+  test("a hidden log has no height whatever the focus says", () => {
+    expect(computeLayout({ width: 200, height: 60 }, { logVisible: false, focus: "command-log" }).logHeight).toBe(0)
   })
 })
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { CommitDialog, commitDialogKey, createCommitDialog, reduceCommitDialog } from "../../src/ui/commit-dialog"
+import { CommitDialog, commitDialogKey, createCommitDialog, reduceCommitDialog, renderCommitDialog } from "../../src/ui/commit-dialog"
 
 describe("commit dialog", () => {
   test("accepts multiline and Unicode text only on Ctrl+Enter", () => {
@@ -10,6 +10,14 @@ describe("commit dialog", () => {
     state = reduceCommitDialog(state, { kind: "insert", text: "body 中文" }).state
     expect(commitDialogKey(state, { name: "enter" }).state.message).toBe("subject Ω\n\nbody 中文\n")
     expect(commitDialogKey(state, { name: "enter", ctrl: true }).result).toEqual({ kind: "confirmed", message: "subject Ω\n\nbody 中文" })
+  })
+
+  test("formats a commit message as separate summary and description fields", () => {
+    const rendered = renderCommitDialog(createCommitDialog("commit", "subject\n\nbody"))
+    expect(rendered).toContain("Commit summary")
+    expect(rendered).toContain("subject")
+    expect(rendered).toContain("Commit description")
+    expect(rendered).toContain("body")
   })
 
   test("rejects empty and whitespace-only messages", () => {

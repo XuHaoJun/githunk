@@ -24,7 +24,7 @@ Evidence is split between deterministic automated coverage and the recorded TUI 
 | Right-pane selection does not copy left-pane content | Existing clipboard/selection unit coverage plus production patch exactness in acceptance test; no client paste performed | Automated isolation tests; client paste Not tested |
 | SSH clipboard works in a documented terminal set | `docs/clipboard-compatibility-v0.1.md` records no SSH session | Not tested |
 | Left/right and Main/Command Log regions are mouse-resizable | TUI smoke launched the real app and sent vertical and horizontal splitter drag input, but the non-interactive harness provided no geometry readback | Not tested; no resize claim |
-| Recognizable keyboard muscle memory | TUI smoke exercised numeric pane navigation, Enter inspection, `@` Command Log toggle, and `q` quit | Manual smoke observed |
+| Recognizable keyboard muscle memory | TUI smoke exercised numeric pane navigation, Enter inspection, and `q` quit; the smoke predates this branch's `@` change (`case "command-log": this.openCommandLogMenu()`, `src/ui/root-view.ts:989`) from a toggle to a modal menu, so that part of the observation no longer describes current behaviour — see line 62 below for the menu's own (`Not tested`) status | Manual smoke observed |
 | Working Tree and `base...HEAD` Branch Review are first-class | Acceptance asserts Working Tree state and aggregate Branch Review (`agent` vs `refs/remotes/origin/main`) with three commits | Automated |
 | Active target and branch base always visible | Acceptance asserts `Working Tree — All`, `Stash — <ref>`, `agent vs refs/remotes/origin/main`, and `Commit — <oid>` labels after transitions | Automated |
 | Reviewed files visibly invalidate after changes | Acceptance asserts `changed-after-review` and invalidation count | Automated |
@@ -44,12 +44,31 @@ hints bar, screen modes, draggable dividers). Automated coverage lives in
 - [ ] With `.git/githunk/ui-state-v1.json` present, `git status` stays clean (the state file lives under `.git/`, never in the worktree).
 - [ ] On a branch with commits, the Commits pane (`4`) lists them instead of showing an empty pane.
 
+## Command log parity (2026-08 lazygit command log parity plan)
+
+Closes out the 13-task plan that rebuilt the lower-right command log to match lazygit's `extras`
+view (`pkg/gui/command_log_panel.go`). `tests/acceptance/command-log.integration.test.ts` is the
+end-to-end acceptance test; it drives a real `git` process through a headless `createApp`, the same
+pattern `review-workflow.integration.test.ts` uses.
+
+| Criterion | Evidence | Status |
+| --- | --- | --- |
+| A background refresh puts no loader command in the log (the `readOnly`-implies-`dontLog` rule, reproducing lazygit's 80 `DontLog()` calls) | `tests/acceptance/command-log.integration.test.ts`: "a refresh puts no loader command in the log" — asserted as a negative (`status`, `for-each-ref`, `log`, etc. never appear), which the test shows failing against a deliberately re-logged loader before confirming it passes on the real code | Automated |
+| A real mutation logs its action above its command, in order (`pkg/gui/command_log_panel.go:14-24`) | Same file: "staging then committing logs each action above its command, in order" — `Stage file` / `  git add -- a.txt` / `Commit` / `  git commit -F -` against a real repository | Automated |
+| The startup header is the first line of every session's log, guarding against a repeat of the Task 3 `src/main.ts` bootstrap-read regression (`src/main.ts` itself has no tests) | Same file: "the header is the first thing in the log"; seeding order additionally pinned by `tests/app/create-app.test.ts` (fails if `seedCommandLog` is deleted or moved after construction) | Automated |
+| A failed command's stderr stays inspectable under `Git output:` (PRD §6.7); a successful command's output produces no such block | Same file: "a failed command's output is inspectable, a successful one's is not" — asserts the failure half, using `deleteBranch` against a nonexistent branch since `push()` against this environment's remote-less temp repository resolves `{ kind: "upstream-required" }` rather than rejecting. The successful-command half is not asserted there; it is `tests/git/runner.test.ts:145-149`'s "a succeeding command's stdout stays out of the log" | Automated |
+| Command log title text (`Command log`), its green focus colour, the command line's ambient default-foreground colour, and the magenta `Git output:` heading over a default-foreground failure body | Task 4's own commit (`5fb335f`) records no smoke, tmux session or SGR capture, despite the plan mandating it; the only trace of that observation is a paraphrase inside `bb61913`'s body — the commit that wrote this line — and the underlying detail lives only in `.superpowers/`, which is gitignored and invisible to the repository — explicitly **not** confirmed in-repo, covered only by the unit/pane tests (`tests/ui/command-log-text.test.ts` pins the `output-heading`/`action`/`command`/`tip` style tags per span; `tests/ui/command-log-pane.test.ts` exercises pane construction and title) | Not tested |
+| Command log action/intro/tip colours; live line wrapping in the running app | Task 4 report: nothing called `logAction`/`logIntro`/`logTip` at the point Task 4 ran (that wiring lands in later tasks), and nothing wrapped at the terminal widths driven — explicitly **not** observed live, covered only by the unit/pane tests (`tests/ui/command-log-text.test.ts`, `tests/ui/command-log-pane.test.ts`) | Not tested |
+| `@` opens the Command log menu; `t` toggles, `f` focuses, `Escape` closes | Task 8 report, Concerns: "No interactive manual smoke test was possible in this environment (non-interactive shell, no TTY)" — `bun run start` was only confirmed to boot under `/dev/null` stdin; the `@`/`t`/`f`/escape behaviour itself was never watched on a real terminal. Separately covered by `tests/ui/command-log-menu.integration.test.ts` and `tests/ui/action-menu.test.ts`, which is a different claim | Not tested |
+| Command log keybindings (`,`/`.`/`<`/`>` page and jump), autoscroll arming/clearing, `getExtrasWindowSize`-equivalent sizing, default visibility | `tests/ui/command-log-scroll.test.ts`, `tests/ui/command-log-autoscroll.integration.test.ts`, `tests/ui/layout.test.ts` (`DEFAULT_LOG_HEIGHT`/`MIN_LOG_HEIGHT`/focused-expand branches), `tests/ui/ui-state-store.integration.test.ts` and `tests/ui/command-log-menu.integration.test.ts` (`commandLogVisible` default and persistence) | Automated |
+| Random-tip catalogue is a documented subset of lazygit's tips | `src/app/command-log-tips.ts`'s block comment records the 13-of-~30 subset and the reasons for every exclusion (feature or keybinding absent from githunk); `tests/app/command-log-tips.test.ts` pins the key table, but nothing asserts catalogue membership in, or verbatim agreement with, lazygit's own `getRandomTip` tip strings | Not tested |
+
 ## Release gates
 
 - [x] `bun test tests/acceptance/review-workflow.integration.test.ts` — 1 pass, 75 assertions.
 - [x] `bun run typecheck` — pass.
 - [x] `bun install --frozen-lockfile && bun run check` — pass: 137 tests, 0 failures, 801 expectations; typecheck passed.
-- [x] Real non-destructive `bun run start` smoke — process exited 0 after navigation, diff inspection, Command Log toggle, splitter drag input, and quit.
+- [x] Real non-destructive `bun run start` smoke — process exited 0 after navigation, diff inspection, splitter drag input, and quit. (Predates this branch's `@` change from a toggle to a modal menu; the menu itself is `Not tested`, see line 62.)
 - [ ] SSH+zellij 120×40 clipboard/paste run — Not tested; see compatibility record.
 - [ ] tmux clipboard/paste run — Not tested.
 - [ ] Local client clipboard paste result — Not tested.

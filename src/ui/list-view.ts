@@ -1,15 +1,15 @@
-import type { TextChunk } from "@opentui/core"
-import { StyledText, bg, bold, cyan, dim, fg, green, magenta, yellow } from "@opentui/core"
-import { SELECTED_LINE_BG, brightenAnsiForeground } from "./theme"
+import type { ColorInput, TextChunk } from "@opentui/core"
+import { StyledText, bg, bold, dim, fg } from "@opentui/core"
+import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, SELECTED_LINE_BG, brightenAnsiForeground } from "./theme"
 
-export type ListColumnSegment = { readonly text: string; readonly color?: string | undefined }
+export type ListColumnSegment = { readonly text: string; readonly color?: ColorInput | undefined }
 
 export type ListColumn = {
   readonly text: string
   readonly priority: number
   readonly style?: "default" | "dim" | "cyan" | "green" | "yellow" | "magenta"
-  /** Truecolor foreground (hex). Wins over `style` when set. */
-  readonly color?: string
+  /** Terminal-aware or truecolor foreground. Wins over `style` when set. */
+  readonly color?: ColorInput
   /** Per-character colouring for `text`; the segments must concatenate back to `text`. */
   readonly segments?: readonly ListColumnSegment[]
   /** Absorbs leftover width and is never dropped; defaults to the last surviving column. */
@@ -155,19 +155,19 @@ function plainChunk(text: string): TextChunk {
   return { __isChunk: true as const, text }
 }
 
-function styleToChunk(text: string, style: ListColumn["style"], color?: string): TextChunk {
-  if (color !== undefined) return fg(color)(text) as TextChunk
+function styleToChunk(text: string, style: ListColumn["style"], color?: ColorInput): TextChunk {
+  if (color !== undefined) return fg(color)(text)
   switch (style) {
     case "dim":
       return dim(text)
     case "cyan":
-      return cyan(text)
+      return fg(ANSI_CYAN)(text)
     case "green":
-      return green(text)
+      return fg(ANSI_GREEN)(text)
     case "yellow":
-      return yellow(text)
+      return fg(ANSI_YELLOW)(text)
     case "magenta":
-      return magenta(text)
+      return fg(ANSI_MAGENTA)(text)
     case "default":
     case undefined:
       return plainChunk(text)
@@ -291,31 +291,18 @@ function renderColumns(row: ListRow, layout: ListColumnLayout): TextChunk[] {
   return chunks
 }
 
-/** `#rrggbb` for a resolved chunk colour, the form `brightenAnsiForeground` keys its map by. */
-function hexOf(color: { toInts(): readonly number[] }): string {
-  const [r = 0, g = 0, b = 0] = color.toInts()
-  return `#${[r, g, b].map((component) => component.toString(16).padStart(2, "0")).join("")}`
-}
-
 /**
  * One rune of a highlighted line, lazygit's way: the base-ANSI foreground is promoted to its
  * bright variant, bold is ORed in, and the selection background replaces whatever was there —
  * pkg/gocui/view.go:665-680 (`View.setCharacter`).
  *
- * Every chunk reaching here already carries a *resolved* foreground (`fg(hex)`, OpenTUI's
- * `cyan`/`green`/… helpers and `ListColumn.segments` all end up as an `RGBA` on the chunk), so
- * transforming that resolved value covers all of them uniformly. A chunk with no foreground at
- * all keeps the list's default one — brightening a colour it never had would invent one.
+ * Every chunk reaching here already carries a resolved foreground. Indexed colors are promoted by
+ * slot; truecolor and terminal-default values are left untouched.
  */
 function highlightChunk(chunk: TextChunk, selectedBg: (input: TextChunk) => TextChunk): TextChunk {
   const current = chunk.fg
-  const brightened = current === undefined ? chunk : recolor(chunk, hexOf(current))
+  const brightened = current === undefined ? chunk : fg(brightenAnsiForeground(current))(chunk)
   return bold(selectedBg(brightened))
-}
-
-function recolor(chunk: TextChunk, hex: string): TextChunk {
-  const bright = brightenAnsiForeground(hex)
-  return bright === hex ? chunk : fg(bright)(chunk)
 }
 
 export function renderListRows(state: ListState, focused: boolean, width: number): StyledText {
@@ -357,7 +344,7 @@ export function renderListRows(state: ListState, focused: boolean, width: number
     const shouldHighlight = isSelected && dr.kind === "item"
 
     if (shouldHighlight) {
-      // lazygit's SelectedLineBgColor, not OpenTUI's `bgBlue` (#0000FF) — see ./theme.
+      // lazygit's indexed SelectedLineBgColor, not a fixed CSS blue — see ./theme.
       const selectedBg = bg(SELECTED_LINE_BG)
       lineChunks = lineChunks.map((c) => highlightChunk(c, selectedBg))
       const plainLen = lineChunks.reduce((sum, c) => sum + visualLength(c.text), 0)

@@ -1,155 +1,193 @@
-/**
- * lazygit's colour palette, in the one place every renderer reads it from.
- *
- * lazygit configures colours as ANSI names ("blue", "green") which the terminal resolves
- * through its 16-colour palette. OpenTUI 0.5.6 has no ANSI-indexed colours at all — its
- * `parseColor` accepts only hex and CSS names — so each ANSI name is pinned here to the hex
- * a standard 16-colour palette renders it as (the CSS `navy`/`green` family), rather than to
- * OpenTUI's `bgBlue`/`green` helpers, whose CSS `blue` is the far brighter #0000FF.
- */
+import { RGBA, type ColorInput } from "@opentui/core"
+
+export type TerminalPaletteSnapshot = {
+  readonly palette?: readonly (string | null)[]
+  readonly defaultForeground?: string | null
+  readonly defaultBackground?: string | null
+}
 
 /**
- * Background of the selected row in a focused list.
- * lazygit: `SelectedLineBgColor: []string{"blue"}` — pkg/config/user_config.go:889.
- * ANSI blue (colour 4) = CSS `navy`; #0000FF (CSS `blue`, what OpenTUI's `bgBlue` resolves to)
- * is the *bright* blue and washes out the row text.
+ * Fallback values for a terminal that cannot answer OpenTUI's palette query. These are Ghostty's
+ * built-in defaults in the development environment; terminals that answer the query replace them
+ * before the first application render. The RGBA values still retain indexed/default intent.
  */
-export const SELECTED_LINE_BG = "#000080"
+const FALLBACK_ANSI_PALETTE: readonly string[] = [
+  "#1d1f21",
+  "#cc6666",
+  "#b5bd68",
+  "#f0c674",
+  "#81a2be",
+  "#b294bb",
+  "#8abeb7",
+  "#c5c8c6",
+  "#666666",
+  "#d54e53",
+  "#b9ca4a",
+  "#e7c547",
+  "#7aa6da",
+  "#c397d8",
+  "#70c0b1",
+  "#eaeaea",
+]
+const FALLBACK_DEFAULT_FOREGROUND = "#ffffff"
+const FALLBACK_DEFAULT_BACKGROUND = "#282c34"
 
-/**
- * Foreground of the active tab in a focused pane's title.
- * lazygit: `ActiveBorderColor: []string{"green", "bold"}` — pkg/config/user_config.go:885 —
- * is assigned to `g.SelFgColor` (pkg/gui/gui.go:1254), which `drawTitle` paints the active
- * tab with. ANSI green (colour 2) = CSS `green`.
- */
-export const TAB_ACTIVE_FG = "#008000"
+let terminalPalette: readonly (string | null)[] = []
+let defaultForegroundFallback = FALLBACK_DEFAULT_FOREGROUND
+let defaultBackgroundFallback = FALLBACK_DEFAULT_BACKGROUND
 
-/** The `bold` half of `ActiveBorderColor` — pkg/config/user_config.go:885. */
+function fallbackForIndexedSlot(slot: number): string | undefined {
+  return terminalPalette[slot] ?? FALLBACK_ANSI_PALETTE[slot]
+}
+
+function indexed(slot: number): RGBA {
+  return RGBA.fromIndex(slot, fallbackForIndexedSlot(slot))
+}
+
+function copyRgbFallback(target: RGBA, source: ColorInput): void {
+  const resolved = typeof source === "string" ? RGBA.fromHex(source) : source
+  for (let index = 0; index < target.buffer.length; index++) {
+    target.buffer[index] = (target.buffer[index]! & 0xff00) | (resolved.buffer[index]! & 0xff)
+  }
+}
+
+export const ANSI_BLACK = indexed(0)
+export const ANSI_RED = indexed(1)
+export const ANSI_GREEN = indexed(2)
+export const ANSI_YELLOW = indexed(3)
+export const ANSI_BLUE = indexed(4)
+export const ANSI_MAGENTA = indexed(5)
+export const ANSI_CYAN = indexed(6)
+export const ANSI_WHITE = indexed(7)
+
+export const ANSI_BRIGHT_BLACK = indexed(8)
+export const ANSI_BRIGHT_RED = indexed(9)
+export const ANSI_BRIGHT_GREEN = indexed(10)
+export const ANSI_BRIGHT_YELLOW = indexed(11)
+export const ANSI_BRIGHT_BLUE = indexed(12)
+export const ANSI_BRIGHT_MAGENTA = indexed(13)
+export const ANSI_BRIGHT_CYAN = indexed(14)
+export const ANSI_BRIGHT_WHITE = indexed(15)
+
+/** lazygit's `default` foreground/background values, resolved by the terminal. */
+export const DEFAULT_FOREGROUND = RGBA.defaultForeground(defaultForegroundFallback)
+export const DEFAULT_BACKGROUND = RGBA.defaultBackground(defaultBackgroundFallback)
+
+/** lazygit's selected-line background: `SelectedLineBgColor: []string{"blue"}`. */
+export const SELECTED_LINE_BG = ANSI_BLUE
+
+/** lazygit's active border color: `ActiveBorderColor: []string{"green", "bold"}`. */
+export const TAB_ACTIVE_FG = ANSI_GREEN
 export const TAB_ACTIVE_BOLD = true
 
 /** Tab separator inside a pane title: `separator := " - "` — pkg/gocui/gui.go:1421. */
 export const TAB_SEPARATOR = " - "
 
-/**
- * Appended to the `[key]` title prefix: the view's first frame rune, `─` by default —
- * pkg/gocui/gui.go:1411.
- */
+/** Appended to the `[key]` title prefix: the view's first frame rune, `─` by default. */
 export const TITLE_PREFIX_FRAME_RUNE = "─"
 
-/**
- * Foreground of a reflog entry's short hash.
- * lazygit: `hashColor := style.FgBlue` — pkg/gui/presentation/reflog_commits.go:43 (the
- * un-cherry-picked, un-diffed case, which is every row here).
- * ANSI blue (colour 4) = CSS `navy`, the same pinning `SELECTED_LINE_BG` documents.
- */
-export const REFLOG_HASH_FG = "#000080"
+/** lazygit's `style.FgBlue` reflog hash. */
+export const REFLOG_HASH_FG = ANSI_BLUE
 
 /**
- * lazygit names most foregrounds as ANSI colours (`style.FgGreen`, `style.FgCyan`, …), which a
- * terminal resolves through its 16-colour palette. OpenTUI has no ANSI-indexed colours, so each
- * one is pinned here to the hex a standard 16-colour palette renders it as — the same pinning
- * `SELECTED_LINE_BG` documents above.
+ * lazygit's commit-hash colours, keyed by `models.CommitStatus` in `getHashColor`
+ * (pkg/gui/presentation/commits.go:477-512): unpushed red, pushed yellow, merged green. A commit
+ * whose status githunk did not compute falls back to `theme.DefaultTextColor`, i.e. the terminal's
+ * default foreground (pkg/theme/theme.go:11).
  */
-const ANSI_RED = "#800000"
-const ANSI_GREEN = "#008000"
-const ANSI_YELLOW = "#808000"
-const ANSI_CYAN = "#008080"
+export const COMMIT_HASH_UNPUSHED_FG = ANSI_RED
+export const COMMIT_HASH_PUSHED_FG = ANSI_YELLOW
+export const COMMIT_HASH_MERGED_FG = ANSI_GREEN
+export const COMMIT_HASH_DEFAULT_FG = DEFAULT_FOREGROUND
 
-/**
- * A file (or directory subtree) whose only changes are staged.
- * lazygit: `nameColor = style.FgGreen` — pkg/gui/presentation/files.go:135.
- */
+/** lazygit's branch recency and status colors. */
+export const BRANCH_RECENCY_FG = ANSI_CYAN
+export const BRANCH_RECENCY_CURRENT_FG = ANSI_GREEN
+export const BRANCH_ITEM_OPERATION_FG = ANSI_CYAN
+export const BRANCH_UPSTREAM_GONE_FG = ANSI_RED
+export const BRANCH_MATCHES_UPSTREAM_FG = ANSI_GREEN
+export const BRANCH_UPSTREAM_NOT_LOCAL_FG = ANSI_MAGENTA
+export const BRANCH_DIVERGED_FG = ANSI_YELLOW
+
+/** lazygit's pull-request state colors are explicit RGB values, not ANSI names. */
+export const PR_OPEN_FG = RGBA.fromInts(0x43, 0x84, 0x40)
+export const PR_CLOSED_FG = RGBA.fromInts(0xc9, 0x45, 0x3c)
+export const PR_MERGED_FG = RGBA.fromInts(0x82, 0x59, 0xdd)
+export const PR_DRAFT_FG = RGBA.fromInts(0x67, 0x6c, 0x75)
+
+/** lazygit's checks-state presentation uses ANSI names. */
+export const PR_CHECKS_PASSING_FG = ANSI_GREEN
+export const PR_CHECKS_PENDING_FG = ANSI_YELLOW
+export const PR_CHECKS_FAILING_FG = ANSI_RED
+
+/** lazygit's file/worktree/submodule presentation colors. */
 export const FILE_STAGED_FG = ANSI_GREEN
-
-/**
- * A file (or directory subtree) with both staged and unstaged changes.
- * lazygit: `nameColor = style.FgYellow` — pkg/gui/presentation/files.go:137.
- */
 export const FILE_MIXED_FG = ANSI_YELLOW
-
-/**
- * The unstaged half of a two-character short status, and a `?` in its staged half.
- * lazygit: `theme.UnstagedChangesColor` — pkg/gui/presentation/files.go:189/195 — configured as
- * `UnstagedChangesColor: []string{"red"}` (pkg/config/user_config.go:895).
- */
 export const UNSTAGED_CHANGES_FG = ANSI_RED
-
-/**
- * The `"  *"` marker on the worktree the app is running in.
- * lazygit: `currentColor = style.FgGreen` — pkg/gui/presentation/worktrees.go:28.
- */
 export const WORKTREE_CURRENT_FG = ANSI_GREEN
-
-/**
- * The (blank) marker cell on every other worktree.
- * lazygit: `currentColor := style.FgCyan` — pkg/gui/presentation/worktrees.go:25.
- */
 export const WORKTREE_INACTIVE_MARKER_FG = ANSI_CYAN
-
-/**
- * A worktree whose directory is gone: the whole name cell turns red.
- * lazygit: `textStyle = style.FgRed` — pkg/gui/presentation/worktrees.go:33.
- */
 export const WORKTREE_MISSING_FG = ANSI_RED
-
-/** A worktree's checked-out branch — pkg/gui/presentation/worktrees.go:50. */
 export const WORKTREE_BRANCH_FG = ANSI_CYAN
-
-/** A detached worktree's `HEAD detached at <hash>` — pkg/gui/presentation/worktrees.go:52. */
 export const WORKTREE_DETACHED_FG = ANSI_YELLOW
-
-/** `Name:` in the submodule preview — pkg/gui/controllers/submodules_controller.go:117. */
 export const SUBMODULE_NAME_FG = ANSI_GREEN
-
-/** `Path:` in the submodule preview — pkg/gui/controllers/submodules_controller.go:118. */
 export const SUBMODULE_PATH_FG = ANSI_YELLOW
-
-/** `Url:` in the submodule preview — pkg/gui/controllers/submodules_controller.go:119. */
 export const SUBMODULE_URL_FG = ANSI_CYAN
 
-/**
- * Base-ANSI foreground → its bright variant, keyed and valued by hex.
- *
- * lazygit brightens the foreground of every rune on a highlighted line —
- * pkg/gocui/view.go:665-680 (`View.setCharacter`):
- *
- *     // this ensures we use the bright variant of a colour upon highlight
- *     fgColorComponent := fgColor & ^AttrAll
- *     if fgColorComponent >= AttrIsValidColor && fgColorComponent < AttrIsValidColor+8 {
- *         fgColor += 8
- *     }
- *     fgColor = fgColor | AttrBold
- *
- * `AttrIsValidColor` … `AttrIsValidColor+8` is exactly `ColorBlack`…`ColorWhite`
- * (pkg/gocui/attribute.go:19,37-45), so only the 8 base ANSI colours are promoted; a default
- * (unset) or truecolor foreground falls through untouched. The promotion runs whether or not the
- * view holds focus — only the *background* half of that branch varies with focus.
- *
- * Both halves are pinned to hex because OpenTUI has no ANSI-indexed colours: the keys are the
- * dark hexes a standard 16-colour palette renders ANSI 0-7 as (the pinning `SELECTED_LINE_BG`
- * documents above), and the values are the hexes OpenTUI's own `brightblack`…`brightwhite` CSS
- * names resolve to (`CSS_COLOR_NAMES`, node_modules/@opentui/core/chunk-bun-9335djz2.js), so the
- * two palettes cannot drift apart.
- */
-const BRIGHT_ANSI_BY_BASE_ANSI: Readonly<Record<string, string>> = {
-  "#000000": "#666666", // black → brightblack
-  "#800000": "#ff6666", // red (CSS maroon) → brightred
-  "#008000": "#66ff66", // green → brightgreen
-  "#808000": "#ffff66", // yellow (CSS olive) → brightyellow
-  "#000080": "#6666ff", // blue (CSS navy) → brightblue
-  "#800080": "#ff66ff", // magenta (CSS purple) → brightmagenta
-  "#008080": "#66ffff", // cyan (CSS teal) → brightcyan
-  "#c0c0c0": "#ffffff", // white (CSS silver) → brightwhite
+/** Creates an indexed ANSI color using the current terminal palette fallback. */
+export function indexedColor(slot: number): RGBA {
+  return indexed(slot)
 }
 
 /**
- * The bright variant of `color` when it is one of the 8 base ANSI colours, otherwise `color`
- * itself — lazygit's `fgColor += 8` on a highlighted line (pkg/gocui/view.go:665-670).
- * Bold, the other half of that branch, is the caller's job.
+ * Updates fallback RGB values from OpenTUI's terminal palette query without changing color intent.
+ * This matters when the native renderer must fall back to RGB while lazygit would emit an ANSI
+ * index; both then resolve to the same terminal palette color.
  */
-export function brightenAnsiForeground(color: string): string {
-  const normalized = color.trim().toLowerCase()
-  // An opaque 8-digit hex names the same colour as its 6-digit form; any other alpha is left be.
-  const rgb = normalized.length === 9 && normalized.endsWith("ff") ? normalized.slice(0, 7) : normalized
-  return BRIGHT_ANSI_BY_BASE_ANSI[rgb] ?? color
+export function configureTerminalPalette(snapshot: TerminalPaletteSnapshot): void {
+  terminalPalette = snapshot.palette ?? []
+  defaultForegroundFallback = snapshot.defaultForeground ?? FALLBACK_DEFAULT_FOREGROUND
+  defaultBackgroundFallback = snapshot.defaultBackground ?? FALLBACK_DEFAULT_BACKGROUND
+
+  const ansiTokens = [
+    ANSI_BLACK,
+    ANSI_RED,
+    ANSI_GREEN,
+    ANSI_YELLOW,
+    ANSI_BLUE,
+    ANSI_MAGENTA,
+    ANSI_CYAN,
+    ANSI_WHITE,
+    ANSI_BRIGHT_BLACK,
+    ANSI_BRIGHT_RED,
+    ANSI_BRIGHT_GREEN,
+    ANSI_BRIGHT_YELLOW,
+    ANSI_BRIGHT_BLUE,
+    ANSI_BRIGHT_MAGENTA,
+    ANSI_BRIGHT_CYAN,
+    ANSI_BRIGHT_WHITE,
+  ]
+  for (let index = 0; index < ansiTokens.length; index++) {
+    const fallback = fallbackForIndexedSlot(index)
+    if (fallback !== undefined) copyRgbFallback(ansiTokens[index]!, fallback)
+  }
+  copyRgbFallback(DEFAULT_FOREGROUND, defaultForegroundFallback)
+  copyRgbFallback(DEFAULT_BACKGROUND, defaultBackgroundFallback)
+}
+
+/**
+ * Mirrors lazygit's highlighted-line rule in `pkg/gocui/view.go:675-685`: only base ANSI indices
+ * become bright; RGB and terminal-default values are left untouched. The caller adds bold.
+ */
+export function brightenAnsiForeground(color: RGBA): RGBA {
+  if (color.intent !== "indexed" || color.slot < 0 || color.slot > 7) return color
+  return [
+    ANSI_BRIGHT_BLACK,
+    ANSI_BRIGHT_RED,
+    ANSI_BRIGHT_GREEN,
+    ANSI_BRIGHT_YELLOW,
+    ANSI_BRIGHT_BLUE,
+    ANSI_BRIGHT_MAGENTA,
+    ANSI_BRIGHT_CYAN,
+    ANSI_BRIGHT_WHITE,
+  ][color.slot]!
 }

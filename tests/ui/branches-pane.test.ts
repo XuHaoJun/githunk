@@ -20,7 +20,7 @@ const model = {
     current: "main",
     detached: false,
     localBranches: [
-      { name: "main", isCurrent: true, committedAt: "1730000000", subject: "initial commit", upstream: "origin/main", upstreamTrack: "ahead 1" },
+      { name: "main", isCurrent: true, committedAt: "1730000000", subject: "initial commit", upstream: "origin/main", upstreamTrack: "[ahead 1]", upstreamRemote: "origin", upstreamBranch: "main", aheadForPull: "1", behindForPull: "0", upstreamGone: false },
       { name: "feature", isCurrent: false, committedAt: "1729000000", subject: "feature work" },
     ],
     remotes: [
@@ -55,24 +55,23 @@ describe("tab-specific pane rows", () => {
     expect(rows.map((r) => r.id)).toEqual(["local:main", "local:feature"])
   })
 
-  test("local branch rows show recency/current/upstream track without adding metadata headers as selectable rows", () => {
+  test("local branch rows show recency/current/branch status without adding metadata headers as selectable rows", () => {
     const rows = localBranchRows(model)
     // No header rows: count matches localBranches, not + header count
     expect(rows.length).toBe(2)
     const mainRow = rows.find((r) => r.id === "local:main")!
     const combined = mainRow.columns.map((c) => c.text).join(" ")
-    // recency from committedAt, current indicator, branch name, upstream, upstreamTrack, subject
     expect(combined).toContain("main")
     expect(combined).toContain("initial commit")
-    // current branch should be indicated (green style or marker)
-    expect(mainRow.columns.some((c) => c.style === "green" || c.text.includes("*") || c.text.includes("●"))).toBe(true)
-    // upstream track
-    expect(combined).toContain("ahead 1")
-    // upstream relationship
+    // The checked-out branch's recency cell is lazygit's literal "  *".
+    expect(mainRow.columns[0]!.text).toBe("  *")
+    // The status cell is lazygit's arrow form, not git's raw `%(upstream:track)`.
+    expect(combined).toContain("↑1")
+    expect(combined).not.toContain("ahead 1")
     expect(combined).toContain("origin/main")
-    // feature row should not be current
+    // feature row is not the checked-out one, so its recency is a real age
     const featureRow = rows.find((r) => r.id === "local:feature")!
-    expect(featureRow.columns.some((c) => c.style === "green")).toBe(false)
+    expect(featureRow.columns[0]!.text).not.toBe("  *")
   })
 
   test("remote rows use remote: prefix", () => {
@@ -108,5 +107,23 @@ describe("tab-specific pane rows", () => {
     expect(remoteRows(emptyModel)).toEqual([])
     expect(tagRows(emptyModel)).toEqual([])
     expect(remoteBranchRows(emptyModel, "origin")).toEqual([])
+  })
+})
+
+describe("row column alignment", () => {
+  test("remote rows keep a fixed cell count so an operation label cannot shift the URLs", () => {
+    const rows = remoteRows({
+      ...model,
+      branches: {
+        ...model.branches!,
+        remotes: [
+          { name: "origin", fetchUrl: "https://example.com/a.git", pushUrl: "ssh://example.com/a.git" },
+          { name: "bare", branches: [] },
+        ],
+      },
+    } as AppModel)
+    expect(new Set(rows.map((row) => row.columns.length)).size).toBe(1)
+    expect(rows.map((row) => row.columns[0]!.text)).toEqual(["origin", "bare"])
+    expect(rows.map((row) => row.columns[2]!.text)).toEqual(["https://example.com/a.git", ""])
   })
 })

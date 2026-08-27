@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
+import type { CommitSummary } from "../../src/domain/commit"
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
 import { createRegistry } from "../../src/ui/bindings"
 import { localBranchRows } from "../../src/ui/panes/branches-pane"
 import { remoteRows } from "../../src/ui/panes/remotes-pane"
 
-describe("panel 3 tabs and RemoteBranches child", () => {
+describe("panel 3 tabs and transient children", () => {
   let harness: ShellHarness | undefined
   let remoteBare: TempRepository | undefined
 
@@ -41,20 +42,21 @@ describe("panel 3 tabs and RemoteBranches child", () => {
     await harness.pressKey("[")
     expect(harness.app.view!.activeBranchesTab).toBe("branches")
 
-    // Bracket in Main must not change tab and must not change reviewTarget
+    // Bracket in Main must not change tab, but now cycles the working-tree scope ring.
     await harness.pressKey("0")
     const beforeMain = harness.app.view!.activeBranchesTab
-    const targetBeforeMainBracket = harness.app.controller.state.reviewTarget
     await harness.pressKey("]")
+    await harness.settle()
     expect(harness.app.view!.activeBranchesTab).toBe(beforeMain)
-    expect(harness.app.controller.state.reviewTarget).toEqual(targetBeforeMainBracket)
+    const scopedTarget = harness.app.controller.state.reviewTarget
+    expect(scopedTarget).toEqual({ kind: "working-tree", scope: "staged" })
 
     // Bracket in Files cycles panel 2's own tabs and leaves panel 3 alone.
     await harness.pressKey("2")
     await harness.pressKey("]")
     expect(harness.app.view!.activeFilesTab).toBe("worktrees")
     expect(harness.app.view!.activeBranchesTab).toBe(beforeMain)
-    expect(harness.app.controller.state.reviewTarget).toEqual(beforeTarget)
+    expect(harness.app.controller.state.reviewTarget).toEqual(scopedTarget)
     await harness.pressKey("[")
     expect(harness.app.view!.activeFilesTab).toBe("files")
 
@@ -62,13 +64,13 @@ describe("panel 3 tabs and RemoteBranches child", () => {
     await harness.pressKey("3")
     await harness.pressKey("]")
     expect(harness.app.view!.activeBranchesTab).toBe("remotes")
-    expect(harness.app.controller.state.reviewTarget).toEqual(beforeTarget)
+    expect(harness.app.controller.state.reviewTarget).toEqual(scopedTarget)
   })
 
-  test("scope-next and scope-previous are unhandled in the tabless main pane", async () => {
+  test("main pane binds brackets to the scope ring while tabbed panels keep tab cycling", async () => {
     const registry = createRegistry()
-    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
-    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
+    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBe("scope-next")
+    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBe("scope-previous")
     // Every tabbed panel binds them to its own tab cycle instead.
     expect(registry.dispatch({ name: "]" }, { context: "files" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "files" })).toBe("tab-previous")
@@ -104,6 +106,151 @@ describe("panel 3 tabs and RemoteBranches child", () => {
     expect(panelAfterEscape.child).toBeUndefined()
     expect(panelAfterEscape.activeTab).toBe("remotes")
     expect(panelAfterEscape.views.remotes.selectedId).toBe(beforeId)
+  })
+
+  test("Enter on Local Branches opens that branch's commits in panel 3", async () => {
+    harness = await createShellHarness({ commits: ["shared base"] })
+    await harness.repository.git(["checkout", "-b", "feature", "--quiet"])
+    await harness.repository.write("feature.txt", "feature\n")
+    await harness.repository.git(["add", "feature.txt"])
+    await harness.repository.git(["commit", "-m", "feature-only commit"])
+    await harness.repository.git(["checkout", "-", "--quiet"])
+    await harness.app.refresh()
+
+    await harness.pressKey("3")
+    await harness.pressKey("j")
+    expect(harness.app.view!.branchesPanel.views.branches.selectedId).toBe("local:feature")
+    const previousPanel4Commits = harness.app.view!.commitsPanel.views.commits.rows.map((row) => row.id)
+    const beforeTarget = harness.app.controller.state.reviewTarget
+
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    await harness.app.view!.whenPreviewSettled()
+    await harness.flush()
+
+    const view = harness.app.view!
+    const child = view.branchesPanel.child
+    expect(child?.value).toEqual({ kind: "local-commits", branch: "feature" })
+    expect(view.renderedListText("branches")).toContain("feature-only commit")
+    expect(view.commitsPanel.views.commits.rows.map((row) => row.id)).toEqual(previousPanel4Commits)
+    expect(harness.app.controller.state.reviewTarget).toEqual(beforeTarget)
+    expect(view.focusManager.active).toBe("branches")
+    expect(harness.frame()).toContain("[3]─Commits (feature)")
+    expect(view.mainContent?.source).toBe("commit")
+    expect(view.mainContent?.stableId).toBe(child?.view.selectedId)
+  })
+
+  test("refresh reloads commits for an open local branch child", async () => {
+    harness = await createShellHarness({ commits: ["shared base"] })
+    await harness.repository.git(["checkout", "-b", "feature", "--quiet"])
+    await harness.repository.write("feature.txt", "feature\n")
+    await harness.repository.git(["add", "feature.txt"])
+    await harness.repository.git(["commit", "-m", "feature-only commit"])
+    await harness.repository.git(["checkout", "-", "--quiet"])
+    await harness.app.refresh()
+
+    await harness.pressKey("3")
+    await harness.pressKey("j")
+    await harness.pressKey("RETURN")
+    await harness.app.view!.whenPreviewSettled()
+    expect(harness.app.view!.renderedListText("branches")).toContain("feature-only commit")
+
+    await harness.repository.git(["checkout", "feature", "--quiet"])
+    await harness.repository.write("feature-second.txt", "second\n")
+    await harness.repository.git(["add", "feature-second.txt"])
+    await harness.repository.git(["commit", "-m", "feature-second commit"])
+    await harness.repository.git(["checkout", "-", "--quiet"])
+    await harness.app.refresh()
+    await harness.app.view!.whenPreviewSettled()
+    await harness.flush()
+
+    expect(harness.app.view!.renderedListText("branches")).toContain("feature-second commit")
+  })
+
+  test("focus changes invalidate a pending local branch commit load", async () => {
+    const loaderStarted = Promise.withResolvers<void>()
+    const loaded = Promise.withResolvers<readonly CommitSummary[]>()
+    harness = await createShellHarness({
+      commits: ["shared base"],
+      loadBranchCommits: async () => {
+        loaderStarted.resolve()
+        return loaded.promise
+      },
+    })
+    await harness.repository.git(["checkout", "-b", "feature", "--quiet"])
+    await harness.repository.write("feature.txt", "feature\n")
+    await harness.repository.git(["add", "feature.txt"])
+    await harness.repository.git(["commit", "-m", "feature-only commit"])
+    await harness.repository.git(["checkout", "-", "--quiet"])
+    await harness.app.refresh()
+
+    await harness.pressKey("3")
+    await harness.pressKey("j")
+    expect(harness.app.view!.branchesPanel.views.branches.selectedId).toBe("local:feature")
+    expect(harness.app.view!.focusManager.active).toBe("branches")
+    expect(harness.app.view!.isMutating).toBe(false)
+    expect(harness.app.view!.branchesPanel.child).toBeUndefined()
+    await harness.pressKey("RETURN")
+    await loaderStarted.promise
+    const loadSettled = harness.app.view!.whenPreviewSettled()
+    await harness.pressKey("4")
+    await harness.pressKey("3")
+    loaded.resolve([{ oid: "feature-oid", shortOid: "feature", parentOids: [], authorName: "A", authoredAt: "2026-01-01T00:00:00Z", subject: "feature commit", body: "" }])
+    await loadSettled
+    await harness.flush()
+
+    expect(harness.app.view!.branchesPanel.child).toBeUndefined()
+  })
+
+  test("Escape from local branch commits restores the branch selection and graph", async () => {
+    harness = await createShellHarness({ commits: ["shared base"] })
+    await harness.repository.git(["checkout", "-b", "feature", "--quiet"])
+    await harness.repository.write("feature.txt", "feature\n")
+    await harness.repository.git(["add", "feature.txt"])
+    await harness.repository.git(["commit", "-m", "feature-only commit"])
+    await harness.repository.git(["checkout", "-", "--quiet"])
+    await harness.app.refresh()
+
+    await harness.pressKey("3")
+    await harness.pressKey("j")
+    await harness.pressKey("RETURN")
+    await harness.app.view!.whenPreviewSettled()
+
+    expect(harness.app.view!.branchesPanel.child?.value.kind).toBe("local-commits")
+    await harness.pressKey("ESCAPE")
+    await harness.app.view!.whenPreviewSettled()
+    await harness.flush()
+
+    expect(harness.app.view!.branchesPanel.child).toBeUndefined()
+    expect(harness.app.view!.selectedListId("branches")).toBe("local:feature")
+    expect(harness.app.view!.mainContent?.source).toBe("local-branch")
+    expect(harness.app.view!.mainContent?.stableId).toBe("feature")
+    expect(harness.frame()).toContain("[3]─Local Branches - Remotes - Tags")
+  })
+
+  test("clicking a transient child title does not select its first commit", async () => {
+    harness = await createShellHarness({ commits: ["shared base"] })
+    await harness.repository.git(["checkout", "-b", "feature", "--quiet"])
+    await harness.repository.write("feature.txt", "feature\n")
+    await harness.repository.git(["add", "feature.txt"])
+    await harness.repository.git(["commit", "-m", "feature-only commit"])
+    await harness.repository.git(["checkout", "-", "--quiet"])
+    await harness.app.refresh()
+
+    await harness.pressKey("3")
+    await harness.pressKey("j")
+    await harness.pressKey("RETURN")
+    await harness.app.view!.whenPreviewSettled()
+    await harness.pressKey("j")
+    const view = harness.app.view!
+    const selectedBefore = view.selectedListId("branches")
+    const win = view.geometry.windows.branches!
+
+    await harness.mockMouse.click(win.x0 + 2, win.y0)
+    await harness.flush()
+
+    expect(view.focusManager.active).toBe("branches")
+    expect(view.selectedListId("branches")).toBe(selectedBefore)
   })
 
   test("bracket inside RemoteBranches closes child and activates adjacent tab", async () => {

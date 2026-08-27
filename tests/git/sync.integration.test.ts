@@ -24,7 +24,14 @@ describe("synchronization operations", () => {
       expect(missingPull).toMatchObject({ kind: "upstream-required", branch, operation: "pull" })
       if (missingPull.kind === "upstream-required") {
         await pull(runner, { upstream: missingPull.candidates[0] ?? { remote: "origin", branch } })
-        expect(runner.log.records().at(-1)?.args).toEqual(["pull", "origin", branch])
+        // pull now carries streamOutput: true (git_commands/sync.go:110), so its stdout follows the
+        // command line in the log rather than the command line being the last entry — assert that
+        // the Git output: heading follows the command, which is what streamOutput actually pins
+        // (matching review-workflow.integration.test.ts's analogous assertion).
+        const texts = runner.log.lines().map((line) => line.spans.map((span) => span.text).join(""))
+        const commandIndex = texts.indexOf(`  git pull origin ${branch}`)
+        expect(commandIndex).toBeGreaterThanOrEqual(0)
+        expect(texts[commandIndex + 2]).toBe("Git output:")
       }
       const missing = await push(runner)
       expect(missing.kind).toBe("upstream-required")

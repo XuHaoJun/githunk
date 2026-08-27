@@ -6,7 +6,9 @@ import type { CapturedFrame, CliRenderer } from "@opentui/core"
 import { createApp, type App } from "../../src/app/create-app"
 import { GitRunner } from "../../src/git/runner"
 import { createTempRepository, type TempRepository } from "./temp-repository"
+import type { CommitSummary } from "../../src/domain/commit"
 import type { FocusId } from "../../src/ui/focus"
+import { UiStateStore, defaultUiState, type UiState as PersistedUiState } from "../../src/ui/ui-state-store"
 
 async function createTempBareRepository(): Promise<TempRepository> {
   const path = await mkdtemp(join(tmpdir(), "githunk-bare-"))
@@ -60,6 +62,19 @@ export type ShellHarnessOptions = {
   readonly setup?: (repository: TempRepository, fetchBare: TempRepository, pushBare: TempRepository) => Promise<void>
   /** Alias for setup. */
   readonly setupRepository?: (repository: TempRepository, fetchBare: TempRepository, pushBare: TempRepository) => Promise<void>
+  /** Observe every geometry change RootView reports, e.g. to assert what gets persisted. */
+  readonly onGeometryChange?: (state: PersistedUiState) => void
+  /**
+   * Pre-seeds `.git/githunk/ui-state-v1.json` so the app reads it back on `refresh()`, stating
+   * the command log's starting visibility explicitly rather than depending on whatever
+   * `defaultUiState()` (src/ui/ui-state-store.ts) currently defaults to — the same reasoning
+   * `RootView`'s own `logVisible ?? true` default follows `Gui.ShowCommandLog: true`
+   * (pkg/config/user_config.go:901).
+   */
+  readonly logVisible?: boolean
+  /** Overrides the default (real editor-spawning) `editFile`, e.g. to observe the edit without spawning a process. */
+  readonly onEditFile?: (path: string, line?: number) => Promise<void>
+  readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
 }
 
 export type ShellHarness = {
@@ -119,9 +134,13 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     height: options.height ?? 40,
     useMouse: true,
     enableMouseMovement: true,
-    // Matches src/main.ts's real renderer configuration explicitly, rather than relying on the
-    // library default of `true` for the same value: ctrl+c must behave the same way under test
-    // as it does in the shipped app.
+    // Matches src/main.ts's real renderer configuration explicitly, rather than relying on
+    // library defaults for the same values: ctrl+c must behave the same way under test as it
+    // does in the shipped app, and the kitty keyboard protocol is ON by default in
+    // CliRenderer (`useKittyKeyboard ?? true`), so the mocks must encode modifier keys the
+    // same way a real terminal reports them — without it, ctrl+Enter degrades to a bare \r
+    // and the commit dialog cannot be confirmed from a test.
+    kittyKeyboard: true,
     exitOnCtrlC: true,
   })
 
@@ -132,11 +151,21 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
   let quitCalled = false
   setup.renderer.on("destroy", () => { quitCalled = true })
 
+  if (options.logVisible !== undefined) {
+    await new UiStateStore(new GitRunner(repository.path)).save({
+      ...defaultUiState(),
+      commandLogVisible: options.logVisible,
+    })
+  }
+
   const app = createApp({
     repositoryRoot: repository.path,
     runner: new GitRunner(repository.path),
     renderer: setup.renderer,
     onQuit: () => { quitCalled = true },
+    ...(options.onGeometryChange === undefined ? {} : { onGeometryChange: options.onGeometryChange }),
+    ...(options.onEditFile === undefined ? {} : { onEditFile: options.onEditFile }),
+    ...(options.loadBranchCommits === undefined ? {} : { loadBranchCommits: options.loadBranchCommits }),
   })
   await app.refresh()
   await setup.flush()

@@ -1,8 +1,9 @@
 import { TextRenderable, type CliRenderer } from "@opentui/core"
 import type { AppModel } from "../app/model"
+import { ANSI_BLUE, DEFAULT_FOREGROUND } from "./theme"
 
-const HINTS_COLOR = "#8a8a8a"
-const STATUS_COLOR = "#c8c8c8"
+const HINTS_COLOR = ANSI_BLUE
+const STATUS_COLOR = DEFAULT_FOREGROUND
 
 export type HintsBarHandle = {
   readonly hints: TextRenderable

@@ -1,6 +1,6 @@
 import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
+import { DEFAULT_BACKGROUND, DEFAULT_FOREGROUND } from "./theme"
 import type { MenuEntry } from "./bindings"
-
 const UNAVAILABLE_SUFFIX = "  (unavailable)"
 
 export function renderMenuLines(entries: readonly MenuEntry[], contextTitle: string): readonly string[] {
@@ -27,16 +27,19 @@ export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandl
   const box = new BoxRenderable(renderer, {
     id: "keybinding-menu",
     border: true,
-    borderColor: "#ffffff",
+    borderColor: DEFAULT_FOREGROUND,
+    focusedBorderColor: DEFAULT_FOREGROUND,
+    titleColor: DEFAULT_FOREGROUND,
     title: "Keybindings",
     bottomTitle: "Escape or ? to close",
     position: "absolute",
     overflow: "hidden",
-    backgroundColor: "#101010",
+    backgroundColor: DEFAULT_BACKGROUND,
   })
   const text = new TextRenderable(renderer, {
     id: "keybinding-menu-text",
     content: "",
+    fg: DEFAULT_FOREGROUND,
     selectable: false,
     wrapMode: "none",
     width: "100%",

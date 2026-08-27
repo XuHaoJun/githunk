@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { TextAttributes, parseColor } from "@opentui/core"
+import { TextAttributes } from "@opentui/core"
 import { buildPaneTabsStrip, paneTabAtOffset, paneTabsPlainTitle, paneTabsTitlePrefix } from "../../src/ui/pane-tabs"
-import { TAB_ACTIVE_FG } from "../../src/ui/theme"
 
 const BRANCHES = { jumpKey: "3", tabs: ["Local Branches", "Remotes", "Tags"] as const }
 
@@ -19,7 +18,8 @@ describe("pane tab strip", () => {
     const strip = buildPaneTabsStrip({ ...BRANCHES, activeIndex: 0, focused: true })
     expect(strip.chunks.map((c) => c.text).join("")).toBe("[3]─Local Branches - Remotes - Tags")
     const active = strip.chunks.find((c) => c.text === "Local Branches")!
-    expect(active.fg!.toInts()).toEqual(parseColor(TAB_ACTIVE_FG).toInts())
+    expect(active.fg!.intent).toBe("indexed")
+    expect(active.fg!.slot).toBe(2)
     expect((active.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
     for (const text of ["Remotes", "Tags", "[3]─", " - "]) {
       const chunk = strip.chunks.find((c) => c.text === text)!

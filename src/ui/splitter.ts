@@ -1,7 +1,8 @@
 import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
+import { ANSI_GREEN, DEFAULT_FOREGROUND } from "./theme"
 
-const IDLE_COLOR = "#555555"
-const HOVER_COLOR = "#ffffff"
+const IDLE_COLOR = DEFAULT_FOREGROUND
+const HOVER_COLOR = ANSI_GREEN
 const VERTICAL_RULE = "│"
 const HORIZONTAL_RULE = "─"
 const VERTICAL_GRAB = "⇔"

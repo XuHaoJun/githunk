@@ -1,4 +1,4 @@
-import type { TextRenderable } from "@opentui/core"
+import type { ColorInput, TextRenderable } from "@opentui/core"
 
 /**
  * The one place that reaches into OpenTUI's text internals.
@@ -16,7 +16,7 @@ import type { TextRenderable } from "@opentui/core"
 
 export type PaneHighlight = { readonly start: number; readonly end: number; readonly styleId: number }
 
-export type PaneStyleDefinition = { readonly fg?: string; readonly dim?: boolean }
+export type PaneStyleDefinition = { readonly fg?: ColorInput; readonly bold?: boolean; readonly dim?: boolean }
 
 export type PaneTextBuffer = {
   /** Replaces the whole buffer. Drops any highlights, and does not touch the scroll offset. */
@@ -84,12 +84,19 @@ export function paneTextBuffer(text: TextRenderable): PaneTextBuffer | undefined
   }
 }
 
-/** Installs unstyled text, by the cheap route where OpenTUI still offers one. */
-export function setPlainPaneText(text: TextRenderable, value: string): void {
-  const buffer = paneTextBuffer(text)
-  if (buffer === undefined) {
-    text.content = value
-    return
+/**
+ * Registers a callback OpenTUI runs at the top of every render pass, chaining onto whatever was
+ * registered before it.
+ *
+ * Every scroll path — keys, wheel, scrollbar drag, reveal, resize — ends in a render, so this is the
+ * single hook a viewport-following painter cannot be bypassed by. `onLifecyclePass` is not in
+ * OpenTUI's public typings, which is why the cast lives in this file with the rest of them.
+ */
+export function onPaneLifecyclePass(text: TextRenderable, callback: () => void): void {
+  const host = text as unknown as { onLifecyclePass?: (() => void) | null }
+  const previous = host.onLifecyclePass
+  host.onLifecyclePass = () => {
+    previous?.call(text)
+    callback()
   }
-  buffer.setText(value)
 }

@@ -1,42 +1,55 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
+import type { ItemOperation } from "../../domain/item-operation"
+import type { PullRequest } from "../../domain/pull-request"
+import { shouldShowPullRequest } from "../../domain/pull-request"
 import { filterItems } from "../../app/filter"
+import { branchStatus, formatRecency } from "../branch-status"
+import { pullRequestIcon } from "../pull-request-icon"
+import { BRANCH_RECENCY_CURRENT_FG, BRANCH_RECENCY_FG } from "../theme"
 import { createPane, type PaneHandle } from "./common"
 import type { ListColumn, ListRow } from "../list-view"
 import { createListState, renderListRows, selectListRow, setListRows, type ListState } from "../list-view"
 
-function formatBranchTime(committedAt: string, now: Date = new Date()): string {
-  const unix = Number(committedAt)
-  if (!Number.isFinite(unix) || committedAt.length === 0) return ""
-  const thenMs = unix * 1000
-  if (Number.isNaN(thenMs)) return ""
-  const diffMs = now.getTime() - thenMs
-  const diffSec = Math.round(diffMs / 1000)
-  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" })
-  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ["year", 31536000],
-    ["month", 2592000],
-    ["week", 604800],
-    ["day", 86400],
-    ["hour", 3600],
-    ["minute", 60],
-    ["second", 1],
-  ]
-  for (const [unit, secs] of units) {
-    if (Math.abs(diffSec) >= secs || unit === "second") {
-      return rtf.format(-Math.round(diffSec / secs), unit)
-    }
-  }
-  return rtf.format(0, "second")
+/**
+ * What a local-branch row is drawn from beyond the model: the clock the recency and spinner are
+ * read off, the operations currently running against rows, and the pull requests to dot them with.
+ */
+export type BranchRowOptions = {
+  readonly now?: Date
+  /** Row id (`local:<name>`) → the operation in flight on it. */
+  readonly itemOperations?: ReadonlyMap<string, ItemOperation>
+  /** Branch name → its pull request, as `pullRequestsByBranch` keys them. */
+  readonly pullRequests?: Readonly<Record<string, PullRequest>>
+  /**
+   * Clock for the spinner, split from `now` so a test can hold the recency still while stepping
+   * frames. Defaults to `now`.
+   */
+  readonly spinnerNowMs?: number
 }
 
-export function localBranchRows(model: AppModel, filter = ""): ListRow[] {
+/**
+ * lazygit's `getBranchDisplayStrings` in its default (normal-screen) configuration —
+ * pkg/gui/presentation/branches.go:45-191: recency, then the pull-request dot, then the name with
+ * its branch status. `gui.showBranchCommitHash` and `gui.showDivergenceFromBaseBranch` are off by
+ * default (pkg/config/user_config.go:916-917), so neither the hash nor the base-branch divergence
+ * cell exists here.
+ *
+ * The upstream and subject cells are githunk's own, at the priorities that make them the first
+ * things ../list-view sheds when the panel narrows; lazygit shows both only in half/full screen
+ * mode (its `fullDescription` branch, :180-190).
+ */
+export function localBranchRows(model: AppModel, filter = "", options: BranchRowOptions = {}): ListRow[] {
   const listing = model.branches
   if (listing === undefined) return []
-  // Lazygit orders branches by committer date descending (default `localBranchSortOrder: "date"` → `-committerdate`),
-  // with the current branch (`Recency: "  *"`) pinned to the top regardless of date. Recency ordering
-  // (`"recency"` mode merges reflog recency) is not replicated here, but date ordering matches the
-  // default vendored config (`pkg/config/user_config.go:954`).
+  const now = options.now ?? new Date()
+  const nowUnix = Math.floor(now.getTime() / 1000)
+  const spinnerNowMs = options.spinnerNowMs ?? now.getTime()
+  const pullRequests = options.pullRequests
+  // Lazygit orders branches by committer date descending (default `localBranchSortOrder: "date"` →
+  // `-committerdate`), with the current branch pinned to the top regardless of date
+  // (pkg/commands/git_commands/branch_loader.go:103-110). Recency ordering (`"recency"` mode merges
+  // reflog recency) is not replicated here.
   const sortedBranches = [...listing.localBranches].sort((a, b) => {
     if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
     const aTime = Number(a.committedAt ?? "0")
@@ -47,34 +60,34 @@ export function localBranchRows(model: AppModel, filter = ""): ListRow[] {
   const rows: ListRow[] = sortedBranches.map((branch) => {
     const id = `local:${branch.name}`
     const columns: ListColumn[] = []
+    // The checked-out branch's recency is the literal "  *" (branch_loader.go:106).
     columns.push({
-      text: branch.isCurrent ? "●" : " ",
+      text: branch.isCurrent ? "  *" : formatRecency(branch.committedAt, nowUnix),
       priority: 0,
-      style: branch.isCurrent ? "green" : "dim",
+      color: branch.isCurrent ? BRANCH_RECENCY_CURRENT_FG : BRANCH_RECENCY_FG,
     })
-    if (branch.isCurrent) {
-      columns.push({ text: branch.name, priority: 2, style: "green" })
-    } else {
-      columns.push({ text: branch.name, priority: 2 })
-    }
-    if (branch.upstream !== undefined && branch.upstream.length > 0) {
-      columns.push({ text: `↳${branch.upstream}`, priority: 3, style: "dim" })
-    }
-    if (branch.upstreamTrack !== undefined && branch.upstreamTrack.length > 0) {
-      columns.push({ text: branch.upstreamTrack, priority: 3, style: "yellow" })
-    }
-    if (branch.subject !== undefined && branch.subject.length > 0) {
-      columns.push({ text: branch.subject, priority: 2 })
-    }
-    if (branch.committedAt !== undefined && branch.committedAt.length > 0) {
-      const time = formatBranchTime(branch.committedAt)
-      if (time.length > 0) columns.push({ text: time, priority: 4, style: "dim" })
-    }
+    const pullRequest = pullRequests === undefined ? undefined : Object.prototype.hasOwnProperty.call(pullRequests, branch.name) ? pullRequests[branch.name] : undefined
+    const icon = pullRequest !== undefined && shouldShowPullRequest(pullRequest, branch.name) ? pullRequestIcon(pullRequest) : undefined
+    // Always a cell, blank when there is no pull request: ../list-view pads each column to its
+    // widest cell, so a per-row absence must not shift the names of the rows around it. A list
+    // where *every* cell is blank is dropped whole, so a repo without pull requests loses nothing.
+    columns.push({ text: icon?.text ?? "", priority: 0, ...(icon?.color === undefined ? {} : { color: icon.color }) })
+    columns.push({ text: branch.name, priority: 2, flex: true })
+    // Every cell below is present on every row, blank where the branch has nothing to put in it:
+    // ../list-view addresses columns by index and pads each to its widest cell, so a row that
+    // omitted one would shift every later cell of that row into the wrong column.
+    const status = branchStatus(branch, options.itemOperations?.get(id), spinnerNowMs)
+    columns.push({ text: status?.text ?? "", priority: 3, ...(status === undefined ? {} : { color: status.color }) })
+    columns.push({ text: branch.upstream === undefined || branch.upstream.length === 0 ? "" : `↳${branch.upstream}`, priority: 5, style: "dim" })
+    columns.push({ text: branch.subject ?? "", priority: 4 })
     return { id, columns }
   })
   if (filter.length === 0) return rows
-  return [...filterItems(filter, rows, (row) => row.columns[1]?.text ?? row.id)]
+  return [...filterItems(filter, rows, (row) => row.columns[2]?.text ?? row.id)]
 }
+
+/** branches_controller.go:205 `self.c.Tr.NoBranchesThisRepo` — pkg/i18n/english.go:1315. */
+export const NO_BRANCHES_THIS_REPO = "No branches for this repo"
 
 /** Panel 3's tab labels and jump label, in lazygit's order (pkg/gui/views.go side-panel groups). */
 export const BRANCHES_TABS = ["Local Branches", "Remotes", "Tags"] as const

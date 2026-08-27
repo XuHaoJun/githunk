@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { isWide } from "./cell-width"
 
 /**
  * Port of lazygit `pkg/gui/presentation/authors/authors.go`.
@@ -81,21 +82,6 @@ function computeInitials(authorName: string): string {
   if (parts.length === 0) return ""
   if (parts.length === 1) return [...parts[0]!].slice(0, 2).join("")
   return `${[...parts[0]!][0] ?? ""}${[...parts[1]!][0] ?? ""}`
-}
-
-function isWide(grapheme: string): boolean {
-  const code = grapheme.codePointAt(0)
-  if (code === undefined) return false
-  return (
-    (code >= 0x1100 && code <= 0x115f) ||
-    (code >= 0x2e80 && code <= 0xa4cf) ||
-    (code >= 0xac00 && code <= 0xd7a3) ||
-    (code >= 0xf900 && code <= 0xfaff) ||
-    (code >= 0xfe30 && code <= 0xfe6f) ||
-    (code >= 0xff00 && code <= 0xff60) ||
-    (code >= 0xffe0 && code <= 0xffe6) ||
-    (code >= 0x20000 && code <= 0x3fffd)
-  )
 }
 
 /** Lazygit's `Gui.CommitAuthorShortLength` default. */

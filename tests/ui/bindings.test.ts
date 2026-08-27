@@ -152,6 +152,11 @@ describe("BindingRegistry availability-aware resolution", () => {
     expect(registry.dispatch({ name: "escape" }, { context: "commits", model: workingTree, ui: ui() })).toBe("back")
     expect(registry.dispatch({ name: "escape" }, { context: "commits", model: commit, ui: ui() })).toBe("commit-back")
   })
+  test("bracket keys cycle the working-tree scope in main but switch tabs in side windows", () => {
+    expect(registry.dispatch({ name: "]" }, { context: "main", model: workingTree, ui: ui() })).toBe("scope-next")
+    expect(registry.dispatch({ name: "[" }, { context: "main", model: workingTree, ui: ui() })).toBe("scope-previous")
+    expect(registry.dispatch({ name: "]" }, { context: "files", model: workingTree, ui: ui() })).toBe("tab-next")
+  })
 
   test("resolves to undefined when the only binding for a key is unavailable", () => {
     const onlyUnavailable = new BindingRegistry([
@@ -283,23 +288,24 @@ describe("GITHUNK_BINDINGS", () => {
     expect(registry.dispatch({ name: "l" }, { context: "main" })).toBe("hunk-next")
   })
 
-  test("moves the main scope toggle off tab and onto bracket keys in branches pane", () => {
+  test("keeps tabs in side windows and restores the scope ring on main's brackets", () => {
     expect(registry.dispatch({ name: "tab" }, { context: "main" })).toBe("pane-next")
-    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
-    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
-    // Panel 2 has tabs of its own now (lazygit's `{files, worktrees, submodules}` group), so the
-    // brackets cycle there too — only the tabless main pane leaves them unbound.
+    // Main is the only tabless window, so its `[`/`]` belong to the PRD §8.1 scope ring.
+    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBe("scope-next")
+    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBe("scope-previous")
+    // Panel 2 has tabs of its own now (lazygit's `{files, worktrees, submodules}` group), so
+    // the brackets cycle there too.
     expect(registry.dispatch({ name: "]" }, { context: "files" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "files" })).toBe("tab-previous")
     expect(registry.dispatch({ name: "]" }, { context: "branches" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "branches" })).toBe("tab-previous")
   })
 
-  test("adds tab-next and tab-previous and deletes scope-next/scope-previous", () => {
+  test("adds tab-next and tab-previous alongside the restored scope actions", () => {
     expect(ACTIONS).toContain("tab-next")
     expect(ACTIONS).toContain("tab-previous")
-    expect(ACTIONS).not.toContain("scope-next")
-    expect(ACTIONS).not.toContain("scope-previous")
+    expect(ACTIONS).toContain("scope-next")
+    expect(ACTIONS).toContain("scope-previous")
   })
 
   test("declares paging, jumping, main scrolling, screen modes and the menu", () => {
@@ -312,11 +318,35 @@ describe("GITHUNK_BINDINGS", () => {
     expect(registry.dispatch({ name: "K" })).toBe("main-scroll-up")
     expect(registry.dispatch({ name: "L" })).toBe("main-scroll-right")
     expect(registry.dispatch({ name: "H" })).toBe("main-scroll-left")
-    expect(registry.dispatch({ name: "d", ctrl: true })).toBe("main-half-page-down")
-    expect(registry.dispatch({ name: "u", ctrl: true })).toBe("main-half-page-up")
+    // lazygit merges `scrollUpMain-alt1`/`-alt2` into `scrollUpMain`, so all six keys are one
+    // binding scrolling `gui.scrollHeight` lines (pkg/config/user_config.go:1047-1052).
+    expect(registry.dispatch({ name: "d", ctrl: true })).toBe("main-scroll-down")
+    expect(registry.dispatch({ name: "u", ctrl: true })).toBe("main-scroll-up")
+    expect(registry.dispatch({ name: "pagedown" })).toBe("main-scroll-down")
+    expect(registry.dispatch({ name: "pageup" })).toBe("main-scroll-up")
     expect(registry.dispatch({ name: "+" })).toBe("screen-mode-next")
     expect(registry.dispatch({ name: "_" })).toBe("screen-mode-previous")
     expect(registry.dispatch({ name: "?" })).toBe("keybinding-menu")
+  })
+
+  /**
+   * lazygit binds all of these on the extras view (pkg/gui/keybindings.go:249-295). They exist
+   * globally in githunk already, but the command log needs its own entries so the handler can apply
+   * the matching autoscroll transition rather than just moving the viewport.
+   */
+  test("the command log binds paging and jump keys in its own context", () => {
+    for (const [key, action] of [[",", "page-previous"], [".", "page-next"], ["<", "goto-top"], [">", "goto-bottom"]] as const) {
+      const binding = registry.resolve({ name: key }, { context: "command-log", model: model(), ui: ui() })
+      expect(binding?.action).toBe(action)
+      expect(binding?.contexts).toContain("command-log")
+    }
+  })
+
+  test("the command log still binds j/k and the arrows", () => {
+    expect(registry.dispatch({ name: "j" }, { context: "command-log" })).toBe("next")
+    expect(registry.dispatch({ name: "k" }, { context: "command-log" })).toBe("previous")
+    expect(registry.dispatch({ name: "down" }, { context: "command-log" })).toBe("next")
+    expect(registry.dispatch({ name: "up" }, { context: "command-log" })).toBe("previous")
   })
 
   test("keeps the per-pane meanings of space, d, enter, r, g, n and f", () => {
@@ -343,11 +373,11 @@ describe("GITHUNK_BINDINGS", () => {
     expect(hints).toContain("reviewed: r")
   })
 
-  test("hides line actions in the All scope, where they are unavailable", () => {
+  test("hides line actions in the All scope but advertises the scope ring", () => {
     const all = model({ reviewTarget: { kind: "working-tree", scope: "all" } })
     const hints = registry.hintsFor("main", all, ui({ focus: "main", mainScope: "all" }), 300)
     expect(hints).not.toContain("stage: space")
-    expect(hints).not.toContain("scope: ")
+    expect(hints).toContain("scope: ]")
   })
 
 
@@ -401,6 +431,11 @@ describe("branches pane: Shift+D force delete", () => {
   const registry = createRegistry()
   const workingTree = model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } })
   const local = ui({ selectedBranchKind: "local" })
+
+  test("labels Enter as viewing commits", () => {
+    const entry = registry.menuFor("branches", workingTree, local).find((candidate) => candidate.keys === "enter")
+    expect(entry).toEqual({ group: "context", keys: "enter", description: "view commits", enabled: true })
+  })
 
   test("Shift+D resolves to branch-delete with shift set, distinct from plain d", () => {
     const dBinding = registry.resolve({ name: "d" }, { context: "branches", model: workingTree, ui: local })
