@@ -1,4 +1,4 @@
-import { BoxRenderable, TextRenderable, type CliRenderer, type KeyEvent } from "@opentui/core"
+import { BoxRenderable, TextRenderable, type CliRenderer, type KeyEvent, type MouseEvent } from "@opentui/core"
 import type { ReviewWorkspaceController } from "./controller"
 import type { ReviewState } from "../../review/core/state"
 import { computeReviewLayout } from "./layout"
@@ -10,7 +10,7 @@ import type { ReviewFocus } from "./command-catalog"
 import { planReviewIntent } from "../../review/core/intents"
 import { coverageForFile, visibleReviewFiles, sortedReviewFeedback } from "../../review/core/selectors"
 import { ReviewStreamPane } from "./stream-pane"
-import { planReviewRows } from "./row-planner"
+import { planReviewRows, reviewFileStartOffset } from "./row-planner"
 import { FeedbackComposer } from "./feedback-composer"
 import { FeedbackPane } from "./feedback-pane"
 import { FinishDialog } from "./finish-dialog"
@@ -19,6 +19,7 @@ import { createRangeAnchor } from "../../review/core/anchors"
 import type { ClipboardPort } from "../clipboard"
 import type { ReviewWorkspaceError } from "./error-state"
 import { isEmptyReview, isDetachedSnapshot } from "./error-state"
+import { cellWidth } from "../cell-width"
 
 export type ReviewWorkspaceOptions = {
   readonly onClose?: () => void
@@ -31,6 +32,7 @@ export class ReviewWorkspace {
   readonly root: BoxRenderable
   private readonly headerBox: BoxRenderable
   private readonly sidebarBox: BoxRenderable
+  private readonly sidebarText: TextRenderable
   private readonly streamBox: BoxRenderable
   private readonly footerBox: BoxRenderable
   private readonly headerText: TextRenderable
@@ -49,6 +51,8 @@ export class ReviewWorkspace {
   private layoutMode: ReviewLayoutMode = "auto"
   private sidebarVisible = true
   private viewportStart = 0
+  private sidebarViewportStart = 0
+  private lastFileTopToken = -1
   private lastState: ReviewState | undefined
   private mouseError: string | null = null
   private overriddenWidth: number | undefined
@@ -94,6 +98,9 @@ export class ReviewWorkspace {
       border: true,
       title: "Branch Review",
       flexDirection: "column",
+      width: "100%",
+      height: "100%",
+      overflow: "hidden",
     })
     renderer.root.add(this.root)
 
@@ -102,11 +109,15 @@ export class ReviewWorkspace {
       id: "review-header",
       flexDirection: "column",
       height: 3,
+      width: "100%",
+      overflow: "hidden",
     })
     this.headerText = new TextRenderable(renderer, {
       id: "review-header-text",
       content: "",
       wrapMode: "none",
+      width: "100%",
+      height: "100%",
     })
     this.headerBox.add(this.headerText)
 
@@ -115,38 +126,95 @@ export class ReviewWorkspace {
       id: "review-body",
       flexDirection: "row",
       flexGrow: 1,
+      width: "100%",
+      overflow: "hidden",
     })
     this.sidebarBox = new BoxRenderable(renderer, {
       id: "review-sidebar",
       width: 28,
+      height: "100%",
       border: true,
       title: "Files",
+      overflow: "hidden",
     })
+    this.sidebarText = new TextRenderable(renderer, {
+      id: "review-sidebar-text",
+      content: "",
+      wrapMode: "none",
+      width: "100%",
+      height: "100%",
+    })
+    this.sidebarBox.add(this.sidebarText)
+    this.sidebarBox.onMouseDown = (event: MouseEvent) => {
+      const row = Math.floor(event.y - this.sidebarBox.y - 1)
+      if (this.handleSidebarRowClick(row)) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }
     this.streamBox = new BoxRenderable(renderer, {
       id: "review-stream",
       flexGrow: 1,
+      height: "100%",
       border: true,
       title: "Diff",
+      overflow: "hidden",
     })
     this.streamText = new TextRenderable(renderer, {
       id: "review-stream-text",
       content: "",
       wrapMode: "none",
+      width: "100%",
+      height: "100%",
     })
     this.streamBox.add(this.streamText)
     body.add(this.sidebarBox)
     body.add(this.streamBox)
+    this.root.onMouse = (event: MouseEvent) => {
+      const type = (event as unknown as { type?: string }).type
+      if (type === "scroll") {
+        const delta = reviewMouseWheelDelta(event)
+        if (delta === 0) return
+        const hitStream = event.x >= this.streamBox.x
+          && event.x < this.streamBox.x + this.streamBox.width
+          && event.y >= this.streamBox.y
+          && event.y < this.streamBox.y + this.streamBox.height
+        const hitSidebar = event.x >= this.sidebarBox.x
+          && event.x < this.sidebarBox.x + this.sidebarBox.width
+          && event.y >= this.sidebarBox.y
+          && event.y < this.sidebarBox.y + this.sidebarBox.height
+        if (hitStream) {
+          this.scrollStreamBy(delta)
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+        if (hitSidebar) {
+          const sidebarHeight = Math.max(1, this.sidebarBox.height - 2)
+          const maxStart = Math.max(0, this.sidebarText.content.split("\n").length - sidebarHeight)
+          this.sidebarViewportStart = Math.max(0, Math.min(maxStart, this.sidebarViewportStart + delta))
+          this.render(this.controller.state)
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+      }
+    }
 
     // Footer hints
     this.footerBox = new BoxRenderable(renderer, {
       id: "review-footer",
       height: 1,
+      width: "100%",
       flexDirection: "row",
+      overflow: "hidden",
     })
     this.footerText = new TextRenderable(renderer, {
       id: "review-footer-text",
       content: "",
       wrapMode: "none",
+      width: "100%",
+      height: "100%",
     })
     this.footerBox.add(this.footerText)
 
@@ -188,7 +256,6 @@ export class ReviewWorkspace {
     this.handleKey = (key: KeyEvent) => {
       const raw = (key as unknown as { name?: string }).name ?? (key as unknown as { key?: string }).key ?? ""
       const name = raw === "return" ? "enter" : raw
-      // Detect Ctrl+S: OpenTUI may report with ctrl modifier; check key.ctrl
       const ctrl = (key as unknown as { ctrl?: boolean }).ctrl ?? false
       if (ctrl && (name === "s" || name === "S")) {
         const handled = this.handleKeyPress("ctrl+s")
@@ -218,7 +285,7 @@ export class ReviewWorkspace {
       this.unsubscribe?.()
     } catch {}
     try {
-      this.renderer.keyInput.off("keypress", this.handleKey)
+      this.root.onMouse = undefined
     } catch {}
     try {
       this.root.destroyRecursively()
@@ -240,6 +307,14 @@ export class ReviewWorkspace {
     } catch {
       return false
     }
+  }
+
+  handleSidebarRowClick(visibleRow: number): boolean {
+    if (!Number.isInteger(visibleRow) || visibleRow < 0) return false
+    const state = this.controller.state
+    if (!state) return false
+    const row = reviewFileRows(state)[this.sidebarViewportStart + visibleRow]
+    return row === undefined ? false : this.handleSidebarClick(row.fileKey)
   }
 
   // Alias for test compatibility
@@ -405,11 +480,10 @@ export class ReviewWorkspace {
     }
 
     if (normalized === "tab") {
-      // When composer is open, tab already handled above; otherwise normal focus switching
-      if (this.focus === "sidebar") this.focus = "stream"
-      else if (this.focus === "stream") this.focus = "filter"
-      else this.focus = "sidebar"
-      this.renderer.requestRender?.()
+      if (this.focus === "stream") this.focus = "sidebar"
+      else if (this.focus === "sidebar") this.focus = "filter"
+      else this.focus = "stream"
+      this.render(state)
       return true
     }
 
@@ -424,40 +498,25 @@ export class ReviewWorkspace {
       return true
     }
 
-    // Resolve via command catalog
-    const cmd = resolveReviewCommand(normalized, this.focus) ?? resolveReviewCommand(normalized, "any")
+    // Resolve through the active focus. Commands declared for "any" remain available
+    // through commandSupportsFocus; no focus-bypassing fallback is allowed.
+    const cmd = resolveReviewCommand(normalized, this.focus)
     if (!cmd) return false
-    if (state && !cmd.available(state as unknown as Pick<ReviewState, "projection">)) return false
+    if (state && !cmd.available(state)) return false
 
     switch (cmd.id) {
-      case "review.moveDown": {
-        if (!state) return false
-        this.streamPane.scrollBy(1)
-        this.viewportStart = this.streamPane.getViewportStart()
-        try {
-          const action = planReviewIntent(state, { type: "selection/move", unit: "hunk", direction: "next" })
-          this.controller.dispatch(action)
-        } catch {
-          try {
-            const action = planReviewIntent(state, { type: "selection/move", unit: "file", direction: "next" })
-            this.controller.dispatch(action)
-          } catch {}
-        }
-        this.render(this.controller.state)
-        return true
-      }
+      case "review.moveDown":
       case "review.moveUp": {
         if (!state) return false
-        this.streamPane.scrollBy(-1)
-        this.viewportStart = this.streamPane.getViewportStart()
-        try {
-          const action = planReviewIntent(state, { type: "selection/move", unit: "hunk", direction: "previous" })
-          this.controller.dispatch(action)
-        } catch {
+        const direction = cmd.id === "review.moveDown" ? "next" : "previous"
+        if (this.focus === "sidebar") {
           try {
-            const action = planReviewIntent(state, { type: "selection/move", unit: "file", direction: "previous" })
+            const action = planReviewIntent(state, { type: "selection/move", unit: "file", direction })
             this.controller.dispatch(action)
           } catch {}
+        } else {
+          this.streamPane.scrollBy(direction === "next" ? 1 : -1)
+          this.viewportStart = this.streamPane.getViewportStart()
         }
         this.render(this.controller.state)
         return true
@@ -791,17 +850,11 @@ export class ReviewWorkspace {
   }
 
   handleResize(width: number, height: number): void {
-    const prevSelection = this.controller.state?.selection
     this.overriddenWidth = width
     this.overriddenHeight = height
     const layout = computeReviewLayout(width, height, this.layoutMode, this.sidebarVisible)
     this.streamPane.handleResize(layout.stream.width, layout.stream.height)
     this.render(this.controller.state)
-    if (prevSelection) {
-      const cur = this.controller.state?.selection
-      if (cur && cur.fileKey !== prevSelection.fileKey) {
-      }
-    }
   }
 
   private render(state: ReviewState | undefined): void {
@@ -811,25 +864,51 @@ export class ReviewWorkspace {
     const layout = computeReviewLayout(width, height, this.layoutMode, this.sidebarVisible)
     this.lastState = state
 
-    // Header
     if (state) {
       const lines = reviewHeaderLines(state, layout.header.width)
-      const headerContent = lines.map((l) => l.map((s) => s.text).join("")).join("\n")
+      const headerContent = lines.map((line) => line.map((span) => span.text).join("")).join("\n")
       this.headerText.content = headerContent
-      const titleLine = lines[0]?.map((s) => s.text).join("") ?? "Branch Review"
+      const titleLine = lines[0]?.map((span) => span.text).join("") ?? "Branch Review"
       this.root.title = titleLine.slice(0, 80)
       const hints = reviewHints(this.focus, state)
       const wsError = this.controller.error
-      const footerBaseRaw = this.mouseError ? `Error: ${this.mouseError} — ${hints}` : wsError ? `${wsError.title}: ${wsError.detail} [${wsError.action}] — ${hints}` : hints
-      // Append finish dialog validation message if dialog open
-      const footerContent = this.finishDialog.isOpen() ? `${this.finishDialog.getValidationMessage()} — ${footerBaseRaw}` : footerBaseRaw
-      this.footerText.content = footerContent
-      const rows = reviewFileRows(state)
-      this.sidebarBox.title = `Files ${rows.length}/${state.document.files.length}`
+      const footerBase = this.mouseError
+        ? `Error: ${this.mouseError} — ${hints}`
+        : wsError
+          ? `${wsError.title}: ${wsError.detail} [${wsError.action}] — ${hints}`
+          : hints
+      this.footerText.content = this.finishDialog.isOpen()
+        ? `${this.finishDialog.getValidationMessage()} — ${footerBase}`
+        : footerBase
+
+      const fileRows = reviewFileRows(state)
+      this.sidebarBox.title = `Files ${fileRows.length}/${state.document.files.length}`
+      const selectedRow = fileRows.findIndex((row) => row.fileKey === state.selection.fileKey)
+      const sidebarHeight = Math.max(1, (layout.sidebar?.height ?? 1) - 2)
+      if (selectedRow >= 0) {
+        if (selectedRow < this.sidebarViewportStart) this.sidebarViewportStart = selectedRow
+        if (selectedRow >= this.sidebarViewportStart + sidebarHeight) {
+          this.sidebarViewportStart = selectedRow - sidebarHeight + 1
+        }
+      }
+      this.sidebarViewportStart = Math.min(
+        this.sidebarViewportStart,
+        Math.max(0, fileRows.length - sidebarHeight),
+      )
+      const sidebarWidth = Math.max(1, (layout.sidebar?.width ?? 1) - 2)
+      this.sidebarText.content = fileRows
+        .slice(this.sidebarViewportStart, this.sidebarViewportStart + sidebarHeight)
+        .map((row) => {
+          const selected = row.fileKey === state.selection.fileKey
+          return truncateReviewSidebarLine(`${selected ? ">" : " "} ${row.marker} ${row.path}`, sidebarWidth)
+        })
+        .join("\n")
+
       this.streamBox.title = `Diff — ${layout.effectiveMode}`
       const streamWidth = layout.stream.width
       const streamHeight = layout.stream.height
-      const plan = planReviewRows(state, {
+      this.streamPane.syncLayout(streamWidth, streamHeight, layout.effectiveMode)
+      const rowOptions = {
         viewportStart: this.viewportStart,
         viewportHeight: streamHeight,
         width: streamWidth,
@@ -837,23 +916,32 @@ export class ReviewWorkspace {
         showLineNumbers: true,
         wrapLines: false,
         expandedSourceByGap: this.controller.getExpandedSourceByGap(),
-      })
+      } as const
+      if (state.reveal.fileTopToken !== this.lastFileTopToken) {
+        const fileKey = state.selection.fileKey
+        const offset = fileKey === null ? null : reviewFileStartOffset(state, rowOptions, fileKey)
+        if (offset !== null) {
+          this.streamPane.setViewportStart(offset)
+          this.viewportStart = this.streamPane.getViewportStart()
+        }
+        this.lastFileTopToken = state.reveal.fileTopToken
+      }
+      const plan = planReviewRows(state, { ...rowOptions, viewportStart: this.viewportStart })
       this.streamPane.setLastPlanForTest(plan)
-      this.streamPane.syncLayout(streamWidth, streamHeight, layout.effectiveMode)
-      const streamContent = plan.rows.map(r => r.text.map(s => s.text).join("")).join("\n")
+      const visiblePlanStart = Math.max(0, this.viewportStart - plan.start)
+      const visiblePlanRows = plan.rows.slice(visiblePlanStart, visiblePlanStart + streamHeight)
+      const streamContent = visiblePlanRows.map((row) => row.text.map((span) => span.text).join("")).join("\n")
       let extra = this.mouseError ? `\n[Error: ${this.mouseError}]` : ""
       if (wsError) {
         extra += `\n[WorkspaceError ${wsError.kind}: ${wsError.title} — ${wsError.detail} — action:${wsError.action}]`
+      } else if (isEmptyReview(state.document)) {
+        extra += "\n[Empty review — no changes between base and HEAD]"
+      } else if (isDetachedSnapshot(state.document)) {
+        extra += `\n[Detached HEAD snapshot — reviewing ${state.document.generation.headOid.slice(0, 8)}]`
       }
-      if (!wsError) {
-        if (isEmptyReview(state.document)) extra += `\n[Empty review — no changes between base and HEAD]`
-        else if (isDetachedSnapshot(state.document)) extra += `\n[Detached HEAD snapshot — reviewing ${state.document.generation.headOid.slice(0, 8)}]`
-      }
-      {
-        const binaryFiles = state.document.files.filter((f) => f.source !== "available")
-        if (binaryFiles.length > 0) {
-          extra += `\n[Binary/too-large: ${binaryFiles.map((f) => f.path).join(", ")} — source unavailable, file-level feedback only]`
-        }
+      const unavailableFiles = state.document.files.filter((file) => file.source !== "available")
+      if (unavailableFiles.length > 0) {
+        extra += `\n[Binary/too-large: ${unavailableFiles.map((file) => file.path).join(", ")} — source unavailable, file-level feedback only]`
       }
       if (this.feedbackComposer.isOpen()) {
         const draft = this.feedbackComposer.getDraft()
@@ -863,7 +951,7 @@ export class ReviewWorkspace {
         }
       }
       if (this.pendingRangeAnchor) {
-        extra += `\n[Range selected: ${this.pendingRangeAnchor.kind} ${"side" in this.pendingRangeAnchor ? this.pendingRangeAnchor.side + ":" + this.pendingRangeAnchor.startLine + "-" + this.pendingRangeAnchor.endLine : ""}]`
+        extra += `\n[Range selected: ${this.pendingRangeAnchor.kind} ${"side" in this.pendingRangeAnchor ? `${this.pendingRangeAnchor.side}:${this.pendingRangeAnchor.startLine}-${this.pendingRangeAnchor.endLine}` : ""}]`
       }
       if (state.feedback.length > 0) {
         const grouped = this.feedbackPane.getGrouped()
@@ -878,28 +966,52 @@ export class ReviewWorkspace {
       this.headerText.content = "loading…"
       this.footerText.content = ""
       this.sidebarBox.title = "Files"
+      this.sidebarText.content = ""
       this.streamBox.title = "Diff"
       this.streamText.content = ""
     }
 
     this.headerBox.height = layout.header.height
     this.footerBox.height = layout.footer.height
-    const sidebarVisibleObj = this.sidebarBox as unknown as { visible?: boolean }
-    const streamPaneVisible = this.streamBox as unknown as { visible?: boolean }
-    const applySidebarVisible = (visible: boolean) => { sidebarVisibleObj.visible = visible }
-    const _unusedStreamVisible = streamPaneVisible.visible
-    void _unusedStreamVisible
     if (layout.sidebar) {
       this.sidebarBox.width = layout.sidebar.width
-      applySidebarVisible(true)
+      this.sidebarBox.visible = true
     } else {
       this.sidebarBox.width = 0
-      applySidebarVisible(false)
+      this.sidebarBox.visible = false
     }
-
-    const maybeRequestRender = this.renderer as unknown as { requestRender?: () => void }
-    if (maybeRequestRender.requestRender) maybeRequestRender.requestRender()
+    this.renderer.requestRender?.()
   }
+}
+
+function truncateReviewSidebarLine(value: string, maxCells: number): string {
+  if (maxCells <= 0) return ""
+  if (cellWidth(value) <= maxCells) return value
+  if (maxCells === 1) return "…"
+  let width = 0
+  let output = ""
+  for (const character of value) {
+    const characterWidth = cellWidth(character)
+    if (width + characterWidth > maxCells - 1) break
+    output += character
+    width += characterWidth
+  }
+  return `${output}…`
+}
+
+function reviewMouseWheelDelta(event: MouseEvent): number {
+  if (!("scroll" in event)) return 0
+  const scroll = event.scroll
+  if (scroll === undefined || scroll === null || typeof scroll !== "object") return 0
+  const direction = "direction" in scroll && typeof scroll.direction === "string"
+    ? scroll.direction
+    : undefined
+  const magnitude = "delta" in scroll && typeof scroll.delta === "number"
+    ? Math.max(1, Math.floor(scroll.delta))
+    : 1
+  if (direction === "down") return magnitude * 2
+  if (direction === "up") return magnitude * -2
+  return 0
 }
 
 function findNextUnreviewed(state: ReviewState, direction: "next" | "previous"): string | null {

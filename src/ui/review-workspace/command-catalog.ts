@@ -194,29 +194,20 @@ for (const cmd of REVIEW_COMMANDS) {
   }
 }
 
-function normalizeKey(key: string): string {
-  // OpenTUI may report "ArrowDown" etc; normalize to lower for case-insensitive match but keep sensitivity for R/r
-  // We handle by trying exact first, then lower
-  return key
+function commandSupportsFocus(command: ReviewCommand, focus: ReviewFocus | undefined): boolean {
+  return focus === undefined
+    || command.focus.includes(focus)
+    || command.focus.includes("any")
+    || command.focus.includes("global")
 }
 
-export function resolveReviewCommand(key: string, _focus?: ReviewFocus): ReviewCommand | undefined {
+export function resolveReviewCommand(key: string, focus?: ReviewFocus): ReviewCommand | undefined {
   const exact = keyToCommand.get(key)
-  if (exact) return exact
+  if (exact && commandSupportsFocus(exact, focus)) return exact
   const lower = key.toLowerCase()
-  // Need to distinguish 'R' vs 'r' : if key is 'R' (shift+r) we want R command, not r
-  // Our map contains both 'R' and 'r' exactly, so exact check above handles.
-  // For lower fallback, we should only fallback if not case-differentiated? For now return lower.
-  // But to avoid 'R' resolving to 'r', we already returned exact for 'R'. For 'r' exact already.
-  // So lower fallback is for arrow keys etc where case doesn't matter.
-  // We try lower only if exact missed and lower != key
-  if (lower !== key) {
-    const viaLower = keyToCommand.get(lower)
-    if (viaLower) return viaLower
-  }
-  // also handle aliases like "ArrowDown" lower is "arrowdown" which matches stored "ArrowDown" via lower map?
-  // Our map stored both exact "ArrowDown" and lower "arrowdown". So lookup with "ArrowDown" hits exact, with "arrowdown" hits via lower or exact lower entry.
-  return undefined
+  if (lower === key) return undefined
+  const viaLower = keyToCommand.get(lower)
+  return viaLower && commandSupportsFocus(viaLower, focus) ? viaLower : undefined
 }
 
 export function reviewHints(focus: ReviewFocus, state: Pick<ReviewState, "projection">): string {

@@ -780,6 +780,35 @@ function measureFileHeight(
   return height
 }
 
+export function reviewFileStartOffset(
+  state: ReviewState,
+  options: PlanReviewRowsOptions,
+  fileKey: string,
+): number | null {
+  const width = Math.max(1, Math.floor(options.width))
+  const showLineNumbers = !!options.showLineNumbers
+  const wrapLines = !!options.wrapLines
+  const normalizedOptions = {
+    ...options,
+    width,
+    showLineNumbers,
+    wrapLines,
+  }
+  const digits = lineNumberDigitsForState(state)
+  let offset = 0
+  for (const file of state.document.files) {
+    if (file.key === fileKey) return offset
+    const key = fileCacheKey(file, normalizedOptions, state, digits)
+    let height = fileHeightCache.get(key)
+    if (height === undefined) {
+      height = measureFileHeight(file, state, normalizedOptions, digits)
+      fileHeightCache.set(key, height)
+    }
+    offset += height
+  }
+  return null
+}
+
 export function planReviewRows(state: ReviewState, opts: PlanReviewRowsOptions): ReviewRowPlan {
   const viewportStart = Math.max(0, Math.floor(opts.viewportStart))
   const viewportHeight = Math.max(0, Math.floor(opts.viewportHeight))
