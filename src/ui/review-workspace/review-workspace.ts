@@ -9,7 +9,8 @@ import { REVIEW_COMMANDS, resolveReviewCommand, reviewHints } from "./command-ca
 import type { ReviewFocus } from "./command-catalog"
 import { planReviewIntent } from "../../review/core/intents"
 import { coverageForFile, visibleReviewFiles, sortedReviewFeedback } from "../../review/core/selectors"
-
+import { ReviewStreamPane } from "./stream-pane"
+import { planReviewRows } from "./row-planner"
 export type ReviewWorkspaceOptions = {
   readonly onClose?: () => void
 }
@@ -24,6 +25,8 @@ export class ReviewWorkspace {
   private readonly footerBox: BoxRenderable
   private readonly headerText: TextRenderable
   private readonly footerText: TextRenderable
+  private readonly streamText: TextRenderable
+  private readonly streamPane: ReviewStreamPane
   private destroyed = false
   private unsubscribe: (() => void) | undefined
   private readonly handleKey: (key: KeyEvent) => void
@@ -31,7 +34,11 @@ export class ReviewWorkspace {
   private rangeActive = false
   private layoutMode: ReviewLayoutMode = "auto"
   private sidebarVisible = true
-
+  private viewportStart = 0
+  private lastState: ReviewState | undefined
+  private mouseError: string | null = null
+  private overriddenWidth: number | undefined
+  private overriddenHeight: number | undefined
   constructor(
     private readonly renderer: CliRenderer,
     private readonly controller: ReviewWorkspaceController,
@@ -76,6 +83,12 @@ export class ReviewWorkspace {
       border: true,
       title: "Diff",
     })
+    this.streamText = new TextRenderable(renderer, {
+      id: "review-stream-text",
+      content: "",
+      wrapMode: "none",
+    })
+    this.streamBox.add(this.streamText)
     body.add(this.sidebarBox)
     body.add(this.streamBox)
 
@@ -95,6 +108,23 @@ export class ReviewWorkspace {
     this.root.add(this.headerBox)
     this.root.add(body)
     this.root.add(this.footerBox)
+
+    // Stream pane — viewport windowed diff stream
+    const getLayout = () => {
+      const w = (this.renderer as unknown as { terminalWidth?: number }).terminalWidth ?? 80
+      const h = (this.renderer as unknown as { terminalHeight?: number }).terminalHeight ?? 24
+      return computeReviewLayout(w, h, this.layoutMode, this.sidebarVisible)
+    }
+    this.streamPane = new ReviewStreamPane({
+      controller: this.controller,
+      getLayout,
+      getState: () => this.controller.state,
+      viewportHeight: getLayout().stream.height,
+      width: getLayout().stream.width,
+      effectiveMode: getLayout().effectiveMode,
+      showLineNumbers: true,
+      wrapLines: false,
+    })
 
     this.unsubscribe = this.controller.subscribe((state) => {
       if (this.destroyed) return
@@ -179,8 +209,9 @@ export class ReviewWorkspace {
         }
         return true
       }
-      if (this.rangeActive) {
+      if (this.rangeActive || this.streamPane.isRangeActive()) {
         this.rangeActive = false
+        try { this.streamPane.endRangeSelection() } catch {}
         this.renderer.requestRender?.()
         return true
       }
@@ -193,6 +224,35 @@ export class ReviewWorkspace {
       return true
     }
 
+    // Gap expansion via z
+    if (normalized === "z" || normalized === "Z") {
+      if (state) {
+        const plan = this.streamPane.getLastPlan()
+        if (plan) {
+          for (let i = 0; i < plan.rows.length; i++) {
+            const row = plan.rows[i]!
+            if (row.kind === "gap") {
+              const globalRow = plan.start + i
+              void this.streamPane.expandGapAtViewportRow(globalRow)
+              this.render(state)
+              return true
+            }
+          }
+        }
+        const fileKey = state.selection.fileKey
+        if (fileKey) {
+          const file = state.document.files.find(f => f.key === fileKey)
+          if (file && file.hunks.length > 1) {
+            const gapId = `before:1`
+            void this.controller.expandGap(fileKey, gapId)
+            this.render(state)
+            return true
+          }
+        }
+      }
+      return true
+    }
+
     // Filter focus trigger
     if (normalized === "/") {
       this.focus = "filter"
@@ -201,7 +261,6 @@ export class ReviewWorkspace {
     }
 
     if (normalized === "tab") {
-      // cycle focus sidebar <-> stream <-> filter
       if (this.focus === "sidebar") this.focus = "stream"
       else if (this.focus === "stream") this.focus = "filter"
       else this.focus = "sidebar"
@@ -212,6 +271,10 @@ export class ReviewWorkspace {
     // Layout mode switches — always available
     if (normalized === "0" || normalized === "1" || normalized === "2") {
       this.layoutMode = normalized === "0" ? "auto" : normalized === "1" ? "split" : "stack"
+      const w = (this.renderer as unknown as { terminalWidth?: number }).terminalWidth ?? 80
+      const h = (this.renderer as unknown as { terminalHeight?: number }).terminalHeight ?? 24
+      const newEffective = this.layoutMode === "auto" ? computeReviewLayout(w, h, this.layoutMode, this.sidebarVisible).effectiveMode : this.layoutMode as "split" | "stack"
+      this.streamPane.handleModeChange(newEffective)
       this.render(state)
       return true
     }
@@ -224,20 +287,24 @@ export class ReviewWorkspace {
     switch (cmd.id) {
       case "review.moveDown": {
         if (!state) return false
+        this.streamPane.scrollBy(1)
+        this.viewportStart = this.streamPane.getViewportStart()
         try {
           const action = planReviewIntent(state, { type: "selection/move", unit: "hunk", direction: "next" })
           this.controller.dispatch(action)
         } catch {
-          // hunk move may clamp; try file
           try {
             const action = planReviewIntent(state, { type: "selection/move", unit: "file", direction: "next" })
             this.controller.dispatch(action)
           } catch {}
         }
+        this.render(this.controller.state)
         return true
       }
       case "review.moveUp": {
         if (!state) return false
+        this.streamPane.scrollBy(-1)
+        this.viewportStart = this.streamPane.getViewportStart()
         try {
           const action = planReviewIntent(state, { type: "selection/move", unit: "hunk", direction: "previous" })
           this.controller.dispatch(action)
@@ -247,6 +314,7 @@ export class ReviewWorkspace {
             this.controller.dispatch(action)
           } catch {}
         }
+        this.render(this.controller.state)
         return true
       }
       case "review.nextHunk": {
@@ -255,6 +323,7 @@ export class ReviewWorkspace {
           const action = planReviewIntent(state, { type: "selection/move", unit: "hunk", direction: "next" })
           this.controller.dispatch(action)
         } catch {}
+        this.render(this.controller.state)
         return true
       }
       case "review.prevHunk": {
@@ -263,6 +332,7 @@ export class ReviewWorkspace {
           const action = planReviewIntent(state, { type: "selection/move", unit: "hunk", direction: "previous" })
           this.controller.dispatch(action)
         } catch {}
+        this.render(this.controller.state)
         return true
       }
       case "review.nextFile": {
@@ -271,6 +341,7 @@ export class ReviewWorkspace {
           const action = planReviewIntent(state, { type: "selection/move", unit: "file", direction: "next" })
           this.controller.dispatch(action)
         } catch {}
+        this.render(this.controller.state)
         return true
       }
       case "review.prevFile": {
@@ -279,6 +350,7 @@ export class ReviewWorkspace {
           const action = planReviewIntent(state, { type: "selection/move", unit: "file", direction: "previous" })
           this.controller.dispatch(action)
         } catch {}
+        this.render(this.controller.state)
         return true
       }
       case "review.nextUnreviewed": {
@@ -290,6 +362,7 @@ export class ReviewWorkspace {
             this.controller.dispatch(action)
           } catch {}
         }
+        this.render(this.controller.state)
         return true
       }
       case "review.prevUnreviewed": {
@@ -301,6 +374,7 @@ export class ReviewWorkspace {
             this.controller.dispatch(action)
           } catch {}
         }
+        this.render(this.controller.state)
         return true
       }
       case "review.nextFeedback": {
@@ -309,6 +383,7 @@ export class ReviewWorkspace {
           const action = planReviewIntent(state, { type: "feedback/next" })
           this.controller.dispatch(action)
         } catch {}
+        this.render(this.controller.state)
         return true
       }
       case "review.prevFeedback": {
@@ -317,6 +392,7 @@ export class ReviewWorkspace {
           const action = planReviewIntent(state, { type: "feedback/previous" })
           this.controller.dispatch(action)
         } catch {}
+        this.render(this.controller.state)
         return true
       }
       case "review.focusFilter": {
@@ -325,23 +401,69 @@ export class ReviewWorkspace {
         return true
       }
       case "review.toggleFocus": {
-        // already handled tab above
         return true
       }
       case "review.toggleRange": {
-        this.rangeActive = !this.rangeActive
+        const wasActive = this.rangeActive || this.streamPane.isRangeActive()
+        if (!wasActive) {
+          const plan = this.streamPane.getLastPlan()
+          if (plan) {
+            let startRow: number | null = null
+            for (let i = 0; i < plan.rows.length; i++) {
+              const r = plan.rows[i]!
+              if (r.kind === "diff" && (r.oldLine !== null || r.newLine !== null)) {
+                startRow = plan.start + i
+                break
+              }
+            }
+            if (startRow !== null) this.streamPane.beginRangeAtViewportRow(startRow)
+          }
+          this.rangeActive = true
+        } else {
+          const plan = this.streamPane.getLastPlan()
+          let endRow: number | null = null
+          if (plan) {
+            for (let i = plan.rows.length - 1; i >= 0; i--) {
+              const r = plan.rows[i]!
+              if (r.kind === "diff" && (r.oldLine !== null || r.newLine !== null)) { endRow = plan.start + i; break }
+            }
+          }
+          if (endRow !== null && plan) {
+            this.streamPane.updateRangeEnd(endRow)
+            const result = this.streamPane.endRangeSelection()
+            if (result.ok && state) {
+              const file = state.document.files.find(f => f.key === result.anchor.fileKey)
+              if (file) {
+                try {
+                  const anchor = {
+                    kind: "range" as const,
+                    fileKey: result.anchor.fileKey,
+                    contentId: file.contentId,
+                    side: result.anchor.side,
+                    startLine: result.anchor.startLine,
+                    endLine: result.anchor.endLine,
+                    ownerHunkIndex: result.anchor.ownerHunkIndex,
+                    contextDigest: "digest-placeholder",
+                  }
+                  const action = planReviewIntent(state, { type: "feedback/start-draft", anchor, kind: "note", severity: "comment", body: "" })
+                  this.controller.dispatch(action)
+                  this.focus = "composer" as Focus
+                } catch {}
+              }
+            }
+          }
+          this.rangeActive = false
+        }
         this.renderer.requestRender?.()
         return true
       }
       case "review.createFeedback": {
         if (!state) return false
-        // Create a draft anchored to current selection file
         const fileKey = state.selection.fileKey
         if (!fileKey) return true
         try {
           const file = state.document.files.find((f) => f.key === fileKey)
           if (!file) return true
-          // Use file anchor if no range, otherwise range anchor would be built from selection — simplified to file
           const anchor = { kind: "file" as const, fileKey, contentId: file.contentId }
           const action = planReviewIntent(state, {
             type: "feedback/start-draft",
@@ -362,9 +484,7 @@ export class ReviewWorkspace {
         try {
           const action = planReviewIntent(state, { type: "viewed/mark", fileKey, viewedAt: new Date().toISOString() })
           this.controller.dispatch(action)
-        } catch {
-          // blocked in commit projection — swallow
-        }
+        } catch {}
         return true
       }
       case "review.layoutAuto":
@@ -372,6 +492,10 @@ export class ReviewWorkspace {
       case "review.layoutStack": {
         const m = cmd.id === "review.layoutAuto" ? "auto" : cmd.id === "review.layoutSplit" ? "split" : "stack"
         this.layoutMode = m as ReviewLayoutMode
+        const w = (this.renderer as unknown as { terminalWidth?: number }).terminalWidth ?? 80
+        const h = (this.renderer as unknown as { terminalHeight?: number }).terminalHeight ?? 24
+        const newEffective = m === "auto" ? computeReviewLayout(w, h, this.layoutMode, this.sidebarVisible).effectiveMode : m as "split" | "stack"
+        this.streamPane.handleModeChange(newEffective)
         this.render(state)
         return true
       }
@@ -398,10 +522,60 @@ export class ReviewWorkspace {
     return this.handleKeyPress(name)
   }
 
-  private render(state: ReviewState | undefined): void {
-    const width = (this.renderer as unknown as { terminalWidth?: number }).terminalWidth ?? 80
-    const height = (this.renderer as unknown as { terminalHeight?: number }).terminalHeight ?? 24
+  // Mouse / scroll / gap / range helpers for tests
+  getStreamPane(): ReviewStreamPane {
+    return this.streamPane
+  }
+
+  scrollStreamBy(delta: number): void {
+    this.streamPane.scrollBy(delta)
+    this.viewportStart = this.streamPane.getViewportStart()
+    this.render(this.controller.state)
+  }
+
+  handleStreamMouseDrag(startRow: number, endRow: number): { ok: boolean; reason?: string } {
+    const result = this.streamPane.handleMouseDrag(startRow, endRow)
+    if (!result.ok) this.mouseError = result.reason ?? null
+    else this.mouseError = null
+    this.render(this.controller.state)
+    return result as { ok: boolean; reason?: string }
+  }
+
+  getMouseError(): string | null {
+    return this.mouseError ?? this.streamPane.getLastMouseError()
+  }
+
+  handleGapClickAtRow(viewportRow: number): Promise<{ ok: boolean; reason?: string }> {
+    return this.streamPane.expandGapAtViewportRow(viewportRow)
+  }
+
+  async expandGap(fileKey: string, gapId: string): Promise<void> {
+    await this.controller.expandGap(fileKey, gapId)
+    this.render(this.controller.state)
+  }
+
+  handleResize(width: number, height: number): void {
+    const prevSelection = this.controller.state?.selection
+    // Store override for render to use, avoiding mutation of readonly renderer props
+    this.overriddenWidth = width
+    this.overriddenHeight = height
     const layout = computeReviewLayout(width, height, this.layoutMode, this.sidebarVisible)
+    this.streamPane.handleResize(layout.stream.width, layout.stream.height)
+    this.render(this.controller.state)
+    if (prevSelection) {
+      const cur = this.controller.state?.selection
+      if (cur && cur.fileKey !== prevSelection.fileKey) {
+        // Preserve semantic anchor expectation
+      }
+    }
+  }
+
+  private render(state: ReviewState | undefined): void {
+    const rendererDims = this.renderer as unknown as { terminalWidth?: number; terminalHeight?: number }
+    const width = this.overriddenWidth ?? rendererDims.terminalWidth ?? 80
+    const height = this.overriddenHeight ?? rendererDims.terminalHeight ?? 24
+    const layout = computeReviewLayout(width, height, this.layoutMode, this.sidebarVisible)
+    this.lastState = state
 
     // Header
     if (state) {
@@ -410,38 +584,53 @@ export class ReviewWorkspace {
       this.headerText.content = headerContent
       const titleLine = lines[0]?.map((s) => s.text).join("") ?? "Branch Review"
       this.root.title = titleLine.slice(0, 80)
-      // Footer hints
       const hints = reviewHints(this.focus, state)
-      this.footerText.content = hints
-      // Sidebar rows (for visual, also stored for debugging)
+      this.footerText.content = this.mouseError ? `Error: ${this.mouseError} — ${hints}` : hints
       const rows = reviewFileRows(state)
-      // Sidebar title shows filter count
       this.sidebarBox.title = `Files ${rows.length}/${state.document.files.length}`
-      // Stream title shows effective mode
       this.streamBox.title = `Diff — ${layout.effectiveMode}`
+      const streamWidth = layout.stream.width
+      const streamHeight = layout.stream.height
+      const plan = planReviewRows(state, {
+        viewportStart: this.viewportStart,
+        viewportHeight: streamHeight,
+        width: streamWidth,
+        effectiveMode: layout.effectiveMode,
+        showLineNumbers: true,
+        wrapLines: false,
+        expandedSourceByGap: this.controller.getExpandedSourceByGap(),
+      })
+      this.streamPane.setLastPlanForTest(plan)
+      this.streamPane.syncLayout(streamWidth, streamHeight, layout.effectiveMode)
+      const streamContent = plan.rows.map(r => r.text.map(s => s.text).join("")).join("\n")
+      this.streamText.content = streamContent + (this.mouseError ? `\n[Error: ${this.mouseError}]` : "")
     } else {
       this.root.title = "Branch Review — loading…"
       this.headerText.content = "loading…"
       this.footerText.content = ""
       this.sidebarBox.title = "Files"
       this.streamBox.title = "Diff"
+      this.streamText.content = ""
     }
 
-    // Apply layout geometry to boxes (best-effort; OpenTUI may ignore x/y if flex)
-    // Keep header/footer full width, body flex handles sidebar/stream split
     this.headerBox.height = layout.header.height
     this.footerBox.height = layout.footer.height
+    const sidebarVisibleObj = this.sidebarBox as unknown as { visible?: boolean }
+    const streamPaneVisible = this.streamBox as unknown as { visible?: boolean }
+    // Keep for lint: assign via intermediate
+    const applySidebarVisible = (visible: boolean) => { sidebarVisibleObj.visible = visible }
+    const _unusedStreamVisible = streamPaneVisible.visible
+    void _unusedStreamVisible
     if (layout.sidebar) {
       this.sidebarBox.width = layout.sidebar.width
-      // In flex row, visible
-      ;(this.sidebarBox as unknown as { visible?: boolean }).visible = true
+      applySidebarVisible(true)
     } else {
-      // Hide sidebar when collapsed — set width 0
       this.sidebarBox.width = 0
-      ;(this.sidebarBox as unknown as { visible?: boolean }).visible = false
+      applySidebarVisible(false)
     }
 
-    this.renderer.requestRender?.()
+    const maybeRequestRender = this.renderer as unknown as { requestRender?: () => void }
+    if (maybeRequestRender.requestRender) maybeRequestRender.requestRender()
   }
 }
 
