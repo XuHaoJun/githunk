@@ -1,6 +1,7 @@
-import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
-import { DEFAULT_BACKGROUND, DEFAULT_FOREGROUND } from "./theme"
+import { BoxRenderable, RGBA, TextRenderable, type CliRenderer } from "@opentui/core"
+import { TAB_ACTIVE_FG } from "./theme"
 import type { MenuEntry } from "./bindings"
+import { popupPanelWidth, popupPanelGeometry } from "./popup-layout"
 const UNAVAILABLE_SUFFIX = "  (unavailable)"
 
 export function renderMenuLines(entries: readonly MenuEntry[], contextTitle: string): readonly string[] {
@@ -21,25 +22,30 @@ export function renderMenuLines(entries: readonly MenuEntry[], contextTitle: str
 export type KeybindingMenuHandle = {
   readonly box: BoxRenderable
   update(entries: readonly MenuEntry[], contextTitle: string): void
+  layout(terminalWidth: number, terminalHeight: number): void
 }
-
 export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandle {
+  const POPUP_BACKGROUND = RGBA.defaultBackground()
+  const POPUP_FOREGROUND = RGBA.defaultForeground()
+  const POPUP_Z_INDEX = 100
   const box = new BoxRenderable(renderer, {
-    id: "keybinding-menu",
     border: true,
-    borderColor: DEFAULT_FOREGROUND,
-    focusedBorderColor: DEFAULT_FOREGROUND,
-    titleColor: DEFAULT_FOREGROUND,
+    borderStyle: "rounded",
+    borderColor: POPUP_FOREGROUND,
+    focusedBorderColor: TAB_ACTIVE_FG,
+    titleColor: POPUP_FOREGROUND,
     title: "Keybindings",
     bottomTitle: "Escape or ? to close",
     position: "absolute",
     overflow: "hidden",
-    backgroundColor: DEFAULT_BACKGROUND,
+    backgroundColor: POPUP_BACKGROUND,
+    zIndex: POPUP_Z_INDEX,
   })
   const text = new TextRenderable(renderer, {
     id: "keybinding-menu-text",
     content: "",
-    fg: DEFAULT_FOREGROUND,
+    fg: POPUP_FOREGROUND,
+    bg: POPUP_BACKGROUND,
     selectable: false,
     wrapMode: "none",
     width: "100%",
@@ -47,10 +53,30 @@ export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandl
   })
   box.add(text)
   box.visible = false
+  let lastEntries: readonly MenuEntry[] = []
+  let lastTitle = ""
   return {
     box,
     update(entries: readonly MenuEntry[], contextTitle: string) {
+      lastEntries = entries
+      lastTitle = contextTitle
       text.content = renderMenuLines(entries, contextTitle).join("\n")
+    },
+    layout(terminalWidth: number, terminalHeight: number) {
+      // Lazygit's menu uses max 90 and centers on screen; githunk's keybinding
+      // menu is a read-only menu so it follows the same sizing as any other
+      // menu popup. The content height is the number of rendered lines.
+      const lines = renderMenuLines(lastEntries, lastTitle)
+      const maxWidth = 90
+      const panelWidth = popupPanelWidth(terminalWidth, maxWidth)
+      const contentWidth = Math.max(1, panelWidth - 2)
+      const contentHeight = lines.length
+      const geom = popupPanelGeometry(terminalWidth, terminalHeight, contentWidth, contentHeight)
+      box.left = geom.left
+      box.top = geom.top
+      box.width = geom.width
+      box.height = geom.height
+      box.visible = true
     },
   }
 }

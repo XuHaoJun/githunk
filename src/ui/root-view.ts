@@ -4040,22 +4040,15 @@ export class RootView {
       reviewStatusText(this.model),
     )
 
-    const menuHost = windows.main ?? windows.hints
-    if (this.menuOpen && menuHost !== undefined) {
-      const width = Math.max(20, Math.min(72, widthOf(menuHost) - 4))
-      const height = Math.max(6, Math.min(this.geometry.terminalHeight - 4, heightOf(menuHost) - 2))
-      this.keybindingMenu.box.left = menuHost.x0 + Math.floor((widthOf(menuHost) - width) / 2)
-      this.keybindingMenu.box.top = menuHost.y0 + Math.floor((heightOf(menuHost) - height) / 2)
-      this.keybindingMenu.box.width = width
-      this.keybindingMenu.box.height = height
+    if (this.menuOpen) {
       this.keybindingMenu.update(
         this.registry.menuFor(this.focusManager.active, this.model, this.uiState()),
         paneTitleFor(this.focusManager.active),
       )
+      this.keybindingMenu.layout(this.geometry.terminalWidth, this.geometry.terminalHeight)
     }
     this.keybindingMenu.box.visible = this.menuOpen
-    if (menuHost !== undefined) this.actionMenu.layout(menuHost, this.geometry.terminalHeight)
-    else this.actionMenu.close()
+    this.actionMenu.layout(this.geometry.terminalWidth, this.geometry.terminalHeight)
     this.commitMessagePanel.layout(this.geometry.terminalWidth, this.geometry.terminalHeight)
     this.root.requestRender()
   }

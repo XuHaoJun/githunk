@@ -256,30 +256,55 @@ describe("createActionMenu", () => {
     const setup = await createTestRenderer({ width: 80, height: 24 })
     try {
       const menu = createActionMenu(setup.renderer)
-      menu.layout({ x0: 0, y0: 0, x1: 79, y1: 23 }, 24)
+      menu.layout(80, 24)
       expect(menu.box.visible).toBe(false)
     } finally {
       setup.renderer.destroy()
     }
   })
 
-  test("layout() sizes and shows the box within the host when open", async () => {
+  test("layout() sizes and shows the box centered on the screen when open", async () => {
     const setup = await createTestRenderer({ width: 80, height: 24 })
     try {
       const menu = createActionMenu(setup.renderer)
       // width/height are yoga's *computed* layout, populated only once the box is part of the
-      // render tree and a frame has run — root-view.ts:478 attaches the equivalent keybinding menu
+      // render tree and a frame has run — root-view.ts:513 attaches the equivalent action menu
       // to `this.root` the same way before its own layout pass.
       setup.renderer.root.add(menu.box)
       menu.openMenu("Command log", menuItems([]))
-      const host = { x0: 0, y0: 0, x1: 79, y1: 23 }
-      menu.layout(host, 24)
+      menu.layout(80, 24)
       await setup.renderOnce()
       expect(menu.box.visible).toBe(true)
       expect(menu.box.width).toBeGreaterThan(0)
       expect(menu.box.height).toBeGreaterThan(0)
-      expect(menu.box.left).toBeGreaterThanOrEqual(host.x0)
-      expect(menu.box.top).toBeGreaterThanOrEqual(host.y0)
+      // Lazygit centers popups on the full terminal (confirmation_helper.go:120-126),
+      // not inside the main pane. For an 80×24 terminal the 2-item menu
+      // should be 78 wide (popupPanelWidth 80→78) and centered at left 1.
+      expect(menu.box.left).toBeGreaterThanOrEqual(0)
+      expect(menu.box.left).toBeLessThan(40)
+      expect(menu.box.top).toBeGreaterThanOrEqual(0)
+      expect(menu.box.top).toBeLessThan(12)
+      expect((menu.box.left as number) + (menu.box.width as number)).toBeLessThanOrEqual(80)
+      expect((menu.box.top as number) + (menu.box.height as number)).toBeLessThanOrEqual(24)
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+
+  test("layout() centers a confirmation prompt on the screen, wrapping to the panel width", async () => {
+    const setup = await createTestRenderer({ width: 80, height: 24 })
+    try {
+      const menu = createActionMenu(setup.renderer)
+      setup.renderer.root.add(menu.box)
+      const longPrompt = "'very-long-branch-name-that-exceeds-the-panel-width-is-not-fully-merged' is not fully merged. Are you sure you want to delete it?"
+      menu.openMenu("Force delete branch", [{ key: "d", label: "Force delete", onPress: () => {} }], longPrompt)
+      menu.layout(80, 24)
+      await setup.renderOnce()
+      expect(menu.box.visible).toBe(true)
+      // Prompt should be wrapped, so the box is taller than the single-item case
+      expect(menu.box.height).toBeGreaterThan(3)
+      expect(menu.box.left).toBe(1) // centered for 78-wide panel on 80 terminal
+      expect(menu.box.width).toBe(78)
     } finally {
       setup.renderer.destroy()
     }
