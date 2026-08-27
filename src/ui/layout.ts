@@ -7,11 +7,21 @@ export const MIN_MAIN_HEIGHT = 8
 export const MIN_LOG_HEIGHT = 3
 export const SPLITTER_SIZE = 1
 export const DEFAULT_SIDE_PANEL_RATIO = 0.3333
-export const DEFAULT_LOG_HEIGHT = 8
+/**
+ * `Gui.CommandLogSize`, default 8 (pkg/config/user_config.go:918), plus the 2-row frame
+ * `getExtrasWindowSize` adds (window_arrangement_helper.go:414). githunk's `logHeight` is a
+ * total including the border, so the default content area is 8 rows as lazygit's is.
+ */
+export const DEFAULT_LOG_HEIGHT = 10
 export const STATUS_PANE_HEIGHT = 3
 export const FOLDED_PANE_HEIGHT = 3
 export const MIN_HEIGHT_FOR_NORMAL_LAYOUT = 28
 export const MIN_HEIGHT_FOR_TALL_SQUASHED = 21
+/**
+ * Below this, `getExtrasWindowSize` drops the log to a single content row
+ * (window_arrangement_helper.go:409-410) rather than letting it eat a short terminal.
+ */
+export const MIN_HEIGHT_FOR_FULL_LOG = 40
 
 export type ScreenMode = "normal" | "half" | "full"
 export const SCREEN_MODES: readonly ScreenMode[] = ["normal", "half", "full"]
@@ -153,9 +163,21 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
   const mainWidth = mainHidden ? 0 : terminalWidth - sideWidth - splitterWidth
 
   const logCapacity = bodyHeight - SPLITTER_SIZE - MIN_MAIN_HEIGHT
+  // `getExtrasWindowSize` (window_arrangement_helper.go:403-417). The third branch takes the
+  // requested height where lazygit takes its `commandLogSize` constant — which is itself a user
+  // setting (pkg/config/user_config.go:191), so githunk's draggable splitter is the same knob with
+  // a different input, not a divergence.
+  //
+  // Compared as a literal rather than through focus.ts's COMMAND_LOG_FOCUS_ID: focus.ts imports
+  // from this file, and a value import back would make that a runtime cycle rather than a
+  // type-only one. `FocusId` still makes a typo a compile error.
   const logHeight = !logVisible || mainWidth === 0 || logCapacity < MIN_LOG_HEIGHT
     ? 0
-    : clamp(requestedLog, MIN_LOG_HEIGHT, logCapacity)
+    : focus === "command-log"
+      ? logCapacity
+      : terminalHeight < MIN_HEIGHT_FOR_FULL_LOG
+        ? MIN_LOG_HEIGHT
+        : clamp(requestedLog, MIN_LOG_HEIGHT, logCapacity)
   const logSplitterHeight = logHeight > 0 ? SPLITTER_SIZE : 0
 
   const mainSectionChildren: Box[] = [{ window: "main", weight: 1 }]

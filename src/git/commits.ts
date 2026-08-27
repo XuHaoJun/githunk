@@ -1,6 +1,7 @@
 import type { CommitDetails, CommitSummary } from "../domain/commit"
 import type { DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
+import { loadCommitStatusSets, withCommitStatuses } from "./commit-status"
 import { GitRunner } from "./runner"
 
 type CommandRunner = Pick<GitRunner, "run">
@@ -38,8 +39,14 @@ export async function listCommits(runner: CommandRunner, range: string, filter?:
   // contiguous so the rendered graph reads as lanes rather than an interleaved tangle.
   const args = ["log", "-z", "--topo-order", `--format=${LOG_FORMAT}`, range]
   if (filter !== undefined && filter.length > 0) args.push("--", filter)
-  const result = await runner.run(args, { readOnly: true })
-  return parseCommitLog(result.stdout)
+  // The log and the pushed/merged reachability queries run concurrently, as they do in lazygit's
+  // `GetCommits` (pkg/commands/git_commands/commit_loader.go:85-124); the statuses are what colour
+  // each hash, so a sequential second round trip would delay the whole panel.
+  const [result, statusSets] = await Promise.all([
+    runner.run(args, { readOnly: true }),
+    loadCommitStatusSets(runner),
+  ])
+  return withCommitStatuses(parseCommitLog(result.stdout), statusSets)
 }
 
 function patchFromShow(raw: string): string {

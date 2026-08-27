@@ -7,7 +7,7 @@ import {
 } from "@opentui/core"
 import type { AppModel } from "../app/model"
 import type { CommitDetails } from "../domain/commit"
-import type { TagSummary } from "../domain/tag"
+import type { TagSummary, TagPreview } from "../domain/tag"
 import type { ReflogEntry } from "../domain/reflog"
 import {
   DEFAULT_LOG_HEIGHT,
@@ -27,15 +27,21 @@ import {
   type WindowName,
 } from "./layout"
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
-import { createBranchesPane, BRANCHES_JUMP_KEY, BRANCHES_TABS } from "./panes/branches-pane"
+import { createBranchesPane, BRANCHES_JUMP_KEY, BRANCHES_TABS, NO_BRANCHES_THIS_REPO, type BranchRowOptions } from "./panes/branches-pane"
 import { localBranchRows } from "./panes/branches-pane"
-import { buildPaneTabsStrip, paneTabAtOffset } from "./pane-tabs"
+import { buildPanePlainTitle, buildPaneTabsStrip, paneTabAtOffset } from "./pane-tabs"
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
 import { tagRows } from "./panes/tags-pane"
 import { buildCommitRows, createCommitsPane } from "./panes/commits-pane"
 import { COMMITS_JUMP_KEY, COMMITS_TABS, NO_REFLOG_HISTORY, reflogRows } from "./panes/reflog-pane"
+import type { RefLogTarget } from "../git/ref-log"
+import type { ItemOperation } from "../domain/item-operation"
+import { SPINNER_RATE_MS } from "./loader"
+import { parseAnsi } from "./ansi"
+import { NO_BRANCHES_FOR_REMOTE, NO_REMOTES, remotePreviewText } from "./panes/remotes-pane"
+import { NO_TAGS, tagPreamble } from "./panes/tags-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
-import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, createFilesPane, createFilesTreeState, fileHasUnstagedChanges, filesPaneCommitAvailable, filesTreeRows } from "./panes/files-pane"
+import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, anyStagedChanges, createFilesPane, createFilesTreeState, fileHasUnstagedChanges, filesTreeRows } from "./panes/files-pane"
 import { NO_WORKTREES_THIS_REPO, selectedWorktreeFrom, worktreePreviewText, worktreeRows } from "./panes/worktrees-pane"
 import { NO_SUBMODULES, selectedSubmoduleFrom, submodulePreviewText, submoduleRows } from "./panes/submodules-pane"
 import {
@@ -52,8 +58,8 @@ import {
   type FileTreeState,
 } from "./file-tree"
 import { submoduleFullName } from "../domain/submodule"
-import type { ChangedFile } from "../domain/review-target"
-import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainPaneCommitAvailable, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, type MainPaneContent } from "./panes/main-pane"
+import type { ChangedFile, WorkingTreeScope } from "../domain/review-target"
+import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { commitFileRows } from "./panes/commit-files-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
@@ -67,10 +73,12 @@ import { branchDeleteConfirmation, remoteTrackingMismatchConfirmation } from "./
 import { COPY_MENU_ITEMS } from "./copy-menu"
 import type { CheckoutRemoteTrackingResult, RemoteBranchSelection } from "../git/branches"
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
+import { createCommitMessagePanel, type CommitMessagePanelHandle } from "./commit-message-panel"
 import { FilterInput } from "./filter-input"
 import { normalizeKey } from "./keymap"
 import { createHintsBar, reviewStatusText, type HintsBarHandle } from "./hints-bar"
 import { createKeybindingMenu, type KeybindingMenuHandle } from "./keybinding-menu"
+import { createActionMenu, type ActionMenuHandle } from "./action-menu"
 import { createSplitter, type SplitterAxis, type SplitterHandle } from "./splitter"
 import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
@@ -82,7 +90,8 @@ import type { CommitSummary } from "../domain/commit"
 const PANE_TITLES: Readonly<Record<FocusId, string>> = {
   main: "Main", status: "Review", files: "Files",
   branches: "Branches", commits: "Commits", stash: "Stash",
-  "command-log": "Command Log",
+  // `Tr.CommandLog` (pkg/i18n/english.go:1928) — lowercase "log", as the pane's own title reads.
+  "command-log": "Command log",
 }
 
 function paneTitleFor(focus: FocusId): string {
@@ -94,24 +103,40 @@ const FILES_TAB_ORDER = ["files", "worktrees", "submodules"] as const
 const BRANCHES_TAB_ORDER = ["branches", "remotes", "tags"] as const
 /** Panel 4's tab keys, in the same order as `COMMITS_TABS`' labels. */
 const COMMITS_TAB_ORDER = ["commits", "reflog"] as const
+type BranchesPanelChild =
+  | { readonly kind: "remote-branches"; readonly remote: string }
+  | { readonly kind: "local-commits"; readonly branch: string }
+
+/** Ring order for the `[` / `]` scope-cycle keys in the main pane (PRD §8.1 review targets). */
+const SCOPE_ORDER: readonly WorkingTreeScope[] = ["all", "staged", "unstaged"]
+
 export type RootViewOptions = {
   readonly sidePanelRatio?: number
   readonly logHeight?: number
   readonly logVisible?: boolean
   readonly onGeometryChange?: (state: PersistedUiState) => void
+  /**
+   * Fired whenever a git operation this view started has settled, however it settled. The single
+   * choke point for "githunk just touched the repository": the refs watcher re-seeds its baseline
+   * here, so githunk's own commits and checkouts are never mistaken for external ones.
+   */
+  readonly onMutationSettled?: () => void
   readonly onStageFile?: (path: string) => Promise<void>
   readonly onUnstageFile?: (path: string) => Promise<void>
   readonly onDiscardFile?: (path: string, untracked: boolean) => Promise<void>
   readonly onToggleAllFiles?: () => Promise<void>
   readonly onModeChange?: (mode: "working-tree" | "branch") => Promise<void>
   readonly onChooseBase?: (baseRef: string) => Promise<void>
+  readonly onScopeChange?: (scope: WorkingTreeScope) => Promise<void>
   readonly onCancelBase?: () => Promise<void>
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
   readonly loadCommitInspection?: (oid: string) => Promise<CommitDetails>
+  readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
   readonly loadCommitFileInspection?: (oid: string, path: string) => Promise<DiffDocument>
-  readonly loadTagInspection?: (tag: TagSummary) => Promise<import("../domain/tag").TagPreview>
+  readonly loadTagInspection?: (tag: TagSummary) => Promise<TagPreview>
+  readonly loadRefLogInspection?: (target: RefLogTarget) => Promise<string>
   readonly onPreviewError?: (error: unknown) => void
   readonly onMarkFocusedFileReviewed?: (path?: string) => Promise<void>
   readonly onCommitMessage?: (message: string) => Promise<void>
@@ -137,6 +162,7 @@ export type RootViewOptions = {
   readonly onInspectBranch?: (branch: string) => Promise<void>
   readonly onCheckoutRemoteTracking?: (selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>
   readonly onFilterBranches?: () => Promise<void>
+  readonly onEditFile?: (path: string, line?: number) => Promise<void>
   readonly onQuit?: () => void
 }
 
@@ -153,6 +179,15 @@ export type GestureOwner =
   | { readonly kind: "scrollbar"; readonly paneId: FocusId }
   | { readonly kind: "main-selection" }
 
+
+/**
+ * Lines the main view scrolls per press of the *global* scroll keys — lazygit's
+ * `gui.scrollHeight`, default 2 (pkg/config/user_config.go:857). `<pgup>`/`<pgdown>`, `K`/`J` and
+ * `<ctrl+u>`/`<ctrl+d>` are all aliases of the one handler (`scrollUpMain`/`scrollDownMain`,
+ * pkg/gui/global_handlers.go:15-22), as is the mouse wheel over the main view
+ * (keybindings.go:177-189), so they all move by this.
+ */
+export const MAIN_SCROLL_HEIGHT = 2
 
 export class RootView {
   readonly renderer: CliRenderer
@@ -171,17 +206,21 @@ export class RootView {
   private model: AppModel
   private readonly panes: Record<Exclude<FocusId, "command-log">, PaneHandle>
   private readonly commandLog: CommandLogPaneHandle
+  private renderedCommandLogArms = 0
+  private commandLogFocused = false
   private readonly clipboard: ClipboardService
   private readonly verticalSplitter: SplitterHandle
   private readonly horizontalSplitter: SplitterHandle
   private readonly hintsBar: HintsBarHandle
   private readonly keybindingMenu: KeybindingMenuHandle
+  private readonly actionMenu: ActionMenuHandle
   private readonly onStageFile: ((path: string) => Promise<void>) | undefined
   private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
   private readonly onDiscardFile: ((path: string, untracked: boolean) => Promise<void>) | undefined
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
   private readonly onModeChange: ((mode: "working-tree" | "branch") => Promise<void>) | undefined
   private readonly onChooseBase: ((baseRef: string) => Promise<void>) | undefined
+  private readonly onScopeChange: ((scope: WorkingTreeScope) => Promise<void>) | undefined
   private readonly onCancelBase: (() => Promise<void>) | undefined
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
@@ -189,12 +228,29 @@ export class RootView {
   private readonly onSelectFile: ((path: string) => void) | undefined
   private readonly loadCommitInspection: ((oid: string) => Promise<CommitDetails>) | undefined
   private readonly loadCommitFileInspection: ((oid: string, path: string) => Promise<DiffDocument>) | undefined
-  private readonly loadTagInspection: ((tag: TagSummary) => Promise<import("../domain/tag").TagPreview>) | undefined
+  private readonly loadTagInspection: ((tag: TagSummary) => Promise<TagPreview>) | undefined
+  private readonly loadRefLogInspection: ((target: RefLogTarget) => Promise<string>) | undefined
+  /**
+   * List row id → the operation currently running against it, lazygit's
+   * `State().SetItemOperation` / `ClearItemOperation` (pkg/gui/controllers/helpers/
+   * inline_status_helper.go:99-138). Held by the view, not the model: it describes what the UI is
+   * doing, and it must survive the model replacement a mid-operation refresh performs.
+   */
+  private readonly itemOperations = new Map<string, ItemOperation>()
+  /**
+   * Repaints the panels carrying an inline status, at the spinner's own rate. lazygit runs exactly
+   * this ticker for the duration of an operation (inline_status_helper.go:109-121), and stops it
+   * when the last one finishes so an idle app draws nothing.
+   */
+  private spinnerTimer: ReturnType<typeof setInterval> | undefined
   private readonly onPreviewError: ((error: unknown) => void) | undefined
   private readonly onCommitMessage: ((message: string) => Promise<void>) | undefined
   private readonly onAmendMessage: ((message: string) => Promise<void>) | undefined
   private readonly onCurrentCommitMessage: (() => Promise<string>) | undefined
+  private readonly commitMessagePanel: CommitMessagePanelHandle
   private commitDialog: CommitDialog | undefined
+  /** Arms the second-press stage-everything confirmation of withEnsureCommittableFiles. */
+  private pendingStageAllCommit: boolean = false
   private readonly onMarkFocusedFileReviewed: ((path?: string) => Promise<void>) | undefined
   private readonly onRefresh: (() => Promise<void>) | undefined
   private readonly onSwitchLocalBranch: ((branch: string) => Promise<void>) | undefined
@@ -213,9 +269,11 @@ export class RootView {
   private readonly onDropStash: ((ref: string) => Promise<void>) | undefined
   private readonly onInspectStash: ((ref: string) => Promise<void>) | undefined
   private readonly onBrowseRemote: ((remote: string) => Promise<void>) | undefined
+  private readonly loadBranchCommits: ((branch: string) => Promise<readonly CommitSummary[]>) | undefined
   private readonly onInspectBranch: ((branch: string) => Promise<void>) | undefined
   private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>) | undefined
   private readonly onFilterBranches: (() => Promise<void>) | undefined
+  private readonly onEditFile: ((path: string, line?: number) => Promise<void>) | undefined
   private copyMenuOpen = false
   private menuOpen = false
   private upstreamCursorIndex = 0
@@ -232,7 +290,8 @@ export class RootView {
   private remoteCheckoutInFlight = false
   private branchFilter = ""
   private branchFilterActive = false
-  branchesPanel: PanelState<"branches" | "remotes" | "tags", { kind: "remote-branches"; remote: string }>
+  private branchCommitsRequest = 0
+  branchesPanel: PanelState<"branches" | "remotes" | "tags", BranchesPanelChild>
   commitsPanel: PanelState<"commits" | "reflog", { kind: "commit-files"; oid: string; details: CommitDetails }>
   filesPanel: PanelState<"files" | "worktrees" | "submodules", never>
   /**
@@ -250,9 +309,11 @@ export class RootView {
   private installedMainTooSmall = false
   private mainLoading = false
   private previewInflight: Promise<void> = Promise.resolve()
+  private branchCommitsInflight: Promise<void> = Promise.resolve()
   private readonly registry = createRegistry()
   private readonly onQuit: (() => void) | undefined
   private readonly onGeometryChange: ((state: PersistedUiState) => void) | undefined
+  private readonly onMutationSettled: (() => void) | undefined
   private readonly filterInput = new FilterInput()
   private readonly handleResize: () => void
   private readonly handleKey: (key: KeyEvent) => void
@@ -267,8 +328,10 @@ export class RootView {
     this.onStageFile = options.onStageFile
     this.onApplyStash = options.onApplyStash
     this.onModeChange = options.onModeChange
+    this.onScopeChange = options.onScopeChange
     this.onQuit = options.onQuit
     this.onGeometryChange = options.onGeometryChange
+    this.onMutationSettled = options.onMutationSettled
     this.onChooseBase = options.onChooseBase
     this.onCancelBase = options.onCancelBase
     this.onUnstageFile = options.onUnstageFile
@@ -292,13 +355,16 @@ export class RootView {
     this.onCreateBranch = options.onCreateBranch
     this.onDeleteBranch = options.onDeleteBranch
     this.onRenameBranch = options.onRenameBranch
-    this.onInspectBranch = options.onInspectBranch
     this.onBrowseRemote = options.onBrowseRemote
+    this.onInspectBranch = options.onInspectBranch
     this.onCheckoutRemoteTracking = options.onCheckoutRemoteTracking
     this.onFilterBranches = options.onFilterBranches
+    this.onEditFile = options.onEditFile
     this.loadCommitInspection = options.loadCommitInspection
     this.loadCommitFileInspection = options.loadCommitFileInspection
     this.loadTagInspection = options.loadTagInspection
+    this.loadRefLogInspection = options.loadRefLogInspection
+    this.loadBranchCommits = options.loadBranchCommits
     this.onPreviewError = options.onPreviewError
     this.onCommitMessage = options.onCommitMessage
     this.onAmendMessage = options.onAmendMessage
@@ -306,7 +372,9 @@ export class RootView {
     this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
     this.renderer = renderer
     this.model = model
-    this.focusManager.logVisible = options.logVisible ?? false
+    // Shown unless the caller says otherwise, matching `Gui.ShowCommandLog: true`
+    // (pkg/config/user_config.go:901).
+    this.focusManager.logVisible = options.logVisible ?? true
     this.logHeight = options.logHeight ?? DEFAULT_LOG_HEIGHT
     if (options.sidePanelRatio !== undefined) this.sidePanelRatio = options.sidePanelRatio
     this.geometry = computeLayout(
@@ -331,7 +399,7 @@ export class RootView {
     }
     // Initialize PanelState for window 3 tabs (branches|remotes|tags) with transient RemoteBranches child
     {
-      const branchesRows = localBranchRows(model, this.branchFilter)
+      const branchesRows = localBranchRows(model, this.branchFilter, this.branchRowOptions())
       const remotesRowsData = remoteRows(model, this.branchFilter)
       const tagsRowsData = tagRows(model, this.branchFilter)
       this.branchesPanel = createPanelState(
@@ -416,18 +484,28 @@ export class RootView {
     this.root.add(this.horizontalSplitter.box)
     this.hintsBar = createHintsBar(renderer)
     this.keybindingMenu = createKeybindingMenu(renderer)
+    this.actionMenu = createActionMenu(renderer)
+    this.commitMessagePanel = createCommitMessagePanel(renderer)
     this.root.add(this.hintsBar.hints)
     this.root.add(this.hintsBar.status)
     this.root.add(this.keybindingMenu.box)
+    this.root.add(this.actionMenu.box)
+    this.root.add(this.commitMessagePanel.box)
     renderer.root.add(this.root)
 
     this.focusManager.onChange = (focus, logVisible) => {
-      if (logVisible) this.commandLog.update(this.model.commandLog)
+      // Route through the same arm comparison `update(model)` uses (see the comment there), not a
+      // bare `commandLog.update`: a wheel scroll does not require focus (task 5), so the
+      // focus-lost re-arm never fires for a log that was scrolled and then hidden. Skipping the
+      // comparison on reopen left it wherever that scroll ended, instead of re-pinning to the
+      // bottom for any mutation that logged output while it was hidden.
+      if (logVisible) this.refreshCommandLog(this.model)
       this.pendingClick = undefined
       this.cancelGesture()
       this.clearDiscardState()
       this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
+      this.invalidateBranchCommitsRequest()
       this.pendingStashDrop = undefined
       this.panes.stash.box.bottomTitle = undefined
       this.panes.branches.box.bottomTitle = undefined
@@ -495,6 +573,7 @@ export class RootView {
     // produce has a handler, so no runtime cross-check is needed here.
   }
   update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean } = {}): void {
+    this.invalidateBranchCommitsRequest()
     this.clearDiscardState()
     if (!options.preserveRemoteCheckout) {
       this.pendingBranchDelete = undefined
@@ -522,6 +601,8 @@ export class RootView {
     this.renderFilesPane()
     this.refreshBranchesPanel(model)
     this.renderBranchesPane()
+    const localChild = this.branchesPanel.child
+    if (localChild?.value.kind === "local-commits") this.requestLocalBranchCommits(localChild.value.branch, false)
     this.refreshCommitsPanel(model)
     this.renderCommitsPane()
     this.refreshStashState(model)
@@ -530,10 +611,30 @@ export class RootView {
     // the main view, the *side* context underneath it in the stack is the one asked to
     // re-render main — the main context itself has nothing to render.
     this.syncPreviewForFocus(this.focusManager.active === "main" ? this.focusManager.lastSide : this.focusManager.active)
-    // A hidden log is not worth rendering: it holds every command's whole stdout, so the text is
-    // as large as the biggest patch the session has run. `applyFocus` renders it when it opens.
-    if (this.focusManager.logVisible) this.commandLog.update(model.commandLog)
+    // A hidden log is not worth rendering: nothing on screen needs the paint. The arm count
+    // `refreshCommandLog` compares against is deliberately not consumed while hidden (see its own
+    // comment), so a whole hidden burst still arms exactly once, on the next call after it
+    // reopens. `applyFocus` renders it when it opens.
+    if (this.focusManager.logVisible) this.refreshCommandLog(model)
     this.recomputeLayout()
+  }
+
+  /**
+   * Applies the arm comparison and hands the log its current lines. lazygit arms autoscroll
+   * inside `LogAction`/`LogCommand` (pkg/gui/command_log_panel.go:38,62) — at write time.
+   * RootView only ever sees the last snapshot of a controller action (`view.update` fires once
+   * per controller call, src/app/create-app.ts:246), and a mutation logs its output *after* its
+   * command line, so arming on the newest write's kind would drop the arm for every batch that
+   * ends in output. Arm on the count of arming writes having grown instead: idempotent and
+   * independent of how many snapshots the batch took. Callers gate this on log visibility: while
+   * the log is hidden the count is not consumed, so a whole hidden burst arms exactly once on the
+   * next call, whether that is the next `update(model)` or the log's own reopening.
+   */
+  private refreshCommandLog(model: AppModel): void {
+    const arms = model.commandLogAutoscrollArms ?? 0
+    if (arms > this.renderedCommandLogArms) this.commandLog.applyScrollInput("append-entry")
+    this.renderedCommandLogArms = arms
+    this.commandLog.update(model.commandLog)
   }
   private clearDiscardState(): void {
     this.discardPending = false
@@ -541,7 +642,8 @@ export class RootView {
     this.pendingFileDiscard = undefined
   }
   private modalInputActive(): boolean {
-    return this.branchFilterActive || this.commitDialog !== undefined || this.copyMenuOpen ||
+    return this.branchFilterActive || this.commitDialog !== undefined || this.commitMessagePanel.visible || this.copyMenuOpen ||
+      this.actionMenu.isOpen() ||
       this.menuOpen ||
       this.model.upstreamChoice !== undefined || this.model.basePicker !== undefined ||
       this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined ||
@@ -561,6 +663,8 @@ export class RootView {
     return this.commitsView()?.selectedIndex ?? 0
   }
   get mainPane(): PaneHandle { return this.panes.main }
+  /** The main pane's hunk cursor — what `h`/`l` move and line staging acts on. Test accessor. */
+  get mainCursorTarget(): MainCursorTarget | undefined { return getMainCursorTarget(this.panes.main) }
   get commitsPane(): PaneHandle { return this.panes.commits }
   get filesPane(): PaneHandle { return this.panes.files }
   get branchesPane(): PaneHandle { return this.panes.branches }
@@ -607,6 +711,14 @@ export class RootView {
     const id = this.commitsPanel.views.reflog?.selectedId
     if (id === undefined) return undefined
     return (this.model.reflog ?? []).find((entry) => entry.id === id)
+  }
+  /** The command log pane's `view.Autoscroll` (pkg/gui/extras_panel.go:48-94), for tests. */
+  get commandLogAutoscroll(): boolean {
+    return this.commandLog.autoscroll
+  }
+  /** The command log's scroll extent, for tests asserting an armed viewport is pinned. */
+  commandLogMaxScrollY(): number {
+    return this.commandLog.maxScrollY()
   }
   paneScrollY(id: FocusId): number {
     if (id === "command-log") return this.commandLog.text.scrollY
@@ -706,6 +818,8 @@ export class RootView {
     } else {
       kind = undefined
     }
+    const selectedFileRow = this.selectedFileRow()
+    const mainDocument = getMainDocument(this.panes.main)
     return {
       focus: this.focusManager.active,
       currentSideWindow: this.focusManager.lastSide,
@@ -716,6 +830,9 @@ export class RootView {
       commitsTab: this.commitsPanel.activeTab,
       filesTab: this.filesPanel.activeTab,
       hasSelectedStash: this.stashState?.selectedId !== undefined && (this.model.stashes ?? []).some((s) => s.oid === this.stashState.selectedId),
+      hasSelectedFile: selectedFileRow?.kind === "file",
+      hasMainDocument: mainDocument !== undefined && mainDocument.files.length > 0,
+      hasSelectedCommitFile: this.commitsPanel.child !== undefined && this.commitsPanel.child.view.selectedId !== undefined,
     }
   }
 
@@ -732,7 +849,12 @@ export class RootView {
    * grow tabs later; see src/ui/pane-tabs.ts for the lazygit format it reproduces.
    */
   get branchesTitleStyled(): StyledText {
+    const child = this.branchesPanel.child
+    if (child !== undefined) return buildPanePlainTitle(BRANCHES_JUMP_KEY, this.branchChildTitle(child.value))
     return buildPaneTabsStrip(this.branchesTabsInput())
+  }
+  private branchChildTitle(child: BranchesPanelChild): string {
+    return child.kind === "local-commits" ? `Commits (${child.branch})` : `Remote branches (${child.remote})`
   }
 
   private branchesTabsInput(): { jumpKey: string; tabs: readonly string[]; activeIndex: number; focused: boolean } {
@@ -759,8 +881,9 @@ export class RootView {
   }
 
   private refreshBranchesPanel(model: AppModel): void {
-    const branchesRows = localBranchRows(model, this.branchFilter)
-    const remotesRowsData = remoteRows(model, this.branchFilter)
+    const rowOptions = this.branchRowOptions()
+    const branchesRows = localBranchRows(model, this.branchFilter, rowOptions)
+    const remotesRowsData = remoteRows(model, this.branchFilter, rowOptions)
     const tagsRowsData = tagRows(model, this.branchFilter)
     let panel = this.branchesPanel
     panel = { ...panel, views: { ...panel.views, branches: setListRows(panel.views.branches, branchesRows, branchesRows.length === 0 ? [{ kind: "message", text: "No branches" }] : undefined) } }
@@ -777,9 +900,14 @@ export class RootView {
 
   private renderBranchesPane(): void {
     const pane = this.panes.branches
-    const tabsInput = this.branchesTabsInput()
-    pane.setTabs?.({ activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
-    const focused = tabsInput.focused
+    const child = this.branchesPanel.child
+    if (child === undefined) {
+      const tabsInput = this.branchesTabsInput()
+      pane.setTabs?.({ activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
+    } else {
+      pane.setPlainTitle?.(`[${BRANCHES_JUMP_KEY}]${TITLE_PREFIX_FRAME_RUNE}${this.branchChildTitle(child.value)}`)
+    }
+    const focused = this.focusManager.active === "branches"
     const state = this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab]
     if (state === undefined) {
       pane.update("")
@@ -882,7 +1010,7 @@ export class RootView {
       case "focus-branches": this.focusManager.focus("branches"); return
       case "focus-commits": this.focusManager.focus("commits"); return
       case "focus-stash": this.focusManager.focus("stash"); return
-      case "command-log": this.focusManager.handleKey("@"); return
+      case "command-log": this.openCommandLogMenu(); return
       case "pane-next": this.focusManager.cycle("next"); return
       case "pane-previous": this.focusManager.cycle("previous"); return
       case "next": this.actionMoveCursor("next"); return
@@ -891,6 +1019,7 @@ export class RootView {
       case "discard-file": this.actionDiscardFile(); return
       case "stage-all": this.actionStageAll(); return
       case "mark-reviewed": this.actionMarkReviewed(); return
+      case "edit-file": void this.actionEditFile(); return
       case "inspect": this.actionInspect(); return
       case "stage-selection": this.actionStageSelection(); return
       case "discard-selection": this.actionDiscardSelection(); return
@@ -914,6 +1043,8 @@ export class RootView {
       case "stash-inspect": this.actionStashInspect(); return
       case "commit": this.actionCommit(); return
       case "amend": this.actionAmend(); return
+      case "scope-next": this.actionScopeCycle("next"); return
+      case "scope-previous": this.actionScopeCycle("previous"); return
       case "fetch": this.actionFetch(); return
       case "pull": this.actionPull(); return
       case "push": this.actionPush(); return
@@ -937,12 +1068,11 @@ export class RootView {
         this.menuOpen = !this.menuOpen
         this.recomputeLayout()
         return
-      case "main-scroll-down": scrollMainPane(this.panes.main, "y", 1); this.root.requestRender(); return
-      case "main-scroll-up": scrollMainPane(this.panes.main, "y", -1); this.root.requestRender(); return
+      case "main-scroll-down": scrollMainPane(this.panes.main, "y", MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
+      case "main-scroll-up": scrollMainPane(this.panes.main, "y", -MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
       case "main-scroll-right": scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
       case "main-scroll-left": scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
-      case "main-half-page-down": scrollMainPane(this.panes.main, "y", this.mainPageStep()); this.root.requestRender(); return
-      case "main-half-page-up": scrollMainPane(this.panes.main, "y", -this.mainPageStep()); this.root.requestRender(); return
+
       case "page-next": this.actionPage("next"); return
       case "page-previous": this.actionPage("previous"); return
       case "goto-top": this.actionJump("top"); return
@@ -959,6 +1089,13 @@ export class RootView {
   }
 
   private handleModalKey(key: KeyEvent): void {
+    if (this.actionMenu.isOpen()) {
+      // `key.name` is already githunk's canonical name here (RootView.handleKey normalizes
+      // before routing to the modal path, keymap.ts:31-33), so only "enter" is live — "return"
+      // in action-menu.ts:105 exists for callers that dispatch raw OpenTUI key names.
+      if (this.actionMenu.handleKey(key.name)) this.recomputeLayout()
+      return
+    }
     if (this.menuOpen) {
       if (key.name === "escape" || key.name === "?") {
         this.menuOpen = false
@@ -968,6 +1105,11 @@ export class RootView {
     }
     if (this.branchFilterActive) {
       this.handleFilterKey(key)
+      return
+    }
+    if (this.commitMessagePanel.visible) {
+      if (this.mutationInFlight) return
+      this.handleCommitMessagePanelKey(key)
       return
     }
     if (this.commitDialog !== undefined) {
@@ -988,8 +1130,6 @@ export class RootView {
         this.handleBranchDialogKey(key)
         return
       }
-      if (this.mutationInFlight) return
-      this.handleCommitDialogKey(key)
       return
     }
     if (this.copyMenuOpen) {
@@ -1147,6 +1287,7 @@ export class RootView {
         return
       }
       case "branches": {
+        this.invalidateBranchCommitsRequest()
         this.pendingBranchDelete = undefined
         this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
@@ -1208,9 +1349,19 @@ export class RootView {
         return
       }
       case "main":
-        // j/k (and h/l via hunk-next/previous) move the hunk cursor here:
-        // MainCursorTarget is hunk-granular and githunk has no line cursor yet.
-        this.moveMainCursor(direction)
+        // One line, like lazygit's `ViewSelectionController.handleLineChange(±1)`
+        // (pkg/gui/controllers/view_selection_controller.go:53-70). The hunk cursor is githunk's
+        // own, for line staging, and `h`/`l` are what move it — binding j/k to it made a short
+        // press do nothing when the next hunk was already on screen, jump a screenful when it was
+        // not, and nothing at all on a pane holding no patch (a branch's commit graph).
+        this.scrollMainBy(direction === "next" ? 1 : -1)
+        return
+      case "command-log":
+        // `scrollUpExtra`/`scrollDownExtra` (pkg/gui/keybindings.go:249-258) scroll one line and
+        // both clear `Autoscroll`, even scrolling down (pkg/gui/extras_panel.go:49,57) — holding
+        // `j` to the bottom does not re-arm it, only `>` does.
+        this.commandLog.scrollBy(direction === "next" ? 1 : -1)
+        this.commandLog.applyScrollInput(direction === "next" ? "scroll-down" : "scroll-up")
         return
       default:
         return
@@ -1223,7 +1374,7 @@ export class RootView {
    * height is read from computeLayout's windows map rather than from `text.height`: the
    * layout engine computes asynchronously, so `text.height` can be stale at cursor-move
    * time, while this.geometry is updated synchronously by recomputeLayout (the same
-   * source focusedPageStep and mainPageStep already trust).
+   * source focusedPageStep and mainPageDelta already trust).
    */
   private revealListRow(name: SideWindow | "main", pane: PaneHandle, line: number): void {
     const visibleLines = Math.max(1, heightOf(this.geometry.windows[name]) - 2)
@@ -1233,9 +1384,19 @@ export class RootView {
     pane.syncScrollbar()
   }
 
-  /** Half the main pane's visible rows, at least one. */
-  private mainPageStep(): number {
-    return Math.max(1, Math.floor(heightOf(this.geometry.windows.main) / 2))
+  /**
+   * lazygit's `ViewTrait.PageDelta()`: one row short of the viewport, so a page scroll leaves a
+   * line of overlap to read against (pkg/gui/context/view_trait.go:87-96). The window height
+   * includes both border rows, hence the extra one.
+   */
+  get mainPageDelta(): number {
+    return Math.max(1, heightOf(this.geometry.windows.main) - 3)
+  }
+
+  /** Every keyboard path that scrolls the main view vertically ends here. */
+  private scrollMainBy(delta: number): void {
+    scrollMainPane(this.panes.main, "y", delta)
+    this.root.requestRender()
   }
 
   /** The visible rows of the focused pane, at least one, used as the page step. */
@@ -1248,11 +1409,41 @@ export class RootView {
   }
 
   private actionPage(direction: "next" | "previous"): void {
+    if (this.focusManager.active === "main") {
+      // `ViewSelectionController.handlePrevPage`/`handleNextPage` — view_selection_controller.go:72-78.
+      this.scrollMainBy(direction === "next" ? this.mainPageDelta : -this.mainPageDelta)
+      return
+    }
     const step = this.focusedPageStep()
+    if (this.focusManager.active === "command-log") {
+      // `pageUpExtrasPanel`/`pageDownExtrasPanel` scroll by `PageDelta()` — the pane's visible
+      // height — and both clear `Autoscroll` (pkg/gui/extras_panel.go:65,73, view_trait.go:87-96).
+      this.commandLog.scrollBy(direction === "next" ? step : -step)
+      this.commandLog.applyScrollInput(direction === "next" ? "page-down" : "page-up")
+      return
+    }
     for (let moved = 0; moved < step; moved += 1) this.actionMoveCursor(direction)
   }
 
   private actionJump(edge: "top" | "bottom"): void {
+    if (this.focusManager.active === "main") {
+      // `handleGotoTop`/`handleGotoBottom` scroll by the whole content height, which the pane's
+      // own clamping turns into "as far as it goes" — view_selection_controller.go:81-97.
+      this.scrollMainBy(edge === "bottom" ? this.panes.main.text.scrollHeight : -this.panes.main.text.scrollHeight)
+      return
+    }
+    if (this.focusManager.active === "command-log") {
+      // `goToExtrasPanelTop` scrolls to 0 and clears `Autoscroll` (pkg/gui/extras_panel.go:81,89);
+      // `goToExtrasPanelBottom` sets it instead, and the pane re-pins to the bottom once armed, so
+      // no separate scroll call is needed here.
+      if (edge === "top") {
+        this.commandLog.scrollTo(0)
+        this.commandLog.applyScrollInput("goto-top")
+      } else {
+        this.commandLog.applyScrollInput("goto-bottom")
+      }
+      return
+    }
     // Lists are short enough that repeating the single-step move is simpler
     // and cannot disagree with it about clamping or selection side effects.
     const direction = edge === "bottom" ? "next" : "previous"
@@ -1385,6 +1576,138 @@ export class RootView {
       ? focusedPath
       : file?.path
     this.runUiMutation(() => this.onMarkFocusedFileReviewed!(reviewPath))
+  }
+  /**
+   * Opens the selected file in an external editor, mirroring lazygit's
+   * `Universal.Edit` (`e`) binding across Files, Staging and Commit Files
+   * (pkg/gui/controllers/files_controller.go:91, staging_controller.go:63,
+   * commits_files_controller.go:77, etc.). The Files pane edits the
+   * selected file, the Main pane edits the file at the hunk cursor (with
+   * `+line` when available), and the Commits drill-down edits the selected
+   * commit file. Directories are rejected explicitly, matching lazygit's
+   * `canEditFiles` guard.
+   */
+  private async actionEditFile(): Promise<void> {
+    if (this.mutationInFlight) return
+    if (this.onEditFile === undefined) {
+      const focus = this.focusManager.active
+      const box = focus === "files" ? this.panes.files.box : focus === "main" ? this.panes.main.box : focus === "commits" ? this.panes.commits.box : this.panes.main.box
+      box.bottomTitle = "Edit not available in this context"
+      return
+    }
+    const focus = this.focusManager.active
+    if (focus === "files") {
+      if (this.filesPanel.activeTab !== "files") {
+        this.panes.files.box.bottomTitle = "Edit is available in the Files tab"
+        return
+      }
+      const row = this.selectedFileRow()
+      if (row === undefined) {
+        this.panes.files.box.bottomTitle = "No file selected"
+        return
+      }
+      if (row.kind === "directory") {
+        this.panes.files.box.bottomTitle = "Cannot edit a directory; select a file"
+        return
+      }
+      const path = row.path
+      this.mutationInFlight = true
+      this.clearDiscardState()
+      this.panes.files.box.bottomTitle = `Opening ${path}…`
+      try {
+        await this.onEditFile(path)
+        this.panes.files.box.bottomTitle = undefined
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.panes.files.box.bottomTitle = message
+      } finally {
+        this.mutationInFlight = false
+        this.onMutationSettled?.()
+        this.root.requestRender()
+      }
+      return
+    }
+    if (focus === "main") {
+      const document = getMainDocument(this.panes.main)
+      if (document === undefined || document.files.length === 0) {
+        this.panes.main.box.bottomTitle = "No file in main view"
+        return
+      }
+      const target = getMainCursorTarget(this.panes.main)
+      let filePath: string | undefined
+      let line: number | undefined
+      if (target !== undefined) {
+        const file = document.files[target.fileIndex]
+        if (file !== undefined) {
+          filePath = file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
+          if (filePath !== undefined && target.hunkIndex !== undefined) {
+            const hunk = file.hunks[target.hunkIndex]
+            if (hunk !== undefined) line = hunk.newStart
+          }
+        }
+      }
+      if (filePath === undefined || filePath === "/dev/null") {
+        const fallbackRow = this.selectedFileRow()
+        if (fallbackRow?.kind === "file") filePath = fallbackRow.path
+        else filePath = document.files[0]?.newPath ?? document.files[0]?.oldPath
+      }
+      if (line === undefined && filePath !== undefined) {
+        const fileForLine = document.files.find((candidate) => (candidate.newPath ?? candidate.oldPath) === filePath) ?? document.files[0]
+        const firstHunk = fileForLine?.hunks[0]
+        if (firstHunk !== undefined) line = firstHunk.newStart
+      }
+      if (filePath === undefined || filePath === "/dev/null" || filePath.length === 0) {
+        this.panes.main.box.bottomTitle = "No file to edit"
+        return
+      }
+      this.mutationInFlight = true
+      this.clearDiscardState()
+      this.panes.main.box.bottomTitle = `Opening ${filePath}${line !== undefined ? `:${line}` : ""}…`
+      try {
+        await this.onEditFile(filePath, line)
+        this.panes.main.box.bottomTitle = undefined
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.panes.main.box.bottomTitle = message
+      } finally {
+        this.mutationInFlight = false
+        this.onMutationSettled?.()
+        this.root.requestRender()
+      }
+      return
+    }
+    if (focus === "commits") {
+      if (this.commitsPanel.child === undefined) {
+        this.panes.commits.box.bottomTitle = "Edit is available in commit files view (press Enter on a commit)"
+        return
+      }
+      const selectedId = this.commitsPanel.child.view.selectedId
+      if (selectedId === undefined) {
+        this.panes.commits.box.bottomTitle = "No file selected"
+        return
+      }
+      const filePath = selectedId.split("\u0000")[0]
+      if (filePath === undefined || filePath.length === 0 || filePath === "/dev/null") {
+        this.panes.commits.box.bottomTitle = "Cannot edit this entry"
+        return
+      }
+      this.mutationInFlight = true
+      this.clearDiscardState()
+      this.panes.commits.box.bottomTitle = `Opening ${filePath}…`
+      try {
+        await this.onEditFile(filePath)
+        this.panes.commits.box.bottomTitle = undefined
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.panes.commits.box.bottomTitle = message
+      } finally {
+        this.mutationInFlight = false
+        this.onMutationSettled?.()
+        this.root.requestRender()
+      }
+      return
+    }
+    this.panes.main.box.bottomTitle = "Edit not available in this panel"
   }
   private actionStageSelection(): void {
     if (this.mutationInFlight) return
@@ -1528,7 +1851,7 @@ export class RootView {
    */
   private paneTabsGeometryFor(paneId: FocusId): { readonly jumpKey: string; readonly tabs: readonly string[] } | undefined {
     if (paneId === "files") return { jumpKey: FILES_JUMP_KEY, tabs: FILES_TABS }
-    if (paneId === "branches") return { jumpKey: BRANCHES_JUMP_KEY, tabs: BRANCHES_TABS }
+    if (paneId === "branches") return this.branchesPanel.child === undefined ? { jumpKey: BRANCHES_JUMP_KEY, tabs: BRANCHES_TABS } : undefined
     // The drill-down child replaces the strip with a plain title, so there is nothing to hit.
     if (paneId === "commits") return this.commitsPanel.child !== undefined ? undefined : { jumpKey: COMMITS_JUMP_KEY, tabs: COMMITS_TABS }
     return undefined
@@ -1549,8 +1872,10 @@ export class RootView {
       const tab = BRANCHES_TAB_ORDER[index]
       if (tab === undefined) return
       if (this.branchesPanel.child === undefined && this.branchesPanel.activeTab === tab) return
+      this.invalidateBranchCommitsRequest()
       this.branchesPanel = { ...leavePanelChild(this.branchesPanel), activeTab: tab }
       this.renderBranchesPane()
+      this.syncPreviewForFocus("branches")
       this.root.requestRender()
       return
     }
@@ -1576,8 +1901,11 @@ export class RootView {
       return
     }
     if (this.focusManager.active === "branches") {
+      this.invalidateBranchCommitsRequest()
       this.branchesPanel = cyclePanelTab(this.branchesPanel, direction)
       this.renderBranchesPane()
+      // Activating a context renders it to main (pkg/gui/context.go `Activate` -> HandleFocus).
+      this.syncPreviewForFocus("branches")
       this.root.requestRender()
       return
     }
@@ -1597,6 +1925,7 @@ export class RootView {
       const id = state.selectedId
       if (id !== undefined && id.startsWith("remote-branch:") && this.onCheckoutRemoteTracking !== undefined) {
         const ref = id.slice("remote-branch:".length)
+        if (panel.child.value.kind !== "remote-branches") return
         const remote = panel.child.value.remote
         const name = ref.slice(remote.length + 1)
         this.runRemoteCheckout({ remote, branch: name, ref }, false)
@@ -1608,7 +1937,8 @@ export class RootView {
     if (id === undefined) return
     if (id.startsWith("local:") && this.onSwitchLocalBranch !== undefined) {
       const name = id.slice("local:".length)
-      this.runUiMutation(() => this.onSwitchLocalBranch!(name))
+      // refs_helper.go:73 attributes a checkout to the branch being checked out.
+      this.runUiMutation(() => this.onSwitchLocalBranch!(name), { rowId: id, operation: "checking-out" })
     }
   }
 
@@ -1665,7 +1995,55 @@ export class RootView {
     const id = panel.views.remotes?.selectedId
     if (id === undefined || !id.startsWith("remote:") || this.onFetchRemote === undefined) return
     const name = id.slice("remote:".length)
-    this.runUiMutation(() => this.onFetchRemote!(name))
+    // remotes_controller.go:365 attributes a remote fetch to the remote's own row.
+    this.runUiMutation(() => this.onFetchRemote!(name), { rowId: id, operation: "fetching" })
+  }
+
+  private requestLocalBranchCommits(branch: string, entering: boolean): void {
+    if (this.loadBranchCommits === undefined) return
+    const expectedId = `local:${branch}`
+    const request = ++this.branchCommitsRequest
+    const isCurrent = (): boolean => {
+      if (request !== this.branchCommitsRequest) return false
+      const child = this.branchesPanel.child
+      if (entering) {
+        return this.focusManager.active === "branches" &&
+          child === undefined &&
+          this.branchesPanel.activeTab === "branches" &&
+          this.branchesPanel.views.branches?.selectedId === expectedId
+      }
+      return child?.parentTab === "branches" && child.value.kind === "local-commits" && child.value.branch === branch
+    }
+    const load = this.loadBranchCommits(branch)
+    const requestPromise = load
+      .then(async (commits) => {
+        if (!isCurrent()) return
+        const rows = buildCommitRows(commits, new Date())
+        const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No commits" }] : undefined
+        if (entering) {
+          this.branchesPanel = enterPanelChild(this.branchesPanel, { kind: "local-commits", branch }, createListState(rows, displayRows))
+        } else {
+          const child = this.branchesPanel.child
+          if (child === undefined || child.value.kind !== "local-commits") return
+          const view = setListRows(child.view, rows, displayRows)
+          this.branchesPanel = { ...this.branchesPanel, child: { ...child, view } }
+        }
+        this.renderBranchesPane()
+        let preview: Promise<void> | undefined
+        const previewFocus = this.focusManager.active === "main" ? this.focusManager.lastSide : this.focusManager.active
+        if (previewFocus === "branches") {
+          this.syncPreviewForFocus("branches")
+          preview = this.previewInflight
+        }
+        this.root.requestRender()
+        if (preview !== undefined) await preview
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent()) return
+        this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+        this.root.requestRender()
+      })
+    this.branchCommitsInflight = requestPromise
   }
 
   private actionBranchInspect(): void {
@@ -1676,6 +2054,7 @@ export class RootView {
       const id = state.selectedId
       if (id !== undefined && id.startsWith("remote-branch:")) {
         const ref = id.slice("remote-branch:".length)
+        if (panel.child.value.kind !== "remote-branches") return
         const remote = panel.child.value.remote
         const name = ref.slice(remote.length + 1)
         const selection = { remote, branch: name, ref }
@@ -1696,18 +2075,19 @@ export class RootView {
     const id = view?.selectedId
     if (id === undefined) return
     if (id.startsWith("local:")) {
-      const name = id.slice("local:".length)
-      if (this.onInspectBranch !== undefined) {
-        this.invalidateRemoteCheckout()
-        this.panes.branches.box.bottomTitle = undefined
-        this.runUiMutation(() => this.onInspectBranch!(name))
-      }
+      const branch = id.slice("local:".length)
+      this.invalidateRemoteCheckout()
+      this.panes.branches.box.bottomTitle = undefined
+      this.requestLocalBranchCommits(branch, true)
     } else if (id.startsWith("remote:")) {
       const remote = id.slice("remote:".length)
       const rows = remoteBranchRows(this.model, remote, this.branchFilter)
       const childView = createListState(rows)
       this.branchesPanel = enterPanelChild(this.branchesPanel, { kind: "remote-branches", remote }, childView)
       this.renderBranchesPane()
+      // Pushing the child context activates it, and activation renders to main
+      // (pkg/gui/context.go `Activate` -> HandleFocus).
+      this.syncPreviewForFocus("branches")
       if (this.onBrowseRemote !== undefined) {
         this.runUiMutation(() => this.onBrowseRemote!(remote))
       }
@@ -1795,9 +2175,12 @@ export class RootView {
       this.panes.stash.box.bottomTitle = undefined
     }
     if (this.branchesPanel.child !== undefined) {
+      this.invalidateBranchCommitsRequest()
       this.branchesPanel = leavePanelChild(this.branchesPanel)
       this.renderBranchesPane()
+      this.syncPreviewForFocus("branches")
       this.root.requestRender()
+      return
     } else if (this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined || this.branchFilterActive || this.remoteCheckoutInFlight) {
       this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
@@ -1822,7 +2205,7 @@ export class RootView {
   private actionStashCreate(): void {
     if (this.mutationInFlight || this.onCreateStash === undefined) return
     this.stashIncludeUntracked = false
-    this.openCommitDialog("stash", "")
+    this.openCommitDialog("")
   }
 
   private actionStashApply(): void {
@@ -1862,26 +2245,74 @@ export class RootView {
 
   private actionCommit(): void {
     if (this.mutationInFlight || this.onCommitMessage === undefined) return
-    const commitAvailable = this.focusManager.active === "files"
-      ? filesPaneCommitAvailable(this.model)
-      : this.focusManager.active === "main" && mainPaneCommitAvailable(this.model)
-    if (!commitAvailable) {
-      this.panes.main.box.bottomTitle = "Commit is available in Files or Main staged scope"
-      return
-    }
-    this.openCommitDialog("commit", "")
+    if (!this.commitAttemptAvailable()) return
+    this.withEnsureCommittableFiles(() => this.openCommitMessagePanel("commit", ""))
   }
 
   private actionAmend(): void {
     if (this.mutationInFlight || this.onAmendMessage === undefined || this.onCurrentCommitMessage === undefined) return
-    const commitAvailable = this.focusManager.active === "files"
-      ? filesPaneCommitAvailable(this.model)
-      : this.focusManager.active === "main" && mainPaneCommitAvailable(this.model)
-    if (!commitAvailable) {
-      this.panes.main.box.bottomTitle = "Commit is available in Files or Main staged scope"
+    if (!this.commitAttemptAvailable()) return
+    this.withEnsureCommittableFiles(() => this.openAmendDialog())
+  }
+
+  /**
+   * Committing targets the index, which only exists for a working-tree review; branch, commit
+   * and stash reviews are read-only (AppController.ensureWorkingTreeMutation refuses the same set).
+   */
+  private commitAttemptAvailable(): boolean {
+    if (this.model.reviewTarget.kind !== "working-tree") {
+      this.panes.main.box.bottomTitle = this.model.reviewTarget.kind === "stash" ? "Stash Review is read-only" : "Branch Review is read-only"
+      return false
+    }
+    const active = this.focusManager.active
+    if (active !== "files" && active !== "main") {
+      this.panes.main.box.bottomTitle = "Commit is available in Files or Main"
+      return false
+    }
+    return true
+  }
+
+  /**
+   * lazygit's WithEnsureCommittableFiles commits whatever the index holds and, when nothing is
+   * staged, prompts to stage everything before retrying the handler
+   * (pkg/gui/controllers/helpers/working_tree_helper.go:229-258). Githunk's confirmation idiom
+   * is a second press of the same key, as with file discard and stash drop.
+   */
+  private withEnsureCommittableFiles(retry: () => void | Promise<void>): void {
+    if (anyStagedChanges(this.model)) {
+      this.pendingStageAllCommit = false
+      void retry()
       return
     }
-    this.openAmendDialog()
+    if (this.model.files.length === 0) {
+      this.panes.main.box.bottomTitle = "No changes to commit"
+      return
+    }
+    if (!this.pendingStageAllCommit) {
+      this.pendingStageAllCommit = true
+      this.panes.main.box.bottomTitle = "Nothing staged — press the same key again to stage everything"
+      this.root.requestRender()
+      return
+    }
+    this.pendingStageAllCommit = false
+    if (this.onToggleAllFiles === undefined) return
+    this.runUiMutation(async () => {
+      await this.onToggleAllFiles!()
+      await retry()
+    })
+  }
+
+  private actionScopeCycle(direction: "next" | "previous"): void {
+    if (this.mutationInFlight) {
+      this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
+      return
+    }
+    if (this.onScopeChange === undefined) return
+    if (this.model.reviewTarget.kind !== "working-tree") return
+    this.invalidateRemoteCheckout()
+    const index = SCOPE_ORDER.indexOf(this.model.reviewTarget.scope)
+    const nextIndex = direction === "next" ? (index + 1) % SCOPE_ORDER.length : (index - 1 + SCOPE_ORDER.length) % SCOPE_ORDER.length
+    this.runUiMutation(() => this.onScopeChange!(SCOPE_ORDER[nextIndex]!))
   }
 
   private actionFetch(): void {
@@ -1889,14 +2320,25 @@ export class RootView {
     this.runUiMutation(() => this.onFetch!())
   }
 
+  /**
+   * sync_controller.go:161,196 attributes a pull or a push to the *current* branch's row, whichever
+   * panel the key was pressed in.
+   */
+  private currentBranchRowId(): string | undefined {
+    const current = this.model.branches?.localBranches.find((branch) => branch.isCurrent)?.name
+    return current === undefined ? undefined : `local:${current}`
+  }
+
   private actionPull(): void {
     if (this.mutationInFlight || this.onPull === undefined) return
-    this.runUiMutation(() => this.onPull!())
+    const rowId = this.currentBranchRowId()
+    this.runUiMutation(() => this.onPull!(), rowId === undefined ? undefined : { rowId, operation: "pulling" })
   }
 
   private actionPush(): void {
     if (this.mutationInFlight || this.onPush === undefined) return
-    this.runUiMutation(() => this.onPush!())
+    const rowId = this.currentBranchRowId()
+    this.runUiMutation(() => this.onPush!(), rowId === undefined ? undefined : { rowId, operation: "pushing" })
   }
 
   private actionRefresh(): void {
@@ -2050,6 +2492,9 @@ export class RootView {
     this.remoteCheckoutGeneration += 1
     this.pendingRemoteMismatch = undefined
   }
+  private invalidateBranchCommitsRequest(): void {
+    this.branchCommitsRequest += 1
+  }
 
   private runRemoteCheckout(selection: RemoteBranchSelection, confirmedMismatch: boolean): void {
     if (this.onCheckoutRemoteTracking === undefined || this.mutationInFlight) return
@@ -2057,6 +2502,7 @@ export class RootView {
     const requestFocus = this.focusManager.active
     const requestActiveTab = this.branchesPanel.activeTab
     const requestChild = this.branchesPanel.child
+    const requestChildRemote = requestChild?.value.kind === "remote-branches" ? requestChild.value.remote : null
     const requestSelectedId = (this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab])?.selectedId
     const requestFilter = this.branchFilter
     const requestFilterActive = this.branchFilterActive
@@ -2067,7 +2513,7 @@ export class RootView {
     const isCurrent = (): boolean => {
       if (requestGeneration !== this.remoteCheckoutGeneration) return false
       if (this.focusManager.active !== requestFocus || this.branchesPanel.activeTab !== requestActiveTab ||
-        (this.branchesPanel.child?.value.remote ?? null) !== (requestChild?.value.remote ?? null) ||
+        requestChildRemote !== (requestChild?.value.kind === "remote-branches" ? requestChild.value.remote : null) ||
         (this.branchesPanel.child?.view.selectedId ?? this.branchesPanel.views[this.branchesPanel.activeTab]?.selectedId) !== requestSelectedId ||
         this.branchFilter !== requestFilter || this.branchFilterActive !== requestFilterActive ||
         JSON.stringify(this.model.reviewTarget) !== requestTarget) return false
@@ -2097,76 +2543,136 @@ export class RootView {
       }
     })
   }
-  private openCommitDialog(mode: "commit" | "amend" | "stash", initialMessage: string): void {
-    this.commitDialog = new CommitDialog(mode, initialMessage)
+  private openCommitDialog(initialMessage: string): void {
+    this.commitDialog = new CommitDialog("stash", initialMessage)
     this.panes.main.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
     this.root.requestRender()
   }
+
+  private openCommitMessagePanel(mode: "commit" | "amend", initialMessage: string): void {
+    this.commitMessagePanel.open(mode, initialMessage)
+    this.recomputeLayout()
+    this.root.requestRender()
+  }
+
   private openBranchDialog(mode: "branch-create" | "branch-rename", initialMessage: string): void {
     this.commitDialog = new CommitDialog(mode, initialMessage)
     this.panes.branches.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
     this.root.requestRender()
   }
 
-  private openAmendDialog(): void {
+  private async openAmendDialog(): Promise<void> {
     if (this.onCurrentCommitMessage === undefined) return
-    this.mutationInFlight = true
-    void this.onCurrentCommitMessage().then((message) => {
-      this.openCommitDialog("amend", message)
-    }).catch((error: unknown) => {
+    const ownsMutation = !this.mutationInFlight
+    if (ownsMutation) this.mutationInFlight = true
+    try {
+      const message = await this.onCurrentCommitMessage()
+      this.openCommitMessagePanel("amend", message)
+    } catch (error: unknown) {
       this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
       this.root.requestRender()
+    } finally {
+      if (ownsMutation) this.mutationInFlight = false
+    }
+  }
+
+  private handleCommitMessagePanelKey(key: KeyEvent): void {
+    const result = this.commitMessagePanel.handleKey(key)
+    if (result === undefined) {
+      this.root.requestRender()
+      return
+    }
+    if (result.kind === "changed") {
+      this.recomputeLayout()
+      return
+    }
+    if (result.kind === "cancelled") {
+      this.commitMessagePanel.close()
+      this.recomputeLayout()
+      this.root.requestRender()
+      return
+    }
+
+    const operation = this.commitMessagePanel.mode === "amend" ? this.onAmendMessage : this.onCommitMessage
+    if (operation === undefined) {
+      this.commitMessagePanel.setError("Commit operation is unavailable")
+      this.root.requestRender()
+      return
+    }
+    this.mutationInFlight = true
+    void operation(result.message).then(() => {
+      this.commitMessagePanel.close()
+      this.recomputeLayout()
+    }).catch((error: unknown) => {
+      this.commitMessagePanel.setError(error instanceof Error ? error.message : String(error))
     }).finally(() => {
       this.mutationInFlight = false
+      this.root.requestRender()
     })
   }
 
-  private handleCommitDialogKey(key: KeyEvent): boolean {
-    const dialog = this.commitDialog
-    if (dialog === undefined) return false
-    const result = commitDialogKey(dialog.state, key)
-    if (result.result?.kind === "cancelled") {
-      this.commitDialog = undefined
-      this.panes.main.box.bottomTitle = undefined
-      this.root.requestRender()
-      return true
+  /** The clock and per-row extras every branches-panel row build needs. */
+  private branchRowOptions(): BranchRowOptions {
+    return {
+      ...(this.itemOperations.size === 0 ? {} : { itemOperations: this.itemOperations }),
+      ...(this.model.pullRequests === undefined ? {} : { pullRequests: this.model.pullRequests }),
     }
-    if (result.result?.kind === "confirmed") {
-      const message = result.result.message
-      const operation = dialog.state.mode === "amend" ? this.onAmendMessage : this.onCommitMessage
-      if (operation === undefined) return true
-      this.mutationInFlight = true
-      void operation(message).then(() => {
-        if (this.commitDialog === dialog) {
-          this.commitDialog = undefined
-          this.panes.main.box.bottomTitle = undefined
-        }
-      }).catch((error: unknown) => {
-        dialog.setError(error instanceof Error ? error.message : String(error))
-        this.panes.main.box.bottomTitle = renderCommitDialog(dialog.state)
-      }).finally(() => {
-        this.mutationInFlight = false
-        this.root.requestRender()
-      })
-      return true
-    }
-    const next = result
-    const nextDialog = new CommitDialog(next.state.mode, next.state.message)
-    nextDialog.setError(next.state.error)
-    this.commitDialog = nextDialog
-    this.panes.main.box.bottomTitle = renderCommitDialog(nextDialog.state)
-    this.root.requestRender()
-    return true
   }
 
-  private runUiMutation(operation: () => Promise<void> | undefined): void {
+  /** The operation showing on a row, if any. Test and diagnostics accessor. */
+  itemOperationFor(rowId: string): ItemOperation | undefined {
+    return this.itemOperations.get(rowId)
+  }
+
+  private startSpinner(): void {
+    if (this.spinnerTimer !== undefined) return
+    this.spinnerTimer = setInterval(() => {
+      this.refreshBranchesPanel(this.model)
+      this.renderBranchesPane()
+      this.root.requestRender()
+    }, SPINNER_RATE_MS)
+  }
+
+  private stopSpinner(): void {
+    if (this.spinnerTimer === undefined) return
+    clearInterval(this.spinnerTimer)
+    this.spinnerTimer = undefined
+  }
+
+  private beginItemOperation(rowId: string, operation: ItemOperation): void {
+    this.itemOperations.set(rowId, operation)
+    this.startSpinner()
+    this.refreshBranchesPanel(this.model)
+    this.renderBranchesPane()
+    this.root.requestRender()
+  }
+
+  private endItemOperation(rowId: string): void {
+    if (!this.itemOperations.delete(rowId)) return
+    if (this.itemOperations.size === 0) this.stopSpinner()
+    this.refreshBranchesPanel(this.model)
+    this.renderBranchesPane()
+    this.root.requestRender()
+  }
+
+  /**
+   * `inlineStatus` attributes the operation to one list row for its duration, which is lazygit's
+   * `WithInlineStatus` (inline_status_helper.go:65-95): the row itself says `Pulling ●∙∙` instead of
+   * showing ahead/behind counts that the operation is in the middle of invalidating.
+   */
+  private runUiMutation(
+    operation: () => Promise<void> | undefined,
+    inlineStatus?: { readonly rowId: string; readonly operation: ItemOperation },
+  ): void {
     if (this.mutationInFlight) return
     this.mutationInFlight = true
     this.clearDiscardState()
     this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
+    if (inlineStatus !== undefined) this.beginItemOperation(inlineStatus.rowId, inlineStatus.operation)
     const promise = operation()
     if (promise === undefined) {
       this.mutationInFlight = false
+      if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
       return
     }
     void promise.catch((error: unknown) => {
@@ -2175,13 +2681,14 @@ export class RootView {
     }).finally(() => {
       this.mutationInFlight = false
       this.clearDiscardState()
+      if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
+      this.onMutationSettled?.()
     })
   }
 
-  /** Resolves when the current commits-pane preview request (if any) has settled. Exposed for
-   *  tests: preview loads run outside the mutation queue, so they have no other completion signal. */
+  /** Resolves when the current Main preview or panel-3 branch-history load has settled. */
   whenPreviewSettled(): Promise<void> {
-    return this.previewInflight
+    return Promise.all([this.previewInflight, this.branchCommitsInflight]).then(() => {})
   }
 
   get commitsContextKind(): "commits" | "commit-files" {
@@ -2272,7 +2779,7 @@ export class RootView {
   /**
    * The selected node's own patch, as lazygit's files pane renders it: a file row diffs that file
    * and a directory row diffs its subtree (`pathsForDiff` →
-   * `WorktreeFileDiffCmdObj`, pkg/gui/controllers/files_controller.go:366). Sliced out of the
+   * `WorktreeFileDiffCmdObj`, pkg/gui/controllers/files_controller.go:373). Sliced out of the
    * already-parsed tree patch instead of re-running git, and re-parsed standalone so line staging
    * and selection see a patch `git apply` accepts.
    */
@@ -2313,6 +2820,24 @@ export class RootView {
       ...(details.preamble === undefined ? {} : { preamble: details.preamble }),
       document: details.document,
     }
+  }
+  /**
+   * lazygit's `GetGraphCmdObj(ref.FullRefName())` render-to-main: the selected ref's commit graph,
+   * coloured by git itself. All three panel-3 tabs and the RemoteBranches drill-down share it,
+   * because lazygit shares it too — branches_controller.go:207, remote_branches_controller.go:122
+   * and tags_controller.go:109 all call the one command.
+   */
+  private requestRefLog(source: RefLogTarget["kind"], name: string, label: string, preamble?: string): void {
+    const preambleField = preamble === undefined ? {} : { preamble }
+    if (this.loadRefLogInspection === undefined) {
+      // No git behind the view (unit harnesses): the ref is still named, so the pane says what it
+      // is showing rather than going blank.
+      this.mainGate.installSynchronous({ source, stableId: name, label, ...preambleField, plainText: `${preamble ?? ""}${name}` })
+      return
+    }
+    const load = (): Promise<string> => this.loadRefLogInspection!({ kind: source, name })
+    const present = (raw: string): MainPaneContent => ({ source, stableId: name, label, ...preambleField, ansi: parseAnsi(raw) })
+    this.previewInflight = this.mainGate.request(source, name, load, present).catch(() => {})
   }
   private presentCommitFileContent(oid: string, selectedId: string, doc: DiffDocument): MainPaneContent {
     const label = selectedId.split("\u0000")[0]!
@@ -2396,35 +2921,63 @@ export class RootView {
     }
     if (focus === "branches") {
       const panel = this.branchesPanel
+      // Panel 3's transient children mirror lazygit's RemoteBranches and SubCommits contexts:
+      // remote branches render a ref graph, while local-branch commits render commit inspection.
       if (panel.child !== undefined) {
-        const content: MainPaneContent = { source: "remote-branch", stableId: panel.child.view.selectedId ?? panel.child.value.remote, label: panel.child.value.remote, plainText: `Remote ${panel.child.value.remote}` }
-        this.mainGate.installSynchronous(content)
-        return
-      }
-      const active = panel.activeTab
-      const view = panel.views[active]
-      const selectedId = view?.selectedId ?? active
-      let source: MainPaneContent["source"] = "local-branch"
-      if (active === "remotes") source = "remote"
-      else if (active === "tags") source = "tag"
-      if (active === "tags" && selectedId.startsWith("tag:") && this.loadTagInspection !== undefined) {
-        const ref = selectedId.slice("tag:".length)
-        const tag = this.model.tags?.find((t) => t.ref === ref)
-        if (tag !== undefined) {
-          const load = (): Promise<import("../domain/tag").TagPreview> => this.loadTagInspection!(tag)
-          const present = (preview: import("../domain/tag").TagPreview): MainPaneContent => ({
-            source: "tag",
-            stableId: ref,
-            label: preview.name,
-            plainText: `${preview.name} ${preview.kind} ${preview.targetOid.slice(0, 7)} ${preview.subject ?? ""}`,
-          })
-          const promise = this.mainGate.request("tag", ref, load, present)
+        const child = panel.child
+        if (child.value.kind === "local-commits") {
+          const selectedId = child.view.selectedId
+          if (selectedId === undefined) {
+            this.mainGate.installSynchronous({ source: "commit", stableId: "local-commits-empty", label: "Commit", plainText: "No commits" })
+            return
+          }
+          if (this.loadCommitInspection === undefined) {
+            this.mainGate.installSynchronous({ source: "commit", stableId: selectedId, label: selectedId, plainText: selectedId })
+            return
+          }
+          const load = (): Promise<CommitDetails> => this.loadCommitInspection!(selectedId)
+          const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
+          const promise = this.mainGate.request("commit", selectedId, load, present)
           this.previewInflight = promise.catch(() => {})
           return
         }
+        const selectedId = child.view.selectedId
+        const ref = selectedId !== undefined && selectedId.startsWith("remote-branch:") ? selectedId.slice("remote-branch:".length) : undefined
+        if (ref === undefined) {
+          this.mainGate.installSynchronous({ source: "remote-branch", stableId: `${child.value.remote}:empty`, label: MAIN_TITLE_REMOTE_BRANCH, plainText: NO_BRANCHES_FOR_REMOTE })
+          return
+        }
+        this.requestRefLog("remote-branch", ref, MAIN_TITLE_REMOTE_BRANCH)
+        return
       }
-      const content: MainPaneContent = { source, stableId: selectedId, label: selectedId, plainText: `${source} ${selectedId}` }
-      this.mainGate.installSynchronous(content)
+      const active = panel.activeTab
+      const selectedId = panel.views[active]?.selectedId
+      if (active === "remotes") {
+        // remotes_controller.go:101-125: the only panel-3 tab that renders text, not a graph.
+        const name = selectedId !== undefined && selectedId.startsWith("remote:") ? selectedId.slice("remote:".length) : undefined
+        const remote = name === undefined ? undefined : this.model.branches?.remotes.find((candidate) => candidate.name === name)
+        this.mainGate.installSynchronous(remote === undefined
+          ? { source: "remote", stableId: "remote-empty", label: MAIN_TITLE_REMOTE, plainText: NO_REMOTES }
+          : { source: "remote", stableId: remote.name, label: MAIN_TITLE_REMOTE, plainText: remotePreviewText(remote) })
+        return
+      }
+      if (active === "tags") {
+        // tags_controller.go:101-123: the tag's own info, a `---` rule, then the graph.
+        const ref = selectedId !== undefined && selectedId.startsWith("tag:") ? selectedId.slice("tag:".length) : undefined
+        const tag = ref === undefined ? undefined : this.model.tags?.find((candidate) => candidate.ref === ref)
+        if (tag === undefined) {
+          this.mainGate.installSynchronous({ source: "tag", stableId: "tag-empty", label: MAIN_TITLE_TAG, plainText: NO_TAGS })
+          return
+        }
+        this.requestRefLog("tag", tag.ref, MAIN_TITLE_TAG, tagPreamble(tag))
+        return
+      }
+      const branch = selectedId !== undefined && selectedId.startsWith("local:") ? selectedId.slice("local:".length) : undefined
+      if (branch === undefined) {
+        this.mainGate.installSynchronous({ source: "local-branch", stableId: "branch-empty", label: MAIN_TITLE_LOG, plainText: NO_BRANCHES_THIS_REPO })
+        return
+      }
+      this.requestRefLog("local-branch", branch, MAIN_TITLE_LOG)
       return
     }
     if (focus === "stash") {
@@ -2535,6 +3088,35 @@ export class RootView {
     }
     return undefined
   }
+
+  /**
+   * Shared by every scrollbar-drag gesture site (mouse down on the track, drag, and up): maps a
+   * screen Y onto the pane's scroll range and jumps there. lazygit has no scrollbar over the
+   * extras view — this is one of githunk's four documented review extensions
+   * (docs/lazygit-compatibility-v0.1.md) — so there is no parity behaviour to copy for it clearing
+   * the command log's autoscroll. It does so anyway, by the same principle the rest of the FSM
+   * already encodes: every explicit user scroll clears the flag, only an explicit jump-to-bottom
+   * arms it, and a scrollbar drag is an explicit user scroll
+   * (src/ui/panes/command-log-scroll.ts's `"scrollbar"` input).
+   */
+  private scrollPaneByScrollbarPosition(paneId: FocusId, eventY: number): void {
+    const barPane = paneId === "command-log" ? this.commandLog as unknown as PaneHandle : (this.panes as Record<string, PaneHandle>)[paneId]
+    const bar = barPane ? paneScrollbar(barPane.text) : undefined
+    const win = (this.geometry.windows as Record<string, { x0: number; y0: number; x1: number; y1: number } | undefined>)[paneId === "command-log" ? "log" : paneId]
+    if (!bar || !win || !barPane) return
+    const barScreenY = (bar as unknown as { screenY: number }).screenY
+    const barHeight = (bar as unknown as { height: number }).height as number
+    const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
+    const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
+    const relative = eventY - trackStart
+    const clamped = Math.max(0, Math.min(trackSize, relative))
+    const ratio = trackSize === 0 ? 0 : clamped / trackSize
+    const range = Math.max(0, bar.scrollSize - bar.viewportSize)
+    const newPos = Math.round(ratio * range)
+    barPane.scrollTo(newPos)
+    if (paneId === "command-log") this.commandLog.applyScrollInput("scrollbar")
+  }
+
   private findPaneAtPoint(x: number, y: number): { id: FocusId; winName: WindowName } | undefined {
     const windows = this.geometry.windows as unknown as Record<string, { x0: number; y0: number; x1: number; y1: number } | undefined>
     const order: Array<[FocusId, WindowName]> = [
@@ -2663,6 +3245,8 @@ export class RootView {
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
+    // An in-flight inline status would otherwise keep its interval — and the process — alive.
+    this.stopSpinner()
     this.cancelGesture()
     this.root.onMouse = undefined
     this.verticalSplitter.box.onMouseOver = undefined
@@ -2743,6 +3327,12 @@ export class RootView {
             const signed = direction === "up" ? -1 : direction === "down" ? 1 : 0
             if (signed !== 0) {
               const delta = Math.max(1, scrollInfo?.delta ?? 1)
+              // Over the command log the wheel is not just a scroll: lazygit binds MouseWheelUp/
+              // MouseWheelDown on the extras view to `scrollUpExtra`/`scrollDownExtra`
+              // (pkg/gui/keybindings.go:248-258), the same handlers `,`/`.` use, and both assign
+              // `Autoscroll = false` (pkg/gui/extras_panel.go:49,57) before scrolling. This is the
+              // only wheel dispatcher in the app, so the transition has to be applied here.
+              if (hit.id === "command-log") this.commandLog.applyScrollInput(signed < 0 ? "scroll-up" : "scroll-down")
               pane.scrollBy(signed * 2 * delta)
             }
           }
@@ -2796,41 +3386,16 @@ export class RootView {
           return
         }
         if (owner.kind === "scrollbar") {
-          const barPane = owner.paneId === "command-log" ? this.commandLog as unknown as PaneHandle : (this.panes as Record<string, PaneHandle>)[owner.paneId]
-          const bar = barPane ? paneScrollbar(barPane.text) : undefined
-          const win = (this.geometry.windows as Record<string, { x0:number; y0:number; x1:number; y1:number } | undefined>)[owner.paneId === "command-log" ? "log" : owner.paneId]
           if (event.type === "drag") {
             this.pendingClick = undefined
             this.lastSplitterPress = undefined
-            if (bar && win && barPane) {
-              const barScreenY = (bar as unknown as { screenY:number }).screenY
-              const barHeight = (bar as unknown as { height:number }).height as number
-              const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
-              const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
-              const relative = event.y - trackStart
-              const clamped = Math.max(0, Math.min(trackSize, relative))
-              const ratio = trackSize === 0 ? 0 : clamped / trackSize
-              const range = Math.max(0, bar.scrollSize - bar.viewportSize)
-              const newPos = Math.round(ratio * range)
-              barPane.scrollTo(newPos)
-            }
+            this.scrollPaneByScrollbarPosition(owner.paneId, event.y)
             event.preventDefault()
             event.stopPropagation()
             return
           }
           if (event.type === "up") {
-            if (bar && win && barPane) {
-              const barScreenY = (bar as unknown as { screenY:number }).screenY
-              const barHeight = (bar as unknown as { height:number }).height as number
-              const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
-              const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
-              const relative = event.y - trackStart
-              const clamped = Math.max(0, Math.min(trackSize, relative))
-              const ratio = trackSize === 0 ? 0 : clamped / trackSize
-              const range = Math.max(0, bar.scrollSize - bar.viewportSize)
-              const newPos = Math.round(ratio * range)
-              barPane.scrollTo(newPos)
-            }
+            this.scrollPaneByScrollbarPosition(owner.paneId, event.y)
             this.gestureOwner = undefined
             event.preventDefault()
             event.stopPropagation()
@@ -2865,21 +3430,7 @@ export class RootView {
           this.pendingClick = undefined
           this.lastSplitterPress = undefined
           this.gestureOwner = { kind: "scrollbar", paneId: scrollbarHit }
-          const barPane = scrollbarHit === "command-log" ? this.commandLog as unknown as PaneHandle : (this.panes as Record<string, PaneHandle>)[scrollbarHit]
-          const bar = barPane ? paneScrollbar(barPane.text) : undefined
-          const win = (this.geometry.windows as Record<string, { x0:number; y0:number; x1:number; y1:number } | undefined>)[scrollbarHit === "command-log" ? "log" : scrollbarHit]
-          if (bar && win && barPane) {
-            const barScreenY = (bar as unknown as { screenY:number }).screenY
-            const barHeight = (bar as unknown as { height:number }).height as number
-            const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
-            const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
-            const relative = event.y - trackStart
-            const clamped = Math.max(0, Math.min(trackSize, relative))
-            const ratio = trackSize === 0 ? 0 : clamped / trackSize
-            const range = Math.max(0, bar.scrollSize - bar.viewportSize)
-            const newPos = Math.round(ratio * range)
-            barPane.scrollTo(newPos)
-          }
+          this.scrollPaneByScrollbarPosition(scrollbarHit, event.y)
           event.preventDefault()
           event.stopPropagation()
           return
@@ -2941,6 +3492,14 @@ export class RootView {
             return
           }
         }
+        if (tabsGeometry === undefined && tabWindow !== undefined && event.y === tabWindow.y0) {
+          this.pendingClick = undefined
+          this.lastSplitterPress = undefined
+          if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
         if (paneId === "main") {
           this.pendingClick = undefined
           this.lastSplitterPress = undefined
@@ -2981,7 +3540,9 @@ export class RootView {
           const panel = this.branchesPanel
           if (panel.child !== undefined) {
             listState = panel.child.view
-            viewIdForDouble = `branches-child:${panel.child.value.remote}`
+            viewIdForDouble = panel.child.value.kind === "remote-branches"
+              ? `branches-child:${panel.child.value.remote}`
+              : `branches-child:local-commits:${panel.child.value.branch}`
           } else {
             listState = panel.views[panel.activeTab]
             viewIdForDouble = `branches:${panel.activeTab}`
@@ -3091,15 +3652,64 @@ export class RootView {
     this.focusManager.focus("main")
   }
 
+  /**
+   * Shared by the horizontal splitter's double-click gesture (the counterpart to the vertical
+   * splitter's double-click collapse, see toggleSideCollapsed above) and the command-log menu's
+   * `t` item (pkg/gui/extras_panel.go:19-29): if the log is shown and focused, pop focus back to
+   * the last side pane first — otherwise focus would point at a window that just disappeared —
+   * then flip visibility and persist it exactly as `gui.c.GetAppState().HideCommandLog = !show;
+   * SaveAppStateAndLogError()` does (:26-27).
+   */
   private toggleCommandLog(): void {
-    this.focusManager.handleKey("@")
+    if (this.focusManager.logVisible && this.focusManager.active === "command-log") {
+      this.focusManager.focus(this.focusManager.lastSide)
+    }
+    this.focusManager.setLogVisible(!this.focusManager.logVisible)
     this.notifyGeometry()
+  }
+
+  /**
+   * lazygit's `@` menu (pkg/gui/extras_panel.go:12-38). Labels are `Tr.CommandLog`,
+   * `Tr.ToggleShowCommandLog` and `Tr.FocusCommandLog` verbatim
+   * (pkg/i18n/english.go:1946,1949-1950).
+   */
+  private openCommandLogMenu(): void {
+    this.actionMenu.openMenu("Command log", [
+      { key: "t", label: "Toggle show/hide command log", onPress: () => this.toggleCommandLog() },
+      {
+        key: "f",
+        label: "Focus command log",
+        onPress: () => {
+          // lazygit's handleFocusCommandLog (extras_panel.go:40-46) is a transient runtime
+          // reveal, not a persisted choice: it calls SetShowExtrasWindow(true) then pushes the
+          // context, but unlike `t`'s OnPress (:24-27) it never assigns
+          // gui.c.GetAppState().HideCommandLog nor calls SaveAppStateAndLogError(). So `f` shows a
+          // hidden log for this session only; on the next launch visibility reverts to whatever
+          // `t` last persisted. Do NOT add a notifyGeometry() call here to "restore" persistence —
+          // that would re-introduce the bug where pressing `f` once makes the log visible on every
+          // subsequent launch.
+          //
+          // Bare-assign logVisible (the same shape applyPersistedGeometry uses above) rather than
+          // setLogVisible(true), so the onChange cascade — refreshCommandLog, applyFocus, pane
+          // renders, recomputeLayout, syncPreviewForFocus — fires once, via focus() below, instead
+          // of once per call.
+          this.focusManager.logVisible = true
+          this.focusManager.focus("command-log")
+        },
+      },
+    ])
+    this.recomputeLayout()
   }
 
 
   private applyFocus(active: FocusId): void {
     for (const pane of Object.values(this.panes)) pane.setFocused(pane.id === active)
-    this.commandLog.setFocused(active === "command-log")
+    // lazygit re-arms autoscroll when the command log loses focus
+    // (pkg/gui/controllers/command_log_controller.go:29-33).
+    const wasFocused = this.commandLogFocused
+    this.commandLogFocused = active === "command-log"
+    if (wasFocused && !this.commandLogFocused) this.commandLog.applyScrollInput("focus-lost")
+    this.commandLog.setFocused(this.commandLogFocused)
   }
 
   private recomputeLayout(): void {
@@ -3213,6 +3823,9 @@ export class RootView {
       )
     }
     this.keybindingMenu.box.visible = this.menuOpen
+    if (menuHost !== undefined) this.actionMenu.layout(menuHost, this.geometry.terminalHeight)
+    else this.actionMenu.close()
+    this.commitMessagePanel.layout(this.geometry.terminalWidth, this.geometry.terminalHeight)
     this.root.requestRender()
   }
 }

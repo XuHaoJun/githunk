@@ -1,6 +1,7 @@
 import type { BranchListing, LocalBranch, Remote, RemoteBranch } from "../domain/branch"
 import { trackingLocalName } from "../domain/branch"
 import { GitRunner } from "./runner"
+import { loadRepoConfig, type RepoConfig } from "./config"
 import { parseNulFields } from "./parse"
 
 type CommandRunner = Pick<GitRunner, "run">
@@ -37,7 +38,12 @@ function withoutRecordTerminator(value: string): string {
 }
 
 async function validateBranchName(runner: CommandRunner, name: string): Promise<void> {
-  await runner.run(["check-ref-format", "--branch", name], { readOnly: true })
+  // `dontLog: false` overrides the `readOnly`-implies-quiet default (runner.ts's `dontLog` doc
+  // comment) deliberately: `createBranch`/`renameBranch`/`deleteBranch` already log their action
+  // label before calling this, so a rejected name must still show *something* under that label —
+  // otherwise the log shows a yellow action with nothing under it, contradicting
+  // `AppController`'s "a mutation the target refuses logs nothing" guarantee (controller.ts).
+  await runner.run(["check-ref-format", "--branch", name], { readOnly: true, dontLog: false })
 }
 
 async function listRemoteNames(runner: CommandRunner): Promise<readonly string[]> {
@@ -45,21 +51,53 @@ async function listRemoteNames(runner: CommandRunner): Promise<readonly string[]
   return result.stdout.split(/\r?\n/).map((name) => name.trim()).filter(Boolean)
 }
 
-export async function listLocalBranches(runner: CommandRunner): Promise<readonly LocalBranch[]> {
+/**
+ * lazygit's `parseUpstreamInfo` (pkg/commands/git_commands/branch_loader.go:466-481). An empty
+ * `%(upstream:short)` means the remote-tracking ref is not in this repo, so the counts are unknown
+ * rather than zero — the distinction the magenta `?` row is drawn from.
+ */
+function parseUpstreamTrack(upstreamShort: string, track: string): {
+  readonly aheadForPull: string
+  readonly behindForPull: string
+  readonly upstreamGone: boolean
+} {
+  if (upstreamShort.length === 0) return { aheadForPull: "?", behindForPull: "?", upstreamGone: false }
+  if (track === "[gone]") return { aheadForPull: "?", behindForPull: "?", upstreamGone: true }
+  const ahead = /ahead (\d+)/.exec(track)?.[1] ?? "0"
+  const behind = /behind (\d+)/.exec(track)?.[1] ?? "0"
+  return { aheadForPull: ahead, behindForPull: behind, upstreamGone: false }
+}
+
+/**
+ * `config` carries the repo-local `branch.<name>.remote`/`.merge` keys; pass the one
+ * `listBranches` already read so this does not spawn a second `git config`.
+ */
+export async function listLocalBranches(runner: CommandRunner, config?: RepoConfig): Promise<readonly LocalBranch[]> {
+  const resolvedConfig = config ?? await loadRepoConfig(runner)
   const result = await runner.run([
     "for-each-ref",
     "--format=%(refname:short)%00%(upstream:short)%00%(objectname)%00%(HEAD)%00%(committerdate:unix)%00%(subject)%00%(upstream:track)%00",
     "refs/heads",
   ], { readOnly: true })
-  return parseNulFields(result.stdout, 7).map(([name, upstream, oid, head, committedAt, subject, upstreamTrack]) => ({
-    name: name ?? "",
-    ...(oid === undefined || oid.length === 0 ? {} : { oid }),
-    ...(upstream === undefined || upstream.length === 0 ? {} : { upstream }),
-    isCurrent: head === "*",
-    ...(committedAt ? { committedAt } : {}),
-    ...(subject ? { subject } : {}),
-    ...(upstreamTrack ? { upstreamTrack } : {}),
-  }))
+  return parseNulFields(result.stdout, 7).map(([name, upstream, oid, head, committedAt, subject, upstreamTrack]) => {
+    const branchName = name ?? ""
+    const track = parseUpstreamTrack(upstream ?? "", upstreamTrack ?? "")
+    const upstreamConfig = resolvedConfig.branchUpstreams.get(branchName)
+    return {
+      name: branchName,
+      ...(oid === undefined || oid.length === 0 ? {} : { oid }),
+      ...(upstream === undefined || upstream.length === 0 ? {} : { upstream }),
+      isCurrent: head === "*",
+      ...(committedAt ? { committedAt } : {}),
+      ...(subject ? { subject } : {}),
+      ...(upstreamTrack ? { upstreamTrack } : {}),
+      ...track,
+      ...(upstreamConfig?.remote === undefined ? {} : { upstreamRemote: upstreamConfig.remote }),
+      // `refs/heads/` stripped, so this is the *branch* name a pull request's head ref matches —
+      // lazygit's `BranchConfig.Merge` (pkg/commands/git_commands/config.go:110).
+      ...(upstreamConfig?.merge === undefined ? {} : { upstreamBranch: upstreamConfig.merge.replace(/^refs\/heads\//, "") }),
+    }
+  })
 }
 
 export async function listRemoteBranches(runner: CommandRunner, remote: string): Promise<readonly RemoteBranch[]> {
@@ -83,24 +121,32 @@ export async function listRemoteBranches(runner: CommandRunner, remote: string):
   })
 }
 
-export async function listRemotes(runner: CommandRunner, includeBranches = false): Promise<readonly Remote[]> {
-  const names = await listRemoteNames(runner)
+/**
+ * lazygit sorts remotes with `origin` pinned first, then case-insensitively by name
+ * (pkg/commands/git_commands/remote_loader.go:55-64) — "we want origin at the top because we'll be
+ * most likely to want it".
+ */
+function compareRemoteNames(left: string, right: string): number {
+  if (left === "origin") return -1
+  if (right === "origin") return 1
+  return left.toLowerCase().localeCompare(right.toLowerCase())
+}
+
+/**
+ * Every remote's URLs from the one `git config --get-regexp` `listBranches` already ran, rather
+ * than a `git remote get-url` per remote per direction — lazygit's `getRemotesFromConfig`
+ * (pkg/commands/git_commands/remote_loader.go:68-110). Pass `config` to reuse that read; omit it
+ * and this loads its own.
+ */
+export async function listRemotes(runner: CommandRunner, includeBranches = false, config?: RepoConfig): Promise<readonly Remote[]> {
+  const resolvedConfig = config ?? await loadRepoConfig(runner)
+  const names = [...resolvedConfig.remotes.keys()].sort(compareRemoteNames)
   return Promise.all(
     names.map(async (name) => {
-      let fetchUrl: string | undefined
-      let pushUrl: string | undefined
-      try {
-        const result = await runner.run(["remote", "get-url", "--", name], { readOnly: true })
-        const trimmed = result.stdout.trim()
-        if (trimmed.length > 0) fetchUrl = trimmed
-      } catch {}
-      try {
-        const result = await runner.run(["remote", "get-url", "--push", "--", name], { readOnly: true })
-        const trimmed = result.stdout.trim()
-        if (trimmed.length > 0) pushUrl = trimmed
-      } catch {}
-      if (pushUrl === undefined && fetchUrl !== undefined) pushUrl = fetchUrl
-      if (fetchUrl === undefined && pushUrl !== undefined) fetchUrl = pushUrl
+      const entry = resolvedConfig.remotes.get(name)!
+      // git falls back to the fetch URL when no `pushurl` is configured, and vice versa.
+      const fetchUrl = entry.fetchUrl ?? entry.pushUrl
+      const pushUrl = entry.pushUrl ?? entry.fetchUrl
       const branches = includeBranches ? await listRemoteBranches(runner, name) : undefined
       return {
         name,
@@ -113,8 +159,12 @@ export async function listRemotes(runner: CommandRunner, includeBranches = false
 }
 
 export async function listBranches(runner: CommandRunner): Promise<BranchListing> {
-  const localBranches = await listLocalBranches(runner)
-  const remotes = await listRemotes(runner)
+  // One config read feeds both loaders: the branch upstreams and every remote's URLs live in it.
+  const config = await loadRepoConfig(runner)
+  const [localBranches, remotes] = await Promise.all([
+    listLocalBranches(runner, config),
+    listRemotes(runner, false, config),
+  ])
   const current = localBranches.find((branch) => branch.isCurrent)?.name
   return {
     ...(current === undefined ? {} : { current }),
@@ -157,7 +207,9 @@ export async function renameBranch(runner: CommandRunner, oldName: string, newNa
 export async function fetchRemote(runner: CommandRunner, remote: string): Promise<void> {
   const remotes = await listRemoteNames(runner)
   if (!remotes.includes(remote)) throw new Error(`remote does not exist: ${remote}`)
-  await runner.run(["fetch", "--", remote])
+  // lazygit's FetchRemote builds with PromptOnCredentialRequest (sync.go:127-132), which routes it
+  // through runAndStream and so into the Git output: block (cmd_obj_runner.go:38-40,234-246).
+  await runner.run(["fetch", "--", remote], { streamOutput: true })
 }
 
 function splitRemoteRef(remoteRef: string, remotes: readonly string[]): { readonly remote: string; readonly branch: string } {

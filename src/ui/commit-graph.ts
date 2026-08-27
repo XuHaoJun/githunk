@@ -1,4 +1,6 @@
 import type { CommitSummary } from "../domain/commit"
+import type { ColorInput } from "@opentui/core"
+
 
 /**
  * Port of lazygit `pkg/gui/presentation/graph/{graph,cell}.go`.
@@ -10,7 +12,7 @@ import type { CommitSummary } from "../domain/commit"
  * the graph column so subjects still line up.
  */
 
-export type GraphSegment = { readonly text: string; readonly color?: string | undefined }
+export type GraphSegment = { readonly text: string; readonly color?: ColorInput | undefined }
 export type CommitGraphRow = { readonly text: string; readonly segments: readonly GraphSegment[] }
 
 type GraphCommit = Pick<CommitSummary, "oid" | "parentOids">
@@ -26,7 +28,7 @@ type Pipe = {
   readonly fromHash: string
   readonly toHash: string
   readonly kind: PipeKind
-  readonly color?: string | undefined
+  readonly color?: ColorInput | undefined
 }
 
 const COMMIT_SYMBOL = "○"
@@ -43,7 +45,7 @@ function right(pipe: Pipe): number {
   return Math.max(pipe.fromPos, pipe.toPos)
 }
 
-function getNextPipes(prevPipes: readonly Pipe[], commit: GraphCommit, color: string | undefined): Pipe[] {
+function getNextPipes(prevPipes: readonly Pipe[], commit: GraphCommit, color: ColorInput | undefined): Pipe[] {
   let maxPos = 0
   for (const pipe of prevPipes) {
     if (pipe.toPos > maxPos) maxPos = pipe.toPos
@@ -137,31 +139,31 @@ type Cell = {
   left: boolean
   right: boolean
   type: "connection" | "commit" | "merge"
-  color?: string | undefined
-  rightColor?: string | undefined
+  color?: ColorInput | undefined
+  rightColor?: ColorInput | undefined
 }
 
 function newCell(): Cell {
   return { up: false, down: false, left: false, right: false, type: "connection" }
 }
 
-function setUp(cell: Cell, color: string | undefined): void {
+function setUp(cell: Cell, color: ColorInput | undefined): void {
   cell.up = true
   cell.color = color
 }
 
-function setDown(cell: Cell, color: string | undefined): void {
+function setDown(cell: Cell, color: ColorInput | undefined): void {
   cell.down = true
   cell.color = color
 }
 
-function setLeft(cell: Cell, color: string | undefined): void {
+function setLeft(cell: Cell, color: ColorInput | undefined): void {
   cell.left = true
   // A vertical run owns the cell colour; horizontals only claim an otherwise idle cell.
   if (!cell.up && !cell.down) cell.color = color
 }
 
-function setRight(cell: Cell, color: string | undefined, override: boolean): void {
+function setRight(cell: Cell, color: ColorInput | undefined, override: boolean): void {
   cell.right = true
   if (cell.rightColor === undefined || override) cell.rightColor = color
 }

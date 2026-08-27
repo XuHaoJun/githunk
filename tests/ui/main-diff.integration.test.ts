@@ -1,40 +1,43 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { TextAttributes } from "@opentui/core"
+import { TextAttributes, type RGBA } from "@opentui/core"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import type { TempRepository } from "../helpers/temp-repository"
 
-/** The main pane's spans on `row`, clipped to the pane's own text window, in paint order. */
-function mainSpans(harness: ShellHarness, row: number): Array<{ text: string; fg: number[]; attributes: number }> {
+
+/** The main pane's spans on `row`, clipped to its own text window, in paint order. */
+function mainSpans(harness: ShellHarness, row: number): Array<{ text: string; fg: RGBA; attributes: number }> {
   const geometry = harness.app.view!.paneTextGeometry("main")!
   const line = harness.captureSpans().lines[row]
   expect(line).toBeDefined()
-  const out: Array<{ text: string; fg: number[]; attributes: number }> = []
+  const out: Array<{ text: string; fg: RGBA; attributes: number }> = []
   let x = 0
   for (const span of line!.spans) {
     const end = x + span.width - 1
     if (end >= geometry.screenX && x <= geometry.screenX + geometry.width - 1) {
-      out.push({ text: span.text, fg: span.fg.toInts(), attributes: span.attributes })
+      out.push({ text: span.text, fg: span.fg, attributes: span.attributes })
     }
     x = end + 1
   }
   return out
 }
 
-/** The first span on `row` whose text is not blank padding. */
-function mainSpanWith(harness: ShellHarness, row: number, needle: string): { text: string; fg: number[]; attributes: number } {
+/** The first span on `row` whose text contains `needle`. */
+function mainSpanWith(harness: ShellHarness, row: number, needle: string): { text: string; fg: RGBA; attributes: number } {
   const spans = mainSpans(harness, row)
   const found = spans.find((span) => span.text.includes(needle))
   expect(found, `no span containing ${JSON.stringify(needle)} on row ${row}: ${JSON.stringify(spans)}`).toBeDefined()
   return found!
 }
 
-const WHITE = [255, 255, 255, 255]
-/** OpenTUI's `green(...)`: CSS `green`. */
-const DIFF_ADDITION_FG = [0, 128, 0, 255]
-/** OpenTUI's `red(...)`: CSS `red`. */
-const DIFF_DELETION_FG = [255, 0, 0, 255]
-/** OpenTUI's `cyan(...)`: CSS `cyan`. */
-const DIFF_HUNK_HEADER_FG = [0, 255, 255, 255]
+function expectDefault(color: RGBA): void {
+  expect(color.intent).toBe("default")
+}
+
+function expectIndexed(color: RGBA, slot: number): void {
+  expect(color.intent).toBe("indexed")
+  expect(color.slot).toBe(slot)
+}
+
 
 describe("main pane diff rendering", () => {
   let harness: ShellHarness | undefined
@@ -57,23 +60,23 @@ describe("main pane diff rendering", () => {
     await harness.pressKey("2")
 
     const top = harness.app.view!.paneTextGeometry("main")!.screenY
-    // `diff --git` is a file header: default foreground, no attributes.
     const fileHeader = mainSpanWith(harness, top, "diff --git")
-    expect(fileHeader.fg).toEqual(WHITE)
+    expectDefault(fileHeader.fg)
     expect(fileHeader.attributes).toBe(0)
-    // `index …` is metadata: dim, default foreground.
+    // `index …` is metadata, dimmed but still terminal-default foreground.
     const metadata = mainSpanWith(harness, top + 1, "index ")
     expect(metadata.attributes & TextAttributes.DIM).toBe(TextAttributes.DIM)
-    expect(metadata.fg).toEqual(WHITE)
-    // The `@@` header is cyan.
-    expect(mainSpanWith(harness, top + 4, "@@ -1,4 +1,3 @@").fg).toEqual(DIFF_HUNK_HEADER_FG)
+    expectDefault(metadata.fg)
+    // The `@@` header is ANSI cyan.
+    const hunkHeader = mainSpanWith(harness, top + 4, "@@ -1,4 +1,3 @@")
+    expectIndexed(hunkHeader.fg, 6)
     // Source lines carry a dim line-number gutter ahead of the diff body.
     expect(mainSpans(harness, top + 5)[0]!.attributes & TextAttributes.DIM).toBe(TextAttributes.DIM)
-    expect(mainSpanWith(harness, top + 6, "-two").fg).toEqual(DIFF_DELETION_FG)
-    expect(mainSpanWith(harness, top + 7, "+TWO").fg).toEqual(DIFF_ADDITION_FG)
-    // A context line's body stays unstyled.
+    expectIndexed(mainSpanWith(harness, top + 6, "-two").fg, 1)
+    expectIndexed(mainSpanWith(harness, top + 7, "+TWO").fg, 2)
+    // A context line's body stays terminal-default and unstyled.
     const context = mainSpanWith(harness, top + 8, " three")
-    expect(context.fg).toEqual(WHITE)
+    expectDefault(context.fg)
     expect(context.attributes).toBe(0)
   })
 
@@ -97,15 +100,15 @@ describe("main pane diff rendering", () => {
     const top = harness.app.view!.paneTextGeometry("main")!.screenY
     // `git show`'s header and stat come before the patch, and carry no diff styling.
     const header = mainSpanWith(harness, top, "commit ")
-    expect(header.fg).toEqual(WHITE)
+    expectDefault(header.fg)
     expect(header.attributes).toBe(0)
     const stat = mainSpanWith(harness, top + 8, "a.txt |")
     expect(stat.attributes).toBe(0)
     // The patch's own rows are styled from `diff --git` on: 11 rows of preamble in this fixture.
     expect(mainSpanWith(harness, top + 12, "index ").attributes & TextAttributes.DIM).toBe(TextAttributes.DIM)
-    expect(mainSpanWith(harness, top + 15, "@@ -1,2 +1,3 @@").fg).toEqual(DIFF_HUNK_HEADER_FG)
-    expect(mainSpanWith(harness, top + 17, "-two").fg).toEqual(DIFF_DELETION_FG)
-    expect(mainSpanWith(harness, top + 18, "+TWO").fg).toEqual(DIFF_ADDITION_FG)
+    expectIndexed(mainSpanWith(harness, top + 15, "@@ -1,2 +1,3 @@").fg, 6)
+    expectIndexed(mainSpanWith(harness, top + 17, "-two").fg, 1)
+    expectIndexed(mainSpanWith(harness, top + 18, "+TWO").fg, 2)
     expect(mainSpans(harness, top + 18)[0]!.attributes & TextAttributes.DIM).toBe(TextAttributes.DIM)
   })
 
@@ -122,7 +125,9 @@ describe("main pane diff rendering", () => {
     })
     await harness.pressKey("2")
     await harness.pressKey("0")
-    for (let page = 0; page < 12; page++) await harness.pressKey("d", { ctrl: true })
+    // `.` is the page scroll of the focused main view (lazygit's `ViewSelectionController`);
+    // `<ctrl+d>` is the *global* scroll, and moves only `gui.scrollHeight` lines.
+    for (let page = 0; page < 12; page++) await harness.pressKey(".")
     expect(harness.app.view!.mainScrollY).toBeGreaterThan(100)
 
     // Every row of this diff body is an addition or a deletion, so the first row of the
@@ -131,7 +136,8 @@ describe("main pane diff rendering", () => {
     const top = harness.app.view!.paneTextGeometry("main")!.screenY
     const body = mainSpans(harness, top).find((span) => span.text.startsWith("+") || span.text.startsWith("-"))
     expect(body).toBeDefined()
-    expect([DIFF_ADDITION_FG, DIFF_DELETION_FG]).toContainEqual(body!.fg)
+    expect(body!.fg.intent).toBe("indexed")
+    expect([1, 2]).toContain(body!.fg.slot)
   })
 })
 

@@ -376,9 +376,10 @@ describe("lazygit core UI acceptance", () => {
     await harness.flush()
     await harness.settle()
     await harness.flush()
-    expect(view.branchesPanel.child).toBeDefined()
-    expect(view.branchesPanel.child?.value.kind).toBe("remote-branches")
-    expect(view.branchesPanel.child?.value.remote).toBe("origin")
+    const remoteChild = view.branchesPanel.child
+    expect(remoteChild).toBeDefined()
+    expect(remoteChild?.value.kind).toBe("remote-branches")
+    if (remoteChild?.value.kind === "remote-branches") expect(remoteChild.value.remote).toBe("origin")
     expect(view.renderedListText("branches")).toContain("origin/master")
     expect(view.mainContent?.source).toBe("remote-branch")
     await harness.pressKey("ESCAPE")
@@ -410,11 +411,12 @@ describe("lazygit core UI acceptance", () => {
     expect(view.selectedListId("branches")).toBe("tag:refs/tags/light")
     await view.whenPreviewSettled().catch(() => {})
     await harness.flush()
+    // tags_controller.go:101-123: the tag's own info, a `---` rule, then its commit graph.
     expect(view.mainContent?.source).toBe("tag")
-    let tagPlain = view.mainContent?.plainText ?? ""
-    expect(tagPlain).toContain("light")
-    expect(tagPlain).toContain("lightweight")
-    expect(tagPlain).toMatch(/[0-9a-f]{7}/)
+    let tagPreamble = view.mainContent?.preamble ?? ""
+    expect(tagPreamble).toContain("Lightweight tag: light")
+    expect(tagPreamble).toContain("---")
+    expect(view.mainContent?.ansi?.text ?? "").toMatch(/[0-9a-f]{7}/)
     attemptsTag = 0
     while (view.selectedListId("branches") !== "tag:refs/tags/v1" && attemptsTag < 8) {
       await harness.pressKey("j")
@@ -433,23 +435,25 @@ describe("lazygit core UI acceptance", () => {
     await view.whenPreviewSettled().catch(() => {})
     await harness.flush()
     expect(view.mainContent?.source).toBe("tag")
-    tagPlain = view.mainContent?.plainText ?? ""
-    expect(tagPlain).toContain("v1")
-    expect(tagPlain).toContain("annotated")
-    expect(tagPlain).toMatch(/[0-9a-f]{7}/)
-    expect(tagPlain).toContain("release one")
+    tagPreamble = view.mainContent?.preamble ?? ""
+    expect(tagPreamble).toContain("Annotated tag: v1")
+    expect(tagPreamble).toContain("release one")
+    expect(view.mainContent?.ansi?.text ?? "").toMatch(/[0-9a-f]{7}/)
 
-    // 7. Main and Files do not consume [/]
+    // 7. Main's brackets drive the working-tree scope ring; Files' brackets cycle its own tabs
     await harness.pressKey("0")
     await harness.flush()
     const tabBeforeMainBracket = view.activeBranchesTab
-    await harness.pressKey("[")
-    await harness.flush()
-    expect(view.activeBranchesTab).toBe(tabBeforeMainBracket)
-    await harness.pressKey("]")
-    await harness.flush()
-    expect(view.activeBranchesTab).toBe(tabBeforeMainBracket)
     const targetBeforeBracket = JSON.stringify(app.controller.state.reviewTarget)
+    await harness.pressKey("[")
+    await harness.settle()
+    expect(view.activeBranchesTab).toBe(tabBeforeMainBracket)
+    expect(JSON.stringify(app.controller.state.reviewTarget))
+      .toBe(JSON.stringify({ kind: "working-tree", scope: "unstaged" }))
+    await harness.pressKey("]")
+    await harness.settle()
+    expect(view.activeBranchesTab).toBe(tabBeforeMainBracket)
+    expect(JSON.stringify(app.controller.state.reviewTarget)).toBe(targetBeforeBracket)
     await harness.pressKey("2")
     await harness.flush()
     await harness.pressKey("[")

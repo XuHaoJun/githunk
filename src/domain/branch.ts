@@ -7,8 +7,25 @@ export type LocalBranch = {
   readonly committedAt?: string
   // TODO Task 5: make required once fixtures updated
   readonly subject?: string
-  // TODO Task 5: make required once fixtures updated
+  /** Raw `%(upstream:track)` — `[ahead 1, behind 2]`, `[gone]`, or empty. */
   readonly upstreamTrack?: string
+  /**
+   * lazygit's `AheadForPull`/`BehindForPull` (pkg/commands/models/branch.go:17-20): decimal counts
+   * against the upstream, or `"?"` when the upstream's ref is not in this repo — which is what
+   * distinguishes "up to date" from "we cannot tell". `parseUpstreamInfo`,
+   * pkg/commands/git_commands/branch_loader.go:466-481.
+   */
+  readonly aheadForPull?: string
+  readonly behindForPull?: string
+  /** lazygit's `UpstreamGone`: tracking a remote branch that has been deleted (`[gone]`). */
+  readonly upstreamGone?: boolean
+  /**
+   * `branch.<name>.remote` and `branch.<name>.merge`. lazygit fills `UpstreamRemote`/
+   * `UpstreamBranch` from exactly these keys (branch_loader.go:120-127), which is why a branch can
+   * be known to track a remote whose ref is absent locally.
+   */
+  readonly upstreamRemote?: string
+  readonly upstreamBranch?: string
 }
 
 export type RemoteBranch = {

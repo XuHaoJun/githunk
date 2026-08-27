@@ -11,12 +11,11 @@ export const ACTIONS = [
   // list and document navigation
   "next", "previous", "page-next", "page-previous", "goto-top", "goto-bottom",
   "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
-  "main-half-page-down", "main-half-page-up",
-  "hunk-next", "hunk-previous", "tab-next", "tab-previous",
+  "hunk-next", "hunk-previous", "tab-next", "tab-previous", "scope-next", "scope-previous",
   // review targets
   "mode-branch", "mode-working-tree", "mark-reviewed",
   // working tree
-  "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection",
+  "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection", "edit-file",
   // file tree
   "toggle-file-tree", "collapse-files", "expand-files",
   // commits
@@ -50,6 +49,12 @@ export type UiState = {
   readonly filesTab?: "files" | "worktrees" | "submodules"
   /** Whether the stash pane currently has an entry selected. */
   readonly hasSelectedStash: boolean
+  /** Whether the Files pane has a file row selected (as opposed to a directory or empty). */
+  readonly hasSelectedFile?: boolean
+  /** Whether the main pane is showing a diff document that can be edited. */
+  readonly hasMainDocument?: boolean
+  /** Whether the Commits pane is drilled into commit files with a file selected. */
+  readonly hasSelectedCommitFile?: boolean
 }
 
 export type Binding = {
@@ -284,7 +289,9 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["3"], action: "focus-branches", description: "branches pane" },
   { keys: ["4"], action: "focus-commits", description: "commits pane" },
   { keys: ["5"], action: "focus-stash", description: "stash pane" },
-  { keys: ["@"], action: "command-log", description: "log", menuDescription: "show, focus or hide the command log" },
+  // `Tr.OpenCommandLogMenu` (pkg/i18n/english.go:1853) behind Universal.ExtrasMenu, default "@"
+  // (pkg/config/user_config.go:1072, pkg/gui/keybindings.go:171-174).
+  { keys: ["@"], action: "command-log", description: "log", menuDescription: "view command log options" },
   { keys: ["l", "right", "tab"], action: "pane-next", description: "pane", displayKeys: "h/l", displayOnScreen: true, menuDescription: "focus the next pane" },
   { keys: ["h", "left", "shift+tab"], action: "pane-previous", description: "previous pane", menuDescription: "focus the previous pane" },
   { keys: [{ name: "+" }], action: "screen-mode-next", description: "zoom in", menuDescription: "enlarge the focused region" },
@@ -296,12 +303,14 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: [","], action: "page-previous", description: "page up" },
   { keys: [">", "end"], action: "goto-bottom", description: "go to bottom" },
   { keys: ["<", "home"], action: "goto-top", description: "go to top" },
-  { keys: ["J"], action: "main-scroll-down", description: "scroll main down" },
-  { keys: ["K"], action: "main-scroll-up", description: "scroll main up" },
+  // `<pgup>`/`<pgdown>`, `K`/`J` and `<ctrl+u>`/`<ctrl+d>` are one binding in lazygit —
+  // `scrollUpMain`/`scrollDownMain` with `scrollUpMain-alt1`/`-alt2` merged into it
+  // (pkg/config/user_config.go:1047-1052, pkg/gui/keybindings.go:87-100) — so they scroll the same
+  // `gui.scrollHeight` lines rather than one of them meaning "half a page".
+  { keys: ["J", "pagedown", "ctrl+d"], action: "main-scroll-down", description: "scroll main down" },
+  { keys: ["K", "pageup", "ctrl+u"], action: "main-scroll-up", description: "scroll main up" },
   { keys: ["L"], action: "main-scroll-right", description: "scroll main right" },
   { keys: ["H"], action: "main-scroll-left", description: "scroll main left" },
-  { keys: ["ctrl+d", "pagedown"], action: "main-half-page-down", description: "main half page down" },
-  { keys: ["ctrl+u", "pageup"], action: "main-half-page-up", description: "main half page up" },
 
   // ---- review targets ----
   { keys: ["b"], action: "mode-branch", description: "branch review", displayOnScreen: true, available: (model) => model.reviewTarget.kind !== "branch" },
@@ -334,14 +343,20 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["h"], action: "hunk-previous", description: "previous hunk", contexts: ["main"] },
   { keys: ["space"], action: "stage-selection", description: "stage", contexts: ["main"], displayOnScreen: true, available: lineActions, menuDescription: "stage the selected lines" },
   { keys: ["d"], action: "discard-selection", description: "discard", contexts: ["main"], displayOnScreen: true, available: (model, ui) => lineActions(model, ui) && ui.mainScope !== "staged", menuDescription: "discard the selected lines" },
+  { keys: ["e"], action: "edit-file", description: "edit", contexts: ["main"], displayOnScreen: true, available: (_model, ui) => ui.hasMainDocument === true, menuDescription: "open the file in an external editor, at the selected hunk" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["main"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["main"] },
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["main"], available: inCommit },
+  // The working-tree scope ring (all → staged → unstaged) is githunk's PRD §8.1 review-target
+  // selector; Main is the only context whose `[`/`]` are free, since side windows use them for tabs.
+  { keys: ["]"], action: "scope-next", description: "next scope", contexts: ["main"], displayOnScreen: true, available: writable, menuDescription: "cycle the working-tree scope: all, staged, unstaged" },
+  { keys: ["["], action: "scope-previous", description: "previous scope", contexts: ["main"], available: writable },
 
   // ---- files pane ----
   { keys: ["space"], action: "stage-file", description: "stage", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "stage or unstage the selected file or directory" },
   { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "discard the file's (or directory's) changes" },
   { keys: ["a"], action: "stage-all", description: "all", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "stage or unstage every file" },
+  { keys: ["e"], action: "edit-file", description: "edit", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "open the file in an external editor" },
   { keys: ["r"], action: "mark-reviewed", description: "reviewed", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "mark the file reviewed" },
   { keys: ["enter"], action: "inspect", description: "open", contexts: ["files"], displayOnScreen: true, menuDescription: "open the file in the main pane, or collapse a directory" },
   // pkg/config/user_config.go:1100-1106 — ToggleTreeView, CollapseAll, ExpandAll.
@@ -359,7 +374,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["D"], action: "branch-delete", description: "force delete", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local", menuDescription: "force delete the branch, even if unmerged" },
   { keys: ["r"], action: "branch-rename", description: "rename", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local" },
   { keys: ["f"], action: "fetch-remote", description: "fetch", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "remote", menuDescription: "fetch the selected remote" },
-  { keys: ["enter"], action: "inspect", description: "inspect", contexts: ["branches"], displayOnScreen: true },
+  { keys: ["enter"], action: "inspect", description: "view commits", contexts: ["branches"], displayOnScreen: true, menuDescription: "view commits" },
   { keys: ["/"], action: "filter", description: "filter", contexts: ["branches"], displayOnScreen: true },
   { keys: ["]"], action: "tab-next", description: "next tab", contexts: ["files", "branches", "commits"], displayOnScreen: true, menuDescription: "next tab" },
   { keys: ["["], action: "tab-previous", description: "previous tab", contexts: ["files", "branches", "commits"], displayOnScreen: true, menuDescription: "previous tab" },
@@ -367,6 +382,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["branches"] },
 
   // ---- commits pane ----
+  { keys: ["e"], action: "edit-file", description: "edit", contexts: ["commits"], displayOnScreen: true, available: (_model, ui) => ui.hasSelectedCommitFile === true, menuDescription: "open the file in an external editor" },
   { keys: ["enter"], action: "commit-drilldown", description: "inspect", contexts: ["commits"], displayOnScreen: true, available: onCommitsTab, menuDescription: "inspect this commit on its own" },
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["commits"], displayOnScreen: true, available: inCommit },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["commits"] },
@@ -381,8 +397,16 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["stash"] },
 
   // ---- command log ----
+  // lazygit binds these on the extras view (pkg/gui/keybindings.go:249-295). They duplicate the
+  // global entries above so that the handler can apply lazygit's autoscroll transition, which
+  // differs per key: every scroll clears the flag except goto-bottom, which sets it
+  // (pkg/gui/extras_panel.go:49,57,65,73,81,89).
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["command-log"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["command-log"] },
+  { keys: ["."], action: "page-next", description: "page down", contexts: ["command-log"] },
+  { keys: [","], action: "page-previous", description: "page up", contexts: ["command-log"] },
+  { keys: [">", "end"], action: "goto-bottom", description: "go to bottom", contexts: ["command-log"] },
+  { keys: ["<", "home"], action: "goto-top", description: "go to top", contexts: ["command-log"] },
 
   // ---- status pane ----
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["status"] },

@@ -1,25 +1,29 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { TextAttributes, parseColor } from "@opentui/core"
+import { TextAttributes, type RGBA } from "@opentui/core"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import { createRegistry, type UiState } from "../../src/ui/bindings"
 import { paneTabsPlainTitle } from "../../src/ui/pane-tabs"
-import { REFLOG_HASH_FG, SELECTED_LINE_BG, TAB_ACTIVE_FG, brightenAnsiForeground } from "../../src/ui/theme"
+import { REFLOG_HASH_FG } from "../../src/ui/theme"
 import { COMMITS_TABS, reflogRows } from "../../src/ui/panes/reflog-pane"
 
 /** The spans covering `[startX, endX]` on `row`, in paint order. */
 function spansAt(harness: ShellHarness, row: number, startX: number, endX: number) {
   const line = harness.captureSpans().lines[row]
   expect(line).toBeDefined()
-  const out: Array<{ text: string; x: number; fg: readonly number[]; bg: readonly number[]; attributes: number }> = []
+  const out: Array<{ text: string; x: number; fg: RGBA; bg: RGBA; attributes: number }> = []
   let x = 0
   for (const span of line!.spans) {
     const spanEnd = x + span.width - 1
     if (spanEnd >= startX && x <= endX) {
-      out.push({ text: span.text, x, fg: span.fg.toInts(), bg: span.bg.toInts(), attributes: span.attributes })
+      out.push({ text: span.text, x, fg: span.fg, bg: span.bg, attributes: span.attributes })
     }
     x = spanEnd + 1
   }
   return out
+}
+
+function isIndexed(color: RGBA, slot: number): boolean {
+  return color.intent === "indexed" && color.slot === slot
 }
 
 /**
@@ -44,26 +48,23 @@ describe("panel 4 Reflog tab", () => {
     const win = view.geometry.windows.commits!
     const expected = paneTabsPlainTitle({ jumpKey: "4", tabs: COMMITS_TABS })
     expect(expected).toBe("[4]─Commits - Reflog")
-    const borderRow = harness.frame().split("\n")[win.y0]!
-    expect(borderRow.slice(win.x0 + 2, win.x0 + 2 + expected.length)).toBe(expected)
-
-    const activeGreen = parseColor(TAB_ACTIVE_FG).toInts()
     const commitsStart = win.x0 + 2 + "[4]─".length
     const commitsSpans = spansAt(harness, win.y0, commitsStart, commitsStart + "Commits".length - 1)
     const active = commitsSpans.find((s) => s.text.includes("Commits"))
     expect(active).toBeDefined()
-    expect(active!.fg).toEqual(activeGreen)
+    expect(isIndexed(active!.fg, 2)).toBe(true)
     expect(active!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
 
     const reflogStart = commitsStart + "Commits - ".length
     const reflogSpans = spansAt(harness, win.y0, reflogStart, reflogStart + "Reflog".length - 1)
-    expect(reflogSpans.every((s) => JSON.stringify(s.fg) !== JSON.stringify(activeGreen))).toBe(true)
+    expect(reflogSpans.every((s) => !isIndexed(s.fg, 2))).toBe(true)
+
 
     // gocui's drawTitle highlights the active tab only while the view is focused.
     await harness.pressKey("1")
     await harness.flush()
     const unfocused = spansAt(harness, win.y0, commitsStart, commitsStart + "Commits".length - 1)
-    expect(unfocused.every((s) => JSON.stringify(s.fg) !== JSON.stringify(activeGreen))).toBe(true)
+    expect(unfocused.every((s) => !isIndexed(s.fg, 2))).toBe(true)
     expect(harness.frame().split("\n")[win.y0]!).toContain("[4]─Commits - Reflog")
   })
 
@@ -81,8 +82,10 @@ describe("panel 4 Reflog tab", () => {
     await harness.pressKey("[")
     expect(view.activeCommitsTab).toBe("commits")
 
+    // Main's brackets belong to the working-tree scope ring and never touch panel 4's tabs.
     await harness.pressKey("0")
     await harness.pressKey("]")
+    await harness.settle()
     expect(view.activeCommitsTab).toBe("commits")
     // Panel 2 has its own tabs: the bracket cycles those and leaves panel 4 where it was.
     await harness.pressKey("2")
@@ -91,8 +94,8 @@ describe("panel 4 Reflog tab", () => {
     expect(view.activeFilesTab).toBe("worktrees")
 
     const registry = createRegistry()
-    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBeUndefined()
-    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBeUndefined()
+    expect(registry.dispatch({ name: "]" }, { context: "main" })).toBe("scope-next")
+    expect(registry.dispatch({ name: "[" }, { context: "main" })).toBe("scope-previous")
     expect(registry.dispatch({ name: "]" }, { context: "commits" })).toBe("tab-next")
     expect(registry.dispatch({ name: "[" }, { context: "commits" })).toBe("tab-previous")
   })
@@ -121,10 +124,8 @@ describe("panel 4 Reflog tab", () => {
     expect(view.selectedListId("commits")).toBe(entries[0]!.id)
   })
 
-  test("the selected reflog row's hash is bright and bold, not navy on navy", async () => {
-    // view.go:665-680 brightens and bolds every rune of a highlighted line before swapping in
-    // SelBgColor. Without that, REFLOG_HASH_FG (#000080) painted on SELECTED_LINE_BG (#000080)
-    // made the selected row's hash invisible.
+  test("the selected reflog row's hash is bright and bold with ANSI intent", async () => {
+    // view.go:665-680 brightens and bolds every base ANSI rune before swapping in SelBgColor.
     harness = await createShellHarness({ commits: ["alpha commit", "beta commit"] })
     await harness.pressKey("4")
     await harness.pressKey("]")
@@ -139,16 +140,15 @@ describe("panel 4 Reflog tab", () => {
     const spans = spansAt(harness, geometry.screenY, geometry.screenX, geometry.screenX + geometry.width - 1)
     const hash = spans.find((s) => s.text.trim().startsWith(shortOid.slice(0, 4)))
     expect(hash).toBeDefined()
-    expect(hash!.bg).toEqual(parseColor(SELECTED_LINE_BG).toInts())
-    expect(hash!.fg).not.toEqual(hash!.bg)
-    expect(hash!.fg).toEqual(parseColor(brightenAnsiForeground(REFLOG_HASH_FG)).toInts())
+    expect(isIndexed(hash!.bg, 4)).toBe(true)
+    expect(isIndexed(hash!.fg, 12)).toBe(true)
     expect(hash!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
 
-    // The row below it is unhighlighted, so its hash keeps lazygit's plain FgBlue.
+    // The row below it is unhighlighted, so its hash keeps lazygit's plain ANSI blue.
     const below = spansAt(harness, geometry.screenY + 1, geometry.screenX, geometry.screenX + geometry.width - 1)
     const plainHash = below.find((s) => s.text.trim().startsWith(entries[1]!.shortOid.slice(0, 4)))
     expect(plainHash).toBeDefined()
-    expect(plainHash!.fg).toEqual(parseColor(REFLOG_HASH_FG).toInts())
+    expect(isIndexed(plainHash!.fg, 4)).toBe(true)
   })
 
   test("selecting a reflog entry previews that commit in the main pane", async () => {

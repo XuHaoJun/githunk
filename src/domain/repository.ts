@@ -1,8 +1,9 @@
 import type { StashEntry } from "./stash"
 import type { UpstreamRequired } from "../git/sync"
-import type { CommandRecord } from "./command"
+import type { CommandLogLine } from "./command"
 import type { CommitSummary } from "./commit"
 import type { BranchListing } from "./branch"
+import type { PullRequest } from "./pull-request"
 import type { TagSummary } from "./tag"
 import type { ReflogEntry } from "./reflog"
 import type { Worktree } from "./worktree"
@@ -27,6 +28,12 @@ export type AppModel = {
   readonly branch: string
   readonly upstream?: string
   readonly branches?: BranchListing
+  /**
+   * Branch name → its pull request, keyed as `pullRequestsByBranch` keys them. Absent until the
+   * background refresh has asked `gh`, and absent for good where `gh` is unavailable — so the
+   * branches panel must render identically without it.
+   */
+  readonly pullRequests?: Readonly<Record<string, PullRequest>>
   readonly tags?: readonly TagSummary[]
   /** `git log -g` for HEAD, backing panel 4's Reflog tab. */
   readonly reflog?: readonly ReflogEntry[]
@@ -60,6 +67,14 @@ export type AppModel = {
     readonly reason: string
   }
   readonly banner?: string
-  readonly commandLog: readonly CommandRecord[]
+  readonly commandLog: readonly CommandLogLine[]
+  /**
+   * How many writes to the log have armed autoscroll — lazygit assigns `Autoscroll = true` in
+   * `LogAction`/`LogCommand` (pkg/gui/command_log_panel.go:38,62) and not in the `prefixWriter` or
+   * the header (pkg/gui/extras_panel.go:109-119, command_log_panel.go:70-85). A count rather than
+   * the newest write's kind, because one controller action produces many snapshots but only the
+   * last one reaches the view (src/app/create-app.ts:244); see `CommandLog.autoscrollArms`.
+   */
+  readonly commandLogAutoscrollArms?: number
   readonly title: string
 }

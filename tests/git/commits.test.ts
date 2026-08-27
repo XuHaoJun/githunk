@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
 import { GitRunner } from "../../src/git/runner"
 import { listCommits, loadCommit, loadCommitFilePatch, parseCommitLog } from "../../src/git/commits"
+import { recordingRunner } from "../helpers/recording-runner"
 
 describe("commit history loaders", () => {
   test("does not treat control separators in free-form fields as delimiters", () => {
@@ -62,11 +63,14 @@ describe("commit history loaders", () => {
     expect(details.preamble).toContain("1 file changed")
     expect(details.preamble).not.toContain("diff --git")
     expect(details.document.text).toContain("diff --git")
-    const file = await loadCommitFilePatch(runner, oid, "space name.txt")
+    // loadCommitFilePatch is readOnly, so it is no longer logged (readOnly implies dontLog) — spy on
+    // the argv directly instead of reading it back out of the command log, to keep checking that the
+    // filename is scoped safely behind `--` rather than treated as a revision or option.
+    const spyRunner = recordingRunner(runner)
+    const file = await loadCommitFilePatch(spyRunner, oid, "space name.txt")
     expect(file.files).toHaveLength(1)
     expect(file.text).toContain("+after")
-    const command = runner.log.records().at(-1)
-    expect(command?.args.slice(-2)).toEqual(["--", "space name.txt"])
+    expect(spyRunner.calls.at(-1)?.slice(-2)).toEqual(["--", "space name.txt"])
   })
 
   test("loads a large 5000-line patch without file-list fallback", async () => {

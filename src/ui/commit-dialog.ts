@@ -27,6 +27,26 @@ export function createCommitDialog(mode: CommitDialogMode, initialMessage = ""):
   return { mode, message: initialMessage }
 }
 
+export type CommitMessageParts = {
+  readonly summary: string
+  readonly description: string
+}
+
+/** Splits git's subject/body representation the same way lazygit fills its two text areas. */
+export function splitCommitMessage(message: string): CommitMessageParts {
+  const separator = message.indexOf("\n")
+  if (separator < 0) return { summary: message, description: "" }
+  const summary = message.slice(0, separator)
+  const description = message[separator + 1] === "\n" ? message.slice(separator + 2) : message.slice(separator + 1)
+  return { summary, description }
+}
+
+/** Joins the two lazygit-style fields into the message passed to `git commit -F -`. */
+export function joinCommitMessage(summary: string, description: string): string {
+  return description.length === 0 ? summary : `${summary}\n\n${description}`
+}
+
+
 export function reduceCommitDialog(state: CommitDialogState, event: CommitDialogEvent): { readonly state: CommitDialogState; readonly result?: CommitDialogResult } {
   if (event.kind === "cancel") return { state, result: { kind: "cancelled" } }
   if (event.kind === "insert") return { state: stateWithoutError({ ...state, message: state.message + event.text }), }
@@ -96,6 +116,10 @@ export function renderCommitDialog(state: CommitDialogState): string {
         : state.mode === "branch-rename" ? "Rename branch"
           : "Commit staged changes"
   const error = state.error === undefined ? "" : `\n! ${state.error}`
+  if (state.mode === "commit" || state.mode === "amend") {
+    const parts = splitCommitMessage(state.message)
+    return `${title}\n\nCommit summary\n${parts.summary}\n\nCommit description\n${parts.description}\n\nEnter submit · Tab description · Esc cancel${error}`
+  }
   return `${title}\n\n${state.message}\n\nCtrl+Enter confirm · Esc cancel${error}`
 }
 

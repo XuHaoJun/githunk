@@ -17,10 +17,12 @@ import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
 import { CommitMutations } from "../git/commit-mutations"
 import { checkoutRemoteTracking, createBranch, deleteBranch, fetchRemote, listBranches, listRemoteBranches, renameBranch, switchLocal, type CheckoutRemoteTrackingOptions, type CheckoutRemoteTrackingResult, type DeleteBranchOptions, type RemoteBranchSelection } from "../git/branches"
 import { listStashes, loadStash, createStash as createGitStash, applyStash as applyGitStash, popStash as popGitStash, dropStash as dropGitStash } from "../git/stash"
-import { fetch as fetchSync, pull as pullSync, push as pushSync, type PullOptions, type PushOptions, type PushResult } from "../git/sync"
+import { fetch as fetchSync, pull as pullSync, push as pushSync, type FetchOptions, type PullOptions, type PushOptions, type PushResult } from "../git/sync"
 import type { StashCreateOptions, StashDropOptions, StashEntry } from "../domain/stash"
 import type { TagPreview, TagSummary } from "../domain/tag"
 import { listTags, loadTagPreview } from "../git/tags"
+import { loadRefLog, refLogFullName, type RefLogTarget } from "../git/ref-log"
+import { pullRequestsByBranch, type PullRequest } from "../domain/pull-request"
 import type { ReflogEntry } from "../domain/reflog"
 import { listReflog } from "../git/reflog"
 import type { Worktree } from "../domain/worktree"
@@ -28,7 +30,11 @@ import { listWorktrees } from "../git/worktrees"
 import type { SubmoduleConfig } from "../domain/submodule"
 import { listSubmodules } from "../git/submodules"
 import { MutationQueue } from "./mutation-queue"
-export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>) => Promise<WorkingTreeSnapshot>
+import { LOG_ACTIONS } from "./log-actions"
+export type WorkingTreeLoader = (
+  target: Extract<ReviewTarget, { readonly kind: "working-tree" }>,
+  options?: { readonly background?: boolean },
+) => Promise<WorkingTreeSnapshot>
 export type BranchReviewLoader = (baseRef: string) => Promise<BranchReviewSnapshot>
 export type BranchListingLoader = () => Promise<BranchListing>
 export type CommitListLoader = (range: string, filter?: string) => Promise<readonly CommitSummary[]>
@@ -39,6 +45,7 @@ export type TagListLoader = () => Promise<readonly TagSummary[]>
 export type ReflogListLoader = () => Promise<readonly ReflogEntry[]>
 export type WorktreeListLoader = () => Promise<readonly Worktree[]>
 export type SubmoduleListLoader = () => Promise<readonly SubmoduleConfig[]>
+export type PullRequestListLoader = () => Promise<readonly PullRequest[]>
 
 
 export type AppControllerOptions = {
@@ -70,6 +77,11 @@ export type AppControllerOptions = {
   readonly loadSubmodules?: SubmoduleListLoader
   // alias for symmetry with tagsLoader; prefer loadSubmodules
   readonly submodulesLoader?: SubmoduleListLoader
+  /**
+   * Pull requests for the branches panel's dots. Absent — or failing, which is what an unavailable
+   * `gh` looks like — leaves the panel exactly as it renders without them.
+   */
+  readonly loadPullRequests?: PullRequestListLoader
   readonly mutations?: GitMutations
   readonly commitMutations?: CommitMutations
   readonly reviewStore?: ReviewStore
@@ -138,6 +150,7 @@ export class AppController {
   private readonly loadReflogListing: ReflogListLoader
   private readonly loadWorktreesListing: WorktreeListLoader
   private readonly loadSubmodulesListing: SubmoduleListLoader
+  private readonly loadPullRequestList: PullRequestListLoader | undefined
   private readonly loadCommitList: CommitListLoader
   private readonly loadCommitDetails: CommitLoader
   private readonly loadCommitFile: CommitFilePatchLoader
@@ -169,9 +182,9 @@ export class AppController {
       : options instanceof GitRunner
         ? new CommitMutations(runner)
         : options.commitMutations ?? new CommitMutations(runner)
-    this.loadSnapshot = load ?? ((target) => {
+    this.loadSnapshot = load ?? ((target, snapshotOptions) => {
       if (runner === undefined) throw new Error("AppController requires a GitRunner or loader")
-      return loadWorkingTree(runner, target.scope)
+      return loadWorkingTree(runner, target.scope, snapshotOptions ?? {})
     })
     this.loadBranchSnapshot = options instanceof GitRunner
       ? (baseRef) => loadBranchReview(options, baseRef)
@@ -209,6 +222,7 @@ export class AppController {
       : options.loadWorktrees ??
         options.worktreesLoader ??
         (runner !== undefined ? () => listWorktrees(runner) : async () => [] as readonly Worktree[])
+    this.loadPullRequestList = options instanceof GitRunner ? undefined : options.loadPullRequests
     this.loadSubmodulesListing = options instanceof GitRunner
       ? () => listSubmodules(options)
       : options.loadSubmodules ??
@@ -225,13 +239,62 @@ export class AppController {
       reviewStatuses: Object.create(null) as Record<string, ReviewFileState>,
       reviewSummary: { reviewed: 0, invalidated: 0, commits: 0, files: 0, additions: 0, deletions: 0 },
       loading: false,
-      commandLog: runner?.log.records() ?? [],
+      commandLog: runner?.log.lines() ?? [],
+      ...(runner?.log === undefined ? {} : { commandLogAutoscrollArms: runner.log.autoscrollArms() }),
       title: titleFor(target),
       commits: [],
     }
   }
   get state(): AppModel {
     return this.currentState
+  }
+
+  /**
+   * The log snapshot every state assignment shares. `exactOptionalPropertyTypes` is why
+   * `commandLogAutoscrollArms` comes back absent rather than `undefined` when there is no runner.
+   */
+  private commandLogSnapshot(): Pick<AppModel, "commandLog" | "commandLogAutoscrollArms"> {
+    const log = this.runner?.log
+    if (log === undefined) return { commandLog: this.currentState.commandLog }
+    return { commandLog: log.lines(), commandLogAutoscrollArms: log.autoscrollArms() }
+  }
+
+  /**
+   * The last pull requests fetched, kept so a branch refresh can re-key them against the new branch
+   * list without another network call — lazygit's `rebuildPullRequestsMap`
+   * (pkg/gui/controllers/helpers/refresh_helper.go:1819-1825).
+   */
+  private pullRequestList: readonly PullRequest[] = []
+
+  private rebuildPullRequests(): void {
+    if (this.pullRequestList.length === 0) return
+    const listing = this.currentState.branches
+    this.currentState = {
+      ...this.currentState,
+      pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? []),
+    }
+  }
+
+  /**
+   * Asks `gh` for this repo's pull requests and re-keys them by branch. A failure is swallowed:
+   * `gh` missing or unauthenticated is the common case, and lazygit likewise only logs when it
+   * cannot reach GitHub (refresh_helper.go:1840-1843).
+   */
+  async refreshPullRequests(): Promise<void> {
+    if (this.loadPullRequestList === undefined) return
+    try {
+      this.pullRequestList = await this.loadPullRequestList()
+    } catch {
+      this.pullRequestList = []
+      this.currentState = { ...this.currentState, ...this.commandLogSnapshot() }
+      return
+    }
+    const listing = this.currentState.branches
+    this.currentState = {
+      ...this.currentState,
+      pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? []),
+      ...this.commandLogSnapshot(),
+    }
   }
 
   async refresh(): Promise<void> {
@@ -272,7 +335,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         branches: branchesResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     } else {
       const error = branchesResult.reason
@@ -281,14 +344,14 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: branchWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     }
     if (stashesResult.status === "fulfilled") {
       this.currentState = {
         ...this.currentState,
         stashes: stashesResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     } else {
       const error = stashesResult.reason
@@ -297,14 +360,14 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: stashWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     }
     if (tagsResult.status === "fulfilled") {
       this.currentState = {
         ...this.currentState,
         tags: tagsResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     } else {
       const error = tagsResult.reason
@@ -313,7 +376,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: tagWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     }
     // A reflog is optional data (a fresh repo, `core.logAllRefUpdates=false` or an expired
@@ -322,7 +385,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         reflog: reflogResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     } else {
       const error = reflogResult.reason
@@ -331,7 +394,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: reflogWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     }
     // Worktrees and submodules are optional data too — a repository can have neither, and
@@ -341,7 +404,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         worktrees: worktreesResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     } else {
       const error = worktreesResult.reason
@@ -350,14 +413,14 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: worktreeWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     }
     if (submodulesResult.status === "fulfilled") {
       this.currentState = {
         ...this.currentState,
         submodules: submodulesResult.value,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     } else {
       const error = submodulesResult.reason
@@ -366,7 +429,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: submoduleWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     }
     const target = this.currentState.reviewTarget
@@ -381,24 +444,37 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner: branchWarning,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     }
     if (stashWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: stashWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner: stashWarning, ...this.commandLogSnapshot() }
     }
     if (tagWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: tagWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner: tagWarning, ...this.commandLogSnapshot() }
     }
     if (reflogWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: reflogWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner: reflogWarning, ...this.commandLogSnapshot() }
     }
     if (worktreeWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: worktreeWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner: worktreeWarning, ...this.commandLogSnapshot() }
     }
     if (submoduleWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: submoduleWarning, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner: submoduleWarning, ...this.commandLogSnapshot() }
     }
+    // The branch list just changed, so the cached pull requests need re-keying against it.
+    this.rebuildPullRequests()
+  }
+
+  /**
+   * lazygit's `RefreshOptions{Scope: []{FILES}}` — the working-tree half of a refresh and nothing
+   * else, which is what the 10-second background routine runs (pkg/gui/background.go:146-154).
+   * Queued behind any mutation in flight, so it cannot read a half-applied index.
+   */
+  async refreshFiles(): Promise<void> {
+    const target = this.currentState.reviewTarget
+    if (target.kind !== "working-tree") return
+    await this.mutationQueue.run(() => this.refreshTarget(target, { background: true }))
   }
 
   async refreshBranches(): Promise<string | undefined> {
@@ -407,8 +483,9 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         branches,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
+      this.rebuildPullRequests()
       return undefined
     } catch (error) {
       const banner = error instanceof GitCommandError
@@ -417,7 +494,7 @@ export class AppController {
       this.currentState = {
         ...this.currentState,
         banner,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
       return banner
     }
@@ -426,22 +503,30 @@ export class AppController {
     await this.switchLocalBranch(branch)
   }
   async switchLocalBranch(branch: string): Promise<void> {
+    this.logAction(LOG_ACTIONS.checkoutBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => switchLocal(runner, branch)))
   }
 
   async createBranch(branch: string, startPoint?: string): Promise<void> {
+    this.logAction(LOG_ACTIONS.createBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => createBranch(runner, branch, startPoint)))
   }
   async createStash(message: string, options: StashCreateOptions): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    // `handleStashSave`'s caller picks the label from which stash variant was invoked
+    // (files_controller.go:1300 vs :1282/:1482 -> :1516). githunk has no staged-only stash, but
+    // does have the untracked-files distinction lazygit labels separately here.
+    this.logAction(options.includeUntracked ? LOG_ACTIONS.stashIncludeUntrackedChanges : LOG_ACTIONS.stashAllChanges)
     await this.runMutation(() => this.requireRunnerOperation((runner) => createGitStash(runner, message, options)).then(() => undefined))
   }
   async applyStash(ref: string): Promise<void> {
     if (!this.ensureStashOperation()) return
+    this.logAction(LOG_ACTIONS.applyStash)
     await this.runMutation(() => this.requireRunnerOperation((runner) => applyGitStash(runner, ref)))
   }
   async popStash(ref: string): Promise<void> {
     if (!this.ensureStashOperation()) return
+    this.logAction(LOG_ACTIONS.popStash)
     await this.runMutation(async () => {
       await this.requireRunnerOperation((runner) => popGitStash(runner, ref))
       if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
@@ -452,6 +537,7 @@ export class AppController {
   }
   async dropStash(ref: string, options: StashDropOptions): Promise<void> {
     if (!this.ensureStashOperation()) return
+    this.logAction(LOG_ACTIONS.dropStash)
     await this.runMutation(async () => {
       await this.requireRunnerOperation((runner) => dropGitStash(runner, ref, options))
       if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
@@ -466,23 +552,27 @@ export class AppController {
       await this.refreshStashTarget(ref)
     })
   }
-  async fetch(remote?: string): Promise<void> {
+  async fetch(remote?: string, options: FetchOptions = {}): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
-    await this.runMutation(() => this.requireRunnerOperation((runner) => fetchSync(runner, remote)))
+    // The background fetch is `DontLog()` in lazygit (git_commands/sync.go:81): no command line
+    // and no action label, so a 60-second timer does not bury what the user actually ran.
+    if (options.background !== true) this.logAction(LOG_ACTIONS.fetch)
+    await this.runMutation(() => this.requireRunnerOperation((runner) => fetchSync(runner, remote, options)))
   }
   async pull(options: PullOptions = {}): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.pull)
     await this.mutationQueue.run(async () => {
       try {
         const result = await this.requireRunnerOperation((runner) => pullSync(runner, options))
         if (result.kind === "upstream-required") {
-          this.currentState = { ...this.currentState, upstreamChoice: result, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+          this.currentState = { ...this.currentState, upstreamChoice: result, ...this.commandLogSnapshot() }
           return
         }
         await this.refresh()
       } catch (error) {
         const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
-        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+        this.currentState = { ...this.currentState, banner, ...this.commandLogSnapshot() }
         throw error
       }
     })
@@ -491,6 +581,11 @@ export class AppController {
   async chooseUpstream(remote: string, branch: string): Promise<void> {
     const choice = this.currentState.upstreamChoice
     if (choice === undefined) return
+    // Setting the upstream is a distinct intent lazygit labels separately
+    // (remote_branches_controller.go:187, `Actions.SetBranchUpstream`; english.go:2210) before the
+    // pull/push it then performs; `pull`/`push` below add their own label, so this is deliberately
+    // the only site that logs twice per keypress.
+    this.logAction(LOG_ACTIONS.setBranchUpstream)
     const upstream = { remote, branch }
     if (choice.operation === "pull") {
       await this.pull({ upstream })
@@ -500,32 +595,36 @@ export class AppController {
   }
   async push(options: PushOptions = {}): Promise<PushResult> {
     if (!this.ensureWorkingTreeMutation()) return { kind: "pushed" }
+    this.logAction(LOG_ACTIONS.push)
     return this.mutationQueue.run(async () => {
       try {
         const result = await this.requireRunnerOperation((runner) => pushSync(runner, options))
         if (result.kind === "upstream-required") {
-          this.currentState = { ...this.currentState, upstreamChoice: result, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+          this.currentState = { ...this.currentState, upstreamChoice: result, ...this.commandLogSnapshot() }
           return result
         }
         await this.refresh()
         return result
       } catch (error) {
         const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
-        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+        this.currentState = { ...this.currentState, banner, ...this.commandLogSnapshot() }
         throw error
       }
     })
   }
 
   async deleteBranch(branch: string, options?: DeleteBranchOptions): Promise<void> {
+    this.logAction(LOG_ACTIONS.deleteLocalBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => deleteBranch(runner, branch, options)))
   }
 
   async renameBranch(oldName: string, newName: string): Promise<void> {
+    this.logAction(LOG_ACTIONS.renameBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => renameBranch(runner, oldName, newName)))
   }
 
   async fetchRemote(remote: string): Promise<void> {
+    this.logAction(LOG_ACTIONS.fetch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => fetchRemote(runner, remote)))
   }
 
@@ -541,13 +640,13 @@ export class AppController {
             ...listing,
             remotes: listing.remotes.map((candidate) => candidate.name === remote ? { ...candidate, branches } : candidate),
           },
-          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          ...this.commandLogSnapshot(),
         }
       } catch (error) {
         const banner = error instanceof GitCommandError
           ? (error.record.stderr || error.message)
           : error instanceof Error ? error.message : String(error)
-        this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+        this.currentState = { ...this.currentState, banner, ...this.commandLogSnapshot() }
         throw error
       }
     })
@@ -560,14 +659,13 @@ export class AppController {
         ...previousState,
         commits: history.commits,
         ...(history.warning === undefined ? {} : { banner: history.warning }),
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
     })
   }
 
-
-
   async checkoutRemoteTracking(remoteRef: string | RemoteBranchSelection, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult | undefined> {
+    this.logAction(LOG_ACTIONS.checkoutBranch)
     return this.runBranchMutation(() => this.requireRunnerOperation((runner) => typeof remoteRef === "string"
       ? checkoutRemoteTracking(runner, remoteRef, options)
       : checkoutRemoteTracking(runner, remoteRef, options)))
@@ -587,7 +685,7 @@ export class AppController {
           this.currentState = {
             ...this.currentState,
             banner: mismatch.message,
-            commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+            ...this.commandLogSnapshot(),
           }
           return result
         }
@@ -601,7 +699,7 @@ export class AppController {
         this.currentState = {
           ...this.currentState,
           banner,
-          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          ...this.commandLogSnapshot(),
         }
         throw error
       }
@@ -640,6 +738,9 @@ export class AppController {
   async loadCommitInspection(oid: string): Promise<CommitDetails> {
     return this.loadCommitDetails(oid)
   }
+  async loadBranchCommits(branch: string): Promise<readonly CommitSummary[]> {
+    return this.loadCommitList(`refs/heads/${branch}`)
+  }
 
   async loadCommitFileInspection(oid: string, path: string): Promise<DiffDocument> {
     return this.loadCommitFile(oid, path)
@@ -648,6 +749,16 @@ export class AppController {
   async loadTagInspection(tag: TagSummary): Promise<TagPreview> {
     if (this.runner === undefined) throw new Error("Tag inspection requires a GitRunner")
     return loadTagPreview(this.runner, tag)
+  }
+
+  /**
+   * A ref's commit graph, still carrying git's own SGR sequences. What panel 3 renders into the
+   * main pane for every selection it has, the way lazygit does
+   * (branches_controller.go:207 `GetGraphCmdObj`).
+   */
+  async loadRefLogInspection(target: RefLogTarget): Promise<string> {
+    if (this.runner === undefined) throw new Error("Ref log inspection requires a GitRunner")
+    return loadRefLog(this.runner, refLogFullName(target))
   }
 
   recordInspectionError(error: unknown): void {
@@ -659,7 +770,7 @@ export class AppController {
     this.currentState = {
       ...this.currentState,
       banner,
-      commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+      ...this.commandLogSnapshot(),
     }
   }
 
@@ -698,7 +809,7 @@ export class AppController {
           basePicker: picker,
           loading: false,
           ...(storeWarning === undefined ? {} : { banner: storeWarning }),
-          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          ...this.commandLogSnapshot(),
         }
         return
       }
@@ -788,11 +899,13 @@ export class AppController {
   }
   async commit(message: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.commit)
     await this.runMutation(() => this.commitMutations?.commit(message))
   }
 
   async amend(message: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.amendCommit)
     await this.runMutation(() => this.commitMutations?.amend(message))
   }
 
@@ -806,26 +919,31 @@ export class AppController {
   }
   async stageFile(path: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.stageFile)
     await this.runMutation(() => this.mutations?.stageFile(path))
   }
 
   async unstageFile(path: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.unstageFile)
     await this.runMutation(() => this.mutations?.unstageFile(path))
   }
 
   async applySelection(document: DiffDocument, includedLineIndexes: readonly number[], options: SelectionMutationOptions): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.applyPatch)
     await this.runMutation(() => this.mutations?.applySelection(document, includedLineIndexes, options))
   }
 
   async discardSelection(document: DiffDocument, includedLineIndexes: readonly number[], options?: Omit<SelectionMutationOptions, "reverse"> & { readonly reverse?: false }): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.applyPatch)
     await this.runMutation(() => this.mutations?.discardSelection(document, includedLineIndexes, options))
   }
 
   async discardFile(path: string, untracked = false): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.discardAllUnstagedChangesInFile)
     await this.runMutation(() => this.mutations?.discardFile(path, untracked))
   }
 
@@ -833,8 +951,19 @@ export class AppController {
   async toggleAllFiles(): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
     await this.mutationQueue.run(async () => {
+      // files_controller.go:555-557 returns NothingToStageForSubmodule before the LogAction at
+      // :559 when there is nothing left to stage or unstage — a clean tree must not write an
+      // action line for a loop that iterates zero files. Checked here, inside the queued
+      // callback, against the `files` this callback actually uses: `MutationQueue.run` chains
+      // rather than rejects, so a working-tree background refresh (same queue) can still be in
+      // flight when the guard runs. Checking `this.currentState.files` before enqueueing reads a
+      // value that may go stale by the time this callback executes — e.g. the refresh empties
+      // `files` while this callback is queued behind it, and a check made before enqueueing would
+      // have already passed on the old, non-empty snapshot.
       const files = this.currentState.files
+      if (files.length === 0) return
       const shouldStage = files.some((file) => file.untracked || file.worktreeStatus !== ".")
+      this.logAction(shouldStage ? LOG_ACTIONS.stageAllFiles : LOG_ACTIONS.unstageAllFiles)
       try {
         for (const file of files) {
           if (shouldStage) await this.mutations?.stageFile(file.path)
@@ -849,7 +978,7 @@ export class AppController {
         this.currentState = {
           ...this.currentState,
           banner,
-          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          ...this.commandLogSnapshot(),
         }
         throw error
       }
@@ -867,6 +996,27 @@ export class AppController {
     return false
   }
 
+  /**
+   * lazygit's `LogAction`, called from its UI controllers — the layer where one user intent
+   * becomes N git commands (pkg/gui/controllers/files_controller.go:544,559;
+   * pkg/gui/controllers/stash_controller.go:127,141,169;
+   * pkg/gui/controllers/sync_controller.go:167,197). This controller is githunk's equivalent: its
+   * mutation methods map one-to-one onto user intents, where `root-view.ts` corresponds to
+   * lazygit's keybinding table and views.
+   *
+   * Called after the cheap, synchronous guards (wrong `reviewTarget` kind and the like), but
+   * *before* any validation that itself needs a git command — `validateBranchName`'s
+   * `check-ref-format` (`src/git/branches.ts:41`) chief among them. So a mutation can still log
+   * its label and then be refused: an invalid branch name reaches `createBranch`/`renameBranch`/
+   * `deleteBranch`'s label before `check-ref-format` rejects it, and `push`/`pull` resolving
+   * `{kind:"upstream-required"}` or `checkoutRemoteTracking` returning `mismatch` do the same from
+   * reads only. What *is* guaranteed: that check-ref-format read is `dontLog: false`, so its own
+   * failure is logged under the label rather than leaving it orphaned above nothing.
+   */
+  private logAction(action: string): void {
+    this.runner?.log.logAction(action)
+  }
+
   private async runMutation(operation: () => Promise<void> | undefined): Promise<void> {
     if (operation === undefined) throw new Error("Mutations require a GitRunner")
     await this.mutationQueue.run(async () => {
@@ -880,7 +1030,7 @@ export class AppController {
         this.currentState = {
           ...this.currentState,
           banner,
-          commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+          ...this.commandLogSnapshot(),
         }
         throw error
       }
@@ -946,12 +1096,15 @@ export class AppController {
       return { commits: this.currentState.commits ?? [], warning }
     }
   }
-  private async refreshTarget(target: Extract<ReviewTarget, { readonly kind: "working-tree" }>): Promise<void> {
+  private async refreshTarget(
+    target: Extract<ReviewTarget, { readonly kind: "working-tree" }>,
+    options: { readonly background?: boolean } = {},
+  ): Promise<void> {
     const previousState = this.priorStashStateForRefresh ?? this.currentState
     const generation = ++this.generation
     this.publishIfCurrent(generation, { loading: true })
     try {
-      const snapshot = await this.loadSnapshot(target)
+      const snapshot = await this.loadSnapshot(target, options)
       if (generation !== this.generation) return
       const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
       if (generation !== this.generation) return
@@ -988,7 +1141,7 @@ export class AppController {
         reviewSummary: review.summary,
         commits: history.commits,
         loading: false,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
       }
       this.priorStashStateForRefresh = undefined
@@ -1000,7 +1153,7 @@ export class AppController {
       this.currentState = {
         ...previousState,
         banner,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
       this.priorStashStateForRefresh = undefined
     }
@@ -1029,12 +1182,12 @@ export class AppController {
         reviewSummary: review.summary,
         loading: false,
         title: titleFor(target, this.currentState.branch),
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
         ...(review.warning === undefined ? {} : { banner: review.warning }),
       }
     } catch (error) {
       const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
-      this.currentState = { ...this.currentState, banner, commandLog: this.runner?.log.records() ?? this.currentState.commandLog }
+      this.currentState = { ...this.currentState, banner, ...this.commandLogSnapshot() }
     }
   }
   private async refreshBranchTarget(baseRef: string): Promise<boolean> {
@@ -1076,7 +1229,7 @@ export class AppController {
         reviewSummary: this.reviewSummaryFor(review.statuses, snapshot.files, snapshot.commitCount),
         commits: history.commits,
         loading: false,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
         ...(selectionId === undefined ? {} : { selectionId }),
         ...(focusId === undefined ? {} : { focusId }),
@@ -1091,7 +1244,7 @@ export class AppController {
         ...this.currentState,
         loading: false,
         banner,
-        commandLog: this.runner?.log.records() ?? this.currentState.commandLog,
+        ...this.commandLogSnapshot(),
       }
       return false
     }

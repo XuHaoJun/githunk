@@ -30,6 +30,20 @@ export class FocusManager {
     this.onChange?.(this.active, this.logVisible)
   }
 
+  /**
+   * The visibility half of what the old direct `@` cycle did in one step (focus.ts's previous
+   * `handleKey` branch): flip `logVisible` and fire `onChange` the same way `focus()` does, so
+   * RootView's cascade — including re-arming the command log's autoscroll, `refreshCommandLog`'s
+   * "consume the batch's arm count on reopen" comparison — runs on a visibility change exactly as
+   * it always has, whether or not `active` also moves. lazygit's `t` menu item
+   * (extras_panel.go:19-29) and githunk's own double-click gesture on the horizontal splitter
+   * share this.
+   */
+  setLogVisible(visible: boolean): void {
+    this.logVisible = visible
+    this.onChange?.(this.active, this.logVisible)
+  }
+
   cycle(direction: "next" | "previous"): void {
     const next = direction === "next"
       ? nextFocus(this.active, this.logVisible)
@@ -37,24 +51,15 @@ export class FocusManager {
     this.focus(next)
   }
 
+  /**
+   * lazygit's `@` opens a menu (pkg/gui/keybindings.go:171-174 -> pkg/gui/extras_panel.go:12-38)
+   * rather than cycling, and RootView owns menus, so FocusManager only ever handles the numbered
+   * focus keys here.
+   */
   handleKey(key: string): boolean {
     const numbered = focusIdForKey(key)
-    if (numbered !== undefined) {
-      this.focus(numbered)
-      return true
-    }
-    if (key !== "@") return false
-
-    if (!this.logVisible) {
-      this.logVisible = true
-      this.active = "main"
-    } else if (this.active === COMMAND_LOG_FOCUS_ID) {
-      this.logVisible = false
-      this.active = "main"
-    } else {
-      this.active = COMMAND_LOG_FOCUS_ID
-    }
-    this.onChange?.(this.active, this.logVisible)
+    if (numbered === undefined) return false
+    this.focus(numbered)
     return true
   }
 }
