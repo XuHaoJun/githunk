@@ -65,3 +65,35 @@ export type ReviewDocumentIndex = Readonly<{
   fileIndexByKey: ReadonlyMap<string, number>
   commitByOid: ReadonlyMap<string, ReviewCommit>
 }>
+export type ReviewAnchor =
+  | Readonly<{ kind: "file"; fileKey: string; contentId: string }>
+  | Readonly<{
+      kind: "range"
+      fileKey: string
+      contentId: string
+      side: "old" | "new"
+      startLine: number
+      endLine: number
+      ownerHunkIndex: number
+      contextDigest: string
+    }>
+
+export type ReviewFeedback = Readonly<{
+  id: string
+  kind: "note" | "suggestion"
+  severity: "comment" | "blocking"
+  body: string
+  replacement?: string
+  anchor: ReviewAnchor
+  resolution: "active" | "stale" | "orphaned"
+  createdAt: string
+  updatedAt: string
+}>
+
+export type ReviewFeedbackDraft = Readonly<{
+  anchor: ReviewAnchor
+  kind: "note" | "suggestion"
+  severity: "comment" | "blocking"
+  body: string
+  replacement?: string
+}>

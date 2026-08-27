@@ -1,4 +1,4 @@
-import type { ReviewDocument } from "./types"
+import type { ReviewDocument, ReviewFeedback, ReviewFeedbackDraft } from "./types"
 
 export type ReviewSelection = Readonly<{ fileKey: string | null; hunkIndex: number }>
 export type ReviewRevealIntent = Readonly<{ fileTopToken: number; hunkToken: number; scrollToFeedback: boolean }>
@@ -16,6 +16,8 @@ export type ReviewState = Readonly<{
   selection: ReviewSelection
   reveal: ReviewRevealIntent
   filter: Readonly<{ query: string; scope: "all" | "unreviewed" | "changed" | "feedback" }>
+  feedback: readonly ReviewFeedback[]
+  draft: ReviewFeedbackDraft | null
   expandedGaps: readonly ExpandedGap[]
   lastSubmission: SubmittedReviewRef | null
 }>
@@ -29,6 +31,8 @@ export function createInitialReviewState(document: ReviewDocument): ReviewState 
     selection: { fileKey: firstFile?.key ?? null, hunkIndex: 0 },
     reveal: { fileTopToken: 0, hunkToken: 0, scrollToFeedback: false },
     filter: { query: "", scope: "all" },
+    feedback: [],
+    draft: null,
     expandedGaps: [],
     lastSubmission: null,
   }
