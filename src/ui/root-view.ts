@@ -144,10 +144,7 @@ export type RootViewOptions = {
   readonly onUnstageFile?: (path: string) => Promise<void>
   readonly onDiscardFile?: (path: string, mode: DiscardFileMode) => Promise<void>
   readonly onToggleAllFiles?: () => Promise<void>
-  readonly onModeChange?: (mode: "working-tree" | "branch") => Promise<void>
-  readonly onChooseBase?: (baseRef: string) => Promise<void>
   readonly onScopeChange?: (scope: WorkingTreeScope) => Promise<void>
-  readonly onCancelBase?: () => Promise<void>
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
@@ -240,10 +237,7 @@ export class RootView {
   private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
   private readonly onDiscardFile: ((path: string, mode: DiscardFileMode) => Promise<void>) | undefined
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
-  private readonly onModeChange: ((mode: "working-tree" | "branch") => Promise<void>) | undefined
-  private readonly onChooseBase: ((baseRef: string) => Promise<void>) | undefined
   private readonly onScopeChange: ((scope: WorkingTreeScope) => Promise<void>) | undefined
-  private readonly onCancelBase: (() => Promise<void>) | undefined
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
   private basePickerIndex = 0
@@ -357,13 +351,10 @@ export class RootView {
     this.clipboard = new ClipboardService(clipboardPort)
     this.onStageFile = options.onStageFile
     this.onApplyStash = options.onApplyStash
-    this.onModeChange = options.onModeChange
     this.onScopeChange = options.onScopeChange
     this.onQuit = options.onQuit
     this.onGeometryChange = options.onGeometryChange
     this.onMutationSettled = options.onMutationSettled
-    this.onChooseBase = options.onChooseBase
-    this.onCancelBase = options.onCancelBase
     this.onUnstageFile = options.onUnstageFile
     this.onDiscardFile = options.onDiscardFile
     this.onToggleAllFiles = options.onToggleAllFiles
@@ -638,7 +629,6 @@ export class RootView {
         key: String(index + 1),
         label: candidate,
         onPress: () => {
-          if (this.onChooseBase !== undefined) this.runUiMutation(() => this.onChooseBase!(candidate))
         },
       }))
       this.actionMenu.openMenu(
@@ -1235,8 +1225,6 @@ export class RootView {
       case "pull": this.actionPull(); return
       case "push": this.actionPush(); return
       case "refresh": this.actionRefresh(); return
-      case "mode-branch": this.actionModeBranch(); return
-      case "mode-working-tree": this.actionModeWorkingTree(); return
       case "filter": this.actionFilter(); return
       case "search-next": this.actionSearchNext(); return
       case "search-previous": this.actionSearchPrevious(); return
@@ -1283,7 +1271,6 @@ export class RootView {
       // in action-menu.ts:105 exists for callers that dispatch raw OpenTUI key names.
       const wasCopyMenu = this.copyMenuOpen && this.actionMenu.box.title === "Copy"
       const wasUpstream = (this.actionMenu.box.title ?? "").startsWith("Upstream")
-      const wasBasePicker = (this.actionMenu.box.title ?? "").startsWith("Choose review base")
       const wasPendingMismatch = this.actionMenu.box.title === "Remote tracking mismatch"
       if (this.actionMenu.handleKey(key.name)) {
         this.recomputeLayout()
@@ -1291,16 +1278,12 @@ export class RootView {
         if (wasUpstream && !this.actionMenu.isOpen() && key.name === "escape" && this.onCancelUpstream !== undefined) {
           this.runUiMutation(() => this.onCancelUpstream!())
         }
-        if (wasBasePicker && !this.actionMenu.isOpen() && key.name === "escape" && this.onCancelBase !== undefined) {
-          this.runUiMutation(() => this.onCancelBase!())
-        }
         if (wasPendingMismatch && !this.actionMenu.isOpen()) {
           if (key.name === "escape") this.actionBack()
           else if (key.name !== "escape") this.pendingRemoteMismatch = undefined
         }
         return
       }
-      return
     }
     if (this.menuOpen) {
       if (key.name === "escape" || key.name === "?") {
@@ -1384,14 +1367,11 @@ export class RootView {
     if (this.model.basePicker !== undefined) {
       if (this.mutationInFlight) return
       if (key.name === "escape") {
-        if (this.onCancelBase !== undefined) this.runUiMutation(() => this.onCancelBase!())
         return
       }
-      if (this.onChooseBase === undefined) return
       const count = this.model.basePicker.candidates.length
       const numericIndex = Number(key.name) - 1
       if (Number.isInteger(numericIndex) && numericIndex >= 0 && numericIndex < count) {
-        this.runUiMutation(() => this.onChooseBase!(this.model.basePicker!.candidates[numericIndex]!))
         return
       }
       if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
@@ -1400,7 +1380,6 @@ export class RootView {
         return
       }
       if (count > 0 && key.name === "enter") {
-        this.runUiMutation(() => this.onChooseBase!(this.model.basePicker!.candidates[this.basePickerIndex]!))
       }
       return
     }
@@ -1693,10 +1672,6 @@ export class RootView {
 
   private actionStageFile(): void {
     if (this.mutationInFlight) return
-    if (this.model.reviewTarget.kind === "branch") {
-      this.panes.main.box.bottomTitle = "Branch Review is read-only"
-      return
-    }
     const row = this.selectedFileRow()
     if (row === undefined) return
     if (row.kind === "directory") {
@@ -1717,10 +1692,6 @@ export class RootView {
 
   private actionDiscardFile(): void {
     if (this.mutationInFlight) return
-    if (this.model.reviewTarget.kind === "branch") {
-      this.panes.main.box.bottomTitle = "Branch Review is read-only"
-      return
-    }
     const row = this.selectedFileRow()
     if (row === undefined || this.onDiscardFile === undefined) return
     const path = row.path
@@ -1752,10 +1723,6 @@ export class RootView {
   private actionStageAll(): void {
     if (this.mutationInFlight) {
       this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
-      return
-    }
-    if (this.model.reviewTarget.kind === "branch") {
-      this.panes.main.box.bottomTitle = "Branch Review is read-only"
       return
     }
     if (this.onToggleAllFiles === undefined) return
@@ -1915,10 +1882,6 @@ export class RootView {
   private actionStageSelection(): void {
     if (this.mutationInFlight) return
     if (this.onApplySelection === undefined) return
-    if (this.model.reviewTarget.kind === "branch") {
-      this.panes.main.box.bottomTitle = "Branch Review is read-only"
-      return
-    }
     if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "all") {
       this.panes.main.box.bottomTitle = "Line actions disabled in All scope; press ] to choose staged or unstaged"
       return
@@ -1946,10 +1909,6 @@ export class RootView {
   private actionDiscardSelection(): void {
     if (this.mutationInFlight) return
     if (this.onDiscardSelection === undefined) return
-    if (this.model.reviewTarget.kind === "branch") {
-      this.panes.main.box.bottomTitle = "Branch Review is read-only"
-      return
-    }
     if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "all") {
       this.panes.main.box.bottomTitle = "Line actions disabled in All scope; press ] to choose staged or unstaged"
       return
@@ -2675,7 +2634,7 @@ export class RootView {
    */
   private commitAttemptAvailable(): boolean {
     if (this.model.reviewTarget.kind !== "working-tree") {
-      this.panes.main.box.bottomTitle = this.model.reviewTarget.kind === "stash" ? "Stash Review is read-only" : "Branch Review is read-only"
+      this.panes.main.box.bottomTitle = this.model.reviewTarget.kind === "stash" ? "Stash Review is read-only" : "Commit drill-down is read-only"
       return false
     }
     const active = this.focusManager.active
@@ -2762,19 +2721,7 @@ export class RootView {
     this.runUiMutation(() => this.onRefresh!())
   }
 
-  private actionModeBranch(): void {
-    if (this.onModeChange === undefined || this.mutationInFlight) return
-    this.invalidateRemoteCheckout()
-    this.panes.branches.box.bottomTitle = undefined
-    this.runUiMutation(() => this.onModeChange!("branch"))
-  }
 
-  private actionModeWorkingTree(): void {
-    if (this.onModeChange === undefined || this.mutationInFlight) return
-    this.invalidateRemoteCheckout()
-    this.panes.branches.box.bottomTitle = undefined
-    this.runUiMutation(() => this.onModeChange!("working-tree"))
-  }
 
   private actionFilter(): void {
     const target = this.currentFilterTarget()

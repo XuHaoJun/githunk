@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto"
 import type { ReviewTarget } from "../domain/review-target"
 
+export type MutableReviewTarget =
+  | Extract<ReviewTarget, { kind: "working-tree" }>
+  | Extract<ReviewTarget, { kind: "stash" }>
+
 export type FilePatchInput = {
   readonly currentPath?: string | undefined
   readonly path?: string | undefined
@@ -8,6 +12,7 @@ export type FilePatchInput = {
   readonly rawPatch?: string | undefined
   readonly patch?: string | undefined
 } | string
+
 function utf8(value: string): Uint8Array {
   return new TextEncoder().encode(value)
 }
@@ -25,20 +30,16 @@ export function sha256Tuple(parts: readonly string[]): string {
   return hash.digest("hex")
 }
 
-export function targetFingerprintParts(target: ReviewTarget): readonly string[] {
+function targetFingerprintParts(target: MutableReviewTarget): readonly string[] {
   switch (target.kind) {
     case "working-tree":
       return [target.kind, target.scope, "", ""]
-    case "branch":
-      return [target.kind, "", target.baseOid, target.headOid]
-    case "commit":
-      return [target.kind, "", target.oid, "", ""]
     case "stash":
       return [target.kind, "", target.ref, "", ""]
   }
 }
 
-export function targetKey(target: ReviewTarget): string {
+export function workingTreeTargetKey(target: MutableReviewTarget): string {
   return sha256Tuple(targetFingerprintParts(target))
 }
 
@@ -46,7 +47,8 @@ function filePatchParts(input: FilePatchInput): readonly [string, string, string
   if (typeof input === "string") return ["", "", input]
   return [input.currentPath ?? input.path ?? "", input.previousPath ?? "", input.rawPatch ?? input.patch ?? ""]
 }
-export function fingerprintFile(target: ReviewTarget, filePatch: FilePatchInput): string {
+
+export function fingerprintWorkingTreeFile(target: MutableReviewTarget, filePatch: FilePatchInput): string {
   const [currentPath, previousPath, rawPatch] = filePatchParts(filePatch)
-  return sha256Tuple([targetKey(target), currentPath, previousPath, rawPatch])
+  return sha256Tuple([workingTreeTargetKey(target), currentPath, previousPath, rawPatch])
 }

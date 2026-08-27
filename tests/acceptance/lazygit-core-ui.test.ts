@@ -257,7 +257,6 @@ describe("lazygit core UI acceptance", () => {
     }
     const oidForDrill = view.commitsSelectedOid!
     const targetBeforeDrill = JSON.stringify(app.controller.state.reviewTarget)
-    const branchTargetBefore = JSON.stringify((app.controller.state as unknown as { branchReviewTarget?: unknown }).branchReviewTarget)
     const generationBefore = (app.controller as unknown as { generation?: number }).generation
     await harness.pressKey("4")
     await harness.flush()
@@ -269,7 +268,6 @@ describe("lazygit core UI acceptance", () => {
     expect(view.commitsPanel.child?.value.kind).toBe("commit-files")
     expect(view.commitsPanel.child?.value.oid).toBe(oidForDrill)
     expect(JSON.stringify(app.controller.state.reviewTarget)).toBe(targetBeforeDrill)
-    expect(JSON.stringify((app.controller.state as unknown as { branchReviewTarget?: unknown }).branchReviewTarget)).toBe(branchTargetBefore)
     if (generationBefore !== undefined) expect((app.controller as unknown as { generation?: number }).generation).toBe(generationBefore)
     const beforeFileSel = view.mainContent?.stableId
     await harness.pressKey("j")
@@ -298,7 +296,7 @@ describe("lazygit core UI acceptance", () => {
     expect(view.commitsSelectedOid).toBe(oidForDrill)
     expect(view.mainContent?.source).toBe("commit")
     expect(view.mainContent?.stableId).toBe(oidForDrill)
-    expect(JSON.stringify((app.controller.state as unknown as { branchReviewTarget?: unknown }).branchReviewTarget)).toBe(branchTargetBefore)
+
     // double-click path
     const commitsBox2 = harness.paneTextGeometry("commits")!
     await mouse.doubleClick(commitsBox2.screenX + 2, commitsBox2.screenY + 1)
@@ -311,7 +309,6 @@ describe("lazygit core UI acceptance", () => {
     }
     expect(view.commitsPanel.child?.value.kind).toBe("commit-files")
     expect(JSON.stringify(app.controller.state.reviewTarget)).toBe(targetBeforeDrill)
-    expect(JSON.stringify((app.controller.state as unknown as { branchReviewTarget?: unknown }).branchReviewTarget)).toBe(branchTargetBefore)
     const oidInChild = view.commitsPanel.child!.value.oid
     await harness.pressKey("ESCAPE")
     await harness.flush()
@@ -320,7 +317,7 @@ describe("lazygit core UI acceptance", () => {
     expect(view.commitsPanel.child).toBeUndefined()
     expect(view.commitsSelectedOid).toBe(oidInChild)
     expect(view.mainContent?.stableId).toBe(oidInChild)
-    expect(JSON.stringify((app.controller.state as unknown as { branchReviewTarget?: unknown }).branchReviewTarget)).toBe(branchTargetBefore)
+
 
     // 5. Panel 3 [/] wraps Branches/Remotes/Tags and preserves each selection
     await harness.pressKey("3")

@@ -4,7 +4,6 @@ export type DiscardFileMode = "all" | "unstaged"
 
 export type ReviewTarget =
   | { readonly kind: "working-tree"; readonly scope: WorkingTreeScope }
-  | { readonly kind: "branch"; readonly baseRef: string; readonly baseOid: string; readonly headOid: string }
   | { readonly kind: "commit"; readonly oid: string }
   | { readonly kind: "stash"; readonly ref: string }
 

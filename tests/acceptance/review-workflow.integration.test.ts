@@ -199,27 +199,6 @@ describe("v0.1 review workflow acceptance", () => {
     await controller.refresh()
     expect((await expectGit(clonePath, ["status", "--porcelain"])).stdout).toBe("")
 
-    await controller.switchMode("branch")
-    if (controller.state.basePicker !== undefined) await controller.setBranchBase("origin/main")
-    const branchTarget = controller.state.reviewTarget
-    expect(branchTarget.kind).toBe("branch")
-    if (branchTarget.kind !== "branch") throw new Error("expected Branch Review target")
-    expect(branchTarget.baseRef).toBe("refs/remotes/origin/main")
-    expect(controller.state.title).toBe(`agent vs ${branchTarget.baseRef}`)
-    expect(controller.state.reviewSummary?.commits).toBe(3)
-    expect((controller.state.commits ?? []).length).toBe(3)
-    expect(controller.state.files.map((file) => file.path)).toEqual(["notes.txt", "story.txt"])
-    const aggregatePatch = (await expectGit(clonePath, ["diff", "--no-ext-diff", "--no-color", "--find-renames", "--binary", `${branchTarget.baseRef}...HEAD`, "--"])).stdout
-    expect(controller.state.patches[0]?.text).toBe(aggregatePatch)
-    const aggregateFiles = controller.state.files
-    const commitOid = (controller.state.commits ?? [])[0]?.oid
-    expect(commitOid).toBeDefined()
-    const details = await controller.loadCommitInspection(commitOid!)
-    expect(details.oid).toBe(commitOid!)
-    expect(controller.state.reviewTarget.kind).not.toBe("commit")
-    expect(controller.state.files).toEqual(aggregateFiles)
-    expect(controller.state.patches[0]?.text).toBe(aggregatePatch)
-
 
     const checkout = await controller.checkoutRemoteTracking({ remote: "origin", branch: "main" })
     expect(checkout).toEqual({ kind: "created", localBranch: "main", remoteRef: "origin/main" })

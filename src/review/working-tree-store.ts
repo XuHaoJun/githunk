@@ -3,9 +3,9 @@ import { GitRunner } from "../git/runner"
 import type { ReviewDatabase } from "../domain/review-progress"
 import { LocalStateFile } from "../storage/local-state-file"
 
-const fileName = "githunk/review-state-v1.json"
+const fileName = "githunk/working-tree-review-state-v1.json"
 
-export function emptyReviewDatabase(): ReviewDatabase {
+export function emptyWorkingTreeReviewDatabase(): ReviewDatabase {
   return { version: 1, baseByBranch: {}, targets: {} }
 }
 
@@ -25,25 +25,25 @@ function isDatabase(value: unknown): value is ReviewDatabase {
   return true
 }
 
-export type ReviewStoreOptions = {
+export type WorkingTreeReviewStoreOptions = {
   readonly repositoryRoot?: string | undefined
   readonly runner?: GitRunner | undefined
   readonly onWarning?: ((warning: string) => void) | undefined
 }
 
-export class ReviewStore {
+export class WorkingTreeReviewStore {
   private readonly runner: GitRunner
   private readonly onWarning: ((warning: string) => void) | undefined
   private readonly file: LocalStateFile
   warning: string | undefined
 
-  constructor(repositoryRootOrOptions: string | ReviewStoreOptions) {
+  constructor(repositoryRootOrOptions: string | WorkingTreeReviewStoreOptions) {
     const options = typeof repositoryRootOrOptions === "string"
       ? { repositoryRoot: repositoryRootOrOptions }
       : repositoryRootOrOptions
     this.runner = options.runner ?? new GitRunner(options.repositoryRoot)
     this.onWarning = options.onWarning
-    this.file = new LocalStateFile({ runner: this.runner, relativePath: fileName, pathKind: "review-state" })
+    this.file = new LocalStateFile({ runner: this.runner, relativePath: fileName, pathKind: "working-tree-review-state" })
   }
 
   get path(): string {
@@ -53,16 +53,16 @@ export class ReviewStore {
   async load(): Promise<ReviewDatabase> {
     this.warning = undefined
     const text = await this.file.readText()
-    if (text === undefined) return emptyReviewDatabase()
+    if (text === undefined) return emptyWorkingTreeReviewDatabase()
     try {
       const parsed: unknown = JSON.parse(text)
       if (!isDatabase(parsed)) throw new Error("schema version is not 1")
       return parsed
     } catch {
       const corruptPath = await this.file.quarantine()
-      this.warning = `Review state was corrupt; moved to ${corruptPath}`
+      this.warning = `Working tree review state was corrupt; moved to ${corruptPath}`
       this.onWarning?.(this.warning)
-      return emptyReviewDatabase()
+      return emptyWorkingTreeReviewDatabase()
     }
   }
 

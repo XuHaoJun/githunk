@@ -294,24 +294,8 @@ export function createApp(options: CreateAppOptions): App {
     onToggleAllFiles: async () => {
       try { await controller.toggleAllFiles() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
-    onModeChange: async (mode) => {
-      if (mode === "branch") {
-        try { await screenController.openBranchReview() } catch (err) {
-          if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
-          throw err
-        }
-        return
-      }
-      try { await controller.switchMode(mode) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
     onScopeChange: async (scope) => {
       try { await controller.setWorkingTreeScope(scope) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onChooseBase: async (baseRef) => {
-      try { await controller.chooseBase(baseRef) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onCancelBase: async () => {
-      try { await controller.cancelBasePicker() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onApplySelection: async (document, indexes, reverse) => {
       if (!(screenController?.shouldRenderRepository() ?? true)) return
