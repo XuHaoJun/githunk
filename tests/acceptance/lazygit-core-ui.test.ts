@@ -376,9 +376,10 @@ describe("lazygit core UI acceptance", () => {
     await harness.flush()
     await harness.settle()
     await harness.flush()
-    expect(view.branchesPanel.child).toBeDefined()
-    expect(view.branchesPanel.child?.value.kind).toBe("remote-branches")
-    expect(view.branchesPanel.child?.value.remote).toBe("origin")
+    const remoteChild = view.branchesPanel.child
+    expect(remoteChild).toBeDefined()
+    expect(remoteChild?.value.kind).toBe("remote-branches")
+    if (remoteChild?.value.kind === "remote-branches") expect(remoteChild.value.remote).toBe("origin")
     expect(view.renderedListText("branches")).toContain("origin/master")
     expect(view.mainContent?.source).toBe("remote-branch")
     await harness.pressKey("ESCAPE")

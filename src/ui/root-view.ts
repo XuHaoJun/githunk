@@ -29,7 +29,7 @@ import {
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
 import { createBranchesPane, BRANCHES_JUMP_KEY, BRANCHES_TABS, NO_BRANCHES_THIS_REPO, type BranchRowOptions } from "./panes/branches-pane"
 import { localBranchRows } from "./panes/branches-pane"
-import { buildPaneTabsStrip, paneTabAtOffset } from "./pane-tabs"
+import { buildPanePlainTitle, buildPaneTabsStrip, paneTabAtOffset } from "./pane-tabs"
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
 import { tagRows } from "./panes/tags-pane"
 import { buildCommitRows, createCommitsPane } from "./panes/commits-pane"
@@ -103,6 +103,9 @@ const FILES_TAB_ORDER = ["files", "worktrees", "submodules"] as const
 const BRANCHES_TAB_ORDER = ["branches", "remotes", "tags"] as const
 /** Panel 4's tab keys, in the same order as `COMMITS_TABS`' labels. */
 const COMMITS_TAB_ORDER = ["commits", "reflog"] as const
+type BranchesPanelChild =
+  | { readonly kind: "remote-branches"; readonly remote: string }
+  | { readonly kind: "local-commits"; readonly branch: string }
 
 /** Ring order for the `[` / `]` scope-cycle keys in the main pane (PRD §8.1 review targets). */
 const SCOPE_ORDER: readonly WorkingTreeScope[] = ["all", "staged", "unstaged"]
@@ -130,6 +133,7 @@ export type RootViewOptions = {
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
   readonly loadCommitInspection?: (oid: string) => Promise<CommitDetails>
+  readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
   readonly loadCommitFileInspection?: (oid: string, path: string) => Promise<DiffDocument>
   readonly loadTagInspection?: (tag: TagSummary) => Promise<TagPreview>
   readonly loadRefLogInspection?: (target: RefLogTarget) => Promise<string>
@@ -265,6 +269,7 @@ export class RootView {
   private readonly onDropStash: ((ref: string) => Promise<void>) | undefined
   private readonly onInspectStash: ((ref: string) => Promise<void>) | undefined
   private readonly onBrowseRemote: ((remote: string) => Promise<void>) | undefined
+  private readonly loadBranchCommits: ((branch: string) => Promise<readonly CommitSummary[]>) | undefined
   private readonly onInspectBranch: ((branch: string) => Promise<void>) | undefined
   private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>) | undefined
   private readonly onFilterBranches: (() => Promise<void>) | undefined
@@ -285,7 +290,8 @@ export class RootView {
   private remoteCheckoutInFlight = false
   private branchFilter = ""
   private branchFilterActive = false
-  branchesPanel: PanelState<"branches" | "remotes" | "tags", { kind: "remote-branches"; remote: string }>
+  private branchCommitsRequest = 0
+  branchesPanel: PanelState<"branches" | "remotes" | "tags", BranchesPanelChild>
   commitsPanel: PanelState<"commits" | "reflog", { kind: "commit-files"; oid: string; details: CommitDetails }>
   filesPanel: PanelState<"files" | "worktrees" | "submodules", never>
   /**
@@ -303,6 +309,7 @@ export class RootView {
   private installedMainTooSmall = false
   private mainLoading = false
   private previewInflight: Promise<void> = Promise.resolve()
+  private branchCommitsInflight: Promise<void> = Promise.resolve()
   private readonly registry = createRegistry()
   private readonly onQuit: (() => void) | undefined
   private readonly onGeometryChange: ((state: PersistedUiState) => void) | undefined
@@ -348,8 +355,8 @@ export class RootView {
     this.onCreateBranch = options.onCreateBranch
     this.onDeleteBranch = options.onDeleteBranch
     this.onRenameBranch = options.onRenameBranch
-    this.onInspectBranch = options.onInspectBranch
     this.onBrowseRemote = options.onBrowseRemote
+    this.onInspectBranch = options.onInspectBranch
     this.onCheckoutRemoteTracking = options.onCheckoutRemoteTracking
     this.onFilterBranches = options.onFilterBranches
     this.onEditFile = options.onEditFile
@@ -357,6 +364,7 @@ export class RootView {
     this.loadCommitFileInspection = options.loadCommitFileInspection
     this.loadTagInspection = options.loadTagInspection
     this.loadRefLogInspection = options.loadRefLogInspection
+    this.loadBranchCommits = options.loadBranchCommits
     this.onPreviewError = options.onPreviewError
     this.onCommitMessage = options.onCommitMessage
     this.onAmendMessage = options.onAmendMessage
@@ -497,6 +505,7 @@ export class RootView {
       this.clearDiscardState()
       this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
+      this.invalidateBranchCommitsRequest()
       this.pendingStashDrop = undefined
       this.panes.stash.box.bottomTitle = undefined
       this.panes.branches.box.bottomTitle = undefined
@@ -564,6 +573,7 @@ export class RootView {
     // produce has a handler, so no runtime cross-check is needed here.
   }
   update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean } = {}): void {
+    this.invalidateBranchCommitsRequest()
     this.clearDiscardState()
     if (!options.preserveRemoteCheckout) {
       this.pendingBranchDelete = undefined
@@ -591,6 +601,8 @@ export class RootView {
     this.renderFilesPane()
     this.refreshBranchesPanel(model)
     this.renderBranchesPane()
+    const localChild = this.branchesPanel.child
+    if (localChild?.value.kind === "local-commits") this.requestLocalBranchCommits(localChild.value.branch, false)
     this.refreshCommitsPanel(model)
     this.renderCommitsPane()
     this.refreshStashState(model)
@@ -837,7 +849,12 @@ export class RootView {
    * grow tabs later; see src/ui/pane-tabs.ts for the lazygit format it reproduces.
    */
   get branchesTitleStyled(): StyledText {
+    const child = this.branchesPanel.child
+    if (child !== undefined) return buildPanePlainTitle(BRANCHES_JUMP_KEY, this.branchChildTitle(child.value))
     return buildPaneTabsStrip(this.branchesTabsInput())
+  }
+  private branchChildTitle(child: BranchesPanelChild): string {
+    return child.kind === "local-commits" ? `Commits (${child.branch})` : `Remote branches (${child.remote})`
   }
 
   private branchesTabsInput(): { jumpKey: string; tabs: readonly string[]; activeIndex: number; focused: boolean } {
@@ -883,9 +900,14 @@ export class RootView {
 
   private renderBranchesPane(): void {
     const pane = this.panes.branches
-    const tabsInput = this.branchesTabsInput()
-    pane.setTabs?.({ activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
-    const focused = tabsInput.focused
+    const child = this.branchesPanel.child
+    if (child === undefined) {
+      const tabsInput = this.branchesTabsInput()
+      pane.setTabs?.({ activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
+    } else {
+      pane.setPlainTitle?.(`[${BRANCHES_JUMP_KEY}]${TITLE_PREFIX_FRAME_RUNE}${this.branchChildTitle(child.value)}`)
+    }
+    const focused = this.focusManager.active === "branches"
     const state = this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab]
     if (state === undefined) {
       pane.update("")
@@ -1265,6 +1287,7 @@ export class RootView {
         return
       }
       case "branches": {
+        this.invalidateBranchCommitsRequest()
         this.pendingBranchDelete = undefined
         this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
@@ -1828,7 +1851,7 @@ export class RootView {
    */
   private paneTabsGeometryFor(paneId: FocusId): { readonly jumpKey: string; readonly tabs: readonly string[] } | undefined {
     if (paneId === "files") return { jumpKey: FILES_JUMP_KEY, tabs: FILES_TABS }
-    if (paneId === "branches") return { jumpKey: BRANCHES_JUMP_KEY, tabs: BRANCHES_TABS }
+    if (paneId === "branches") return this.branchesPanel.child === undefined ? { jumpKey: BRANCHES_JUMP_KEY, tabs: BRANCHES_TABS } : undefined
     // The drill-down child replaces the strip with a plain title, so there is nothing to hit.
     if (paneId === "commits") return this.commitsPanel.child !== undefined ? undefined : { jumpKey: COMMITS_JUMP_KEY, tabs: COMMITS_TABS }
     return undefined
@@ -1849,8 +1872,10 @@ export class RootView {
       const tab = BRANCHES_TAB_ORDER[index]
       if (tab === undefined) return
       if (this.branchesPanel.child === undefined && this.branchesPanel.activeTab === tab) return
+      this.invalidateBranchCommitsRequest()
       this.branchesPanel = { ...leavePanelChild(this.branchesPanel), activeTab: tab }
       this.renderBranchesPane()
+      this.syncPreviewForFocus("branches")
       this.root.requestRender()
       return
     }
@@ -1876,6 +1901,7 @@ export class RootView {
       return
     }
     if (this.focusManager.active === "branches") {
+      this.invalidateBranchCommitsRequest()
       this.branchesPanel = cyclePanelTab(this.branchesPanel, direction)
       this.renderBranchesPane()
       // Activating a context renders it to main (pkg/gui/context.go `Activate` -> HandleFocus).
@@ -1899,6 +1925,7 @@ export class RootView {
       const id = state.selectedId
       if (id !== undefined && id.startsWith("remote-branch:") && this.onCheckoutRemoteTracking !== undefined) {
         const ref = id.slice("remote-branch:".length)
+        if (panel.child.value.kind !== "remote-branches") return
         const remote = panel.child.value.remote
         const name = ref.slice(remote.length + 1)
         this.runRemoteCheckout({ remote, branch: name, ref }, false)
@@ -1972,6 +1999,53 @@ export class RootView {
     this.runUiMutation(() => this.onFetchRemote!(name), { rowId: id, operation: "fetching" })
   }
 
+  private requestLocalBranchCommits(branch: string, entering: boolean): void {
+    if (this.loadBranchCommits === undefined) return
+    const expectedId = `local:${branch}`
+    const request = ++this.branchCommitsRequest
+    const isCurrent = (): boolean => {
+      if (request !== this.branchCommitsRequest) return false
+      const child = this.branchesPanel.child
+      if (entering) {
+        return this.focusManager.active === "branches" &&
+          child === undefined &&
+          this.branchesPanel.activeTab === "branches" &&
+          this.branchesPanel.views.branches?.selectedId === expectedId
+      }
+      return child?.parentTab === "branches" && child.value.kind === "local-commits" && child.value.branch === branch
+    }
+    const load = this.loadBranchCommits(branch)
+    const requestPromise = load
+      .then(async (commits) => {
+        if (!isCurrent()) return
+        const rows = buildCommitRows(commits, new Date())
+        const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No commits" }] : undefined
+        if (entering) {
+          this.branchesPanel = enterPanelChild(this.branchesPanel, { kind: "local-commits", branch }, createListState(rows, displayRows))
+        } else {
+          const child = this.branchesPanel.child
+          if (child === undefined || child.value.kind !== "local-commits") return
+          const view = setListRows(child.view, rows, displayRows)
+          this.branchesPanel = { ...this.branchesPanel, child: { ...child, view } }
+        }
+        this.renderBranchesPane()
+        let preview: Promise<void> | undefined
+        const previewFocus = this.focusManager.active === "main" ? this.focusManager.lastSide : this.focusManager.active
+        if (previewFocus === "branches") {
+          this.syncPreviewForFocus("branches")
+          preview = this.previewInflight
+        }
+        this.root.requestRender()
+        if (preview !== undefined) await preview
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent()) return
+        this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+        this.root.requestRender()
+      })
+    this.branchCommitsInflight = requestPromise
+  }
+
   private actionBranchInspect(): void {
     if (this.mutationInFlight) return
     const panel = this.branchesPanel
@@ -1980,6 +2054,7 @@ export class RootView {
       const id = state.selectedId
       if (id !== undefined && id.startsWith("remote-branch:")) {
         const ref = id.slice("remote-branch:".length)
+        if (panel.child.value.kind !== "remote-branches") return
         const remote = panel.child.value.remote
         const name = ref.slice(remote.length + 1)
         const selection = { remote, branch: name, ref }
@@ -2000,12 +2075,10 @@ export class RootView {
     const id = view?.selectedId
     if (id === undefined) return
     if (id.startsWith("local:")) {
-      const name = id.slice("local:".length)
-      if (this.onInspectBranch !== undefined) {
-        this.invalidateRemoteCheckout()
-        this.panes.branches.box.bottomTitle = undefined
-        this.runUiMutation(() => this.onInspectBranch!(name))
-      }
+      const branch = id.slice("local:".length)
+      this.invalidateRemoteCheckout()
+      this.panes.branches.box.bottomTitle = undefined
+      this.requestLocalBranchCommits(branch, true)
     } else if (id.startsWith("remote:")) {
       const remote = id.slice("remote:".length)
       const rows = remoteBranchRows(this.model, remote, this.branchFilter)
@@ -2102,9 +2175,12 @@ export class RootView {
       this.panes.stash.box.bottomTitle = undefined
     }
     if (this.branchesPanel.child !== undefined) {
+      this.invalidateBranchCommitsRequest()
       this.branchesPanel = leavePanelChild(this.branchesPanel)
       this.renderBranchesPane()
+      this.syncPreviewForFocus("branches")
       this.root.requestRender()
+      return
     } else if (this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined || this.branchFilterActive || this.remoteCheckoutInFlight) {
       this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
@@ -2416,6 +2492,9 @@ export class RootView {
     this.remoteCheckoutGeneration += 1
     this.pendingRemoteMismatch = undefined
   }
+  private invalidateBranchCommitsRequest(): void {
+    this.branchCommitsRequest += 1
+  }
 
   private runRemoteCheckout(selection: RemoteBranchSelection, confirmedMismatch: boolean): void {
     if (this.onCheckoutRemoteTracking === undefined || this.mutationInFlight) return
@@ -2423,6 +2502,7 @@ export class RootView {
     const requestFocus = this.focusManager.active
     const requestActiveTab = this.branchesPanel.activeTab
     const requestChild = this.branchesPanel.child
+    const requestChildRemote = requestChild?.value.kind === "remote-branches" ? requestChild.value.remote : null
     const requestSelectedId = (this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab])?.selectedId
     const requestFilter = this.branchFilter
     const requestFilterActive = this.branchFilterActive
@@ -2433,7 +2513,7 @@ export class RootView {
     const isCurrent = (): boolean => {
       if (requestGeneration !== this.remoteCheckoutGeneration) return false
       if (this.focusManager.active !== requestFocus || this.branchesPanel.activeTab !== requestActiveTab ||
-        (this.branchesPanel.child?.value.remote ?? null) !== (requestChild?.value.remote ?? null) ||
+        requestChildRemote !== (requestChild?.value.kind === "remote-branches" ? requestChild.value.remote : null) ||
         (this.branchesPanel.child?.view.selectedId ?? this.branchesPanel.views[this.branchesPanel.activeTab]?.selectedId) !== requestSelectedId ||
         this.branchFilter !== requestFilter || this.branchFilterActive !== requestFilterActive ||
         JSON.stringify(this.model.reviewTarget) !== requestTarget) return false
@@ -2606,10 +2686,9 @@ export class RootView {
     })
   }
 
-  /** Resolves when the current commits-pane preview request (if any) has settled. Exposed for
-   *  tests: preview loads run outside the mutation queue, so they have no other completion signal. */
+  /** Resolves when the current Main preview or panel-3 branch-history load has settled. */
   whenPreviewSettled(): Promise<void> {
-    return this.previewInflight
+    return Promise.all([this.previewInflight, this.branchCommitsInflight]).then(() => {})
   }
 
   get commitsContextKind(): "commits" | "commit-files" {
@@ -2842,13 +2921,30 @@ export class RootView {
     }
     if (focus === "branches") {
       const panel = this.branchesPanel
-      // The RemoteBranches drill-down: remote_branches_controller.go:114-135, the same graph as a
-      // local branch under the title `Remote Branch`.
+      // Panel 3's transient children mirror lazygit's RemoteBranches and SubCommits contexts:
+      // remote branches render a ref graph, while local-branch commits render commit inspection.
       if (panel.child !== undefined) {
-        const selectedId = panel.child.view.selectedId
+        const child = panel.child
+        if (child.value.kind === "local-commits") {
+          const selectedId = child.view.selectedId
+          if (selectedId === undefined) {
+            this.mainGate.installSynchronous({ source: "commit", stableId: "local-commits-empty", label: "Commit", plainText: "No commits" })
+            return
+          }
+          if (this.loadCommitInspection === undefined) {
+            this.mainGate.installSynchronous({ source: "commit", stableId: selectedId, label: selectedId, plainText: selectedId })
+            return
+          }
+          const load = (): Promise<CommitDetails> => this.loadCommitInspection!(selectedId)
+          const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
+          const promise = this.mainGate.request("commit", selectedId, load, present)
+          this.previewInflight = promise.catch(() => {})
+          return
+        }
+        const selectedId = child.view.selectedId
         const ref = selectedId !== undefined && selectedId.startsWith("remote-branch:") ? selectedId.slice("remote-branch:".length) : undefined
         if (ref === undefined) {
-          this.mainGate.installSynchronous({ source: "remote-branch", stableId: `${panel.child.value.remote}:empty`, label: MAIN_TITLE_REMOTE_BRANCH, plainText: NO_BRANCHES_FOR_REMOTE })
+          this.mainGate.installSynchronous({ source: "remote-branch", stableId: `${child.value.remote}:empty`, label: MAIN_TITLE_REMOTE_BRANCH, plainText: NO_BRANCHES_FOR_REMOTE })
           return
         }
         this.requestRefLog("remote-branch", ref, MAIN_TITLE_REMOTE_BRANCH)
@@ -3396,6 +3492,14 @@ export class RootView {
             return
           }
         }
+        if (tabsGeometry === undefined && tabWindow !== undefined && event.y === tabWindow.y0) {
+          this.pendingClick = undefined
+          this.lastSplitterPress = undefined
+          if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
         if (paneId === "main") {
           this.pendingClick = undefined
           this.lastSplitterPress = undefined
@@ -3436,7 +3540,9 @@ export class RootView {
           const panel = this.branchesPanel
           if (panel.child !== undefined) {
             listState = panel.child.view
-            viewIdForDouble = `branches-child:${panel.child.value.remote}`
+            viewIdForDouble = panel.child.value.kind === "remote-branches"
+              ? `branches-child:${panel.child.value.remote}`
+              : `branches-child:local-commits:${panel.child.value.branch}`
           } else {
             listState = panel.views[panel.activeTab]
             viewIdForDouble = `branches:${panel.activeTab}`

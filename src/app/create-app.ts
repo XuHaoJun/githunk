@@ -1,6 +1,7 @@
 import type { CliRenderer } from "@opentui/core"
 import { AppController } from "./controller"
 import type { GitRunner } from "../git/runner"
+import type { CommitSummary } from "../domain/commit"
 import { createGhRunner, loadPullRequests } from "../git/github"
 import { UiStateStore, type UiState as PersistedUiState } from "../ui/ui-state-store"
 import { RootView } from "../ui/root-view"
@@ -19,6 +20,8 @@ export type CreateAppOptions = {
   readonly renderer?: CliRenderer
   readonly onQuit?: () => void
   readonly onEditFile?: (path: string, line?: number) => Promise<void>
+  /** Optional read-only branch history seam for embedded callers and tests. */
+  readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
   /**
    * Fired every time RootView reports a geometry change (`RootViewOptions.onGeometryChange`),
    * in addition to (not instead of) the persistence write this function always performs. Exists
@@ -238,6 +241,7 @@ export function createApp(options: CreateAppOptions): App {
       view.update(controller.state)
     },
     loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
+    loadBranchCommits: options.loadBranchCommits ?? ((branch) => controller.loadBranchCommits(branch)),
     loadCommitFileInspection: (oid, path) => controller.loadCommitFileInspection(oid, path),
     loadTagInspection: (tag) => controller.loadTagInspection(tag),
     loadRefLogInspection: (target) => controller.loadRefLogInspection(target),

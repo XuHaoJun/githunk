@@ -432,6 +432,11 @@ describe("branches pane: Shift+D force delete", () => {
   const workingTree = model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } })
   const local = ui({ selectedBranchKind: "local" })
 
+  test("labels Enter as viewing commits", () => {
+    const entry = registry.menuFor("branches", workingTree, local).find((candidate) => candidate.keys === "enter")
+    expect(entry).toEqual({ group: "context", keys: "enter", description: "view commits", enabled: true })
+  })
+
   test("Shift+D resolves to branch-delete with shift set, distinct from plain d", () => {
     const dBinding = registry.resolve({ name: "d" }, { context: "branches", model: workingTree, ui: local })
     const shiftDBinding = registry.resolve({ name: "D" }, { context: "branches", model: workingTree, ui: local })

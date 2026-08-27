@@ -664,8 +664,6 @@ export class AppController {
     })
   }
 
-
-
   async checkoutRemoteTracking(remoteRef: string | RemoteBranchSelection, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult | undefined> {
     this.logAction(LOG_ACTIONS.checkoutBranch)
     return this.runBranchMutation(() => this.requireRunnerOperation((runner) => typeof remoteRef === "string"
@@ -739,6 +737,9 @@ export class AppController {
 
   async loadCommitInspection(oid: string): Promise<CommitDetails> {
     return this.loadCommitDetails(oid)
+  }
+  async loadBranchCommits(branch: string): Promise<readonly CommitSummary[]> {
+    return this.loadCommitList(`refs/heads/${branch}`)
   }
 
   async loadCommitFileInspection(oid: string, path: string): Promise<DiffDocument> {

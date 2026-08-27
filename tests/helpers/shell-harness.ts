@@ -6,6 +6,7 @@ import type { CapturedFrame, CliRenderer } from "@opentui/core"
 import { createApp, type App } from "../../src/app/create-app"
 import { GitRunner } from "../../src/git/runner"
 import { createTempRepository, type TempRepository } from "./temp-repository"
+import type { CommitSummary } from "../../src/domain/commit"
 import type { FocusId } from "../../src/ui/focus"
 import { UiStateStore, defaultUiState, type UiState as PersistedUiState } from "../../src/ui/ui-state-store"
 
@@ -73,6 +74,7 @@ export type ShellHarnessOptions = {
   readonly logVisible?: boolean
   /** Overrides the default (real editor-spawning) `editFile`, e.g. to observe the edit without spawning a process. */
   readonly onEditFile?: (path: string, line?: number) => Promise<void>
+  readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
 }
 
 export type ShellHarness = {
@@ -163,6 +165,7 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     onQuit: () => { quitCalled = true },
     ...(options.onGeometryChange === undefined ? {} : { onGeometryChange: options.onGeometryChange }),
     ...(options.onEditFile === undefined ? {} : { onEditFile: options.onEditFile }),
+    ...(options.loadBranchCommits === undefined ? {} : { loadBranchCommits: options.loadBranchCommits }),
   })
   await app.refresh()
   await setup.flush()
