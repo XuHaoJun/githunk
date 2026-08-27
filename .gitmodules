@@ -1,3 +1,6 @@
 [submodule "learn-projects/lazygit"]
 	path = learn-projects/lazygit
 	url = https://github.com/jesseduffield/lazygit.git
+[submodule "learn-projects/hunk"]
+	path = learn-projects/hunk
+	url = https://github.com/modem-dev/hunk
