@@ -28,6 +28,21 @@ export type LocalBranch = {
   readonly upstreamBranch?: string
 }
 
+export type BranchDeleteMode = "local" | "remote" | "local-and-remote"
+
+export type BranchDeleteRequest = {
+  readonly mode: BranchDeleteMode
+  readonly branch: string
+  readonly remote?: string
+  readonly remoteBranch?: string
+  readonly force: boolean
+}
+
+/** Mirrors lazygit's branch-name prompt normalization: literal spaces become separators. */
+export function sanitizeBranchName(name: string): string {
+  return name.replaceAll(" ", "-")
+}
+
 export type RemoteBranch = {
   readonly name: string
   readonly ref: string

@@ -22,6 +22,8 @@ export type CreateAppOptions = {
   readonly onEditFile?: (path: string, line?: number) => Promise<void>
   /** Optional read-only branch history seam for embedded callers and tests. */
   readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
+  /** Optional merge-state probe seam for UI race tests and embedded callers. */
+  readonly onCheckBranchMerged?: (branch: string, upstream?: string) => Promise<boolean>
   /**
    * Fired every time RootView reports a geometry change (`RootViewOptions.onGeometryChange`),
    * in addition to (not instead of) the persistence write this function always performs. Exists
@@ -212,8 +214,8 @@ export function createApp(options: CreateAppOptions): App {
     onUnstageFile: async (path) => {
       try { await controller.unstageFile(path) } finally { view.update(controller.state) }
     },
-    onDiscardFile: async (path, untracked) => {
-      try { await controller.discardFile(path, untracked) } finally { view.update(controller.state) }
+    onDiscardFile: async (path, mode) => {
+      try { await controller.discardFile(path, mode) } finally { view.update(controller.state) }
     },
     onToggleAllFiles: async () => {
       try { await controller.toggleAllFiles() } finally { view.update(controller.state) }
@@ -264,12 +266,30 @@ export function createApp(options: CreateAppOptions): App {
     onSwitchLocalBranch: async (branch) => {
       try { await controller.switchLocalBranch(branch) } finally { view.update(controller.state) }
     },
-    onCreateBranch: async (startPoint, branchName) => {
+    onCreateBranch: async (startPoint, branchName, options) => {
       if (branchName === undefined) return
-      try { await controller.createBranch(branchName, startPoint) } finally { view.update(controller.state) }
+      try { await controller.createBranch(branchName, startPoint, options) } finally { view.update(controller.state) }
     },
-    onDeleteBranch: async (branch, force) => {
-      try { await controller.deleteBranch(branch, { force, confirmed: force }) } finally { view.update(controller.state) }
+    onCreateBranchWithAutostash: async (startPoint, branchName, options) => {
+      if (branchName === undefined) return
+      try { await controller.createBranchWithAutostash(branchName, startPoint, options) } finally { view.update(controller.state) }
+    },
+    onDeleteBranch: async (request) => {
+      try {
+        if (request.mode === "local") {
+          await controller.deleteBranch(request.branch, { force: request.force, confirmed: request.force })
+        } else if (request.mode === "remote") {
+          if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
+          await controller.deleteRemoteBranch(request.remote, request.remoteBranch)
+        } else {
+          if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("local and remote deletion requires an upstream")
+          await controller.deleteLocalAndRemoteBranch(request.branch, request.remote, request.remoteBranch, { force: request.force, confirmed: request.force })
+        }
+      } finally { view.update(controller.state) }
+    },
+    onCheckBranchMerged: options.onCheckBranchMerged ?? ((branch, upstream) => controller.branchIsMerged(branch, upstream)),
+    onDeleteBranchFromWorktree: async (path, action, request, forceWorktree) => {
+      try { await controller.deleteBranchFromWorktree(path, action, request, forceWorktree) } finally { view.update(controller.state) }
     },
     onRenameBranch: async (branch, newName) => {
       if (newName === undefined) return

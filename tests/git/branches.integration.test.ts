@@ -1,14 +1,20 @@
 import { describe, expect, test } from "bun:test"
+import { CommandLog } from "../../src/app/command-log"
+import { AppController } from "../../src/app/controller"
 import { GitRunner } from "../../src/git/runner"
 import {
   checkoutRemoteTracking,
   createBranch,
   deleteBranch,
+  deleteLocalAndRemoteBranch,
+  deleteRemoteBranch,
   fetchRemote,
+  isBranchMerged,
   listBranches,
   listRemoteBranches,
   renameBranch,
   switchLocal,
+  type CreateBranchOptions,
 } from "../../src/git/branches"
 import { trackingLocalName } from "../../src/domain/branch"
 import { createTempRepository } from "../helpers/temp-repository"
@@ -193,6 +199,151 @@ describe("branch and remote operations", () => {
     } finally {
       await repository.cleanup()
       await bare.cleanup()
+    }
+  })
+
+  test("deletes a remote branch through its configured remote", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["push", "origin", "master:feature/foo"])
+
+      await deleteRemoteBranch(new GitRunner(repository.path), "origin", "feature/foo")
+
+      const remoteRef = await remote.git(["show-ref", "--verify", "--quiet", "refs/heads/feature/foo"])
+      expect(remoteRef.exitCode).not.toBe(0)
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+
+  test("deletes the remote ref before the matching local branch", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["push", "origin", "master:feature/foo"])
+      await repository.git(["fetch", "origin"])
+      await repository.git(["branch", "--track", "feature/foo", "origin/feature/foo"])
+
+      await deleteLocalAndRemoteBranch(new GitRunner(repository.path), "feature/foo", "origin", "feature/foo")
+
+      expect((await repository.git(["branch", "--list", "feature/foo"])).stdout).not.toContain("feature/foo")
+      expect((await remote.git(["show-ref", "--verify", "--quiet", "refs/heads/feature/foo"])).exitCode).not.toBe(0)
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+  test("combined deletion validates force before touching the remote", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["switch", "-c", "feature/foo"])
+      await repository.write("feature.txt", "unmerged\n")
+      await repository.git(["add", "feature.txt"])
+      await repository.git(["commit", "-m", "unmerged"])
+      await repository.git(["push", "-u", "origin", "feature/foo"])
+      await repository.git(["switch", "master"])
+
+      const runner = new GitRunner(repository.path)
+      await expect(deleteLocalAndRemoteBranch(runner, "feature/foo", "origin", "feature/foo")).rejects.toThrow()
+
+      expect((await remote.git(["show-ref", "--verify", "--quiet", "refs/heads/feature/foo"])).exitCode).toBe(0)
+      expect((await repository.git(["branch", "--list", "feature/foo"])).stdout).toContain("feature/foo")
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+
+  test("reports whether a branch is merged into HEAD", async () => {
+    const repository = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      const runner = new GitRunner(repository.path)
+      await createBranch(runner, "feature")
+      await repository.write("file.txt", "feature\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "feature"])
+      await switchLocal(runner, "master")
+
+      expect(await isBranchMerged(runner, "feature")).toBe(false)
+      await repository.git(["merge", "--ff-only", "feature"])
+      expect(await isBranchMerged(runner, "feature")).toBe(true)
+    } finally {
+      await repository.cleanup()
+    }
+  })
+
+  test("creates from a remote ref without tracking when the name is edited", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["push", "origin", "master:feature/foo"])
+      await repository.git(["fetch", "origin"])
+
+      const runner = new GitRunner(repository.path)
+      const options: CreateBranchOptions = { track: false }
+      await createBranch(runner, "custom", "origin/feature/foo", options)
+
+      const upstream = await repository.git(["rev-parse", "--abbrev-ref", "custom@{upstream}"])
+      expect(upstream.exitCode).not.toBe(0)
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+  test("combined deletion logs remote and local actions in order", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "file.txt"])
+      await repository.git(["commit", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["push", "origin", "master:feature/foo"])
+      await repository.git(["fetch", "origin"])
+      await repository.git(["branch", "--track", "feature/foo", "origin/feature/foo"])
+
+      const log = new CommandLog()
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner: new GitRunner({ cwd: repository.path, log }),
+      })
+      await controller.refresh()
+      await controller.deleteLocalAndRemoteBranch("feature/foo", "origin", "feature/foo", { force: true, confirmed: true })
+
+      const actions = log.lines()
+        .filter((line) => line.spans.some((span) => span.style === "action"))
+        .map((line) => line.spans.map((span) => span.text).join(""))
+      expect(actions).toEqual(["Delete remote branch", "Delete local branch"])
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
     }
   })
 })
