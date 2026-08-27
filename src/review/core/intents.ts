@@ -10,6 +10,8 @@ export type ReviewIntent =
   | { type: "filter/set-scope"; scope: "all" | "unreviewed" | "changed" | "feedback" }
   | { type: "projection/set"; projection: ReviewProjection }
   | { type: "gap/toggle"; fileKey: string; gapId: string }
+  | { type: "viewed/mark"; fileKey: string; viewedAt: string }
+  | { type: "viewed/unmark"; fileKey: string }
   | { type: "feedback/start-draft"; anchor: ReviewAnchor; kind: "note" | "suggestion"; severity: "comment" | "blocking"; body?: string; replacement?: string }
   | { type: "feedback/update-draft"; body?: string; severity?: "comment" | "blocking"; replacement?: string; kind?: "note" | "suggestion" }
   | { type: "feedback/cancel-draft" }
@@ -19,7 +21,6 @@ export type ReviewIntent =
   | { type: "feedback/reanchor"; id: string; anchor: ReviewAnchor; updatedAt: string }
   | { type: "feedback/next" }
   | { type: "feedback/previous" }
-
 export type ReviewIntentValidationCode =
   | "file-not-found"
   | "hunk-not-found"
@@ -143,7 +144,6 @@ function validateNonEmptyId(id: string): void {
     throw new ReviewIntentValidationError("id-invalid", `id must be non-empty`)
   }
 }
-
 export function planReviewIntent(state: ReviewState, intent: ReviewIntent): ReviewAction {
   switch (intent.type) {
     case "selection/select-file": {
@@ -176,6 +176,30 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
       }
       return { type: "gap/toggle", fileKey: intent.fileKey, gapId: intent.gapId }
     }
+    case "viewed/mark": {
+      validateFileKey(state, intent.fileKey)
+      if (!intent.viewedAt || intent.viewedAt.trim() === "") {
+        throw new ReviewIntentValidationError("body-invalid", "viewedAt required")
+      }
+      // Commit projection is inspection-only: marking aggregate Viewed is disabled
+      if (state.projection.kind === "commit") {
+        throw new ReviewIntentValidationError("projection-invalid", "cannot mark viewed in commit projection")
+      }
+      const file = state.document.files.find((f) => f.key === intent.fileKey)
+      if (!file) throw new ReviewIntentValidationError("file-not-found", `file not found: ${intent.fileKey}`)
+      const record = {
+        fileKey: file.key,
+        path: file.path,
+        contentId: file.contentId,
+        generationId: state.document.generation.id,
+        viewedAt: intent.viewedAt,
+      } as const
+      return { type: "viewed/mark", fileKey: intent.fileKey, record }
+    }
+    case "viewed/unmark": {
+      validateFileKey(state, intent.fileKey)
+      return { type: "viewed/unmark", fileKey: intent.fileKey }
+    }
     case "feedback/start-draft": {
       validateNonEmptyId(intent.anchor.fileKey)
       validateAnchor(state, intent.anchor)
@@ -187,8 +211,6 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
       }
       validateSuggestionPrerequisites(state, intent.anchor, intent.kind, intent.replacement)
       const body = intent.body ?? ""
-      // For note, require non-empty body at creation? Allow empty and validate on create? But spec says draft body typing persisted, so allow empty draft. Validate on create.
-      // We allow empty body for draft start; validation of body happens on create if needed.
       const draft = {
         anchor: intent.anchor,
         kind: intent.kind,
@@ -202,14 +224,12 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
       if (!state.draft) {
         throw new ReviewIntentValidationError("draft-missing", "no draft to update")
       }
-      // Validate severity/kind if provided
       if (intent.severity !== undefined && intent.severity !== "comment" && intent.severity !== "blocking") {
         throw new ReviewIntentValidationError("body-invalid", `invalid severity`)
       }
       if (intent.kind !== undefined && intent.kind !== "note" && intent.kind !== "suggestion") {
         throw new ReviewIntentValidationError("body-invalid", `invalid kind`)
       }
-      // If kind would become suggestion, validate replacement
       const nextKind = intent.kind ?? state.draft.kind
       const nextReplacement = intent.replacement !== undefined ? intent.replacement : state.draft.replacement
       const nextAnchor = state.draft.anchor
@@ -235,16 +255,11 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
       if (!intent.createdAt || intent.createdAt.trim() === "") {
         throw new ReviewIntentValidationError("body-invalid", "createdAt required")
       }
-      // Validate draft body/replacement before creation
       const draft = state.draft
       if (draft.kind === "note" && draft.body.trim().length === 0) {
         throw new ReviewIntentValidationError("body-invalid", "note body must be non-empty")
       }
       validateSuggestionPrerequisites(state, draft.anchor, draft.kind, draft.replacement)
-      if (draft.kind === "suggestion" && draft.body.trim().length === 0 && (!draft.replacement || draft.replacement.trim().length === 0)) {
-        // allow empty body if replacement present, but we already checked replacement
-      }
-      // Prevent duplicate id
       if (state.feedback.some((f) => f.id === intent.id)) {
         throw new ReviewIntentValidationError("id-invalid", `duplicate feedback id ${intent.id}`)
       }
@@ -268,23 +283,14 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
       if (!intent.updatedAt || intent.updatedAt.trim() === "") {
         throw new ReviewIntentValidationError("body-invalid", "updatedAt required")
       }
-      // Validate updated fields
-      const nextBody = intent.body !== undefined ? intent.body : existing.body
       const nextSeverity = intent.severity ?? existing.severity
       const nextReplacement = intent.replacement !== undefined ? intent.replacement : existing.replacement
       if (nextSeverity !== "comment" && nextSeverity !== "blocking") {
         throw new ReviewIntentValidationError("body-invalid", "invalid severity")
       }
-      if (existing.kind === "suggestion" || (nextBody !== undefined && false)) {
-        // if existing is suggestion, replacement must remain valid
-        if (existing.kind === "suggestion") {
-          validateSuggestionPrerequisites(state, existing.anchor, "suggestion", nextReplacement)
-          if (nextBody !== undefined && nextBody.trim().length === 0 && (!nextReplacement || nextReplacement.trim().length===0)) {
-            // allow empty body? we require body may be empty for suggestion? keep permissive
-          }
-        }
+      if (existing.kind === "suggestion") {
+        validateSuggestionPrerequisites(state, existing.anchor, "suggestion", nextReplacement)
       }
-      // For note, body must be non-empty if provided
       if (existing.kind === "note" && intent.body !== undefined && intent.body.trim().length === 0) {
         throw new ReviewIntentValidationError("body-invalid", "note body must be non-empty")
       }
@@ -308,7 +314,6 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
         throw new ReviewIntentValidationError("body-invalid", "updatedAt required")
       }
       validateAnchor(state, intent.anchor)
-      // If existing is suggestion, new anchor must satisfy suggestion prerequisites
       validateSuggestionPrerequisites(state, intent.anchor, existing.kind, existing.replacement)
       return { type: "feedback/reanchor", id: intent.id, anchor: intent.anchor, updatedAt: intent.updatedAt }
     }

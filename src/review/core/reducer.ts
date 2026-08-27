@@ -33,7 +33,6 @@ function feedbackNavigationTarget(
   const currentKey = state.selection.fileKey
   const currentHunk = state.selection.hunkIndex
   let currentIdx = -1
-  // Find feedback matching current selection (fileKey + hunk)
   for (let i = 0; i < sorted.length; i++) {
     const fb = sorted[i]!
     if (fb.anchor.fileKey !== currentKey) continue
@@ -156,6 +155,55 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         revision: state.revision + 1,
       }
     }
+    case "viewed/mark": {
+      const file = state.document.files.find((f) => f.key === action.fileKey)
+      if (!file) return state
+      const existing = state.viewed[action.fileKey]
+      if (
+        existing &&
+        existing.path === action.record.path &&
+        existing.contentId === action.record.contentId &&
+        existing.generationId === action.record.generationId &&
+        existing.viewedAt === action.record.viewedAt
+      ) {
+        return state
+      }
+      return {
+        ...state,
+        viewed: { ...state.viewed, [action.fileKey]: action.record },
+        revision: state.revision + 1,
+      }
+    }
+    case "viewed/unmark": {
+      if (!(action.fileKey in state.viewed)) return state
+      const copy = { ...state.viewed }
+      delete copy[action.fileKey]
+      return {
+        ...state,
+        viewed: copy,
+        revision: state.revision + 1,
+      }
+    }
+    case "document/reconciled": {
+      const docChanged = action.document !== state.document
+      const viewedChanged = action.viewed !== state.viewed
+      const feedbackChanged = action.feedback !== state.feedback
+      const selectionChanged =
+        action.selection.fileKey !== state.selection.fileKey || action.selection.hunkIndex !== state.selection.hunkIndex
+      const gapsChanged = action.expandedGaps !== state.expandedGaps
+      if (!docChanged && !viewedChanged && !feedbackChanged && !selectionChanged && !gapsChanged) {
+        return state
+      }
+      return {
+        ...state,
+        document: action.document,
+        viewed: action.viewed,
+        feedback: action.feedback,
+        selection: action.selection,
+        expandedGaps: action.expandedGaps,
+        revision: state.revision + 1,
+      }
+    }
     case "feedback/start-draft": {
       return {
         ...state,
@@ -166,8 +214,6 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
     case "feedback/update-draft": {
       if (!state.draft) return state
       const nextDraft = { ...state.draft, ...action.patch }
-      // If patch removes replacement when kind becomes note, we should delete replacement key if not needed
-      // Keep as is; if kind is note, replacement may remain but not used
       return {
         ...state,
         draft: nextDraft,

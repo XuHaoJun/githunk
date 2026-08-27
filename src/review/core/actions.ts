@@ -1,5 +1,5 @@
-import type { ReviewProjection } from "./state"
-import type { ReviewAnchor, ReviewFeedback, ReviewFeedbackDraft } from "./types"
+import type { ReviewAnchor, ReviewDocument, ReviewFeedback, ReviewFeedbackDraft } from "./types"
+import type { ReviewProjection, ViewedRecord, ExpandedGap, ReviewSelection } from "./state"
 
 export type ReviewAction =
   | { type: "selection/select-file"; fileKey: string }
@@ -9,6 +9,8 @@ export type ReviewAction =
   | { type: "filter/set-scope"; scope: "all" | "unreviewed" | "changed" | "feedback" }
   | { type: "projection/set"; projection: ReviewProjection }
   | { type: "gap/toggle"; fileKey: string; gapId: string }
+  | { type: "viewed/mark"; fileKey: string; record: ViewedRecord }
+  | { type: "viewed/unmark"; fileKey: string }
   | { type: "feedback/start-draft"; draft: ReviewFeedbackDraft }
   | { type: "feedback/update-draft"; patch: Partial<Pick<ReviewFeedbackDraft, "body" | "severity" | "kind" | "replacement">> }
   | { type: "feedback/cancel-draft" }
@@ -18,3 +20,4 @@ export type ReviewAction =
   | { type: "feedback/reanchor"; id: string; anchor: ReviewAnchor; updatedAt: string }
   | { type: "feedback/next" }
   | { type: "feedback/previous" }
+  | { type: "document/reconciled"; document: ReviewDocument; viewed: Readonly<Record<string, ViewedRecord>>; feedback: readonly ReviewFeedback[]; selection: ReviewSelection; expandedGaps: readonly ExpandedGap[] }

@@ -1,5 +1,13 @@
 import type { ReviewDocument, ReviewFeedback, ReviewFeedbackDraft } from "./types"
 
+export type ViewedRecord = Readonly<{
+  fileKey: string
+  path: string
+  contentId: string
+  generationId: string
+  viewedAt: string
+}>
+
 export type ReviewSelection = Readonly<{ fileKey: string | null; hunkIndex: number }>
 export type ReviewRevealIntent = Readonly<{ fileTopToken: number; hunkToken: number; scrollToFeedback: boolean }>
 export type ReviewProjection =
@@ -16,12 +24,12 @@ export type ReviewState = Readonly<{
   selection: ReviewSelection
   reveal: ReviewRevealIntent
   filter: Readonly<{ query: string; scope: "all" | "unreviewed" | "changed" | "feedback" }>
+  viewed: Readonly<Record<string, ViewedRecord>>
   feedback: readonly ReviewFeedback[]
   draft: ReviewFeedbackDraft | null
   expandedGaps: readonly ExpandedGap[]
   lastSubmission: SubmittedReviewRef | null
 }>
-
 export function createInitialReviewState(document: ReviewDocument): ReviewState {
   const firstFile = document.files[0] ?? null
   return {
@@ -31,6 +39,7 @@ export function createInitialReviewState(document: ReviewDocument): ReviewState 
     selection: { fileKey: firstFile?.key ?? null, hunkIndex: 0 },
     reveal: { fileTopToken: 0, hunkToken: 0, scrollToFeedback: false },
     filter: { query: "", scope: "all" },
+    viewed: {},
     feedback: [],
     draft: null,
     expandedGaps: [],
