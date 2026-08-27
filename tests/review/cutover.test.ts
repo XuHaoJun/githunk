@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises"
 import { AppController } from "../../src/app/controller"
 import { WorkingTreeReviewStore } from "../../src/review/working-tree-store"
 import { fingerprintWorkingTreeFile, workingTreeTargetKey } from "../../src/review/working-tree-fingerprint"
+import { createRegistry } from "../../src/ui/bindings"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
 import { createTempRepository } from "../helpers/temp-repository"
 
@@ -84,5 +85,12 @@ describe("cutover: dedicated workspace isolation", () => {
     } finally {
       await repo.cleanup()
     }
+  })
+
+  test("b opens Branch Review via open-branch-review binding owned by AppScreenController", () => {
+    const registry = createRegistry()
+    expect(registry.dispatch({ name: "b" })).toBe("open-branch-review")
+    const bBinding = registry.bindings.find((entry) => entry.keys.includes("b"))
+    expect(bBinding?.action).toBe("open-branch-review")
   })
 })

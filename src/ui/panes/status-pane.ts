@@ -21,7 +21,6 @@ export function updateStatusPane(pane: PaneHandle, model: AppModel): void {
   pane.update([
     `Target: ${target}`,
     model.branch ? `Branch: ${model.branch}` : "Branch: (loading)",
-    model.basePicker === undefined ? "" : `Base picker: ${model.basePicker.candidates.join(", ") || "(none)"}`,
     model.loading ? "Loading…" : `${summary?.files ?? model.files.length} files · ${summary?.additions ?? 0} additions · ${summary?.deletions ?? 0} deletions`,
     `Review: ${summary?.reviewed ?? 0} reviewed · ${summary?.invalidated ?? 0} invalidated · ${summary?.commits ?? 0} commits`,
     model.banner ? `! ${model.banner}` : "",

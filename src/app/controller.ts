@@ -756,14 +756,6 @@ export class AppController {
     await this.refreshTarget({ kind: "working-tree", scope })
   }
 
-  async chooseBase(_baseRef: string): Promise<void> {
-    // Branch Review moved to dedicated workspace; repository controller no longer handles base selection.
-    return
-  }
-  async cancelBasePicker(): Promise<void> {
-    const { basePicker: _picker, ...state } = this.currentState
-    this.currentState = { ...state, loading: false }
-  }
   async cancelUpstreamChoice(): Promise<void> {
     const { upstreamChoice: _choice, ...state } = this.currentState
     this.currentState = state
@@ -1092,7 +1084,6 @@ export class AppController {
         upstream: _previousUpstream,
         upstreamChoice: _previousUpstreamChoice,
         banner: _previousBanner,
-        basePicker: _previousPicker,
         selectionId: _previousSelectionId,
         focusId: _previousFocusId,
         ...previousState

@@ -145,6 +145,7 @@ export type RootViewOptions = {
   readonly onDiscardFile?: (path: string, mode: DiscardFileMode) => Promise<void>
   readonly onToggleAllFiles?: () => Promise<void>
   readonly onScopeChange?: (scope: WorkingTreeScope) => Promise<void>
+  readonly onOpenBranchReview?: () => Promise<void>
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
@@ -238,9 +239,9 @@ export class RootView {
   private readonly onDiscardFile: ((path: string, mode: DiscardFileMode) => Promise<void>) | undefined
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
   private readonly onScopeChange: ((scope: WorkingTreeScope) => Promise<void>) | undefined
+  private readonly onOpenBranchReview: (() => Promise<void>) | undefined
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
-  private basePickerIndex = 0
   private readonly onSelectFile: ((path: string) => void) | undefined
   private readonly loadCommitInspection: ((oid: string) => Promise<CommitDetails>) | undefined
   private readonly loadCommitFileInspection: ((oid: string, path: string) => Promise<DiffDocument>) | undefined
@@ -350,8 +351,8 @@ export class RootView {
     }
     this.clipboard = new ClipboardService(clipboardPort)
     this.onStageFile = options.onStageFile
-    this.onApplyStash = options.onApplyStash
     this.onScopeChange = options.onScopeChange
+    this.onOpenBranchReview = options.onOpenBranchReview
     this.onQuit = options.onQuit
     this.onGeometryChange = options.onGeometryChange
     this.onMutationSettled = options.onMutationSettled
@@ -608,8 +609,6 @@ export class RootView {
       this.filterInput.close()
     }
     this.model = model
-    const pickerCount = model.basePicker?.candidates.length ?? 0
-    this.basePickerIndex = pickerCount === 0 ? 0 : Math.min(this.basePickerIndex, pickerCount - 1)
     if (model.upstreamChoice !== undefined) {
       this.upstreamCursorIndex = Math.min(this.upstreamCursorIndex, Math.max(0, model.upstreamChoice.candidates.length - 1))
       const items = model.upstreamChoice.candidates.map((candidate, index) => ({
@@ -624,22 +623,9 @@ export class RootView {
         items,
         model.upstreamChoice.candidates.length === 0 ? "No candidates — Esc to cancel" : "Choose an upstream (j/k, 1-9, Enter) — Esc to cancel",
       )
-    } else if (model.basePicker !== undefined) {
-      const items = model.basePicker.candidates.map((candidate, index) => ({
-        key: String(index + 1),
-        label: candidate,
-        onPress: () => {
-        },
-      }))
-      this.actionMenu.openMenu(
-        `Choose review base (${model.basePicker.reason})`,
-        items,
-        items.length === 0 ? "No candidates — Esc to cancel" : "Choose a base (j/k, 1-9, Enter) — Esc to cancel",
-      )
-    } else if (this.actionMenu.isOpen() && ((this.actionMenu.box.title ?? "").startsWith("Upstream") || (this.actionMenu.box.title ?? "").startsWith("Choose review base"))) {
+    } else if (this.actionMenu.isOpen() && (this.actionMenu.box.title ?? "").startsWith("Upstream")) {
       this.actionMenu.close()
     }
-    updateStatusPane(this.panes.status, model)
     this.refreshFilesPanel(model)
     this.renderFilesPane()
     this.refreshBranchesPanel(model)
@@ -686,7 +672,7 @@ export class RootView {
     return this.branchFilterActive || this.filterInput.state.active || this.promptPopup.visible || this.commitMessagePanel.visible || this.copyMenuOpen ||
       this.actionMenu.isOpen() ||
       this.menuOpen ||
-      this.model.upstreamChoice !== undefined || this.model.basePicker !== undefined ||
+      this.model.upstreamChoice !== undefined ||
       this.pendingRemoteMismatch !== undefined
   }
 
@@ -1225,6 +1211,7 @@ export class RootView {
       case "pull": this.actionPull(); return
       case "push": this.actionPush(); return
       case "refresh": this.actionRefresh(); return
+      case "open-branch-review": this.actionOpenBranchReview(); return
       case "filter": this.actionFilter(); return
       case "search-next": this.actionSearchNext(); return
       case "search-previous": this.actionSearchPrevious(); return
@@ -1245,6 +1232,11 @@ export class RootView {
         this.recomputeLayout()
         return
       case "main-scroll-down": scrollMainPane(this.panes.main, "y", MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
+      case "main-scroll-up": scrollMainPane(this.panes.main, "y", -MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
+      case "main-scroll-right": scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
+      case "main-scroll-left": scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
+
+      case "page-next":
       case "main-scroll-up": scrollMainPane(this.panes.main, "y", -MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
       case "main-scroll-right": scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
       case "main-scroll-left": scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
@@ -1361,25 +1353,6 @@ export class RootView {
       if (count > 0 && key.name === "enter") {
         const choice = this.model.upstreamChoice.candidates[this.upstreamCursorIndex]!
         this.runUiMutation(() => this.onChooseUpstream!(choice.remote, choice.branch))
-      }
-      return
-    }
-    if (this.model.basePicker !== undefined) {
-      if (this.mutationInFlight) return
-      if (key.name === "escape") {
-        return
-      }
-      const count = this.model.basePicker.candidates.length
-      const numericIndex = Number(key.name) - 1
-      if (Number.isInteger(numericIndex) && numericIndex >= 0 && numericIndex < count) {
-        return
-      }
-      if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
-        this.basePickerIndex = Math.max(0, Math.min(count - 1, this.basePickerIndex + (key.name === "j" || key.name === "down" ? 1 : -1)))
-        this.panes.status.box.bottomTitle = `${this.basePickerIndex + 1}/${count}: ${this.model.basePicker.candidates[this.basePickerIndex]} — Enter to choose`
-        return
-      }
-      if (count > 0 && key.name === "enter") {
       }
       return
     }
@@ -2721,7 +2694,10 @@ export class RootView {
     this.runUiMutation(() => this.onRefresh!())
   }
 
-
+  private actionOpenBranchReview(): void {
+    if (this.mutationInFlight || this.onOpenBranchReview === undefined) return
+    this.runUiMutation(() => this.onOpenBranchReview!())
+  }
 
   private actionFilter(): void {
     const target = this.currentFilterTarget()

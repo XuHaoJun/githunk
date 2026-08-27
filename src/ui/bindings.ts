@@ -13,7 +13,7 @@ export const ACTIONS = [
   "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
   "hunk-next", "hunk-previous", "tab-next", "tab-previous", "scope-next", "scope-previous",
   // review targets
-  "mark-reviewed",
+  "open-branch-review", "mark-reviewed",
   // working tree
   "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection", "edit-file",
   // file tree
@@ -314,6 +314,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["H"], action: "main-scroll-left", description: "scroll main left" },
 
   // ---- review targets ----
+  { keys: ["b"], action: "open-branch-review", description: "branch review", displayOnScreen: true },
 
   // ---- sync ----
   { keys: ["R"], action: "refresh", description: "refresh" },

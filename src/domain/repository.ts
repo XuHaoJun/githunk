@@ -60,10 +60,6 @@ export type AppModel = {
   readonly selectionId?: string
   readonly focusId?: string
   readonly loading: boolean
-  readonly basePicker?: {
-    readonly candidates: readonly string[]
-    readonly reason: string
-  }
   readonly banner?: string
   readonly commandLog: readonly CommandLogLine[]
   /**

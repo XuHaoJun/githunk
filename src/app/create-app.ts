@@ -297,6 +297,13 @@ export function createApp(options: CreateAppOptions): App {
     onScopeChange: async (scope) => {
       try { await controller.setWorkingTreeScope(scope) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
+    onOpenBranchReview: async () => {
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await screenController.openBranchReview() } catch (error) {
+        if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
+        throw error
+      }
+    },
     onApplySelection: async (document, indexes, reverse) => {
       if (!(screenController?.shouldRenderRepository() ?? true)) return
       try { await controller.applySelection(document, indexes, { reverse, wholeFile: false }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
