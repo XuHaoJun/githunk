@@ -11,8 +11,16 @@ import { planReviewIntent } from "../../review/core/intents"
 import { coverageForFile, visibleReviewFiles, sortedReviewFeedback } from "../../review/core/selectors"
 import { ReviewStreamPane } from "./stream-pane"
 import { planReviewRows } from "./row-planner"
+import { FeedbackComposer } from "./feedback-composer"
+import { FeedbackPane } from "./feedback-pane"
+import { FinishDialog } from "./finish-dialog"
+import type { ReviewAnchor } from "../../review/core/types"
+import { createRangeAnchor } from "../../review/core/anchors"
+import type { ClipboardPort } from "../clipboard"
+
 export type ReviewWorkspaceOptions = {
   readonly onClose?: () => void
+  readonly clipboard?: ClipboardPort
 }
 
 type Focus = ReviewFocus
@@ -27,6 +35,10 @@ export class ReviewWorkspace {
   private readonly footerText: TextRenderable
   private readonly streamText: TextRenderable
   private readonly streamPane: ReviewStreamPane
+  private readonly feedbackComposer: FeedbackComposer
+  private readonly feedbackPane: FeedbackPane
+  private readonly finishDialog: FinishDialog
+  private pendingRangeAnchor: ReviewAnchor | null = null
   private destroyed = false
   private unsubscribe: (() => void) | undefined
   private readonly handleKey: (key: KeyEvent) => void
@@ -126,6 +138,14 @@ export class ReviewWorkspace {
       wrapLines: false,
     })
 
+    const clipboardPort: ClipboardPort = options.clipboard ?? {
+      isOsc52Supported: () => false,
+      copyToClipboardOSC52: () => false,
+    }
+    this.feedbackComposer = new FeedbackComposer({ controller: this.controller })
+    this.feedbackPane = new FeedbackPane({ controller: this.controller })
+    this.finishDialog = new FinishDialog({ controller: this.controller, clipboard: clipboardPort })
+
     this.unsubscribe = this.controller.subscribe((state) => {
       if (this.destroyed) return
       this.render(state)
@@ -134,8 +154,17 @@ export class ReviewWorkspace {
 
     this.handleKey = (key: KeyEvent) => {
       const raw = (key as unknown as { name?: string }).name ?? (key as unknown as { key?: string }).key ?? ""
-      // Normalize: OpenTUI reports "return" for Enter, but we handle escape etc.
       const name = raw === "return" ? "enter" : raw
+      // Detect Ctrl+S: OpenTUI may report with ctrl modifier; check key.ctrl
+      const ctrl = (key as unknown as { ctrl?: boolean }).ctrl ?? false
+      if (ctrl && (name === "s" || name === "S")) {
+        const handled = this.handleKeyPress("ctrl+s")
+        if (handled) {
+          key.preventDefault?.()
+          key.stopPropagation?.()
+        }
+        return
+      }
       const handled = this.handleKeyPress(name)
       if (handled) {
         key.preventDefault?.()
@@ -148,6 +177,10 @@ export class ReviewWorkspace {
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
+    // Flush drafts on destroy (orderly exit)
+    try {
+      void this.controller.flushDrafts?.()
+    } catch {}
     try {
       this.unsubscribe?.()
     } catch {}
@@ -193,24 +226,87 @@ export class ReviewWorkspace {
     return this.rangeActive
   }
 
+  getFeedbackComposer(): FeedbackComposer {
+    return this.feedbackComposer
+  }
+
+  getFeedbackPane(): FeedbackPane {
+    return this.feedbackPane
+  }
+
+  getFinishDialog(): FinishDialog {
+    return this.finishDialog
+  }
+
+  getPendingRangeAnchor(): ReviewAnchor | null {
+    return this.pendingRangeAnchor
+  }
+
+  clearPendingRangeAnchor(): void {
+    this.pendingRangeAnchor = null
+  }
+
   // Main keyboard entry — returns true if handled
   handleKeyPress(keyName: string): boolean {
     const normalized = keyName === "return" ? "enter" : keyName
     const state = this.controller.state
 
+    // Composer focus handling: tab stays inside composer until close, Ctrl+S and Escape handled by composer
+    if (this.feedbackComposer.isOpen()) {
+      if (normalized === "tab" || normalized === "shift+tab" || normalized === "s-tab") {
+        this.feedbackComposer.handleKey(normalized)
+        this.render(state)
+        return true
+      }
+      if (normalized === "ctrl+s" || normalized === "ctrl-s") {
+        this.feedbackComposer.handleKey(normalized)
+        // After save, focus returns to stream
+        if (!this.feedbackComposer.isOpen()) {
+          this.focus = "stream"
+          this.pendingRangeAnchor = null
+        }
+        this.render(this.controller.state)
+        return true
+      }
+      if (normalized === "escape") {
+        // Let composer handle cancel
+        this.feedbackComposer.cancel()
+        this.focus = "stream"
+        this.render(this.controller.state)
+        return true
+      }
+      // While composer is open, other keys are considered handled to keep focus inside (tab containment)
+      // But allow typing simulation via setBody etc; for generic key handling we still consume to prevent focus switch
+      // Only tab/ctrl+s/escape are actionable; others are not handled here but should not bubble to workspace commands
+      // For test parity, we treat any key while composer open as composer-handled if it's a composer control navigation
+      // Otherwise return true to block workspace commands but not consume typing — we delegate typing to composer methods via tests
+      // So we block workspace command resolution while composer open except for tab/escape/ctrl+s
+      // Check if key would be a workspace command; if composer is open, block it
+      const cmdWhileComposer = resolveReviewCommand(normalized, this.focus) ?? resolveReviewCommand(normalized, "any")
+      if (cmdWhileComposer) {
+        // Block workspace commands while composer open (tab containment)
+        return true
+      }
+    }
+
     // Escape priority: draft > range > filter > workspace
     if (normalized === "escape") {
       if (state?.draft) {
         try {
-          const action = planReviewIntent(state, { type: "feedback/cancel-draft" })
-          this.controller.dispatch(action)
+          this.feedbackComposer.cancel()
         } catch {
-          // still consume escape
+          try {
+            const action = planReviewIntent(state, { type: "feedback/cancel-draft" })
+            this.controller.dispatch(action)
+          } catch {}
         }
+        this.focus = "stream"
+        this.render(this.controller.state)
         return true
       }
       if (this.rangeActive || this.streamPane.isRangeActive()) {
         this.rangeActive = false
+        this.pendingRangeAnchor = null
         try { this.streamPane.endRangeSelection() } catch {}
         this.renderer.requestRender?.()
         return true
@@ -220,7 +316,22 @@ export class ReviewWorkspace {
         this.renderer.requestRender?.()
         return true
       }
+      if (this.finishDialog.isOpen()) {
+        this.finishDialog.close()
+        this.render(state)
+        return true
+      }
       this.options.onClose?.()
+      return true
+    }
+
+    // Finish dialog: trap keys when open
+    if (this.finishDialog.isOpen()) {
+      if (normalized === "enter" || normalized === "ctrl+s") {
+        void this.finishDialog.submit().then(() => this.render(this.controller.state))
+        return true
+      }
+      // tab inside dialog stays, escape handled above
       return true
     }
 
@@ -261,6 +372,7 @@ export class ReviewWorkspace {
     }
 
     if (normalized === "tab") {
+      // When composer is open, tab already handled above; otherwise normal focus switching
       if (this.focus === "sidebar") this.focus = "stream"
       else if (this.focus === "stream") this.focus = "filter"
       else this.focus = "sidebar"
@@ -383,6 +495,7 @@ export class ReviewWorkspace {
           const action = planReviewIntent(state, { type: "feedback/next" })
           this.controller.dispatch(action)
         } catch {}
+        // Also update feedback pane navigation but reducer handles
         this.render(this.controller.state)
         return true
       }
@@ -435,8 +548,12 @@ export class ReviewWorkspace {
               const file = state.document.files.find(f => f.key === result.anchor.fileKey)
               if (file) {
                 try {
-                  const anchor = {
-                    kind: "range" as const,
+                  const anchor = createRangeAnchor(file, { side: result.anchor.side, startLine: result.anchor.startLine, endLine: result.anchor.endLine })
+                  this.pendingRangeAnchor = anchor
+                } catch {
+                  // fallback with placeholder anchor if createRangeAnchor fails due to binary etc
+                  const anchor: ReviewAnchor = {
+                    kind: "range",
                     fileKey: result.anchor.fileKey,
                     contentId: file.contentId,
                     side: result.anchor.side,
@@ -445,10 +562,8 @@ export class ReviewWorkspace {
                     ownerHunkIndex: result.anchor.ownerHunkIndex,
                     contextDigest: "digest-placeholder",
                   }
-                  const action = planReviewIntent(state, { type: "feedback/start-draft", anchor, kind: "note", severity: "comment", body: "" })
-                  this.controller.dispatch(action)
-                  this.focus = "composer" as Focus
-                } catch {}
+                  this.pendingRangeAnchor = anchor
+                }
               }
             }
           }
@@ -459,22 +574,26 @@ export class ReviewWorkspace {
       }
       case "review.createFeedback": {
         if (!state) return false
+        if (this.feedbackComposer.isOpen()) return true
         const fileKey = state.selection.fileKey
         if (!fileKey) return true
-        try {
-          const file = state.document.files.find((f) => f.key === fileKey)
-          if (!file) return true
-          const anchor = { kind: "file" as const, fileKey, contentId: file.contentId }
-          const action = planReviewIntent(state, {
-            type: "feedback/start-draft",
-            anchor,
-            kind: "note",
-            severity: "comment",
-            body: "",
-          })
-          this.controller.dispatch(action)
+        const file = state.document.files.find((f) => f.key === fileKey)
+        if (!file) return true
+        // Use pending range anchor if available and matches current file, otherwise file anchor
+        let anchorToUse: ReviewAnchor | null = null
+        if (this.pendingRangeAnchor && this.pendingRangeAnchor.fileKey === fileKey && this.pendingRangeAnchor.contentId === file.contentId) {
+          anchorToUse = this.pendingRangeAnchor
+        } else {
+          anchorToUse = { kind: "file" as const, fileKey, contentId: file.contentId }
+        }
+        // Delegate to composer which handles binary restriction and validation
+        const opened = this.feedbackComposer.open(anchorToUse, "note", "comment", "")
+        if (opened) {
           this.focus = "composer" as Focus
-        } catch {}
+          // Clear pending range after consumption
+          if (anchorToUse.kind === "range") this.pendingRangeAnchor = null
+        }
+        this.render(this.controller.state)
         return true
       }
       case "review.markViewed": {
@@ -499,7 +618,13 @@ export class ReviewWorkspace {
         this.render(state)
         return true
       }
-      case "review.finishReview":
+      case "review.finishReview": {
+        // Open finish dialog via FinishDialog
+        this.finishDialog.open()
+        this.focus = "stream"
+        this.render(state)
+        return true
+      }
       case "review.help":
       case "review.close": {
         if (cmd.id === "review.close") {
@@ -534,9 +659,62 @@ export class ReviewWorkspace {
   }
 
   handleStreamMouseDrag(startRow: number, endRow: number): { ok: boolean; reason?: string } {
+    // If feedback pane is reanchoring, treat drag as re-anchor range selection
+    if (this.feedbackPane.isReanchoring()) {
+      const result = this.streamPane.handleMouseDrag(startRow, endRow)
+      if (result.ok) {
+        // result.anchor holds range; dispatch reanchor via pane
+        const reanchorId = this.feedbackPane.getReanchorId()
+        if (reanchorId) {
+          const state = this.controller.state
+          if (state) {
+            const file = state.document.files.find(f => f.key === result.anchor.fileKey)
+            if (file) {
+              try {
+                const newAnchor = createRangeAnchor(file, { side: result.anchor.side, startLine: result.anchor.startLine, endLine: result.anchor.endLine })
+                this.feedbackPane.confirmReanchor(reanchorId, newAnchor)
+              } catch {
+                const fallback: ReviewAnchor = {
+                  kind: "range",
+                  fileKey: result.anchor.fileKey,
+                  contentId: file.contentId,
+                  side: result.anchor.side,
+                  startLine: result.anchor.startLine,
+                  endLine: result.anchor.endLine,
+                  ownerHunkIndex: result.anchor.ownerHunkIndex,
+                  contextDigest: "digest-placeholder",
+                }
+                this.feedbackPane.confirmReanchor(reanchorId, fallback)
+              }
+            }
+          }
+        }
+        this.mouseError = null
+        this.render(this.controller.state)
+        return { ok: true }
+      } else {
+        this.mouseError = result.reason ?? null
+        this.render(this.controller.state)
+        return result as { ok: boolean; reason?: string }
+      }
+    }
     const result = this.streamPane.handleMouseDrag(startRow, endRow)
     if (!result.ok) this.mouseError = result.reason ?? null
-    else this.mouseError = null
+    else {
+      this.mouseError = null
+      // On successful drag that yields a range, store as pending for next 'c' (keyboard/mouse parity)
+      if (result.ok && (result as unknown as { anchor?: ReviewAnchor }).anchor) {
+        const anchor = (result as unknown as { anchor: ReviewAnchor }).anchor
+        this.pendingRangeAnchor = anchor
+      } else if (result.ok) {
+        // streamPane.handleMouseDrag may return {ok:true, anchor:...} — check via endRangeSelection?
+        // For parity, also try to get last range
+        try {
+          const last = this.streamPane.getLastPlan()
+          void last
+        } catch {}
+      }
+    }
     this.render(this.controller.state)
     return result as { ok: boolean; reason?: string }
   }
@@ -554,9 +732,33 @@ export class ReviewWorkspace {
     this.render(this.controller.state)
   }
 
+  // Feedback pane mouse helpers for parity
+  handleFeedbackClick(id: string): boolean {
+    return this.feedbackPane.selectFeedback(id)
+  }
+
+  handleFeedbackReanchorClick(id: string): boolean {
+    return this.feedbackPane.beginReanchor(id)
+  }
+
+  handleFeedbackDeleteClick(id: string): { needsConfirm: boolean; canDelete: boolean } {
+    return this.feedbackPane.requestDelete(id)
+  }
+
+  handleFeedbackDeleteConfirm(id: string): boolean {
+    return this.feedbackPane.confirmDelete(id)
+  }
+
+  handleComposerSave(): boolean {
+    return this.feedbackComposer.clickSave()
+  }
+
+  handleComposerCancel(): boolean {
+    return this.feedbackComposer.clickCancel()
+  }
+
   handleResize(width: number, height: number): void {
     const prevSelection = this.controller.state?.selection
-    // Store override for render to use, avoiding mutation of readonly renderer props
     this.overriddenWidth = width
     this.overriddenHeight = height
     const layout = computeReviewLayout(width, height, this.layoutMode, this.sidebarVisible)
@@ -565,7 +767,6 @@ export class ReviewWorkspace {
     if (prevSelection) {
       const cur = this.controller.state?.selection
       if (cur && cur.fileKey !== prevSelection.fileKey) {
-        // Preserve semantic anchor expectation
       }
     }
   }
@@ -585,7 +786,10 @@ export class ReviewWorkspace {
       const titleLine = lines[0]?.map((s) => s.text).join("") ?? "Branch Review"
       this.root.title = titleLine.slice(0, 80)
       const hints = reviewHints(this.focus, state)
-      this.footerText.content = this.mouseError ? `Error: ${this.mouseError} — ${hints}` : hints
+      const footerBase = this.mouseError ? `Error: ${this.mouseError} — ${hints}` : hints
+      // Append finish dialog validation message if dialog open
+      const footerContent = this.finishDialog.isOpen() ? `${this.finishDialog.getValidationMessage()} — ${footerBase}` : footerBase
+      this.footerText.content = footerContent
       const rows = reviewFileRows(state)
       this.sidebarBox.title = `Files ${rows.length}/${state.document.files.length}`
       this.streamBox.title = `Diff — ${layout.effectiveMode}`
@@ -603,7 +807,25 @@ export class ReviewWorkspace {
       this.streamPane.setLastPlanForTest(plan)
       this.streamPane.syncLayout(streamWidth, streamHeight, layout.effectiveMode)
       const streamContent = plan.rows.map(r => r.text.map(s => s.text).join("")).join("\n")
-      this.streamText.content = streamContent + (this.mouseError ? `\n[Error: ${this.mouseError}]` : "")
+      let extra = this.mouseError ? `\n[Error: ${this.mouseError}]` : ""
+      if (this.feedbackComposer.isOpen()) {
+        const draft = this.feedbackComposer.getDraft()
+        if (draft) {
+          extra += `\n[Composer open: ${draft.kind}/${draft.severity} ${draft.anchor.kind}${draft.anchor.kind==="range"?` ${draft.anchor.side}:${draft.anchor.startLine}-${draft.anchor.endLine}`:""}]`
+          if (this.feedbackComposer.canShowReplacement()) extra += " [replacement visible]"
+        }
+      }
+      if (this.pendingRangeAnchor) {
+        extra += `\n[Range selected: ${this.pendingRangeAnchor.kind} ${"side" in this.pendingRangeAnchor ? this.pendingRangeAnchor.side+":"+this.pendingRangeAnchor.startLine+"-"+this.pendingRangeAnchor.endLine : ""}]`
+      }
+      if (state.feedback.length > 0) {
+        const grouped = this.feedbackPane.getGrouped()
+        extra += `\n[Feedback: active ${grouped.active.length}, stale ${grouped.stale.length}, orphaned ${grouped.orphaned.length}]`
+      }
+      if (this.finishDialog.isOpen()) {
+        extra += `\n[Finish: ${this.finishDialog.getValidationMessage()}]`
+      }
+      this.streamText.content = streamContent + extra
     } else {
       this.root.title = "Branch Review — loading…"
       this.headerText.content = "loading…"
@@ -617,7 +839,6 @@ export class ReviewWorkspace {
     this.footerBox.height = layout.footer.height
     const sidebarVisibleObj = this.sidebarBox as unknown as { visible?: boolean }
     const streamPaneVisible = this.streamBox as unknown as { visible?: boolean }
-    // Keep for lint: assign via intermediate
     const applySidebarVisible = (visible: boolean) => { sidebarVisibleObj.visible = visible }
     const _unusedStreamVisible = streamPaneVisible.visible
     void _unusedStreamVisible

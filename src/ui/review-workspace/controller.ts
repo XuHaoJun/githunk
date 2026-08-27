@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+import { parseReviewArtifactV1 } from "../../review/storage/schemas"
 import type { GitRunner } from "../../git/runner"
 import type { ReviewDocument, ReviewProjection, SourceContextRequest, ReviewFile } from "../../review/core/types"
 import type { ReviewState, ViewedRecord, ExpandedGap, ReviewSelection } from "../../review/core/state"
@@ -194,10 +196,51 @@ export class ReviewWorkspaceController {
     if (capturedGeneration !== this.activeGenerationId) return
   }
 
+  async flushDrafts(): Promise<void> {
+    if (!this.stateStore) return
+    await this.stateStore.flush()
+  }
+
   async finishReview(input: { decision: ReviewDecision; summary: string }): Promise<ReviewState> {
     if (this._state === undefined) throw new Error("no review state")
     if (!this.stateStore || !this.artifactStore) throw new Error("stores required for finish")
-    const artifactId = this.randomIdImpl()
+    const reviewId = this._state.document.identity.id
+    let reuseArtifact: import("../../review/core/artifact").ReviewArtifactV1 | undefined
+    let artifactIdFromMarker: string | undefined
+    try {
+      const db = await this.stateStore.load()
+      const marker = db.reviews[reviewId]?.submissionInProgress
+      if (marker) {
+        artifactIdFromMarker = marker.artifactId
+        const raw = await this.artifactStore.readRaw(reviewId, marker.artifactId)
+        if (raw !== undefined) {
+          const digest = createHash("sha256").update(raw, "utf8").digest("hex")
+          if (digest === marker.digest) {
+            const parsed: unknown = JSON.parse(raw)
+            const res = parseReviewArtifactV1(parsed)
+            if (res.ok) {
+              const artifact = res.value
+              const matchesInput = artifact.decision === input.decision && artifact.summary === input.summary
+              if (matchesInput) {
+                reuseArtifact = artifact
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+    if (reuseArtifact) {
+      const next = await finishReviewTransaction({
+        stateStore: this.stateStore,
+        artifactStore: this.artifactStore,
+        reviewState: this._state,
+        artifact: reuseArtifact,
+      })
+      this._state = next
+      this.publish()
+      return next
+    }
+    const artifactId = artifactIdFromMarker ?? this.randomIdImpl()
     const submittedAt = this.nowImpl()
     const { buildReviewArtifact } = await import("../../review/core/artifact")
     const artifact = buildReviewArtifact(this._state, { id: artifactId, submittedAt, decision: input.decision, summary: input.summary })

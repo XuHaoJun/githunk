@@ -103,9 +103,16 @@ export function buildReviewArtifact(
   } else {
     throw new Error(`unsupported projection for artifact`)
   }
-
   const viewed: { fileKey: string; path: string; contentId: string }[] = []
-  const notViewed = state.document.files.map((f) => ({ fileKey: f.key, path: f.path }))
+  const notViewed: { fileKey: string; path: string }[] = []
+  for (const file of state.document.files) {
+    const rec = state.viewed[file.key]
+    if (rec && rec.path === file.path && rec.contentId === file.contentId) {
+      viewed.push({ fileKey: file.key, path: file.path, contentId: file.contentId })
+    } else {
+      notViewed.push({ fileKey: file.key, path: file.path })
+    }
+  }
 
   const indexByKey = new Map(state.document.files.map((f, i) => [f.key, i] as const))
   const sorted = [...state.feedback].sort((a, b) => {
