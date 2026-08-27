@@ -75,6 +75,7 @@ import { branchCheckoutRequiresStash, type CheckoutRemoteTrackingResult, type Cr
 import { worktreeRemovalRequiresForce } from "../git/worktrees"
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
 import { createCommitMessagePanel, type CommitMessagePanelHandle } from "./commit-message-panel"
+import { createPromptPopup, type PromptPopupHandle } from "./prompt-popup"
 import { FilterInput } from "./filter-input"
 import { normalizeKey } from "./keymap"
 import { createHintsBar, reviewStatusText, type HintsBarHandle } from "./hints-bar"
@@ -265,6 +266,7 @@ export class RootView {
   private readonly onAmendMessage: ((message: string) => Promise<void>) | undefined
   private readonly onCurrentCommitMessage: (() => Promise<string>) | undefined
   private readonly commitMessagePanel: CommitMessagePanelHandle
+  private readonly promptPopup: PromptPopupHandle
   private commitDialog: CommitDialog | undefined
   /** Arms the second-press stage-everything confirmation of withEnsureCommittableFiles. */
   private pendingStageAllCommit: boolean = false
@@ -508,11 +510,13 @@ export class RootView {
     this.keybindingMenu = createKeybindingMenu(renderer)
     this.actionMenu = createActionMenu(renderer)
     this.commitMessagePanel = createCommitMessagePanel(renderer)
+    this.promptPopup = createPromptPopup(renderer)
     this.root.add(this.hintsBar.hints)
     this.root.add(this.hintsBar.status)
     this.root.add(this.keybindingMenu.box)
     this.root.add(this.actionMenu.box)
     this.root.add(this.commitMessagePanel.box)
+    this.root.add(this.promptPopup.box)
     renderer.root.add(this.root)
 
     this.focusManager.onChange = (focus, logVisible) => {
@@ -610,8 +614,33 @@ export class RootView {
     this.basePickerIndex = pickerCount === 0 ? 0 : Math.min(this.basePickerIndex, pickerCount - 1)
     if (model.upstreamChoice !== undefined) {
       this.upstreamCursorIndex = Math.min(this.upstreamCursorIndex, Math.max(0, model.upstreamChoice.candidates.length - 1))
-      const choices = model.upstreamChoice.candidates.map((candidate, index) => `${index + 1} ${candidate.remote}/${candidate.branch}`).join(" · ")
-      this.panes.main.box.bottomTitle = `Upstream required for ${model.upstreamChoice.branch}: ${choices || "no candidates"} — choose a number`
+      const items = model.upstreamChoice.candidates.map((candidate, index) => ({
+        key: String(index + 1),
+        label: `${candidate.remote}/${candidate.branch}`,
+        onPress: () => {
+          if (this.onChooseUpstream !== undefined) this.runUiMutation(() => this.onChooseUpstream!(candidate.remote, candidate.branch))
+        },
+      }))
+      this.actionMenu.openMenu(
+        `Upstream required for ${model.upstreamChoice.branch}`,
+        items,
+        model.upstreamChoice.candidates.length === 0 ? "No candidates — Esc to cancel" : "Choose an upstream (j/k, 1-9, Enter) — Esc to cancel",
+      )
+    } else if (model.basePicker !== undefined) {
+      const items = model.basePicker.candidates.map((candidate, index) => ({
+        key: String(index + 1),
+        label: candidate,
+        onPress: () => {
+          if (this.onChooseBase !== undefined) this.runUiMutation(() => this.onChooseBase!(candidate))
+        },
+      }))
+      this.actionMenu.openMenu(
+        `Choose review base (${model.basePicker.reason})`,
+        items,
+        items.length === 0 ? "No candidates — Esc to cancel" : "Choose a base (j/k, 1-9, Enter) — Esc to cancel",
+      )
+    } else if (this.actionMenu.isOpen() && ((this.actionMenu.box.title ?? "").startsWith("Upstream") || (this.actionMenu.box.title ?? "").startsWith("Choose review base"))) {
+      this.actionMenu.close()
     }
     updateStatusPane(this.panes.status, model)
     this.refreshFilesPanel(model)
@@ -657,7 +686,7 @@ export class RootView {
     this.actionMenu.close()
   }
   private modalInputActive(): boolean {
-    return this.branchFilterActive || this.commitDialog !== undefined || this.commitMessagePanel.visible || this.copyMenuOpen ||
+    return this.branchFilterActive || this.promptPopup.visible || this.commitMessagePanel.visible || this.copyMenuOpen ||
       this.actionMenu.isOpen() ||
       this.menuOpen ||
       this.model.upstreamChoice !== undefined || this.model.basePicker !== undefined ||
@@ -1109,7 +1138,25 @@ export class RootView {
       // `key.name` is already githunk's canonical name here (RootView.handleKey normalizes
       // before routing to the modal path, keymap.ts:31-33), so only "enter" is live — "return"
       // in action-menu.ts:105 exists for callers that dispatch raw OpenTUI key names.
-      if (this.actionMenu.handleKey(key.name)) this.recomputeLayout()
+      const wasCopyMenu = this.copyMenuOpen && this.actionMenu.box.title === "Copy"
+      const wasUpstream = (this.actionMenu.box.title ?? "").startsWith("Upstream")
+      const wasBasePicker = (this.actionMenu.box.title ?? "").startsWith("Choose review base")
+      const wasPendingMismatch = this.actionMenu.box.title === "Remote tracking mismatch"
+      if (this.actionMenu.handleKey(key.name)) {
+        this.recomputeLayout()
+        if (wasCopyMenu && !this.actionMenu.isOpen()) this.copyMenuOpen = false
+        if (wasUpstream && !this.actionMenu.isOpen() && key.name === "escape" && this.onCancelUpstream !== undefined) {
+          this.runUiMutation(() => this.onCancelUpstream!())
+        }
+        if (wasBasePicker && !this.actionMenu.isOpen() && key.name === "escape" && this.onCancelBase !== undefined) {
+          this.runUiMutation(() => this.onCancelBase!())
+        }
+        if (wasPendingMismatch && !this.actionMenu.isOpen()) {
+          if (key.name === "escape") this.actionBack()
+          else if (key.name !== "escape") this.pendingRemoteMismatch = undefined
+        }
+        return
+      }
       return
     }
     if (this.menuOpen) {
@@ -1134,7 +1181,8 @@ export class RootView {
         if (this.mutationInFlight) return
         if (key.name === "u" && key.ctrl === true && !key.meta) {
           this.stashIncludeUntracked = !this.stashIncludeUntracked
-          this.panes.main.box.bottomTitle = `${renderCommitDialog(this.commitDialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`
+          this.promptPopup.update(this.commitDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
+          this.recomputeLayout()
           this.root.requestRender()
           return
         }
@@ -2545,10 +2593,18 @@ export class RootView {
 
   private actionCopyMenu(): void {
     this.copyMenuOpen = true
-    this.panes.main.box.bottomTitle = `Copy: ${COPY_MENU_ITEMS.map((item, index) => `${index + 1} ${item.label}`).join(" | ")}`
+    const items = COPY_MENU_ITEMS.map((item, index) => ({
+      key: String(index + 1),
+      label: item.label,
+      onPress: () => {
+        this.copyMenuOpen = false
+        this.copyMainMode(item.mode)
+      },
+    }))
+    this.actionMenu.openMenu("Copy", items, "Choose a copy mode (1-9, j/k, Enter) — Esc to close")
+    this.recomputeLayout()
     this.root.requestRender()
   }
-
   private actionCopyExact(): void {
     this.copyMainMode("text")
   }
@@ -2596,8 +2652,9 @@ export class RootView {
     if (result.result?.kind === "cancelled") {
       this.commitDialog = undefined
       this.branchDialogContext = undefined
-      this.panes.branches.box.bottomTitle = undefined
+      this.promptPopup.close()
       this.clearTransientMenus()
+      this.recomputeLayout()
       this.root.requestRender()
       return true
     }
@@ -2621,6 +2678,8 @@ export class RootView {
       const isBranchCreate = context.mode === "branch-create"
       this.commitDialog = undefined
       this.branchDialogContext = undefined
+      this.promptPopup.close()
+      this.recomputeLayout()
       if (isBranchCreate) this.runBranchCreate(operation, autostashOperation, branchName ?? "")
       else this.runUiMutation(operation)
       return true
@@ -2629,7 +2688,8 @@ export class RootView {
     const nextDialog = new CommitDialog(next.state.mode, next.state.message, context.mode === "branch-create" ? context.branchBase : undefined)
     nextDialog.setError(next.state.error)
     this.commitDialog = nextDialog
-    this.panes.branches.box.bottomTitle = renderCommitDialog(nextDialog.state)
+    this.promptPopup.update(nextDialog.state)
+    this.recomputeLayout()
     this.root.requestRender()
     return true
   }
@@ -2640,7 +2700,8 @@ export class RootView {
     const result = commitDialogKey(dialog.state, key)
     if (result.result?.kind === "cancelled") {
       this.commitDialog = undefined
-      this.panes.main.box.bottomTitle = undefined
+      this.promptPopup.close()
+      this.recomputeLayout()
       this.root.requestRender()
       return true
     }
@@ -2650,11 +2711,13 @@ export class RootView {
       void this.onCreateStash(result.result.message, this.stashIncludeUntracked).then(() => {
         if (this.commitDialog === dialog) {
           this.commitDialog = undefined
-          this.panes.main.box.bottomTitle = undefined
+          this.promptPopup.close()
+          this.recomputeLayout()
         }
       }).catch((error: unknown) => {
         dialog.setError(error instanceof Error ? error.message : String(error))
-        this.panes.main.box.bottomTitle = `${renderCommitDialog(dialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`
+        this.promptPopup.update(dialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
+        this.recomputeLayout()
       }).finally(() => {
         this.mutationInFlight = false
         this.root.requestRender()
@@ -2664,7 +2727,8 @@ export class RootView {
     const next = commitDialogKey(dialog.state, key)
     this.commitDialog = new CommitDialog("stash", next.state.message)
     this.commitDialog.setError(next.state.error)
-    this.panes.main.box.bottomTitle = `${renderCommitDialog(this.commitDialog.state)}\nInclude untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`
+    this.promptPopup.update(this.commitDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
+    this.recomputeLayout()
     this.root.requestRender()
     return true
   }
@@ -2672,6 +2736,10 @@ export class RootView {
   private invalidateRemoteCheckout(): void {
     this.remoteCheckoutGeneration += 1
     this.pendingRemoteMismatch = undefined
+    if (this.actionMenu.isOpen() && this.actionMenu.box.title === "Remote tracking mismatch") {
+      this.actionMenu.close()
+      this.recomputeLayout()
+    }
   }
   private invalidateBranchCommitsRequest(): void {
     this.branchCommitsRequest += 1
@@ -2705,10 +2773,17 @@ export class RootView {
       if (result?.kind === "mismatch") {
         this.pendingRemoteMismatch = { selection, message: result.message }
         const confirmation = remoteTrackingMismatchConfirmation(result.message)
-        this.panes.branches.box.bottomTitle =
-          `${confirmation.message} Press ${capitalizeKeyName(confirmation.confirmKey)} to confirm or ${capitalizeKeyName(confirmation.cancelKey)} to cancel.`
+        this.actionMenu.openMenu(
+          confirmation.title,
+          [{ key: confirmation.confirmKey, label: confirmation.confirmLabel, onPress: () => this.actionBranchInspect() }],
+          confirmation.message,
+        )
+        this.recomputeLayout()
       } else {
         this.pendingRemoteMismatch = undefined
+        if (this.actionMenu.isOpen() && this.actionMenu.box.title === "Remote tracking mismatch") {
+          this.actionMenu.close()
+        }
         this.panes.branches.box.bottomTitle = undefined
       }
       this.root.requestRender()
@@ -2726,7 +2801,8 @@ export class RootView {
   }
   private openCommitDialog(initialMessage: string): void {
     this.commitDialog = new CommitDialog("stash", initialMessage)
-    this.panes.main.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
+    this.promptPopup.open(this.commitDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
+    this.recomputeLayout()
     this.root.requestRender()
   }
 
@@ -2738,7 +2814,8 @@ export class RootView {
 
   private openBranchDialog(mode: "branch-create" | "branch-rename", initialMessage: string, branchBase?: string): void {
     this.commitDialog = new CommitDialog(mode, initialMessage, branchBase)
-    this.panes.branches.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
+    this.promptPopup.open(this.commitDialog.state)
+    this.recomputeLayout()
     this.root.requestRender()
   }
 
@@ -4050,6 +4127,7 @@ export class RootView {
     this.keybindingMenu.box.visible = this.menuOpen
     this.actionMenu.layout(this.geometry.terminalWidth, this.geometry.terminalHeight)
     this.commitMessagePanel.layout(this.geometry.terminalWidth, this.geometry.terminalHeight)
+    this.promptPopup.layout(this.geometry.terminalWidth, this.geometry.terminalHeight)
     this.root.requestRender()
   }
 }
