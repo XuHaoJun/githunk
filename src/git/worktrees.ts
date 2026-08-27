@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { Worktree } from "../domain/worktree"
 import { shortHash } from "../domain/reflog"
-import { GitRunner } from "./runner"
+import { GitCommandError, GitRunner } from "./runner"
 
 type CommandRunner = Pick<GitRunner, "run">
 
@@ -269,4 +269,18 @@ export async function listWorktrees(runner: CommandRunner): Promise<readonly Wor
     })
   }
   return listing
+}
+
+export async function removeWorktree(runner: CommandRunner, path: string, force = false): Promise<void> {
+  await runner.run(["worktree", "remove", ...(force ? ["-f"] : []), path])
+}
+
+export async function detachWorktree(runner: CommandRunner, path: string): Promise<void> {
+  await runner.run(["-C", path, "checkout", "--detach"])
+}
+
+export function worktreeRemovalRequiresForce(error: unknown): boolean {
+  if (!(error instanceof GitCommandError)) return false
+  return error.record.stderr.includes("--force") ||
+    error.record.stderr.includes("working trees containing submodules cannot be moved or removed")
 }

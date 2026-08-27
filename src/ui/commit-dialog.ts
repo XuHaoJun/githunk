@@ -6,6 +6,7 @@ export type CommitDialogResult =
 export type CommitDialogState = {
   readonly mode: CommitDialogMode
   readonly message: string
+  readonly branchBase?: string
   readonly error?: string
 }
 
@@ -23,8 +24,8 @@ export type CommitDialogEvent =
   | { readonly kind: "newline" }
   | { readonly kind: "confirm" }
   | { readonly kind: "cancel" }
-export function createCommitDialog(mode: CommitDialogMode, initialMessage = ""): CommitDialogState {
-  return { mode, message: initialMessage }
+export function createCommitDialog(mode: CommitDialogMode, initialMessage = "", branchBase?: string): CommitDialogState {
+  return { mode, message: initialMessage, ...(branchBase === undefined ? {} : { branchBase }) }
 }
 
 export type CommitMessageParts = {
@@ -112,7 +113,7 @@ function printableText(key: CommitDialogKey): string | undefined {
 export function renderCommitDialog(state: CommitDialogState): string {
   const title = state.mode === "amend" ? "Amend commit"
     : state.mode === "stash" ? "Create stash"
-      : state.mode === "branch-create" ? "Create branch"
+      : state.mode === "branch-create" ? state.branchBase === undefined ? "Create branch" : `New branch name (branch is off of '${state.branchBase}')`
         : state.mode === "branch-rename" ? "Rename branch"
           : "Commit staged changes"
   const error = state.error === undefined ? "" : `\n! ${state.error}`
@@ -126,8 +127,8 @@ export function renderCommitDialog(state: CommitDialogState): string {
 export class CommitDialog {
   private current: CommitDialogState
 
-  constructor(mode: CommitDialogMode, initialMessage = "") {
-    this.current = createCommitDialog(mode, initialMessage)
+  constructor(mode: CommitDialogMode, initialMessage = "", branchBase?: string) {
+    this.current = createCommitDialog(mode, initialMessage, branchBase)
   }
 
   get state(): CommitDialogState {

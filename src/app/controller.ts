@@ -7,15 +7,15 @@ import { inferReviewBase, currentBranchRef, resolveRefOid, reviewBaseCandidates,
 import { parseDiff } from "../domain/diff/parse"
 import type { DiffDocument, DiffFile } from "../domain/diff/document"
 import type { AppModel, PatchSection } from "../domain/repository"
-import type { BranchListing } from "../domain/branch"
+import type { BranchDeleteRequest, BranchListing } from "../domain/branch"
 import type { WorkingTreeSnapshot } from "../domain/repository"
-import type { ReviewTarget, WorkingTreeScope, ChangedFile } from "../domain/review-target"
+import type { ReviewTarget, WorkingTreeScope, ChangedFile, DiscardFileMode } from "../domain/review-target"
 import { reviewStateFor, type ReviewDatabase, type ReviewFileState } from "../domain/review-progress"
 import { fingerprintFile, targetKey } from "../review/fingerprint"
 import { emptyReviewDatabase, ReviewStore } from "../review/store"
 import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
 import { CommitMutations } from "../git/commit-mutations"
-import { checkoutRemoteTracking, createBranch, deleteBranch, fetchRemote, listBranches, listRemoteBranches, renameBranch, switchLocal, type CheckoutRemoteTrackingOptions, type CheckoutRemoteTrackingResult, type DeleteBranchOptions, type RemoteBranchSelection } from "../git/branches"
+import { checkoutRemoteTracking, createBranch, deleteBranch, deleteRemoteBranch as deleteRemoteGitBranch, isBranchMerged as isGitBranchMerged, fetchRemote, listBranches, listRemoteBranches, renameBranch, switchLocal, type CheckoutRemoteTrackingOptions, type CheckoutRemoteTrackingResult, type CreateBranchOptions, type DeleteBranchOptions, type RemoteBranchSelection } from "../git/branches"
 import { listStashes, loadStash, createStash as createGitStash, applyStash as applyGitStash, popStash as popGitStash, dropStash as dropGitStash } from "../git/stash"
 import { fetch as fetchSync, pull as pullSync, push as pushSync, type FetchOptions, type PullOptions, type PushOptions, type PushResult } from "../git/sync"
 import type { StashCreateOptions, StashDropOptions, StashEntry } from "../domain/stash"
@@ -26,7 +26,7 @@ import { pullRequestsByBranch, type PullRequest } from "../domain/pull-request"
 import type { ReflogEntry } from "../domain/reflog"
 import { listReflog } from "../git/reflog"
 import type { Worktree } from "../domain/worktree"
-import { listWorktrees } from "../git/worktrees"
+import { detachWorktree, listWorktrees, removeWorktree } from "../git/worktrees"
 import type { SubmoduleConfig } from "../domain/submodule"
 import { listSubmodules } from "../git/submodules"
 import { MutationQueue } from "./mutation-queue"
@@ -46,6 +46,10 @@ export type ReflogListLoader = () => Promise<readonly ReflogEntry[]>
 export type WorktreeListLoader = () => Promise<readonly Worktree[]>
 export type SubmoduleListLoader = () => Promise<readonly SubmoduleConfig[]>
 export type PullRequestListLoader = () => Promise<readonly PullRequest[]>
+
+type BranchMutationOptions = {
+  readonly refreshOnFailure?: boolean
+}
 
 
 export type AppControllerOptions = {
@@ -507,9 +511,28 @@ export class AppController {
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => switchLocal(runner, branch)))
   }
 
-  async createBranch(branch: string, startPoint?: string): Promise<void> {
+  async createBranch(branch: string, startPoint?: string, options: CreateBranchOptions = {}): Promise<void> {
     this.logAction(LOG_ACTIONS.createBranch)
-    await this.runBranchMutation(() => this.requireRunnerOperation((runner) => createBranch(runner, branch, startPoint)))
+    await this.runBranchMutation(() => this.requireRunnerOperation((runner) => createBranch(runner, branch, startPoint, options)))
+  }
+
+  async createBranchWithAutostash(branch: string, startPoint?: string, options: CreateBranchOptions = {}): Promise<void> {
+    await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
+      const stash = await createGitStash(runner, `Auto-stashing changes for creating new branch ${branch}`, { includeUntracked: true })
+      if (stash === undefined) {
+        await createBranch(runner, branch, startPoint, options)
+        return
+      }
+      try {
+        await createBranch(runner, branch, startPoint, options)
+      } finally {
+        await popGitStash(runner, stash.oid)
+      }
+    }), { refreshOnFailure: true })
+  }
+
+  async branchIsMerged(branch: string, upstream?: string): Promise<boolean> {
+    return this.mutationQueue.run(() => this.requireRunnerOperation((runner) => isGitBranchMerged(runner, branch, upstream)))
   }
   async createStash(message: string, options: StashCreateOptions): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
@@ -618,6 +641,52 @@ export class AppController {
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => deleteBranch(runner, branch, options)))
   }
 
+  async deleteRemoteBranch(remote: string, branch: string): Promise<void> {
+    this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+    await this.runBranchMutation(() => this.requireRunnerOperation((runner) => deleteRemoteGitBranch(runner, remote, branch)))
+    await this.browseRemote(remote)
+  }
+
+  async deleteLocalAndRemoteBranch(branch: string, remote: string, remoteBranch: string, options?: DeleteBranchOptions): Promise<void> {
+    await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
+      this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+      await deleteRemoteGitBranch(runner, remote, remoteBranch)
+      this.logAction(LOG_ACTIONS.deleteLocalBranch)
+      await deleteBranch(runner, branch, options)
+    }))
+    await this.browseRemote(remote)
+  }
+  async deleteBranchFromWorktree(
+    worktreePath: string,
+    action: "remove" | "detach",
+    request: BranchDeleteRequest,
+    forceWorktree = false,
+  ): Promise<void> {
+    await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
+      if (request.mode === "local-and-remote" && (request.remote === undefined || request.remoteBranch === undefined)) {
+        throw new Error("local and remote deletion requires an upstream")
+      }
+      const merged = await isGitBranchMerged(runner, request.branch)
+      if (!merged && request.force !== true) {
+        throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
+      }
+      const localOptions = { force: true, confirmed: true }
+      this.logAction(LOG_ACTIONS.removeWorktree)
+      if (action === "remove") await removeWorktree(runner, worktreePath, forceWorktree)
+      else await detachWorktree(runner, worktreePath)
+      if (request.mode === "local") {
+        this.logAction(LOG_ACTIONS.deleteLocalBranch)
+        await deleteBranch(runner, request.branch, localOptions)
+        return
+      }
+      this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+      await deleteRemoteGitBranch(runner, request.remote!, request.remoteBranch!)
+      this.logAction(LOG_ACTIONS.deleteLocalBranch)
+      await deleteBranch(runner, request.branch, localOptions)
+    }), { refreshOnFailure: true })
+    if (request.mode === "local-and-remote" && request.remote !== undefined) await this.browseRemote(request.remote)
+  }
+
   async renameBranch(oldName: string, newName: string): Promise<void> {
     this.logAction(LOG_ACTIONS.renameBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => renameBranch(runner, oldName, newName)))
@@ -676,7 +745,7 @@ export class AppController {
     return operation(this.runner)
   }
 
-  private async runBranchMutation<T>(operation: () => Promise<T>): Promise<T | undefined> {
+  private async runBranchMutation<T>(operation: () => Promise<T>, options: BranchMutationOptions = {}): Promise<T | undefined> {
     return this.mutationQueue.run(async () => {
       try {
         const result = await operation()
@@ -696,6 +765,10 @@ export class AppController {
         const banner = error instanceof GitCommandError
           ? (error.record.stderr || error.message)
           : error instanceof Error ? error.message : String(error)
+        if (options.refreshOnFailure) {
+          await this.inferBase().catch(() => undefined)
+          await this.refresh()
+        }
         this.currentState = {
           ...this.currentState,
           banner,
@@ -941,10 +1014,10 @@ export class AppController {
     await this.runMutation(() => this.mutations?.discardSelection(document, includedLineIndexes, options))
   }
 
-  async discardFile(path: string, untracked = false): Promise<void> {
+  async discardFile(path: string, mode: DiscardFileMode = "unstaged"): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
-    this.logAction(LOG_ACTIONS.discardAllUnstagedChangesInFile)
-    await this.runMutation(() => this.mutations?.discardFile(path, untracked))
+    this.logAction(mode === "all" ? LOG_ACTIONS.discardAllChangesInFile : LOG_ACTIONS.discardAllUnstagedChangesInFile)
+    await this.runMutation(() => this.mutations?.discardFile(path, mode))
   }
 
 

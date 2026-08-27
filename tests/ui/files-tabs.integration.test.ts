@@ -60,6 +60,16 @@ const stagedAndUntracked = async (repository: TempRepository): Promise<void> => 
   await repository.write("untracked.txt", "new\n")
 }
 
+/** One file with both staged and unstaged changes, so both discard menu entries are available. */
+const stagedAndUnstaged = async (repository: TempRepository): Promise<void> => {
+  await repository.write("tracked.txt", "base\n")
+  await repository.git(["add", "."])
+  await repository.git(["commit", "-m", "base commit"])
+  await repository.write("tracked.txt", "base\nstaged\n")
+  await repository.git(["add", "tracked.txt"])
+  await repository.write("tracked.txt", "base\nstaged\nunstaged\n")
+}
+
 describe("panel 2 tabs", () => {
   let harness: ShellHarness | undefined
   const extras: TempRepository[] = []
@@ -217,6 +227,39 @@ describe("panel 2 tabs", () => {
     expect(nowSelected!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
   })
 
+  test("d opens lazygit's all-versus-unstaged discard menu", async () => {
+    harness = await createShellHarness({ setup: stagedAndUnstaged })
+    await harness.pressKey("2")
+
+    await harness.pressKey("d")
+    const frame = harness.frame()
+    expect(frame).toContain("Discard changes")
+    expect(frame).toContain("Discard all changes")
+    expect(frame).toContain("Discard unstaged changes")
+
+    await harness.pressKey("u")
+    await harness.settle()
+    expect((await harness.repository.git(["diff", "--name-only"])).stdout).toBe("")
+    expect((await harness.repository.git(["diff", "--cached", "--name-only"])).stdout).toContain("tracked.txt")
+  })
+
+  test("discard menu explains when unstaged-only is unavailable", async () => {
+    harness = await createShellHarness({ setup: stagedAndUntracked })
+    await harness.pressKey("2")
+
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Discard unstaged changes (unavailable:")
+    await harness.pressKey("u")
+    expect(harness.app.view!.actionMenuOpen).toBe(true)
+    expect((await harness.repository.git(["diff", "--cached", "--name-only"])).stdout).toContain("tracked.txt")
+
+    await harness.pressKey("x")
+    await harness.settle()
+    const status = (await harness.repository.git(["status", "--short"])).stdout
+    expect(status).not.toContain("M  tracked.txt")
+    expect(status).toContain("untracked.txt")
+  })
+
   test("enter toggles a directory row's collapse, and `, - and = drive the tree mode", async () => {
     harness = await createShellHarness({ setup: nestedTree })
     const view = harness.app.view!
@@ -271,7 +314,7 @@ describe("panel 2 tabs", () => {
     expect((await harness.repository.git(["diff", "--cached", "--name-only"])).stdout.trim()).toBe("")
   })
 
-  test("d on a directory row discards its whole subtree after the second press", async () => {
+  test("d on a directory row opens discard choices before changing its subtree", async () => {
     harness = await createShellHarness({ setup: nestedTree })
     const view = harness.app.view!
     await harness.pressKey("2")
@@ -279,12 +322,12 @@ describe("panel 2 tabs", () => {
     expect(view.selectedListId("files")).toBe("src/ui/panes")
 
     await harness.pressKey("d")
-    await harness.flush()
-    expect(String(view.filesPane.box.bottomTitle)).toContain("src/ui/panes")
-    // Still there: the first press only asks.
+    const frame = harness.frame()
+    expect(frame).toContain("Discard changes")
+    expect(frame).toContain("Discard all changes")
     expect((await harness.repository.git(["status", "--porcelain"])).stdout).toContain("src/ui/panes/one.txt")
 
-    await harness.pressKey("d")
+    await harness.pressKey("x")
     await harness.settle()
     const status = (await harness.repository.git(["status", "--porcelain"])).stdout
     expect(status).not.toContain("src/ui/panes")

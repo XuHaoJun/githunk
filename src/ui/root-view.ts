@@ -6,8 +6,10 @@ import {
   type MouseEvent,
 } from "@opentui/core"
 import type { AppModel } from "../app/model"
+import { sanitizeBranchName, type BranchDeleteRequest, type LocalBranch } from "../domain/branch"
 import type { CommitDetails } from "../domain/commit"
 import type { TagSummary, TagPreview } from "../domain/tag"
+import type { Worktree } from "../domain/worktree"
 import type { ReflogEntry } from "../domain/reflog"
 import {
   DEFAULT_LOG_HEIGHT,
@@ -41,15 +43,13 @@ import { parseAnsi } from "./ansi"
 import { NO_BRANCHES_FOR_REMOTE, NO_REMOTES, remotePreviewText } from "./panes/remotes-pane"
 import { NO_TAGS, tagPreamble } from "./panes/tags-pane"
 import { createCommandLogPane, type CommandLogPaneHandle } from "./panes/command-log-pane"
-import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, anyStagedChanges, createFilesPane, createFilesTreeState, fileHasUnstagedChanges, filesTreeRows } from "./panes/files-pane"
+import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, anyStagedChanges, createFilesPane, createFilesTreeState, fileHasStagedChanges, fileHasUnstagedChanges, filesTreeRows } from "./panes/files-pane"
 import { NO_WORKTREES_THIS_REPO, selectedWorktreeFrom, worktreePreviewText, worktreeRows } from "./panes/worktrees-pane"
 import { NO_SUBMODULES, selectedSubmoduleFrom, submodulePreviewText, submoduleRows } from "./panes/submodules-pane"
 import {
   collapseAllFileTree,
-  everyFileInNode,
   expandAllFileTree,
   fileTreeRows,
-  forEachFile,
   setFileTreeItems,
   someFileInNode,
   toggleFileTreeCollapsedPath,
@@ -58,7 +58,7 @@ import {
   type FileTreeState,
 } from "./file-tree"
 import { submoduleFullName } from "../domain/submodule"
-import type { ChangedFile, WorkingTreeScope } from "../domain/review-target"
+import type { ChangedFile, DiscardFileMode, WorkingTreeScope } from "../domain/review-target"
 import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { commitFileRows } from "./panes/commit-files-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
@@ -68,10 +68,11 @@ import { copySelection, selectionFromRenderable } from "../domain/diff/selection
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
 import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
-import { discardConfirmation } from "./confirm-dialog"
-import { branchDeleteConfirmation, remoteTrackingMismatchConfirmation } from "./branch-dialogs"
+import { discardConfirmation, stashApplyConfirmation, stashDropConfirmation, stashPopConfirmation, type ConfirmationRequest } from "./confirm-dialog"
+import { branchAutostashConfirmation, branchForceDeleteConfirmation, branchLocalAndRemoteDeleteConfirmation, branchRemoteDeleteConfirmation, branchRenameConfirmation, remoteTrackingMismatchConfirmation, worktreeForceRemoveConfirmation } from "./branch-dialogs"
 import { COPY_MENU_ITEMS } from "./copy-menu"
-import type { CheckoutRemoteTrackingResult, RemoteBranchSelection } from "../git/branches"
+import { branchCheckoutRequiresStash, type CheckoutRemoteTrackingResult, type CreateBranchOptions, type RemoteBranchSelection } from "../git/branches"
+import { worktreeRemovalRequiresForce } from "../git/worktrees"
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
 import { createCommitMessagePanel, type CommitMessagePanelHandle } from "./commit-message-panel"
 import { FilterInput } from "./filter-input"
@@ -110,6 +111,19 @@ type BranchesPanelChild =
 /** Ring order for the `[` / `]` scope-cycle keys in the main pane (PRD §8.1 review targets). */
 const SCOPE_ORDER: readonly WorkingTreeScope[] = ["all", "staged", "unstaged"]
 
+function liveBranchUpstream(branch: LocalBranch): { readonly remote: string; readonly branch: string } | undefined {
+  if (branch.upstreamGone === true) return undefined
+  if (branch.upstreamRemote !== undefined && branch.upstreamRemote.length > 0 &&
+    branch.upstreamBranch !== undefined && branch.upstreamBranch.length > 0) {
+    return { remote: branch.upstreamRemote, branch: branch.upstreamBranch }
+  }
+  const upstream = branch.upstream
+  if (upstream === undefined) return undefined
+  const separator = upstream.indexOf("/")
+  if (separator <= 0 || separator === upstream.length - 1) return undefined
+  return { remote: upstream.slice(0, separator), branch: upstream.slice(separator + 1) }
+}
+
 export type RootViewOptions = {
   readonly sidePanelRatio?: number
   readonly logHeight?: number
@@ -123,7 +137,7 @@ export type RootViewOptions = {
   readonly onMutationSettled?: () => void
   readonly onStageFile?: (path: string) => Promise<void>
   readonly onUnstageFile?: (path: string) => Promise<void>
-  readonly onDiscardFile?: (path: string, untracked: boolean) => Promise<void>
+  readonly onDiscardFile?: (path: string, mode: DiscardFileMode) => Promise<void>
   readonly onToggleAllFiles?: () => Promise<void>
   readonly onModeChange?: (mode: "working-tree" | "branch") => Promise<void>
   readonly onChooseBase?: (baseRef: string) => Promise<void>
@@ -144,8 +158,11 @@ export type RootViewOptions = {
   readonly onCurrentCommitMessage?: () => Promise<string>
   readonly onRefresh?: () => Promise<void>
   readonly onSwitchLocalBranch?: (branch: string) => Promise<void>
-  readonly onCreateBranch?: (startPoint?: string, branchName?: string) => Promise<void>
-  readonly onDeleteBranch?: (branch: string, force: boolean) => Promise<void>
+  readonly onCreateBranch?: (startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>
+  readonly onCreateBranchWithAutostash?: (startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>
+  readonly onDeleteBranch?: (request: BranchDeleteRequest) => Promise<void>
+  readonly onCheckBranchMerged?: (branch: string, upstream?: string) => Promise<boolean>
+  readonly onDeleteBranchFromWorktree?: (path: string, action: "remove" | "detach", request: BranchDeleteRequest, forceWorktree?: boolean) => Promise<void>
   readonly onFetchRemote?: (remote: string) => Promise<void>
   readonly onRenameBranch?: (branch: string, newName?: string) => Promise<void>
   readonly onFetch?: () => Promise<void>
@@ -216,7 +233,7 @@ export class RootView {
   private readonly actionMenu: ActionMenuHandle
   private readonly onStageFile: ((path: string) => Promise<void>) | undefined
   private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
-  private readonly onDiscardFile: ((path: string, untracked: boolean) => Promise<void>) | undefined
+  private readonly onDiscardFile: ((path: string, mode: DiscardFileMode) => Promise<void>) | undefined
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
   private readonly onModeChange: ((mode: "working-tree" | "branch") => Promise<void>) | undefined
   private readonly onChooseBase: ((baseRef: string) => Promise<void>) | undefined
@@ -254,8 +271,11 @@ export class RootView {
   private readonly onMarkFocusedFileReviewed: ((path?: string) => Promise<void>) | undefined
   private readonly onRefresh: (() => Promise<void>) | undefined
   private readonly onSwitchLocalBranch: ((branch: string) => Promise<void>) | undefined
-  private readonly onCreateBranch: ((startPoint?: string, branchName?: string) => Promise<void>) | undefined
-  private readonly onDeleteBranch: ((branch: string, force: boolean) => Promise<void>) | undefined
+  private readonly onCreateBranch: ((startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>) | undefined
+  private readonly onCreateBranchWithAutostash: ((startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>) | undefined
+  private readonly onDeleteBranch: ((request: BranchDeleteRequest) => Promise<void>) | undefined
+  private readonly onCheckBranchMerged: ((branch: string, upstream?: string) => Promise<boolean>) | undefined
+  private readonly onDeleteBranchFromWorktree: ((path: string, action: "remove" | "detach", request: BranchDeleteRequest, forceWorktree?: boolean) => Promise<void>) | undefined
   private readonly onFetchRemote: ((remote: string) => Promise<void>) | undefined
   private readonly onRenameBranch: ((branch: string, newName?: string) => Promise<void>) | undefined
   private readonly onFetch: (() => Promise<void>) | undefined
@@ -278,19 +298,18 @@ export class RootView {
   private menuOpen = false
   private upstreamCursorIndex = 0
   private stashIncludeUntracked = false
-  private pendingDiscardPaths: readonly string[] = []
-  private discardPending = false
-  private pendingStashDrop: { readonly oid: string; readonly ref: string } | undefined
-  private pendingFileDiscard: { readonly path: string; readonly untracked: boolean; readonly directory: boolean } | undefined
-  private branchDialogContext: { readonly mode: "branch-create"; readonly startPoint?: string } | { readonly mode: "branch-rename"; readonly branch: string } | undefined
+  private branchDialogContext:
+    | { readonly mode: "branch-create"; readonly startPoint?: string; readonly suggestedBranchName: string; readonly branchBase: string }
+    | { readonly mode: "branch-rename"; readonly branch: string }
+    | undefined
   private mutationInFlight = false
-  private pendingBranchDelete: { readonly branch: string; readonly force: boolean } | undefined
   private pendingRemoteMismatch: { readonly selection: RemoteBranchSelection; readonly message: string } | undefined
   private remoteCheckoutGeneration = 0
   private remoteCheckoutInFlight = false
   private branchFilter = ""
   private branchFilterActive = false
   private branchCommitsRequest = 0
+  private branchActionGeneration = 0
   branchesPanel: PanelState<"branches" | "remotes" | "tags", BranchesPanelChild>
   commitsPanel: PanelState<"commits" | "reflog", { kind: "commit-files"; oid: string; details: CommitDetails }>
   filesPanel: PanelState<"files" | "worktrees" | "submodules", never>
@@ -353,7 +372,10 @@ export class RootView {
     this.onInspectStash = options.onInspectStash
     this.onSwitchLocalBranch = options.onSwitchLocalBranch
     this.onCreateBranch = options.onCreateBranch
+    this.onCreateBranchWithAutostash = options.onCreateBranchWithAutostash
     this.onDeleteBranch = options.onDeleteBranch
+    this.onCheckBranchMerged = options.onCheckBranchMerged
+    this.onDeleteBranchFromWorktree = options.onDeleteBranchFromWorktree
     this.onRenameBranch = options.onRenameBranch
     this.onBrowseRemote = options.onBrowseRemote
     this.onInspectBranch = options.onInspectBranch
@@ -494,6 +516,7 @@ export class RootView {
     renderer.root.add(this.root)
 
     this.focusManager.onChange = (focus, logVisible) => {
+      this.branchActionGeneration += 1
       // Route through the same arm comparison `update(model)` uses (see the comment there), not a
       // bare `commandLog.update`: a wheel scroll does not require focus (task 5), so the
       // focus-lost re-arm never fires for a log that was scrolled and then hidden. Skipping the
@@ -502,11 +525,9 @@ export class RootView {
       if (logVisible) this.refreshCommandLog(this.model)
       this.pendingClick = undefined
       this.cancelGesture()
-      this.clearDiscardState()
-      this.pendingBranchDelete = undefined
+      this.clearTransientMenus()
       this.invalidateRemoteCheckout()
       this.invalidateBranchCommitsRequest()
-      this.pendingStashDrop = undefined
       this.panes.stash.box.bottomTitle = undefined
       this.panes.branches.box.bottomTitle = undefined
       this.branchFilterActive = false
@@ -537,16 +558,16 @@ export class RootView {
         this.pendingClick = undefined
         this.cancelGesture()
       }
-      if (routedKey.name === "escape" && this.commitsPanel.child !== undefined) {
-        this.actionBack()
+      // Dialogs and action menus consume input before the focused-main Escape shortcut. Otherwise a
+      // menu opened while CommitFiles is active would pop the commit child and leave the menu up.
+      if (this.modalInputActive()) {
+        this.handleModalKey(routedKey)
         key.preventDefault()
         key.stopPropagation()
         return
       }
-
-      // Dialogs consume raw characters, so modal input keeps its own path.
-      if (this.modalInputActive()) {
-        this.handleModalKey(routedKey)
+      if (routedKey.name === "escape" && this.commitsPanel.child !== undefined) {
+        this.actionBack()
         key.preventDefault()
         key.stopPropagation()
         return
@@ -573,10 +594,10 @@ export class RootView {
     // produce has a handler, so no runtime cross-check is needed here.
   }
   update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean } = {}): void {
+    this.branchActionGeneration += 1
     this.invalidateBranchCommitsRequest()
-    this.clearDiscardState()
+    this.clearTransientMenus()
     if (!options.preserveRemoteCheckout) {
-      this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
       this.branchFilterActive = false
@@ -585,10 +606,6 @@ export class RootView {
       this.filterInput.close()
     }
     this.model = model
-    if (this.pendingStashDrop !== undefined && !(model.stashes ?? []).some((stash) => stash.oid === this.pendingStashDrop?.oid)) {
-      this.pendingStashDrop = undefined
-      this.panes.stash.box.bottomTitle = undefined
-    }
     const pickerCount = model.basePicker?.candidates.length ?? 0
     this.basePickerIndex = pickerCount === 0 ? 0 : Math.min(this.basePickerIndex, pickerCount - 1)
     if (model.upstreamChoice !== undefined) {
@@ -636,18 +653,15 @@ export class RootView {
     this.renderedCommandLogArms = arms
     this.commandLog.update(model.commandLog)
   }
-  private clearDiscardState(): void {
-    this.discardPending = false
-    this.pendingDiscardPaths = []
-    this.pendingFileDiscard = undefined
+  private clearTransientMenus(): void {
+    this.actionMenu.close()
   }
   private modalInputActive(): boolean {
     return this.branchFilterActive || this.commitDialog !== undefined || this.commitMessagePanel.visible || this.copyMenuOpen ||
       this.actionMenu.isOpen() ||
       this.menuOpen ||
       this.model.upstreamChoice !== undefined || this.model.basePicker !== undefined ||
-      this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined ||
-      this.pendingStashDrop !== undefined || this.pendingFileDiscard !== undefined || this.discardPending
+      this.pendingRemoteMismatch !== undefined
   }
 
   /** Whether a mutation (git operation triggered via `runUiMutation`) is currently in flight. */
@@ -669,6 +683,8 @@ export class RootView {
   get filesPane(): PaneHandle { return this.panes.files }
   get branchesPane(): PaneHandle { return this.panes.branches }
   get stashPane(): PaneHandle { return this.panes.stash }
+  /** Whether the shared transient action menu is open; test and embedding seam. */
+  get actionMenuOpen(): boolean { return this.actionMenu.isOpen() }
   get statusPane(): PaneHandle { return this.panes.status }
   paneFor(id: (typeof FOCUS_IDS)[number]): PaneHandle {
     return this.panes[id]
@@ -1030,7 +1046,7 @@ export class RootView {
       case "tab-previous": this.actionCycleTab("previous"); return
       case "branch-checkout": this.actionBranchCheckout(); return
       case "branch-create": this.actionBranchCreate(); return
-      case "branch-delete": this.actionBranchDelete(key.shift === true); return
+      case "branch-delete": this.actionBranchDelete(); return
       case "branch-rename": this.actionBranchRename(); return
       case "fetch-remote": this.actionFetchRemote(); return
       case "commit-drilldown": this.actionCommitDrilldown(); return
@@ -1193,58 +1209,23 @@ export class RootView {
       }
       return
     }
-    // A pending two-press confirmation (branch delete, stash drop, file/selection discard,
-    // remote-tracking mismatch) is also modal input: the confirming or cancelling keystroke
-    // must re-run the same pane action rather than fall through to the registry. Each dispatch
-    // below is guarded by re-resolving the key through the registry (with the current context,
-    // model and ui) so the binding's `available` predicate still governs it — the same rule the
-    // non-modal path enforces. Without this, a key that happens to match "d" or "enter" here
-    // would bypass the predicate entirely (e.g. deleting a branch that isn't the selected one).
+    // A pending remote-tracking mismatch remains modal until the user confirms with Enter or
+    // cancels with Escape. All action menus are handled above, so no destructive key may fall
+    // through to the focused pane while a modal is active.
     if (key.name === "escape") {
       this.actionBack()
       return
     }
-    if (key.name === "d" || key.name === "enter") {
-      const resolvedAction = this.resolveModalAction(key)
-      switch (this.focusManager.active) {
-        case "files":
-          if (key.name === "d" && resolvedAction === "discard-file") this.actionDiscardFile()
-          return
-        case "branches":
-          if (key.name === "d" && resolvedAction === "branch-delete") this.actionBranchDelete(key.shift === true)
-          if (key.name === "enter" && resolvedAction === "inspect") this.actionBranchInspect()
-          return
-        case "stash":
-          if (key.name === "d" && resolvedAction === "stash-drop") this.actionStashDrop()
-          return
-        case "main":
-          if (key.name === "d" && resolvedAction === "discard-selection") this.actionDiscardSelection()
-          return
-        default:
-          return
-      }
+    if (key.name === "enter" && this.pendingRemoteMismatch !== undefined && this.focusManager.active === "branches") {
+      this.actionBranchInspect()
     }
   }
 
-  /**
-   * Resolves `key` through the registry using the current pane context, model and ui — the same
-   * availability-aware resolution `handleKey` uses on the non-modal path. `handleModalKey`'s
-   * confirm/cancel tail uses this to decide whether a two-press confirmation may actually act,
-   * rather than calling the action method unconditionally and re-implementing its guard inline.
-   */
-  private resolveModalAction(key: KeyEvent): Action | undefined {
-    return this.registry.resolve(key, {
-      context: this.focusManager.active,
-      model: this.model,
-      ui: this.uiState(),
-    })?.action
-  }
-
   private handleFilterKey(key: KeyEvent): boolean {
+    this.branchActionGeneration += 1
     if (!this.branchFilterActive) return false
     const result = this.filterInput.handleKey(key)
     if (result.cancelled) {
-      this.pendingBranchDelete = undefined
       this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
       this.branchFilter = ""
@@ -1262,7 +1243,7 @@ export class RootView {
   private actionMoveCursor(direction: "next" | "previous"): void {
     switch (this.focusManager.active) {
       case "files": {
-        this.clearDiscardState()
+        this.clearTransientMenus()
         const panel = this.filesPanel
         const active = panel.activeTab
         const current = panel.views[active]
@@ -1287,8 +1268,8 @@ export class RootView {
         return
       }
       case "branches": {
+        this.branchActionGeneration += 1
         this.invalidateBranchCommitsRequest()
-        this.pendingBranchDelete = undefined
         this.invalidateRemoteCheckout()
         this.panes.branches.box.bottomTitle = undefined
         const panel = this.branchesPanel
@@ -1337,8 +1318,6 @@ export class RootView {
         return
       }
       case "stash": {
-        this.pendingStashDrop = undefined
-        this.panes.stash.box.bottomTitle = undefined
         const next = moveListSelection(this.stashState, direction)
         if (next !== this.stashState) {
           this.stashState = next
@@ -1526,24 +1505,30 @@ export class RootView {
     }
     const row = this.selectedFileRow()
     if (row === undefined || this.onDiscardFile === undefined) return
-    if (row.kind === "directory") {
-      this.confirmDirectoryDiscard(row)
-      return
-    }
-    const file = row.payload
-    if (file === undefined) return
-    if (!file.untracked && file.worktreeStatus === "." && file.indexStatus !== ".") {
-      this.panes.files.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
-      return
-    }
-    const pending = this.pendingFileDiscard
-    if (pending?.path === file.path && pending.untracked === file.untracked && !pending.directory) {
-      this.pendingFileDiscard = undefined
-      this.runUiMutation(() => this.onDiscardFile!(file.path, file.untracked))
-    } else {
-      this.pendingFileDiscard = { path: file.path, untracked: file.untracked, directory: false }
-      this.panes.files.box.bottomTitle = `${discardConfirmation(file.path, file.untracked).message} Press d again to confirm or Escape to cancel.`
-    }
+    const path = row.path
+    const hasStaged = row.kind === "directory"
+      ? someFileInNode(row.node, fileHasStagedChanges)
+      : row.payload !== undefined && fileHasStagedChanges(row.payload)
+    const hasUnstaged = row.kind === "directory"
+      ? someFileInNode(row.node, fileHasUnstagedChanges)
+      : row.payload !== undefined && fileHasUnstagedChanges(row.payload)
+    const unstagedReason = !hasStaged || !hasUnstaged
+      ? "The selected items don't have both staged and unstaged changes."
+      : undefined
+    this.actionMenu.openMenu("Discard changes", [
+      {
+        key: "x",
+        label: "Discard all changes",
+        onPress: () => this.runUiMutation(() => this.onDiscardFile?.(path, "all")),
+      },
+      {
+        key: "u",
+        label: "Discard unstaged changes",
+        onPress: () => this.runUiMutation(() => this.onDiscardFile?.(path, "unstaged")),
+        ...(unstagedReason === undefined ? {} : { disabledReason: unstagedReason }),
+      },
+    ])
+    this.recomputeLayout()
   }
 
   private actionStageAll(): void {
@@ -1612,7 +1597,7 @@ export class RootView {
       }
       const path = row.path
       this.mutationInFlight = true
-      this.clearDiscardState()
+      this.clearTransientMenus()
       this.panes.files.box.bottomTitle = `Opening ${path}…`
       try {
         await this.onEditFile(path)
@@ -1661,7 +1646,7 @@ export class RootView {
         return
       }
       this.mutationInFlight = true
-      this.clearDiscardState()
+      this.clearTransientMenus()
       this.panes.main.box.bottomTitle = `Opening ${filePath}${line !== undefined ? `:${line}` : ""}…`
       try {
         await this.onEditFile(filePath, line)
@@ -1692,7 +1677,7 @@ export class RootView {
         return
       }
       this.mutationInFlight = true
-      this.clearDiscardState()
+      this.clearTransientMenus()
       this.panes.commits.box.bottomTitle = `Opening ${filePath}…`
       try {
         await this.onEditFile(filePath)
@@ -1762,14 +1747,7 @@ export class RootView {
     const path = targetFile?.newPath !== undefined && targetFile.newPath !== "/dev/null" ? targetFile.newPath : targetFile?.oldPath ?? "selected changes"
     const modelFile = this.model.files.find((file) => file.path === path)
     if (modelFile?.untracked && this.onDiscardFile !== undefined) {
-      const pending = this.pendingFileDiscard
-      if (pending?.path === path && pending.untracked && !pending.directory) {
-        this.pendingFileDiscard = undefined
-        this.runUiMutation(() => this.onDiscardFile!(path, true))
-      } else {
-        this.pendingFileDiscard = { path, untracked: true, directory: false }
-        this.panes.main.box.bottomTitle = `${discardConfirmation(path, true).message} Press d again to confirm or Escape to cancel.`
-      }
+      this.openConfirmation(discardConfirmation(path, true), () => this.runUiMutation(() => this.onDiscardFile?.(path, "all")))
       return
     }
     const availability = modelFile?.conflicted
@@ -1783,49 +1761,16 @@ export class RootView {
     }
     if (selected === undefined || selected.indexes.length === 0) {
       this.panes.main.box.bottomTitle = "No changed lines selected"
-    } else {
-      const paths = this.selectionPaths(selected.document, selected.indexes)
-      const label = paths.join(", ")
-      if (!this.discardPending || this.pendingDiscardPaths.join("\0") !== paths.join("\0")) {
-        this.discardPending = true
-        this.pendingDiscardPaths = paths
-        this.panes.main.box.bottomTitle = `${discardConfirmation(label || path).message} Press d again to confirm or Escape to cancel.`
-      } else {
-        this.clearDiscardState()
-        this.runUiMutation(() => this.onDiscardSelection!(selected.document, selected.indexes))
-      }
+      return
     }
+    const paths = this.selectionPaths(selected.document, selected.indexes)
+    const label = paths.join(", ")
+    this.openConfirmation(
+      discardConfirmation(label || path),
+      () => this.runUiMutation(() => this.onDiscardSelection!(selected.document, selected.indexes)),
+    )
   }
 
-  /**
-   * Discarding a directory means discarding its subtree, which git already does for a directory
-   * pathspec: `restore` for the tracked changes and `clean` for the untracked files. Both are
-   * issued through the same single-path callback the file case uses, so nothing about the
-   * mutation plumbing changes. A subtree whose every file is *only* staged is refused for the
-   * same reason a staged file is (githunk's discard never touches the index).
-   */
-  private confirmDirectoryDiscard(row: FileTreeRow<ChangedFile>): void {
-    if (everyFileInNode(row.node, (file) => !file.untracked && file.worktreeStatus === "." && file.indexStatus !== ".")) {
-      this.panes.files.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
-      return
-    }
-    const pending = this.pendingFileDiscard
-    if (pending?.path === row.path && pending.directory) {
-      this.pendingFileDiscard = undefined
-      const tracked: string[] = []
-      const untracked: string[] = []
-      forEachFile(row.node, (file) => (file.untracked ? untracked : tracked).push(file.path))
-      const discard = this.onDiscardFile
-      if (discard === undefined) return
-      this.runUiMutation(async () => {
-        if (tracked.length > 0) await discard(row.path, false)
-        if (untracked.length > 0) await discard(row.path, true)
-      })
-      return
-    }
-    this.pendingFileDiscard = { path: row.path, untracked: false, directory: true }
-    this.panes.files.box.bottomTitle = `${discardConfirmation(row.path).message} Press d again to confirm or Escape to cancel.`
-  }
 
   /** lazygit's `` ` `` binding — files_controller.go:1502 toggleTreeView. */
   private actionToggleFileTree(): void {
@@ -1872,6 +1817,7 @@ export class RootView {
       const tab = BRANCHES_TAB_ORDER[index]
       if (tab === undefined) return
       if (this.branchesPanel.child === undefined && this.branchesPanel.activeTab === tab) return
+      this.branchActionGeneration += 1
       this.invalidateBranchCommitsRequest()
       this.branchesPanel = { ...leavePanelChild(this.branchesPanel), activeTab: tab }
       this.renderBranchesPane()
@@ -1893,7 +1839,7 @@ export class RootView {
   private actionCycleTab(direction: "next" | "previous"): void {
     if (this.focusManager.active === "files") {
       this.filesPanel = cyclePanelTab(this.filesPanel, direction)
-      this.clearDiscardState()
+      this.clearTransientMenus()
       this.renderFilesPane()
       // Activating a context renders it to main (pkg/gui/context.go `Activate` -> HandleFocus).
       this.syncPreviewForFocus("files")
@@ -1901,6 +1847,7 @@ export class RootView {
       return
     }
     if (this.focusManager.active === "branches") {
+      this.branchActionGeneration += 1
       this.invalidateBranchCommitsRequest()
       this.branchesPanel = cyclePanelTab(this.branchesPanel, direction)
       this.renderBranchesPane()
@@ -1943,37 +1890,268 @@ export class RootView {
   }
 
   private actionBranchCreate(): void {
-    if (this.mutationInFlight) return
-    if (this.onCreateBranch === undefined) return
+    if (this.mutationInFlight || this.onCreateBranch === undefined) return
     const panel = this.branchesPanel
     let startPoint: string | undefined
-    if (panel.child === undefined && panel.activeTab === "branches") {
+    let suggestedBranchName = ""
+    let branchBase = ""
+    if (panel.child?.value.kind === "remote-branches") {
+      const id = panel.child.view.selectedId
+      if (id === undefined || !id.startsWith("remote-branch:")) return
+      const ref = id.slice("remote-branch:".length)
+      const prefix = `${panel.child.value.remote}/`
+      if (!ref.startsWith(prefix)) return
+      startPoint = ref
+      branchBase = ref
+      suggestedBranchName = ref.slice(prefix.length)
+    } else if (panel.child !== undefined || panel.activeTab !== "branches") {
+      return
+    } else {
       const id = panel.views.branches?.selectedId
-      if (id !== undefined && id.startsWith("local:")) startPoint = id.slice("local:".length)
+      if (id === undefined || !id.startsWith("local:")) return
+      const name = id.slice("local:".length)
+      if (!this.model.branches?.localBranches.some((branch) => branch.name === name)) return
+      startPoint = `refs/heads/${name}`
+      branchBase = name
     }
-    this.branchDialogContext = { mode: "branch-create", ...(startPoint === undefined ? {} : { startPoint }) }
-    this.openBranchDialog("branch-create", "")
+    this.branchDialogContext = { mode: "branch-create", startPoint, suggestedBranchName, branchBase }
+    this.openBranchDialog("branch-create", suggestedBranchName, branchBase)
+  }
+  private actionBranchDelete(): void {
+    if (this.mutationInFlight || this.onDeleteBranch === undefined) return
+    const panel = this.branchesPanel
+    if (panel.child?.value.kind === "remote-branches") {
+      const id = panel.child.view.selectedId
+      if (id === undefined || !id.startsWith("remote-branch:")) return
+      const ref = id.slice("remote-branch:".length)
+      const prefix = `${panel.child.value.remote}/`
+      if (!ref.startsWith(prefix)) return
+      const remoteBranch = ref.slice(prefix.length)
+      this.openBranchDeleteConfirmation(
+        { mode: "remote", branch: remoteBranch, remote: panel.child.value.remote, remoteBranch, force: false },
+        branchRemoteDeleteConfirmation(remoteBranch, panel.child.value.remote),
+      )
+      return
+    }
+    if (panel.child !== undefined || panel.activeTab !== "branches") return
+    const id = panel.views.branches?.selectedId
+    if (id === undefined || !id.startsWith("local:")) return
+    const name = id.slice("local:".length)
+    const branch = this.model.branches?.localBranches.find((candidate) => candidate.name === name)
+    if (branch === undefined) return
+    const upstream = liveBranchUpstream(branch)
+    const checkedOutReason = branch.isCurrent ? "You cannot delete the checked out branch!" : undefined
+    const upstreamReason = upstream === undefined ? "The selected branch has no upstream (or the upstream is not stored locally)" : undefined
+    const localRequest: BranchDeleteRequest = { mode: "local", branch: name, force: false }
+    const remoteRequest: BranchDeleteRequest = {
+      mode: "remote",
+      branch: upstream?.branch ?? name,
+      ...(upstream === undefined ? {} : { remote: upstream.remote, remoteBranch: upstream.branch }),
+      force: false,
+    }
+    const bothRequest: BranchDeleteRequest = {
+      mode: "local-and-remote",
+      branch: name,
+      ...(upstream === undefined ? {} : { remote: upstream.remote, remoteBranch: upstream.branch }),
+      force: false,
+    }
+    this.actionMenu.openMenu(`Delete branch '${name}'?`, [
+      {
+        key: "c",
+        label: "Delete local branch",
+        onPress: () => this.beginBranchDelete(branch, localRequest),
+        ...(checkedOutReason === undefined ? {} : { disabledReason: checkedOutReason }),
+      },
+      {
+        key: "r",
+        label: "Delete remote branch",
+        onPress: () => this.beginBranchDelete(branch, remoteRequest),
+        ...(upstreamReason === undefined ? {} : { disabledReason: upstreamReason }),
+      },
+      {
+        key: "b",
+        label: "Delete local and remote branch",
+        onPress: () => this.beginBranchDelete(branch, bothRequest),
+        ...(checkedOutReason !== undefined ? { disabledReason: checkedOutReason } : upstreamReason === undefined ? {} : { disabledReason: upstreamReason }),
+      },
+    ])
+    this.recomputeLayout()
+  }
+  private openConfirmation(confirmation: ConfirmationRequest, onConfirm: () => void): void {
+    this.panes.main.box.bottomTitle = undefined
+    this.actionMenu.openMenu(
+      confirmation.title,
+      [{
+        key: confirmation.confirmKey,
+        label: confirmation.confirmLabel,
+        onPress: onConfirm,
+      }],
+      confirmation.message,
+    )
+    this.recomputeLayout()
   }
 
-  private actionBranchDelete(force: boolean): void {
-    if (this.mutationInFlight) return
-    const panel = this.branchesPanel
-    if (panel.child !== undefined) return
-    if (panel.activeTab !== "branches") return
-    const id = panel.views.branches?.selectedId
-    if (id === undefined || !id.startsWith("local:") || this.onDeleteBranch === undefined) return
-    const name = id.slice("local:".length)
-    const pending = this.pendingBranchDelete
-    if (pending?.branch === name && pending.force === force) {
-      this.pendingBranchDelete = undefined
-      this.panes.branches.box.bottomTitle = undefined
-      this.runUiMutation(() => this.onDeleteBranch!(name, force))
-    } else {
-      this.pendingBranchDelete = { branch: name, force }
-      const confirmation = branchDeleteConfirmation(name, force)
-      this.panes.branches.box.bottomTitle = `${confirmation.message} Press ${force ? "D" : "d"} again to confirm or Escape to cancel.`
-    }
+  private openBranchDeleteConfirmation(request: BranchDeleteRequest, confirmation: ConfirmationRequest): void {
+    this.openConfirmation(confirmation, () => this.runUiMutation(() => this.onDeleteBranch?.(request)))
   }
+
+  private branchActionIsCurrent(generation: number, selectedId: string | undefined): boolean {
+    return this.branchActionGeneration === generation &&
+      this.focusManager.active === "branches" &&
+      this.branchesPanel.child === undefined &&
+      this.branchesPanel.activeTab === "branches" &&
+      this.branchesPanel.views.branches?.selectedId === selectedId
+  }
+
+  private beginBranchDelete(branch: LocalBranch, request: BranchDeleteRequest): void {
+    if (request.mode === "remote") {
+      if (request.remote === undefined || request.remoteBranch === undefined) return
+      this.openBranchDeleteConfirmation(request, branchRemoteDeleteConfirmation(request.remoteBranch, request.remote))
+      return
+    }
+    const worktree = (this.model.worktrees ?? []).find((candidate) => candidate.branch === branch.name && !candidate.isCurrent)
+    if (worktree !== undefined) {
+      if (this.onDeleteBranchFromWorktree === undefined) {
+        this.panes.main.box.bottomTitle = `Branch ${branch.name} is checked out by worktree ${worktree.name}`
+        this.root.requestRender()
+        return
+      }
+      this.openWorktreeDeleteMenu(branch, worktree, request)
+      return
+    }
+    const requestGeneration = this.branchActionGeneration
+    const requestSelectedId = this.branchesPanel.views.branches?.selectedId
+    const checkMerged = this.onCheckBranchMerged
+    if (checkMerged === undefined) {
+      if (request.mode === "local") {
+        this.runUiMutation(() => this.onDeleteBranch?.({ ...request, force: true }))
+      } else if (request.remote !== undefined && request.remoteBranch !== undefined) {
+        this.openBranchDeleteConfirmation(
+          { ...request, force: true },
+          branchLocalAndRemoteDeleteConfirmation(branch.name, request.remote, request.remoteBranch, true),
+        )
+      }
+      return
+    }
+    this.mutationInFlight = true
+    this.panes.main.box.bottomTitle = "Checking branch merge state…"
+    void checkMerged(branch.name, branch.upstream).then((merged) => {
+      this.mutationInFlight = false
+      if (!this.branchActionIsCurrent(requestGeneration, requestSelectedId)) {
+        this.panes.main.box.bottomTitle = undefined
+        this.root.requestRender()
+        return
+      }
+      if (request.mode === "local" && merged) {
+        this.runUiMutation(() => this.onDeleteBranch?.({ ...request, force: true }))
+        return
+      }
+      if (request.mode === "local") {
+        this.openBranchDeleteConfirmation({ ...request, force: true }, branchForceDeleteConfirmation(branch.name))
+        return
+      }
+      if (request.remote === undefined || request.remoteBranch === undefined) return
+      this.openBranchDeleteConfirmation(
+        { ...request, force: true },
+        branchLocalAndRemoteDeleteConfirmation(branch.name, request.remote, request.remoteBranch, !merged),
+      )
+    }).catch((error: unknown) => {
+      this.mutationInFlight = false
+      if (!this.branchActionIsCurrent(requestGeneration, requestSelectedId)) {
+        this.panes.main.box.bottomTitle = undefined
+        this.root.requestRender()
+        return
+      }
+      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+      this.root.requestRender()
+    })
+  }
+  private openWorktreeDeleteMenu(branch: LocalBranch, worktree: Worktree, request: BranchDeleteRequest): void {
+    const both = request.mode === "local-and-remote"
+    this.actionMenu.openMenu(`Branch ${branch.name} is checked out by worktree ${worktree.name}`, [
+      {
+        key: "r",
+        label: both ? "Remove worktree and delete local and remote branch" : "Remove worktree and delete branch",
+        onPress: () => this.confirmWorktreeBranchDelete(branch, worktree, request, "remove"),
+      },
+      {
+        key: "d",
+        label: both ? "Detach worktree and delete local and remote branch" : "Detach worktree and delete branch",
+        onPress: () => this.confirmWorktreeBranchDelete(branch, worktree, request, "detach"),
+      },
+    ])
+    this.recomputeLayout()
+  }
+
+  private runWorktreeBranchDelete(
+    worktree: Worktree,
+    action: "remove" | "detach",
+    request: BranchDeleteRequest,
+    forceWorktree: boolean,
+  ): void {
+    const operation = this.onDeleteBranchFromWorktree
+    if (operation === undefined || this.mutationInFlight) return
+    this.mutationInFlight = true
+    this.clearTransientMenus()
+    this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
+    void operation(worktree.path, action, { ...request, force: true }, forceWorktree).then(() => {
+      this.mutationInFlight = false
+      this.onMutationSettled?.()
+    }).catch((error: unknown) => {
+      this.mutationInFlight = false
+      this.onMutationSettled?.()
+      if (action === "remove" && !forceWorktree && worktreeRemovalRequiresForce(error)) {
+        this.openConfirmation(worktreeForceRemoveConfirmation(worktree.name), () =>
+          this.runWorktreeBranchDelete(worktree, action, request, true))
+        return
+      }
+      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+      this.root.requestRender()
+    })
+  }
+
+  private confirmWorktreeBranchDelete(
+    branch: LocalBranch,
+    worktree: Worktree,
+    request: BranchDeleteRequest,
+    action: "remove" | "detach",
+  ): void {
+    const execute = (): void => {
+      this.runWorktreeBranchDelete(worktree, action, request, false)
+    }
+    const requestGeneration = this.branchActionGeneration
+    const requestSelectedId = this.branchesPanel.views.branches?.selectedId
+    const checkMerged = this.onCheckBranchMerged
+    if (checkMerged === undefined) {
+      execute()
+      return
+    }
+    this.mutationInFlight = true
+    this.panes.main.box.bottomTitle = "Checking branch merge state…"
+    void checkMerged(branch.name, branch.upstream).then((merged) => {
+      this.mutationInFlight = false
+      if (!this.branchActionIsCurrent(requestGeneration, requestSelectedId)) {
+        this.panes.main.box.bottomTitle = undefined
+        this.root.requestRender()
+        return
+      }
+      if (merged) {
+        execute()
+        return
+      }
+      this.openConfirmation(branchForceDeleteConfirmation(branch.name), execute)
+    }).catch((error: unknown) => {
+      this.mutationInFlight = false
+      if (!this.branchActionIsCurrent(requestGeneration, requestSelectedId)) {
+        this.panes.main.box.bottomTitle = undefined
+        this.root.requestRender()
+        return
+      }
+      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+      this.root.requestRender()
+    })
+  }
+
 
   private actionBranchRename(): void {
     if (this.mutationInFlight) return
@@ -1983,8 +2161,17 @@ export class RootView {
     const id = panel.views.branches?.selectedId
     if (id === undefined || !id.startsWith("local:") || this.onRenameBranch === undefined) return
     const name = id.slice("local:".length)
-    this.branchDialogContext = { mode: "branch-rename", branch: name }
-    this.openBranchDialog("branch-rename", "")
+    const branch = this.model.branches?.localBranches.find((candidate) => candidate.name === name)
+    if (branch === undefined) return
+    const openPrompt = (): void => {
+      this.branchDialogContext = { mode: "branch-rename", branch: name }
+      this.openBranchDialog("branch-rename", "")
+    }
+    if (liveBranchUpstream(branch) === undefined) {
+      openPrompt()
+      return
+    }
+    this.openConfirmation(branchRenameConfirmation(), openPrompt)
   }
 
   private actionFetchRemote(): void {
@@ -2171,9 +2358,6 @@ export class RootView {
       this.root.requestRender()
       return
     }
-    if (this.pendingStashDrop !== undefined) {
-      this.panes.stash.box.bottomTitle = undefined
-    }
     if (this.branchesPanel.child !== undefined) {
       this.invalidateBranchCommitsRequest()
       this.branchesPanel = leavePanelChild(this.branchesPanel)
@@ -2181,8 +2365,7 @@ export class RootView {
       this.syncPreviewForFocus("branches")
       this.root.requestRender()
       return
-    } else if (this.pendingBranchDelete !== undefined || this.pendingRemoteMismatch !== undefined || this.branchFilterActive || this.remoteCheckoutInFlight) {
-      this.pendingBranchDelete = undefined
+    } else if (this.pendingRemoteMismatch !== undefined || this.branchFilterActive || this.remoteCheckoutInFlight) {
       this.invalidateRemoteCheckout()
       this.panes.branches.box.bottomTitle = undefined
       this.branchFilterActive = false
@@ -2191,14 +2374,6 @@ export class RootView {
       this.branchFilter = ""
       this.refreshBranchesPanel(this.model)
       this.renderBranchesPane()
-    }
-    if (this.pendingFileDiscard !== undefined) {
-      this.clearDiscardState()
-      this.panes.files.box.bottomTitle = undefined
-    }
-    if (this.discardPending) {
-      this.clearDiscardState()
-      this.panes.main.box.bottomTitle = undefined
     }
   }
 
@@ -2212,28 +2387,21 @@ export class RootView {
     if (this.mutationInFlight) return
     const selected = selectedStashEntryFromState(this.stashState, this.model)
     if (selected === undefined || this.onApplyStash === undefined) return
-    this.runUiMutation(() => this.onApplyStash!(selected.oid))
+    this.openConfirmation(stashApplyConfirmation(selected.ref), () => this.runUiMutation(() => this.onApplyStash?.(selected.oid)))
   }
 
   private actionStashPop(): void {
     if (this.mutationInFlight) return
     const selected = selectedStashEntryFromState(this.stashState, this.model)
     if (selected === undefined || this.onPopStash === undefined) return
-    this.runUiMutation(() => this.onPopStash!(selected.oid))
+    this.openConfirmation(stashPopConfirmation(selected.ref), () => this.runUiMutation(() => this.onPopStash?.(selected.oid)))
   }
 
   private actionStashDrop(): void {
     if (this.mutationInFlight) return
     const selected = selectedStashEntryFromState(this.stashState, this.model)
     if (selected === undefined || this.onDropStash === undefined) return
-    if (this.pendingStashDrop?.oid === selected.oid) {
-      this.pendingStashDrop = undefined
-      this.panes.stash.box.bottomTitle = undefined
-      this.runUiMutation(() => this.onDropStash!(selected.oid))
-    } else {
-      this.pendingStashDrop = selected
-      this.panes.stash.box.bottomTitle = `Drop ${selected.ref}? Press d again to confirm or Escape to cancel.`
-    }
+    this.openConfirmation(stashDropConfirmation(selected.ref), () => this.runUiMutation(() => this.onDropStash?.(selected.oid)))
   }
 
   private actionStashInspect(): void {
@@ -2364,7 +2532,7 @@ export class RootView {
 
   private actionFilter(): void {
     if (this.focusManager.active !== "branches") return
-    this.pendingBranchDelete = undefined
+    this.branchActionGeneration += 1
     this.invalidateRemoteCheckout()
     this.panes.branches.box.bottomTitle = undefined
     this.filterInput.open()
@@ -2429,23 +2597,36 @@ export class RootView {
       this.commitDialog = undefined
       this.branchDialogContext = undefined
       this.panes.branches.box.bottomTitle = undefined
-      this.clearDiscardState()
+      this.clearTransientMenus()
       this.root.requestRender()
       return true
     }
     if (result.result?.kind === "confirmed") {
       const message = result.result.message
-      const operation = context.mode === "branch-create"
-        ? this.onCreateBranch === undefined ? undefined : () => this.onCreateBranch!(context.startPoint, message)
-        : this.onRenameBranch === undefined ? undefined : () => this.onRenameBranch!(context.branch, message)
+      let branchName: string | undefined
+      let operation: (() => Promise<void>) | undefined
+      let autostashOperation: (() => Promise<void>) | undefined
+      if (context.mode === "branch-create") {
+        if (this.onCreateBranch === undefined) return true
+        branchName = sanitizeBranchName(message)
+        const options = { track: context.suggestedBranchName.length > 0 && branchName === context.suggestedBranchName }
+        operation = () => this.onCreateBranch!(context.startPoint, branchName, options)
+        if (this.onCreateBranchWithAutostash !== undefined) {
+          autostashOperation = () => this.onCreateBranchWithAutostash!(context.startPoint, branchName, options)
+        }
+      } else if (this.onRenameBranch !== undefined) {
+        operation = () => this.onRenameBranch!(context.branch, message)
+      }
       if (operation === undefined) return true
+      const isBranchCreate = context.mode === "branch-create"
       this.commitDialog = undefined
       this.branchDialogContext = undefined
-      this.runUiMutation(operation)
+      if (isBranchCreate) this.runBranchCreate(operation, autostashOperation, branchName ?? "")
+      else this.runUiMutation(operation)
       return true
     }
     const next = result
-    const nextDialog = new CommitDialog(next.state.mode, next.state.message)
+    const nextDialog = new CommitDialog(next.state.mode, next.state.message, context.mode === "branch-create" ? context.branchBase : undefined)
     nextDialog.setError(next.state.error)
     this.commitDialog = nextDialog
     this.panes.branches.box.bottomTitle = renderCommitDialog(nextDialog.state)
@@ -2539,7 +2720,7 @@ export class RootView {
       this.mutationInFlight = false
       this.remoteCheckoutInFlight = false
       if (requestGeneration === this.remoteCheckoutGeneration) {
-        this.clearDiscardState()
+        this.clearTransientMenus()
       }
     })
   }
@@ -2555,8 +2736,8 @@ export class RootView {
     this.root.requestRender()
   }
 
-  private openBranchDialog(mode: "branch-create" | "branch-rename", initialMessage: string): void {
-    this.commitDialog = new CommitDialog(mode, initialMessage)
+  private openBranchDialog(mode: "branch-create" | "branch-rename", initialMessage: string, branchBase?: string): void {
+    this.commitDialog = new CommitDialog(mode, initialMessage, branchBase)
     this.panes.branches.box.bottomTitle = renderCommitDialog(this.commitDialog.state)
     this.root.requestRender()
   }
@@ -2655,6 +2836,54 @@ export class RootView {
     this.root.requestRender()
   }
 
+  private runBranchCreate(
+    operation: () => Promise<void>,
+    autostashOperation: (() => Promise<void>) | undefined,
+    branchName: string,
+    finishOnFailure = false,
+  ): void {
+    if (this.mutationInFlight) return
+    this.mutationInFlight = true
+    this.clearTransientMenus()
+    this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
+    void operation().then(() => {
+      this.mutationInFlight = false
+      this.finishBranchCreate(branchName)
+      this.onMutationSettled?.()
+    }).catch((error: unknown) => {
+      this.mutationInFlight = false
+      this.onMutationSettled?.()
+      if (autostashOperation !== undefined && branchCheckoutRequiresStash(error)) {
+        this.openConfirmation(branchAutostashConfirmation(), () => this.runBranchCreate(autostashOperation, undefined, branchName, true))
+        return
+      }
+      if (finishOnFailure) {
+        this.finishBranchCreate(branchName)
+      }
+      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+      this.root.requestRender()
+    })
+  }
+
+  private finishBranchCreate(branchName: string): void {
+    if (this.branchesPanel.child !== undefined) {
+      this.branchesPanel = { ...leavePanelChild(this.branchesPanel), activeTab: "branches" }
+    }
+    const localId = `local:${branchName}`
+    const branchView = this.branchesPanel.views.branches
+    if (branchView.rows.some((row) => row.id === localId)) {
+      this.branchesPanel = {
+        ...this.branchesPanel,
+        views: { ...this.branchesPanel.views, branches: selectListRow(branchView, localId) },
+      }
+    }
+    if (this.focusManager.active !== "branches") this.focusManager.focus("branches")
+    this.renderBranchesPane()
+    this.syncPreviewForFocus("branches")
+    this.root.requestRender()
+  }
+
+
   /**
    * `inlineStatus` attributes the operation to one list row for its duration, which is lazygit's
    * `WithInlineStatus` (inline_status_helper.go:65-95): the row itself says `Pulling ●∙∙` instead of
@@ -2666,7 +2895,7 @@ export class RootView {
   ): void {
     if (this.mutationInFlight) return
     this.mutationInFlight = true
-    this.clearDiscardState()
+    this.clearTransientMenus()
     this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
     if (inlineStatus !== undefined) this.beginItemOperation(inlineStatus.rowId, inlineStatus.operation)
     const promise = operation()
@@ -2680,7 +2909,7 @@ export class RootView {
       this.root.requestRender()
     }).finally(() => {
       this.mutationInFlight = false
-      this.clearDiscardState()
+      this.clearTransientMenus()
       if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
       this.onMutationSettled?.()
     })
@@ -3013,7 +3242,7 @@ export class RootView {
     setMainCursorTarget(pane, target)
     const targetLine = mainCursorTargetLine(document, target)
     if (targetLine !== undefined) this.revealListRow("main", pane, targetLine)
-    this.clearDiscardState()
+    this.clearTransientMenus()
     const location = target.hunkIndex === undefined ? "file" : `hunk ${target.hunkIndex + 1}`
     pane.box.bottomTitle = `Cursor file ${target.fileIndex + 1}, ${location}`
     this.root.requestRender()
@@ -3167,6 +3396,7 @@ export class RootView {
         const nextView = selectListRow(panel.child.view, stableId)
         if (nextView !== panel.child.view) {
           this.branchesPanel = { ...panel, child: { ...panel.child, view: nextView } }
+          this.branchActionGeneration += 1
           this.renderBranchesPane()
           this.revealListRow("branches", this.panes.branches, nextView.selectedIndex)
           this.syncPreviewForFocus("branches")
@@ -3178,6 +3408,7 @@ export class RootView {
         const nextView = selectListRow(view, stableId)
         if (nextView !== view) {
           this.branchesPanel = { ...panel, views: { ...panel.views, [active]: nextView } }
+          this.branchActionGeneration += 1
           this.renderBranchesPane()
           this.revealListRow("branches", this.panes.branches, nextView.selectedIndex)
           this.syncPreviewForFocus("branches")
@@ -3505,7 +3736,7 @@ export class RootView {
           this.lastSplitterPress = undefined
           this.gestureOwner = { kind: "main-selection" }
           if (this.focusManager.active !== "main") this.focusManager.focus("main")
-          this.clearDiscardState()
+          this.clearTransientMenus()
           event.stopPropagation()
           return
         }

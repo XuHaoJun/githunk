@@ -33,6 +33,8 @@ export const LOG_ACTIONS = {
    * mistake to "fix" here.
    */
   discardAllUnstagedChangesInFile: "Discard all unstaged changes selected file(s)",
+  /** english.go:2173 */
+  discardAllChangesInFile: "Discard all changes in selected file(s)",
   /**
    * staging_controller.go:239-265; english.go:2215. Both staging and discarding a selection:
    * `DiscardSelection` (:213) routes through `applySelectionAndRefresh(true)` into the same
@@ -56,6 +58,10 @@ export const LOG_ACTIONS = {
   createBranch: "Create branch",
   /** english.go:2137 */
   deleteLocalBranch: "Delete local branch",
+  /** english.go:1733 */
+  deleteRemoteBranch: "Delete remote branch",
+  /** english.go:2053 */
+  removeWorktree: "Remove worktree",
   /** english.go:2141 */
   renameBranch: "Rename branch",
   /** english.go:2210 */

@@ -1,6 +1,6 @@
 import type { BranchListing, LocalBranch, Remote, RemoteBranch } from "../domain/branch"
 import { trackingLocalName } from "../domain/branch"
-import { GitRunner } from "./runner"
+import { GitCommandError, GitRunner } from "./runner"
 import { loadRepoConfig, type RepoConfig } from "./config"
 import { parseNulFields } from "./parse"
 
@@ -10,6 +10,11 @@ export type DeleteBranchOptions = {
   readonly force?: boolean
   /** Force deletion is deliberately a separately confirmed action. */
   readonly confirmed?: boolean
+}
+
+export type CreateBranchOptions = {
+  /** Let Git create normal upstream tracking unless explicitly disabled. */
+  readonly track?: boolean
 }
 
 export type CheckoutRemoteTrackingOptions = {
@@ -178,7 +183,7 @@ export async function switchLocal(runner: CommandRunner, branch: string): Promis
   await validateBranchName(runner, branch)
   await runner.run(["switch", branch])
 }
-export async function createBranch(runner: CommandRunner, branch: string, startPoint?: string): Promise<void> {
+export async function createBranch(runner: CommandRunner, branch: string, startPoint?: string, options: CreateBranchOptions = {}): Promise<void> {
   await validateBranchName(runner, branch)
   if (startPoint === undefined) {
     await runner.run(["switch", "-c", branch])
@@ -186,7 +191,7 @@ export async function createBranch(runner: CommandRunner, branch: string, startP
   }
   const resolved = await runner.run(["rev-parse", "--verify", "--quiet", "--end-of-options", `${startPoint}^{commit}`], { readOnly: true })
   if (resolved.stdout.trim().length === 0) throw new Error(`start point does not resolve to a commit: ${startPoint}`)
-  await runner.run(["switch", "-c", branch, startPoint])
+  await runner.run(["switch", "-c", branch, ...(options.track === false ? ["--no-track"] : []), startPoint])
 }
 
 
@@ -196,6 +201,48 @@ export async function deleteBranch(runner: CommandRunner, branch: string, option
     throw new Error(`force deletion requires separate confirmation for ${branch}`)
   }
   await runner.run(["branch", options.force === true ? "-D" : "-d", "--", branch])
+}
+
+export async function deleteRemoteBranch(runner: CommandRunner, remote: string, branch: string): Promise<void> {
+  await validateBranchName(runner, branch)
+  const remotes = await listRemoteNames(runner)
+  if (!remotes.includes(remote)) throw new Error(`remote does not exist: ${remote}`)
+  await runner.run(["push", remote, "--delete", `refs/heads/${branch}`], { streamOutput: true })
+}
+
+/** Validates an unconfirmed force delete before touching the remote, then deletes remote first. */
+export async function deleteLocalAndRemoteBranch(
+  runner: CommandRunner,
+  branch: string,
+  remote: string,
+  remoteBranch: string,
+  options: DeleteBranchOptions = {},
+): Promise<void> {
+  const merged = await isBranchMerged(runner, branch)
+  if (!merged && (options.force !== true || options.confirmed !== true)) {
+    throw new Error(`force deletion requires separate confirmation for ${branch}`)
+  }
+  const localOptions = merged ? { force: true, confirmed: true } : options
+  await deleteRemoteBranch(runner, remote, remoteBranch)
+  await deleteBranch(runner, branch, localOptions)
+}
+
+/**
+ * Mirrors lazygit's `IsBranchMerged`: a branch is merged when it has no commit outside the
+ * checked-out branch or its live upstream. Main-branch configuration is not available in githunk,
+ * so HEAD and the branch's explicit upstream are the complete local set.
+ */
+export async function isBranchMerged(runner: CommandRunner, branch: string, upstream?: string): Promise<boolean> {
+  const exclusions = ["^HEAD", ...(upstream === undefined || upstream.length === 0 ? [] : [`^${upstream}`])]
+  const result = await runner.run(["rev-list", "--max-count=1", `refs/heads/${branch}`, ...exclusions, "--"], { readOnly: true })
+  return result.stdout.trim().length === 0
+}
+
+export function branchCheckoutRequiresStash(error: unknown): boolean {
+  if (!(error instanceof GitCommandError)) return false
+  const stderr = error.record.stderr
+  return stderr.includes("Please commit your changes or stash them before you switch branch") ||
+    stderr.includes("Please move or remove them before you switch branch")
 }
 
 export async function renameBranch(runner: CommandRunner, oldName: string, newName: string): Promise<void> {

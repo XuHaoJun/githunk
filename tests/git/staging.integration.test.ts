@@ -125,7 +125,21 @@ describe("GitMutations", () => {
   test("discards an untracked file only through clean", async () => {
     await repo.write("untracked.txt", "remove me\n")
     const mutations = new GitMutations(runner)
-    await mutations.discardFile("untracked.txt", true)
+    await mutations.discardFile("untracked.txt", "all")
     expect((await repo.git(["status", "--short"])).stdout).not.toContain("untracked.txt")
+  })
+
+  test("separates discarding unstaged changes from all changes", async () => {
+    await repo.write("file.txt", "base\nstaged\n")
+    await repo.git(["add", "--", "file.txt"])
+    await repo.write("file.txt", "base\nstaged\nunstaged\n")
+    const mutations = new GitMutations(runner)
+
+    await mutations.discardFile("file.txt", "unstaged")
+    expect((await repo.git(["diff", "--cached", "--name-only"])).stdout).toContain("file.txt")
+    expect((await repo.git(["diff", "--name-only"])).stdout).toBe("")
+
+    await mutations.discardFile("file.txt", "all")
+    expect((await repo.git(["status", "--short"])).stdout).toBe("")
   })
 })
