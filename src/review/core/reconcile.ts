@@ -137,25 +137,45 @@ export function reconcileViewed(
   previous: Readonly<Record<string, ViewedRecord>>,
   matches: ReviewFileMatchResult,
 ): Readonly<Record<string, ViewedRecord>> {
+  const prevKeys = Object.keys(previous)
+  if (prevKeys.length === 0) return previous
   const next: Record<string, ViewedRecord> = {}
+  let changed = false
   for (const [prevKey, record] of Object.entries(previous)) {
     const current = matches.previousToCurrent.get(prevKey)
     if (current) {
-      // Transfer to new fileKey, preserving original path/contentId/generation provenance
-      // The record's fileKey should update to current key for indexing, but path/contentId stay as originally viewed
-      const transferred: ViewedRecord = {
-        fileKey: current.key,
-        path: record.path,
-        contentId: record.contentId,
-        generationId: record.generationId,
-        viewedAt: record.viewedAt,
+      if (current.key === prevKey) {
+        // Exact match: preserve original record reference (fileKey unchanged, provenance still valid)
+        next[current.key] = record
+      } else {
+        // Rename: must update fileKey for new index, path/contentId stay as originally viewed (invalidates coverage)
+        const transferred: ViewedRecord = {
+          fileKey: current.key,
+          path: record.path,
+          contentId: record.contentId,
+          generationId: record.generationId,
+          viewedAt: record.viewedAt,
+        }
+        next[current.key] = transferred
+        changed = true
       }
-      next[current.key] = transferred
     } else {
-      // Deleted or ambiguous -> drop (no transfer)
-      // No entry in next
+      // Deleted or ambiguous -> drop
+      changed = true
     }
   }
+  // Preserve reference when semantically equal (no renames/drops and same count)
+  if (!changed && prevKeys.length === Object.keys(next).length) {
+    let allSame = true
+    for (const k of prevKeys) {
+      if (!(k in next) || next[k] !== previous[k]) {
+        allSame = false
+        break
+      }
+    }
+    if (allSame) return previous
+  }
+  if (Object.keys(next).length === 0 && prevKeys.length === 0) return previous
   return next
 }
 
@@ -167,22 +187,32 @@ export function reconcileFeedback(
   const prevKey = feedback.anchor.fileKey
   const current = matches.previousToCurrent.get(prevKey)
 
-  // If anchor was on a file that got renamed uniquely, remap its fileKey before reconcile
   let anchorForReconcile = feedback.anchor
   if (current && current.key !== prevKey) {
-    // Update fileKey to new location, keep other fields for reconcileAnchor to handle
     if (anchorForReconcile.kind === "file") {
       anchorForReconcile = { kind: "file", fileKey: current.key, contentId: anchorForReconcile.contentId }
     } else {
       anchorForReconcile = { ...anchorForReconcile, fileKey: current.key }
     }
-  } else if (!current) {
-    // No mapping: check if file was deleted or ambiguous
-    // If previous key is ambiguous or deleted, the fileKey no longer exists in document
-    // Keep anchor as is; reconcileAnchor will return orphaned
   }
 
   const result = reconcileAnchor(anchorForReconcile, document)
+  // Preserve reference when anchor and resolution unchanged
+  const anchorUnchanged =
+    result.anchor === feedback.anchor ||
+    (result.anchor.kind === feedback.anchor.kind &&
+      result.anchor.fileKey === feedback.anchor.fileKey &&
+      result.anchor.contentId === feedback.anchor.contentId &&
+      (result.anchor.kind === "file" ||
+        (result.anchor.kind === "range" &&
+          (feedback.anchor as Extract<ReviewFeedback["anchor"], { kind: "range" }>).startLine === result.anchor.startLine &&
+          (feedback.anchor as Extract<ReviewFeedback["anchor"], { kind: "range" }>).endLine === result.anchor.endLine &&
+          (feedback.anchor as Extract<ReviewFeedback["anchor"], { kind: "range" }>).ownerHunkIndex === result.anchor.ownerHunkIndex &&
+          (feedback.anchor as Extract<ReviewFeedback["anchor"], { kind: "range" }>).contextDigest === result.anchor.contextDigest &&
+          (feedback.anchor as Extract<ReviewFeedback["anchor"], { kind: "range" }>).side === result.anchor.side)))
+  if (anchorUnchanged && result.resolution === feedback.resolution) {
+    return feedback
+  }
   return {
     ...feedback,
     anchor: result.anchor,
@@ -198,40 +228,32 @@ export function reconcileSelection(
   if (selection.fileKey === null) return selection
   const current = matches.previousToCurrent.get(selection.fileKey)
   if (current) {
-    // Exact or rename: keep same hunk index if valid
     const file = document.files.find((f) => f.key === current.key)
     if (!file) return { fileKey: null, hunkIndex: 0 }
     const maxIndex = file.hunks.length === 0 ? 0 : file.hunks.length - 1
     const clamped = Math.min(Math.max(selection.hunkIndex, 0), maxIndex)
+    if (current.key === selection.fileKey && clamped === selection.hunkIndex) return selection
     return { fileKey: current.key, hunkIndex: clamped }
   }
 
-  // Check if selection was ambiguous or deleted
   if (matches.ambiguousPreviousKeys.has(selection.fileKey) || matches.deletedFiles.some((f) => f.key === selection.fileKey)) {
-    // Fallback to nearest visible file by document order
     return fallbackSelection(document, selection)
   }
 
-  // Fallback for case where previous key not found in previous? Maybe file was new and then deleted?
   const stillExists = document.files.find((f) => f.key === selection.fileKey)
   if (stillExists) {
-    // File still present but not matched? Could be new file that stayed? Keep same.
     const maxIndex = stillExists.hunks.length === 0 ? 0 : stillExists.hunks.length - 1
     const clamped = Math.min(Math.max(selection.hunkIndex, 0), maxIndex)
+    if (clamped === selection.hunkIndex) return selection
     return { fileKey: stillExists.key, hunkIndex: clamped }
   }
 
   return fallbackSelection(document, selection)
 }
 
+// TODO: nearest visible fallback for middle deletion – currently first-file; deferred to polish (see task-4-report I2)
 function fallbackSelection(document: ReviewDocument, previous: ReviewSelection): ReviewSelection {
   if (document.files.length === 0) return { fileKey: null, hunkIndex: 0 }
-  // Heuristic: pick first file (nearest visible). Could use index of previous if we had previous order;
-  // we don't track previous index, so fallback to first visible file.
-  // Alternative: if previous had an index, clamp to nearest. Without previous document order, choose first.
-  // For tests that expect nearest to deleted middle file, first is not ideal, but we can approximate by choosing smallest index.
-  // Since we lack previous index, we simply return first file's key.
-  // To better handle middle deletion, we can attempt to keep hunkIndex 0.
   const first = document.files[0]!
   return { fileKey: first.key, hunkIndex: 0 }
 }
@@ -240,29 +262,74 @@ export function reconcileExpandedGaps(
   expandedGaps: readonly ExpandedGap[],
   matches: ReviewFileMatchResult,
 ): readonly ExpandedGap[] {
+  if (expandedGaps.length === 0) return expandedGaps
   const result: ExpandedGap[] = []
+  let changed = false
   for (const gap of expandedGaps) {
     const current = matches.previousToCurrent.get(gap.fileKey)
     if (current) {
-      result.push({ fileKey: current.key, gapId: gap.gapId, expanded: gap.expanded })
+      if (current.key === gap.fileKey) {
+        result.push(gap)
+      } else {
+        result.push({ fileKey: current.key, gapId: gap.gapId, expanded: gap.expanded })
+        changed = true
+      }
     } else if (matches.ambiguousPreviousKeys.has(gap.fileKey)) {
-      // ambiguous -> retire
+      changed = true
       continue
     } else {
-      // deleted or otherwise unmatched -> retire if not present
-      // Check if gap's fileKey still exists as exact (should have been handled)
-      // else retire
+      changed = true
       continue
     }
+  }
+  if (!changed && result.length === expandedGaps.length) {
+    let allSame = true
+    for (let i = 0; i < result.length; i++) {
+      if (result[i] !== expandedGaps[i]) {
+        allSame = false
+        break
+      }
+    }
+    if (allSame) return expandedGaps
   }
   return result
 }
 
+// Deferred: rewritten-history detection via ancestor check (lastSubmission head not ancestor of HEAD)
+// and since-last-review projection eligibility are handled in projection loader (Task 6); aggregate
+// reconciliation here preserves coverage via identity regardless of history rewrite (see design §9.2).
 export function reconcileReviewState(previous: ReviewState, document: ReviewDocument): ReviewState {
+  if (previous.document === document) return previous
   const matches = matchReviewFiles(previous.document.files, document.files)
   const viewed = reconcileViewed(previous.viewed, matches)
-  const feedback = previous.feedback.map((item) => reconcileFeedback(item, matches, document))
+  const feedback = (() => {
+    if (previous.feedback.length === 0) return previous.feedback
+    const reconciled = previous.feedback.map((item) => reconcileFeedback(item, matches, document))
+    let same = reconciled.length === previous.feedback.length
+    if (same) {
+      for (let i = 0; i < reconciled.length; i++) {
+        if (reconciled[i] !== previous.feedback[i]) {
+          same = false
+          break
+        }
+      }
+    } else {
+      same = false
+    }
+    return same ? previous.feedback : reconciled
+  })()
   const selection = reconcileSelection(previous.selection, matches, document)
   const expandedGaps = reconcileExpandedGaps(previous.expandedGaps, matches)
+  // Idempotent when generation and patch digest unchanged and all derived slices equal – avoids spurious revision bump for no-op reconciliation (I3)
+  if (
+    viewed === previous.viewed &&
+    feedback === previous.feedback &&
+    selection === previous.selection &&
+    expandedGaps === previous.expandedGaps &&
+    document.generation.id === previous.document.generation.id &&
+    document.aggregatePatchDigest === previous.document.aggregatePatchDigest
+  ) {
+    return previous
+  }
   return reduceReviewState(previous, { type: "document/reconciled", document, viewed, feedback, selection, expandedGaps })
 }

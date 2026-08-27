@@ -77,7 +77,7 @@ export function reviewFileMatchesFilter(file: Pick<ReviewFile, "path" | "previou
   return false
 }
 
-export function visibleReviewFiles(state: Pick<ReviewState, "document" | "filter" | "feedback" | "viewed" | "selection">): readonly ReviewFile[] {
+export function visibleReviewFiles(state: Pick<ReviewState, "document" | "filter" | "feedback"> & Partial<Pick<ReviewState, "viewed" | "selection">>): readonly ReviewFile[] {
   const q = state.filter.query
   const scope = state.filter.scope
   return state.document.files.filter((file) => {
@@ -86,11 +86,14 @@ export function visibleReviewFiles(state: Pick<ReviewState, "document" | "filter
       return state.feedback.some((fb) => fb.anchor.fileKey === file.key)
     }
     if (scope === "unreviewed") {
-      const cov = coverageForFile(file, (state as unknown as { viewed: Readonly<Record<string, ViewedRecord>> }).viewed, (state as unknown as { selection: { fileKey: string | null } }).selection?.fileKey ?? null)
+      const viewed = (state.viewed ?? {}) as Readonly<Record<string, ViewedRecord>>
+      const selectedKey = state.selection?.fileKey ?? null
+      const cov = coverageForFile(file, viewed, selectedKey)
       return cov === "not-viewed" || cov === "reviewing"
     }
     if (scope === "changed") {
-      const cov = coverageForFile(file, (state as unknown as { viewed: Readonly<Record<string, ViewedRecord>> }).viewed)
+      const viewed = (state.viewed ?? {}) as Readonly<Record<string, ViewedRecord>>
+      const cov = coverageForFile(file, viewed)
       return cov === "changed-after-review"
     }
     if (scope === "all") return true
