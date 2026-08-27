@@ -273,7 +273,7 @@ describe("branch action parity", () => {
 
     await harness.pressKey("RETURN")
     expect(harness.app.view!.actionMenuOpen).toBe(false)
-    expect(String(harness.app.view!.branchesPane.box.bottomTitle)).toContain("Rename branch")
+    expect(harness.frame()).toContain("Rename branch")
   })
   test("new branch from a remote branch uses its ref and short name", async () => {
     harness = await createShellHarness({ setup: seedRemoteBranch })
@@ -287,9 +287,9 @@ describe("branch action parity", () => {
     expect(harness.app.view!.branchesPanel.child?.view.selectedId).toBe("remote-branch:origin/feature/foo")
     await harness.pressKey("n")
 
-    const prompt = String(harness.app.view!.branchesPane.box.bottomTitle)
-    expect(prompt).toContain("New branch name (branch is off of 'origin/feature/foo')")
-    expect(prompt).toContain("feature/foo")
+    const frame = harness.frame()
+    expect(frame).toContain("New branch name (branch is off of 'origin/feature/foo')")
+    expect(frame).toContain("feature/foo")
   })
 
   test("creating from a local branch checks out the new branch", async () => {
