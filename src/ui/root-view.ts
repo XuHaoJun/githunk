@@ -600,10 +600,7 @@ export class RootView {
   update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean } = {}): void {
     this.branchActionGeneration += 1
     this.invalidateBranchCommitsRequest()
-    this.clearTransientMenus()
     if (!options.preserveRemoteCheckout) {
-      this.invalidateRemoteCheckout()
-      this.panes.branches.box.bottomTitle = undefined
       this.branchFilterActive = false
       this.branchFilter = ""
       this.filterInput.clear()
