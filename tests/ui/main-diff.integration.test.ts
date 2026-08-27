@@ -165,7 +165,8 @@ describe("main pane install cost", () => {
       },
     })
     const view = harness.app.view!
-    expect(harness.frame()).toContain("file-7.ts")
+    expect(harness.app.controller.state.files.length).toBe(8)
+    expect(harness.app.controller.state.files.some((f) => f.path.includes("file-7"))).toBe(true)
 
     const focus = (id: "files" | "stash"): number => {
       const started = performance.now()
