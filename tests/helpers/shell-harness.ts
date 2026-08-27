@@ -75,6 +75,7 @@ export type ShellHarnessOptions = {
   /** Overrides the default (real editor-spawning) `editFile`, e.g. to observe the edit without spawning a process. */
   readonly onEditFile?: (path: string, line?: number) => Promise<void>
   readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
+  readonly onCheckBranchMerged?: (branch: string, upstream?: string) => Promise<boolean>
 }
 
 export type ShellHarness = {
@@ -166,6 +167,7 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     ...(options.onGeometryChange === undefined ? {} : { onGeometryChange: options.onGeometryChange }),
     ...(options.onEditFile === undefined ? {} : { onEditFile: options.onEditFile }),
     ...(options.loadBranchCommits === undefined ? {} : { loadBranchCommits: options.loadBranchCommits }),
+    ...(options.onCheckBranchMerged === undefined ? {} : { onCheckBranchMerged: options.onCheckBranchMerged }),
   })
   await app.refresh()
   await setup.flush()

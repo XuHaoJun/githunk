@@ -187,7 +187,7 @@ describe("v0.1 review workflow acceptance", () => {
     expect((await expectGit(clonePath, ["status", "--porcelain"])).stdout).toBe(" M story.txt\n?? untracked.txt\n")
     expect(await readFile(join(clonePath, "untracked.txt"), "utf8")).toBe("new file\n")
     await controller.discardFile("story.txt")
-    await controller.discardFile("untracked.txt", true)
+    await controller.discardFile("untracked.txt", "all")
     await controller.refresh()
     expect((await expectGit(clonePath, ["status", "--porcelain"])).stdout).toBe("")
     await controller.popStash(stashRef!)
@@ -195,7 +195,7 @@ describe("v0.1 review workflow acceptance", () => {
     expect((await expectGit(clonePath, ["status", "--porcelain"])).stdout).toBe(" M story.txt\n?? untracked.txt\n")
     expect(await readFile(join(clonePath, "untracked.txt"), "utf8")).toBe("new file\n")
     await controller.discardFile("story.txt")
-    await controller.discardFile("untracked.txt", true)
+    await controller.discardFile("untracked.txt", "all")
     await controller.refresh()
     expect((await expectGit(clonePath, ["status", "--porcelain"])).stdout).toBe("")
 

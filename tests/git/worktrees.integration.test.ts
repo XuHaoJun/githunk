@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import { GitRunner } from "../../src/git/runner"
-import { listWorktrees } from "../../src/git/worktrees"
+import { detachWorktree, listWorktrees, removeWorktree } from "../../src/git/worktrees"
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
 
 describe("worktree loader against a real repository", () => {
@@ -82,5 +82,32 @@ describe("worktree loader against a real repository", () => {
 
     const worktrees = await listWorktrees(new GitRunner(repository.path))
     expect(worktrees[0]).toMatchObject({ isCurrent: true, isMain: true, branch: "topic" })
+  })
+  test("removes a linked worktree", async () => {
+    repository = await createTempRepository()
+    await repository.write("file.txt", "base\n")
+    await repository.git(["add", "file.txt"])
+    await repository.git(["commit", "-m", "base"])
+    await repository.git(["worktree", "add", "wt-feature", "-b", "feature"])
+
+    await removeWorktree(new GitRunner(repository.path), join(repository.path, "wt-feature"))
+
+    expect((await repository.git(["worktree", "list", "--porcelain"])).stdout).not.toContain("wt-feature")
+    expect((await repository.git(["branch", "--list", "feature"])).stdout).toContain("feature")
+  })
+
+  test("detaches a linked worktree without deleting its branch", async () => {
+    repository = await createTempRepository()
+    await repository.write("file.txt", "base\n")
+    await repository.git(["add", "file.txt"])
+    await repository.git(["commit", "-m", "base"])
+    await repository.git(["worktree", "add", "wt-feature", "-b", "feature"])
+
+    await detachWorktree(new GitRunner(repository.path), join(repository.path, "wt-feature"))
+
+    const worktrees = await listWorktrees(new GitRunner(repository.path))
+    const detached = worktrees.find((worktree) => worktree.name === "wt-feature")
+    expect(detached?.branch).toBeUndefined()
+    expect((await repository.git(["branch", "--list", "feature"])).stdout).toContain("feature")
   })
 })

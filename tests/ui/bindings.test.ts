@@ -427,48 +427,6 @@ describe("GITHUNK_BINDINGS", () => {
   })
 })
 
-describe("branches pane: Shift+D force delete", () => {
-  const registry = createRegistry()
-  const workingTree = model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } })
-  const local = ui({ selectedBranchKind: "local" })
-
-  test("labels Enter as viewing commits", () => {
-    const entry = registry.menuFor("branches", workingTree, local).find((candidate) => candidate.keys === "enter")
-    expect(entry).toEqual({ group: "context", keys: "enter", description: "view commits", enabled: true })
-  })
-
-  test("Shift+D resolves to branch-delete with shift set, distinct from plain d", () => {
-    const dBinding = registry.resolve({ name: "d" }, { context: "branches", model: workingTree, ui: local })
-    const shiftDBinding = registry.resolve({ name: "D" }, { context: "branches", model: workingTree, ui: local })
-    expect(dBinding?.action).toBe("branch-delete")
-    expect(shiftDBinding?.action).toBe("branch-delete")
-    // Two distinct bindings, not the same declaration matched twice.
-    expect(dBinding).not.toBe(shiftDBinding)
-    expect(registry.dispatch({ name: "D" }, { context: "branches", model: workingTree, ui: local })).toBe("branch-delete")
-  })
-
-  test("Shift+D is gated by the same availability predicate as d", () => {
-    const remote = ui({ selectedBranchKind: "remote" })
-    expect(registry.dispatch({ name: "D" }, { context: "branches", model: workingTree, ui: remote })).toBeUndefined()
-    expect(registry.dispatch({ name: "d" }, { context: "branches", model: workingTree, ui: remote })).toBeUndefined()
-  })
-
-  test("hints bar describes force delete distinguishably from ordinary delete", () => {
-    const hints = registry.hintsFor("branches", workingTree, local, 300)
-    expect(hints).toContain("delete: d")
-    expect(hints).toContain("force delete: D")
-  })
-
-  test("? menu describes force delete distinguishably from ordinary delete", () => {
-    const entries = registry.menuFor("branches", workingTree, local)
-    const plainDelete = entries.find((entry) => entry.keys === "d" && entry.description === "delete the branch")
-    const forceDelete = entries.find((entry) => entry.keys === "D")
-    expect(plainDelete).toBeDefined()
-    expect(forceDelete).toBeDefined()
-    expect(forceDelete?.description).not.toBe(plainDelete?.description)
-    expect(forceDelete?.description.toLowerCase()).toContain("force")
-  })
-})
 
 describe("branches pane: f agrees between hints, menu and dispatch", () => {
   const registry = createRegistry()

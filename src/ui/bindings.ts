@@ -369,9 +369,8 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
 
   // ---- branches pane ----
   { keys: ["space"], action: "branch-checkout", description: "checkout", contexts: ["branches"], displayOnScreen: true, menuDescription: "switch to the branch, creating a local tracking branch if needed" },
-  { keys: ["n"], action: "branch-create", description: "new", contexts: ["branches"], displayOnScreen: true },
-  { keys: ["d"], action: "branch-delete", description: "delete", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local", menuDescription: "delete the branch" },
-  { keys: ["D"], action: "branch-delete", description: "force delete", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local", menuDescription: "force delete the branch, even if unmerged" },
+  { keys: ["n"], action: "branch-create", description: "new", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local" || ui.selectedBranchKind === "remote-branch" },
+  { keys: ["d"], action: "branch-delete", description: "delete", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local" || ui.selectedBranchKind === "remote-branch", menuDescription: "open branch delete options" },
   { keys: ["r"], action: "branch-rename", description: "rename", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local" },
   { keys: ["f"], action: "fetch-remote", description: "fetch", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "remote", menuDescription: "fetch the selected remote" },
   { keys: ["enter"], action: "inspect", description: "view commits", contexts: ["branches"], displayOnScreen: true, menuDescription: "view commits" },

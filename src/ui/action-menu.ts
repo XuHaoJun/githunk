@@ -16,19 +16,27 @@ export type ActionMenuItem = {
   readonly key: string
   readonly label: string
   readonly onPress: () => void
+  /** A disabled item remains visible, like lazygit's disabled menu rows. */
+  readonly disabledReason?: string
+  /** Optional side effect when a user chooses a disabled item. */
+  readonly onDisabled?: () => void
+}
+
+function actionMenuLabel(item: ActionMenuItem): string {
+  return item.disabledReason === undefined ? item.label : `${item.label} (unavailable: ${item.disabledReason})`
 }
 
 export function renderActionMenuLines(items: readonly ActionMenuItem[], selectedIndex: number): readonly string[] {
   const keyWidth = items.reduce((widest, item) => Math.max(widest, item.key.length), 0)
   return items.map((item, index) =>
-    `${index === selectedIndex ? ">" : " "} ${item.key.padEnd(keyWidth, " ")}  ${item.label}`,
+    `${index === selectedIndex ? ">" : " "} ${item.key.padEnd(keyWidth, " ")}  ${actionMenuLabel(item)}`,
   )
 }
 
 export type ActionMenuHandle = {
   readonly box: BoxRenderable
   isOpen(): boolean
-  openMenu(title: string, items: readonly ActionMenuItem[]): void
+  openMenu(title: string, items: readonly ActionMenuItem[], prompt?: string): void
   close(): void
   /** Returns true when the key was consumed, so the caller stops dispatching it. */
   handleKey(name: string): boolean
@@ -61,19 +69,22 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
   box.visible = false
 
   let items: readonly ActionMenuItem[] = []
+  let prompt = ""
   let selectedIndex = 0
   let open = false
 
   const paint = (): void => {
-    text.content = renderActionMenuLines(items, selectedIndex).join("\n")
+    const promptLines = prompt.length === 0 ? [] : [prompt, ""]
+    text.content = [...promptLines, ...renderActionMenuLines(items, selectedIndex)].join("\n")
   }
 
   return {
     box,
     isOpen: () => open,
-    openMenu(title: string, nextItems: readonly ActionMenuItem[]) {
+    openMenu(title: string, nextItems: readonly ActionMenuItem[], nextPrompt = "") {
       open = true
       items = nextItems
+      prompt = nextPrompt
       selectedIndex = 0
       box.title = title
       box.visible = true
@@ -82,8 +93,10 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
     close() {
       open = false
       items = []
+      prompt = ""
       selectedIndex = 0
       box.visible = false
+      text.content = ""
     },
     handleKey(name: string): boolean {
       if (!open) return false
@@ -106,6 +119,10 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
         ? items[selectedIndex]
         : items.find((item) => item.key === name)
       if (pressed === undefined) return false
+      if (pressed.disabledReason !== undefined) {
+        pressed.onDisabled?.()
+        return true
+      }
       // Closed before the handler runs: an item may itself open a panel or move focus, and it must
       // not have to fight a menu that is still up — exactly what lazygit's command-log toggle does
       // (extras_panel.go:19-29 pops the context first).
@@ -120,9 +137,11 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
       }
       const hostWidth = Math.max(1, host.x1 - host.x0 + 1)
       const hostHeight = Math.max(1, host.y1 - host.y0 + 1)
-      const longest = items.reduce((widest, item) => Math.max(widest, item.key.length + item.label.length + 4), 0)
-      const width = Math.max(20, Math.min(72, Math.min(hostWidth - 4, longest + 4)))
-      const height = Math.max(3, Math.min(terminalHeight - 4, items.length + 2))
+      const longestItem = items.reduce((widest, item) => Math.max(widest, item.key.length + actionMenuLabel(item).length + 4), 0)
+      const longestPrompt = prompt.split("\n").reduce((widest, line) => Math.max(widest, line.length), 0)
+      const width = Math.max(20, Math.min(72, Math.min(hostWidth - 4, Math.max(longestItem + 4, longestPrompt + 4))))
+      const promptLines = prompt.length === 0 ? 0 : prompt.split("\n").length + 1
+      const height = Math.max(3, Math.min(terminalHeight - 4, items.length + promptLines + 2))
       box.left = host.x0 + Math.floor((hostWidth - width) / 2)
       box.top = host.y0 + Math.floor((hostHeight - height) / 2)
       box.width = width

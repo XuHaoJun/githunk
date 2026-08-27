@@ -220,6 +220,37 @@ describe("createActionMenu", () => {
       setup.renderer.destroy()
     }
   })
+  test("renders disabled items with their reason and does not invoke them", async () => {
+    const setup = await createTestRenderer({ width: 80, height: 24 })
+    try {
+      const calls: string[] = []
+      const menu = createActionMenu(setup.renderer)
+      menu.openMenu("Delete branch", [
+        { key: "c", label: "Delete local branch", onPress: () => calls.push("local"), disabledReason: "checked out" },
+        { key: "r", label: "Delete remote branch", onPress: () => calls.push("remote") },
+      ])
+      const text = menu.box.findDescendantById("action-menu-text") as TextRenderable
+      expect(text.plainText).toContain("Delete local branch (unavailable: checked out)")
+      expect(menu.handleKey("enter")).toBe(true)
+      expect(calls).toEqual([])
+      expect(menu.isOpen()).toBe(true)
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+
+  test("renders an optional prompt above menu items", async () => {
+    const setup = await createTestRenderer({ width: 80, height: 24 })
+    try {
+      const menu = createActionMenu(setup.renderer)
+      menu.openMenu("Delete branch", [{ key: "d", label: "Delete", onPress: noop }], "Are you sure?")
+      const text = menu.box.findDescendantById("action-menu-text") as TextRenderable
+      expect(text.plainText).toBe("Are you sure?\n\n> d  Delete")
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+
 
   test("layout() hides the box when the menu is closed", async () => {
     const setup = await createTestRenderer({ width: 80, height: 24 })

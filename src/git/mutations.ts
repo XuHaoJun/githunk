@@ -1,8 +1,8 @@
 import type { DiffDocument } from "../domain/diff/document"
 import { buildPartialPatch, type PartialPatchOptions } from "../domain/diff/transform"
+import type { DiscardFileMode } from "../domain/review-target"
 import { MutationQueue } from "../app/mutation-queue"
 import { GitRunner } from "./runner"
-
 export type MutationRefresh = () => Promise<void>
 
 export type SelectionMutationOptions = PartialPatchOptions & {
@@ -44,10 +44,13 @@ export class GitMutations {
     })
   }
 
-  async discardFile(path: string, untracked = false): Promise<void> {
+  async discardFile(path: string, mode: DiscardFileMode = "unstaged"): Promise<void> {
     return this.queue.run(async () => {
-      if (untracked) await this.runner.run(["clean", "-f", "--", path])
-      else await this.runner.run(["restore", "--", path])
+      if (mode === "all") {
+        await this.runner.run(["restore", "--staged", "--", path], { acceptedExitCodes: [0, 1] })
+      }
+      await this.runner.run(["restore", "--", path], { acceptedExitCodes: [0, 1] })
+      await this.runner.run(["clean", "-f", "-d", "--", path])
       await this.refresh()
     })
   }

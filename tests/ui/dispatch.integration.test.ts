@@ -233,140 +233,140 @@ describe("root view dispatch", () => {
     }
   })
 
-  test("file discard requires two presses; the first does not mutate", async () => {
+  test("file discard opens a menu before mutating", async () => {
     harness = await createShellHarness()
     const path = `${harness.repository.path}/b.txt`
     expect(await Bun.file(path).exists()).toBe(true)
 
-    await harness.pressKey("2") // focus files; b.txt is the only (untracked) entry
-    await harness.pressKey("d") // first press: arms the confirmation only
+    await harness.pressKey("2")
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Discard changes")
     expect(await Bun.file(path).exists()).toBe(true)
 
-    await harness.pressKey("d") // second press: confirms
+    await harness.pressKey("x")
     await harness.settle()
     expect(await Bun.file(path).exists()).toBe(false)
   })
 
-  test("branch delete requires two presses; the first does not mutate", async () => {
+  test("main discard selection uses the shared confirmation menu", async () => {
+    harness = await createShellHarness({ setup: twoHunkFile })
+
+    await harness.pressKey("]")
+    await harness.settle()
+    await harness.pressKey("]")
+    await harness.settle()
+    await harness.app.view!.whenPreviewSettled()
+    expect(harness.app.view!.mainContent?.source).toBe("files")
+    await harness.pressKey("l")
+    expect(harness.app.view!.mainCursorTarget).toBeDefined()
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Confirm discard")
+    await harness.pressKey("ESCAPE")
+    expect(harness.app.view!.actionMenuOpen).toBe(false)
+
+    await harness.pressKey("d")
+    await harness.pressKey("d")
+    await harness.settle()
+    expect((await harness.repository.git(["diff", "--", "a.txt"])).stdout).not.toContain("+line 1 changed")
+  })
+
+  test("Escape closes an action menu before popping an existing commit child", async () => {
+    harness = await createShellHarness({ commits: ["alpha commit", "beta commit"] })
+
+    await harness.pressKey("4")
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    await harness.app.view!.whenPreviewSettled()
+    expect(harness.app.view!.commitsContextKind).toBe("commit-files")
+
+    await harness.pressKey("2")
+    await harness.pressKey("d")
+    expect(harness.app.view!.actionMenuOpen).toBe(true)
+    await harness.pressKey("ESCAPE")
+
+    expect(harness.app.view!.actionMenuOpen).toBe(false)
+    expect(harness.app.view!.commitsContextKind).toBe("commit-files")
+  })
+
+  test("branch delete opens a menu before mutating", async () => {
     harness = await createShellHarness()
     await harness.repository.git(["branch", "throwaway"])
     await harness.app.refresh()
 
-    await harness.pressKey("3") // focus branches
+    await harness.pressKey("3")
     const items = branchPaneItems(harness.app.controller.state)
     const targetIndex = items.findIndex((item) => item.kind === "local" && item.name === "throwaway")
     expect(targetIndex).toBeGreaterThanOrEqual(0)
     for (let i = 0; i < targetIndex; i++) await harness.pressKey("j")
 
-    await harness.pressKey("d") // first press: arms the confirmation only
-    let listing = await harness.repository.git(["branch", "--list", "throwaway"])
-    expect(listing.stdout).toContain("throwaway")
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Delete branch 'throwaway'?")
+    expect((await harness.repository.git(["branch", "--list", "throwaway"])).stdout).toContain("throwaway")
 
-    await harness.pressKey("d") // second press: confirms
+    await harness.pressKey("c")
     await harness.settle()
-    listing = await harness.repository.git(["branch", "--list", "throwaway"])
-    expect(listing.stdout).not.toContain("throwaway")
+    expect((await harness.repository.git(["branch", "--list", "throwaway"])).stdout).not.toContain("throwaway")
   })
 
-  test("Shift+D force-deletes a branch, requiring two matching presses", async () => {
-    harness = await createShellHarness()
-    await harness.repository.git(["branch", "throwaway"])
-    await harness.app.refresh()
-
-    await harness.pressKey("3") // focus branches
-    const items = branchPaneItems(harness.app.controller.state)
-    const targetIndex = items.findIndex((item) => item.kind === "local" && item.name === "throwaway")
-    expect(targetIndex).toBeGreaterThanOrEqual(0)
-    for (let i = 0; i < targetIndex; i++) await harness.pressKey("j")
-
-    await harness.pressKey("D", { shift: true }) // first press: arms the force-delete confirmation only
-    let listing = await harness.repository.git(["branch", "--list", "throwaway"])
-    expect(listing.stdout).toContain("throwaway")
-
-    await harness.pressKey("D", { shift: true }) // second press: confirms
-    await harness.settle()
-    listing = await harness.repository.git(["branch", "--list", "throwaway"])
-    expect(listing.stdout).not.toContain("throwaway")
-  })
-
-  test("a d press followed by a Shift+D press does not complete a branch deletion", async () => {
-    // The important regression case: the two-press confirmation must require the *same* force
-    // flag on both presses. Before Shift+D had a binding, this scenario couldn't even be
-    // exercised through real keys; now that it can, `d` then `D` must re-arm (with the new force
-    // flag, per the existing mismatch-rearms-instead-of-deleting behaviour) rather than delete.
-    harness = await createShellHarness()
-    await harness.repository.git(["branch", "throwaway"])
-    await harness.app.refresh()
-
-    await harness.pressKey("3") // focus branches
-    const items = branchPaneItems(harness.app.controller.state)
-    const targetIndex = items.findIndex((item) => item.kind === "local" && item.name === "throwaway")
-    expect(targetIndex).toBeGreaterThanOrEqual(0)
-    for (let i = 0; i < targetIndex; i++) await harness.pressKey("j")
-
-    await harness.pressKey("d") // arms a non-force delete confirmation
-    await harness.pressKey("D", { shift: true }) // mismatched force flag: must not complete
-    await harness.settle()
-    const listing = await harness.repository.git(["branch", "--list", "throwaway"])
-    expect(listing.stdout).toContain("throwaway")
-  })
-
-  test("a Shift+D press followed by a d press does not complete a branch deletion", async () => {
-    // The reverse order of the case above, exercised independently (rather than chained onto it)
-    // so the second press's re-arming doesn't leave a matching pending state for a third press to
-    // walk into.
-    harness = await createShellHarness()
-    await harness.repository.git(["branch", "throwaway"])
-    await harness.app.refresh()
-
-    await harness.pressKey("3") // focus branches
-    const items = branchPaneItems(harness.app.controller.state)
-    const targetIndex = items.findIndex((item) => item.kind === "local" && item.name === "throwaway")
-    expect(targetIndex).toBeGreaterThanOrEqual(0)
-    for (let i = 0; i < targetIndex; i++) await harness.pressKey("j")
-
-    await harness.pressKey("D", { shift: true }) // arms a force-delete confirmation
-    await harness.pressKey("d") // mismatched force flag: must not complete
-    await harness.settle()
-    const listing = await harness.repository.git(["branch", "--list", "throwaway"])
-    expect(listing.stdout).toContain("throwaway")
-  })
-
-  test("stash drop requires two presses; the first does not mutate", async () => {
+  test("stash apply requires explicit confirmation", async () => {
     harness = await createShellHarness({ stash: true })
-    await harness.pressKey("5") // focus stash
+    await harness.pressKey("5")
+    expect(harness.app.view!.isMutating).toBe(false)
 
-    let listing = await harness.repository.git(["stash", "list"])
-    expect(listing.stdout.trim().length).toBeGreaterThan(0)
+    await harness.pressKey(" ")
+    expect(harness.app.view!.actionMenuOpen).toBe(true)
+    expect(harness.frame()).toContain("Stash apply")
+    expect(harness.frame()).toContain("Are you sure you want to apply")
+    expect((await harness.repository.git(["stash", "list"])).stdout.trim().length).toBeGreaterThan(0)
 
-    await harness.pressKey("d") // first press: arms the confirmation only
-    listing = await harness.repository.git(["stash", "list"])
-    expect(listing.stdout.trim().length).toBeGreaterThan(0)
-
-    await harness.pressKey("d") // second press: confirms
+    await harness.pressKey("RETURN")
     await harness.settle()
-    listing = await harness.repository.git(["stash", "list"])
-    expect(listing.stdout.trim().length).toBe(0)
+    expect((await harness.repository.git(["stash", "list"])).stdout.trim().length).toBeGreaterThan(0)
   })
 
-  test("escape from the files pane cancels a pending file discard", async () => {
+  test("stash pop requires explicit confirmation", async () => {
+    harness = await createShellHarness({ stash: true })
+    await harness.pressKey("5")
+
+    await harness.pressKey("g")
+    expect(harness.frame()).toContain("Stash pop")
+    expect(harness.frame()).toContain("Are you sure you want to pop")
+    expect((await harness.repository.git(["stash", "list"])).stdout.trim().length).toBeGreaterThan(0)
+
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    expect((await harness.repository.git(["stash", "list"])).stdout.trim().length).toBe(0)
+  })
+
+  test("stash drop requires an explicit confirmation menu", async () => {
+    harness = await createShellHarness({ stash: true })
+    await harness.pressKey("5")
+
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Stash drop")
+    expect(harness.frame()).toContain("Are you sure you want to drop")
+    expect((await harness.repository.git(["stash", "list"])).stdout.trim().length).toBeGreaterThan(0)
+
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    expect((await harness.repository.git(["stash", "list"])).stdout.trim().length).toBe(0)
+  })
+
+  test("escape from the files discard menu cancels without deleting", async () => {
     harness = await createShellHarness()
     const path = `${harness.repository.path}/b.txt`
 
-    await harness.pressKey("2") // focus files; b.txt is the only (untracked) entry
-    await harness.pressKey("d") // arm the confirmation
-    // Cancel it. With pendingFileDiscard set, modalInputActive() is true, so this escape never
-    // reaches the registry at all — handleModalKey's unconditional `key.name === "escape"` branch
-    // calls actionBack() directly, bypassing dispatch/resolve (and their availability predicates)
-    // entirely.
-    await harness.pressKey("ESCAPE")
-
-    // If escape had not cancelled the pending discard, this single press would be the
-    // *confirming* second press and would delete the file immediately.
+    await harness.pressKey("2")
     await harness.pressKey("d")
+    expect(harness.app.view!.actionMenuOpen).toBe(true)
+    await harness.pressKey("ESCAPE")
+    expect(harness.app.view!.actionMenuOpen).toBe(false)
+
+    await harness.pressKey("d")
+    expect(harness.app.view!.actionMenuOpen).toBe(true)
     expect(await Bun.file(path).exists()).toBe(true)
 
-    await harness.pressKey("d")
+    await harness.pressKey("x")
     await harness.settle()
     expect(await Bun.file(path).exists()).toBe(false)
   })
