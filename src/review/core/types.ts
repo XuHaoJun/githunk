@@ -15,12 +15,15 @@ export type ReviewGeneration = Readonly<{
 export type ReviewFileKind = "added" | "modified" | "deleted" | "renamed" | "copied" | "binary"
 
 export type ReviewHunk = Readonly<{
+  /** Stable ordering within the file; not part of digest (geometry + lines define identity). */
   index: number
   oldStart: number
   oldCount: number
   newStart: number
   newCount: number
+  /** Normalized lines as produced by the patch parser; caller must normalize before constructing. */
   lines: readonly string[]
+  /** Stable digest over old/new start/count + normalized lines; excludes index. */
   digest: string
 }>
 

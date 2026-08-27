@@ -1,6 +1,10 @@
 import { sha256Tuple } from "./identity"
 import type { ReviewCommit, ReviewDocument, ReviewDocumentIndex, ReviewFile, ReviewHunk } from "./types"
 
+/**
+ * Create a hunk with a stable digest over geometry and normalized lines.
+ * Caller must normalize lines before constructing; digest excludes `index`.
+ */
 export function createReviewHunk(input: Omit<ReviewHunk, "digest">): ReviewHunk {
   const digest = sha256Tuple([
     String(input.oldStart),
@@ -17,7 +21,6 @@ export function createReviewDocument(input: {
   generation: ReviewDocument["generation"]
   commits: readonly ReviewCommit[]
   files: readonly ReviewFile[]
-  aggregatePatchDigest?: string
 }): ReviewDocument {
   const commits = [...input.commits]
   const files = [...input.files]
@@ -37,8 +40,9 @@ export function createReviewDocument(input: {
     filePaths.add(file.path)
   }
 
-  const aggregatePatchDigest =
-    input.aggregatePatchDigest ?? sha256Tuple(files.map((f) => f.patchDigest))
+  // Contract: aggregate digest is computed in document order (files as given),
+  // so the same set of files in a different order yields a different digest.
+  const aggregatePatchDigest = sha256Tuple(files.map((f) => f.patchDigest))
 
   return {
     identity: input.identity,

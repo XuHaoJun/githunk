@@ -5,7 +5,7 @@ export function sha256Tuple(parts: readonly string[]): string {
   const hash = createHash("sha256")
   for (const part of parts) {
     const bytes = new TextEncoder().encode(part)
-    const length = Buffer.allocUnsafe(4)
+    const length = Buffer.alloc(4)
     length.writeUInt32BE(bytes.byteLength, 0)
     hash.update(length)
     hash.update(bytes)
