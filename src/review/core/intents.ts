@@ -1,5 +1,6 @@
 import type { ReviewAction } from "./actions"
-import type { ReviewState, ReviewProjection } from "./state"
+import type { ReviewState } from "./state"
+import type { ReviewProjection } from "./types"
 import type { ReviewAnchor, ReviewFeedback, ReviewFeedbackDraft } from "./types"
 
 export type ReviewIntent =
@@ -181,7 +182,11 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
       if (!intent.viewedAt || intent.viewedAt.trim() === "") {
         throw new ReviewIntentValidationError("body-invalid", "viewedAt required")
       }
-      // Commit projection is inspection-only: marking aggregate Viewed is disabled
+      // Commit projection is inspection-only: marking aggregate Viewed is disabled because the
+      // projection may omit changes from other commits (spec §6.3). Since-last eligibility
+      // (viewed in submitted generation + projection contains every change) is enforced by the
+      // projection loader's isAncestor/history-rewritten check and reconcile, so marking in
+      // since-last is allowed here and advances coverage to the current aggregate ContentIdentity.
       if (state.projection.kind === "commit") {
         throw new ReviewIntentValidationError("projection-invalid", "cannot mark viewed in commit projection")
       }

@@ -1,4 +1,4 @@
-import type { ReviewDocument, ReviewFeedback, ReviewFeedbackDraft } from "./types"
+import type { ReviewDocument, ReviewFeedback, ReviewFeedbackDraft, ReviewProjection } from "./types"
 
 export type ViewedRecord = Readonly<{
   fileKey: string
@@ -10,13 +10,11 @@ export type ViewedRecord = Readonly<{
 
 export type ReviewSelection = Readonly<{ fileKey: string | null; hunkIndex: number }>
 export type ReviewRevealIntent = Readonly<{ fileTopToken: number; hunkToken: number; scrollToFeedback: boolean }>
-export type ReviewProjection =
-  | Readonly<{ kind: "aggregate" }>
-  | Readonly<{ kind: "since-last-review"; fromHeadOid: string }>
-  | Readonly<{ kind: "commit"; oid: string }>
-
 export type ExpandedGap = Readonly<{ fileKey: string; gapId: string; expanded: boolean }>
 export type SubmittedReviewRef = Readonly<{ artifactId: string; generationId: string; headOid: string; submittedAt: string }>
+export type { ReviewProjection } from "./types"
+export type { ReviewProjectionDocument } from "./types"
+export type { SourceContextRequest, SourceContextResult } from "./types"
 export type ReviewState = Readonly<{
   document: ReviewDocument
   revision: number
