@@ -1,0 +1,13 @@
+{
+  "id": "empty",
+  "description": "Empty diff yields no files",
+  "raw": [],
+  "numstat": [],
+  "expected": {
+    "files": [],
+    "gaps": [],
+    "rowAddresses": [],
+    "contentIdDistinctPairs": [],
+    "contentIdSamePairs": []
+  }
+}

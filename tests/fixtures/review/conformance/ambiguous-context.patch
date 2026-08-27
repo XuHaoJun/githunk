@@ -1,0 +1,13 @@
+diff --git a/ambiguous.txt b/ambiguous.txt
+index abc123..def456 100644
+--- a/ambiguous.txt
++++ b/ambiguous.txt
+@@ -1,7 +1,7 @@
+ context-a
+ context-b
+ context-c
+-target-old
++target-new
+ context-d
+ context-e
+ context-f

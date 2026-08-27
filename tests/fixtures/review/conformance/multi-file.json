@@ -1,0 +1,143 @@
+{
+  "id": "multi-file",
+  "description": "Multiple files preserve document order and per-file addresses",
+  "raw": [
+    {
+      "status": "M",
+      "path": "src/a.ts",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldBlobOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "newBlobOid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "status": "M",
+      "path": "src/b.ts",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldBlobOid": "cccccccccccccccccccccccccccccccccccccccc",
+      "newBlobOid": "dddddddddddddddddddddddddddddddddddddddd"
+    }
+  ],
+  "numstat": [
+    {
+      "path": "src/a.ts",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/b.ts",
+      "additions": 1,
+      "deletions": 1
+    }
+  ],
+  "expected": {
+    "files": [
+      {
+        "key": "src/a.ts",
+        "path": "src/a.ts",
+        "kind": "modified",
+        "stats": {
+          "additions": 1,
+          "deletions": 1
+        },
+        "source": "available",
+        "hunks": [
+          {
+            "index": 0,
+            "oldStart": 10,
+            "oldCount": 3,
+            "newStart": 10,
+            "newCount": 3,
+            "lines": [
+              " context-a",
+              "-old-a",
+              "+new-a",
+              " tail-a"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "src/b.ts",
+        "path": "src/b.ts",
+        "kind": "modified",
+        "stats": {
+          "additions": 1,
+          "deletions": 1
+        },
+        "source": "available",
+        "hunks": [
+          {
+            "index": 0,
+            "oldStart": 20,
+            "oldCount": 3,
+            "newStart": 20,
+            "newCount": 3,
+            "lines": [
+              " context-b",
+              "-old-b",
+              "+new-b",
+              " tail-b"
+            ]
+          }
+        ]
+      }
+    ],
+    "gaps": [
+      {
+        "fileKey": "src/a.ts",
+        "gapId": "before:0"
+      },
+      {
+        "fileKey": "src/a.ts",
+        "gapId": "trailing:0"
+      },
+      {
+        "fileKey": "src/b.ts",
+        "gapId": "before:0"
+      },
+      {
+        "fileKey": "src/b.ts",
+        "gapId": "trailing:0"
+      }
+    ],
+    "rowAddresses": [
+      {
+        "fileKey": "src/a.ts",
+        "hunkIndex": 0,
+        "oldLine": 10,
+        "newLine": 10,
+        "marker": "context"
+      },
+      {
+        "fileKey": "src/a.ts",
+        "hunkIndex": 0,
+        "oldLine": 11,
+        "newLine": null,
+        "marker": "deletion"
+      },
+      {
+        "fileKey": "src/b.ts",
+        "hunkIndex": 0,
+        "oldLine": 21,
+        "newLine": null,
+        "marker": "deletion"
+      },
+      {
+        "fileKey": "src/b.ts",
+        "hunkIndex": 0,
+        "oldLine": null,
+        "newLine": 21,
+        "marker": "addition"
+      }
+    ],
+    "contentIdDistinctPairs": [
+      [
+        "src/a.ts",
+        "src/b.ts"
+      ]
+    ],
+    "contentIdSamePairs": []
+  }
+}

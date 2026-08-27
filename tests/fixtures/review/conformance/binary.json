@@ -1,0 +1,48 @@
+{
+  "id": "binary",
+  "description": "Binary file has no hunks and dedicated source kind",
+  "raw": [
+    {
+      "status": "M",
+      "path": "image.png",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldBlobOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "newBlobOid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "numstat": [
+    {
+      "path": "image.png",
+      "additions": null,
+      "deletions": null
+    }
+  ],
+  "expected": {
+    "files": [
+      {
+        "key": "image.png",
+        "path": "image.png",
+        "kind": "binary",
+        "stats": {
+          "additions": null,
+          "deletions": null
+        },
+        "source": "binary",
+        "hunks": []
+      }
+    ],
+    "gaps": [],
+    "rowAddresses": [
+      {
+        "fileKey": "image.png",
+        "hunkIndex": null,
+        "oldLine": null,
+        "newLine": null,
+        "marker": "binary"
+      }
+    ],
+    "contentIdDistinctPairs": [],
+    "contentIdSamePairs": []
+  }
+}

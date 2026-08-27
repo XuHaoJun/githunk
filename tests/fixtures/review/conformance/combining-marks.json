@@ -1,0 +1,77 @@
+{
+  "id": "combining-marks",
+  "description": "Combining marks counted as one cell width approximation",
+  "raw": [
+    {
+      "status": "M",
+      "path": "combining.txt",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldBlobOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "newBlobOid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "numstat": [
+    {
+      "path": "combining.txt",
+      "additions": 1,
+      "deletions": 1
+    }
+  ],
+  "expected": {
+    "files": [
+      {
+        "key": "combining.txt",
+        "path": "combining.txt",
+        "kind": "modified",
+        "stats": {
+          "additions": 1,
+          "deletions": 1
+        },
+        "source": "available",
+        "hunks": [
+          {
+            "index": 0,
+            "oldStart": 1,
+            "oldCount": 2,
+            "newStart": 1,
+            "newCount": 2,
+            "lines": [
+              "-é combined",
+              "+é updated",
+              " plain"
+            ]
+          }
+        ]
+      }
+    ],
+    "gaps": [
+      {
+        "fileKey": "combining.txt",
+        "gapId": "before:0"
+      },
+      {
+        "fileKey": "combining.txt",
+        "gapId": "trailing:0"
+      }
+    ],
+    "rowAddresses": [
+      {
+        "fileKey": "combining.txt",
+        "hunkIndex": 0,
+        "oldLine": 1,
+        "newLine": null,
+        "marker": "deletion"
+      },
+      {
+        "fileKey": "combining.txt",
+        "hunkIndex": 0,
+        "oldLine": 2,
+        "newLine": 2,
+        "marker": "context"
+      }
+    ],
+    "contentIdDistinctPairs": [],
+    "contentIdSamePairs": []
+  }
+}

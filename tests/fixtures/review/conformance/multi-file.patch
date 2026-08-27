@@ -1,0 +1,18 @@
+diff --git a/src/a.ts b/src/a.ts
+index abc123..def456 100644
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -10,3 +10,3 @@
+ context-a
+-old-a
++new-a
+ tail-a
+diff --git a/src/b.ts b/src/b.ts
+index abc123..def456 100644
+--- a/src/b.ts
++++ b/src/b.ts
+@@ -20,3 +20,3 @@
+ context-b
+-old-b
++new-b
+ tail-b

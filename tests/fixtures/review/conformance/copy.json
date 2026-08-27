@@ -1,0 +1,79 @@
+{
+  "id": "copy",
+  "description": "Copied file with previousPath",
+  "raw": [
+    {
+      "status": "C100",
+      "path": "copy.txt",
+      "previousPath": "original.txt",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldBlobOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "newBlobOid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "numstat": [
+    {
+      "path": "copy.txt",
+      "previousPath": "original.txt",
+      "additions": 1,
+      "deletions": 1
+    }
+  ],
+  "expected": {
+    "files": [
+      {
+        "key": "copy.txt",
+        "path": "copy.txt",
+        "previousPath": "original.txt",
+        "kind": "copied",
+        "stats": {
+          "additions": 1,
+          "deletions": 1
+        },
+        "source": "available",
+        "hunks": [
+          {
+            "index": 0,
+            "oldStart": 1,
+            "oldCount": 1,
+            "newStart": 1,
+            "newCount": 1,
+            "lines": [
+              "-hello",
+              "+hello copy"
+            ]
+          }
+        ]
+      }
+    ],
+    "gaps": [
+      {
+        "fileKey": "copy.txt",
+        "gapId": "before:0"
+      },
+      {
+        "fileKey": "copy.txt",
+        "gapId": "trailing:0"
+      }
+    ],
+    "rowAddresses": [
+      {
+        "fileKey": "copy.txt",
+        "hunkIndex": 0,
+        "oldLine": 1,
+        "newLine": null,
+        "marker": "deletion"
+      },
+      {
+        "fileKey": "copy.txt",
+        "hunkIndex": 0,
+        "oldLine": null,
+        "newLine": 1,
+        "marker": "addition"
+      }
+    ],
+    "contentIdDistinctPairs": [],
+    "contentIdSamePairs": []
+  }
+}

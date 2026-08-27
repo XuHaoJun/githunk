@@ -1,0 +1,8 @@
+diff --git a/combining.txt b/combining.txt
+index abc123..def456 100644
+--- a/combining.txt
++++ b/combining.txt
+@@ -1,2 +1,2 @@
+-é combined
++é updated
+ plain

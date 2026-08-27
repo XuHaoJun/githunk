@@ -1,0 +1,76 @@
+{
+  "id": "delete",
+  "description": "Deleted file",
+  "raw": [
+    {
+      "status": "D",
+      "path": "delete-me.txt",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldBlobOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "newBlobOid": "0000000000000000000000000000000000000000"
+    }
+  ],
+  "numstat": [
+    {
+      "path": "delete-me.txt",
+      "additions": 0,
+      "deletions": 2
+    }
+  ],
+  "expected": {
+    "files": [
+      {
+        "key": "delete-me.txt",
+        "path": "delete-me.txt",
+        "kind": "deleted",
+        "stats": {
+          "additions": 0,
+          "deletions": 2
+        },
+        "source": "available",
+        "hunks": [
+          {
+            "index": 0,
+            "oldStart": 1,
+            "oldCount": 2,
+            "newStart": 0,
+            "newCount": 0,
+            "lines": [
+              "-line1",
+              "-line2"
+            ]
+          }
+        ]
+      }
+    ],
+    "gaps": [
+      {
+        "fileKey": "delete-me.txt",
+        "gapId": "before:0"
+      },
+      {
+        "fileKey": "delete-me.txt",
+        "gapId": "trailing:0"
+      }
+    ],
+    "rowAddresses": [
+      {
+        "fileKey": "delete-me.txt",
+        "hunkIndex": 0,
+        "oldLine": 1,
+        "newLine": null,
+        "marker": "deletion"
+      },
+      {
+        "fileKey": "delete-me.txt",
+        "hunkIndex": 0,
+        "oldLine": 2,
+        "newLine": null,
+        "marker": "deletion"
+      }
+    ],
+    "contentIdDistinctPairs": [],
+    "contentIdSamePairs": []
+  }
+}
