@@ -351,6 +351,7 @@ export class RootView {
     }
     this.clipboard = new ClipboardService(clipboardPort)
     this.onStageFile = options.onStageFile
+    this.onApplyStash = options.onApplyStash
     this.onScopeChange = options.onScopeChange
     this.onOpenBranchReview = options.onOpenBranchReview
     this.onQuit = options.onQuit
@@ -626,8 +627,8 @@ export class RootView {
     } else if (this.actionMenu.isOpen() && (this.actionMenu.box.title ?? "").startsWith("Upstream")) {
       this.actionMenu.close()
     }
+    updateStatusPane(this.panes.status, model)
     this.refreshFilesPanel(model)
-    this.renderFilesPane()
     this.refreshBranchesPanel(model)
     this.renderBranchesPane()
     const localChild = this.branchesPanel.child
@@ -1235,12 +1236,6 @@ export class RootView {
       case "main-scroll-up": scrollMainPane(this.panes.main, "y", -MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
       case "main-scroll-right": scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
       case "main-scroll-left": scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
-
-      case "page-next":
-      case "main-scroll-up": scrollMainPane(this.panes.main, "y", -MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
-      case "main-scroll-right": scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
-      case "main-scroll-left": scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
-
       case "page-next": this.actionPage("next"); return
       case "page-previous": this.actionPage("previous"); return
       case "goto-top": this.actionJump("top"); return
