@@ -90,6 +90,9 @@ import { ANSI_CYAN, ANSI_GREEN, DEFAULT_FOREGROUND, TITLE_PREFIX_FRAME_RUNE } fr
 import { createListState, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRows, type ListState, type ListRow } from "./list-view"
 import { MainPreviewGate } from "./main-preview"
 import type { CommitSummary } from "../domain/commit"
+// Review workspace screen ownership is managed by AppScreenController (src/app/screen-controller.ts).
+// This view remains the repository workspace; it is hidden (not destroyed) when the review screen is active,
+// and its focus/selection is remembered for restoration on Escape.
 const PANE_TITLES: Readonly<Record<FocusId, string>> = {
   main: "Main", status: "Review", files: "Files",
   branches: "Branches", commits: "Commits", stash: "Stash",
