@@ -5,6 +5,8 @@ import { createInitialReviewState } from "../../review/core/state"
 import { reconcileReviewState } from "../../review/core/reconcile"
 import { reduceReviewState } from "../../review/core/reducer"
 import type { ReviewAction } from "../../review/core/actions"
+import type { ReviewIntent } from "../../review/core/intents"
+import { planReviewIntent } from "../../review/core/intents"
 import { loadReviewDocument } from "../../review/git/load-review-document"
 import { ReviewStateStore, persistedFromReviewState } from "../../review/storage/review-state-store"
 import { ReviewArtifactStore, finishReviewTransaction } from "../../review/storage/review-artifact-store"
@@ -148,9 +150,10 @@ export class ReviewWorkspaceController {
   }
 
   dispatch(action: ReviewAction): void {
-    if (this._state === undefined) return
-    const next = reduceReviewState(this._state, action)
-    if (next === this._state) return
+    const current = this._state
+    if (current === undefined) return
+    const next = reduceReviewState(current, action)
+    if (next === current) return
     this._state = next
     this.publish()
     void this.persistState()
@@ -162,8 +165,19 @@ export class ReviewWorkspaceController {
     }
   }
 
+  dispatchIntent(intent: ReviewIntent): boolean {
+    const current = this._state
+    if (current === undefined) return false
+    try {
+      const action = planReviewIntent(current, intent)
+      this.dispatch(action)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async loadProjection(projection: ReviewProjection): Promise<void> {
-    if (this._state === undefined) return
     const token = ++this.generationToken
     const capturedReviewId = this.activeReviewId
     const capturedGeneration = this.activeGenerationId
