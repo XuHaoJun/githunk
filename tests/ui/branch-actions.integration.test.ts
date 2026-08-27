@@ -127,6 +127,13 @@ describe("branch action parity", () => {
     await harness.pressKey("d")
     await harness.pressKey("c")
     await harness.pressKey("r")
+    // The "Remove worktree" confirmation appears after the `git worktree remove`
+    // attempt fails with `worktreeRemovalRequiresForce` — an async subprocess.
+    // `pressKey("r")` only flushes the renderer, so the promise may not have
+    // settled yet. Wait for the mutation to finish (which opens the popup) before
+    // asserting its contents, mirroring the `settle()` the test already does after
+    // confirming the popup.
+    await harness.settle()
 
     expect(harness.frame()).toContain("Remove worktree")
     expect(harness.frame()).toContain("modified or untracked")

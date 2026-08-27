@@ -1,7 +1,6 @@
-import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
-import type { Dimensions } from "./boxlayout"
-import { DEFAULT_BACKGROUND, DEFAULT_FOREGROUND } from "./theme"
-
+import { BoxRenderable, RGBA, TextRenderable, type CliRenderer } from "@opentui/core"
+import { TAB_ACTIVE_FG } from "./theme"
+import { popupPanelWidth, popupPanelGeometry, wrapMessage } from "./popup-layout"
 /**
  * A titled, keyed, actionable menu — lazygit's `types.CreateMenuOptions` / `types.MenuItem`
  * (pkg/gui/extras_panel.go:12-38 builds the command log's). githunk already had a *read-only*
@@ -40,26 +39,32 @@ export type ActionMenuHandle = {
   close(): void
   /** Returns true when the key was consumed, so the caller stops dispatching it. */
   handleKey(name: string): boolean
-  layout(host: Dimensions, terminalHeight: number): void
+  layout(terminalWidth: number, terminalHeight: number): void
 }
 
 export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
+  const POPUP_BACKGROUND = RGBA.defaultBackground()
+  const POPUP_FOREGROUND = RGBA.defaultForeground()
+  const POPUP_Z_INDEX = 100
   const box = new BoxRenderable(renderer, {
     id: "action-menu",
     border: true,
-    borderColor: DEFAULT_FOREGROUND,
-    focusedBorderColor: DEFAULT_FOREGROUND,
-    titleColor: DEFAULT_FOREGROUND,
+    borderStyle: "rounded",
+    borderColor: POPUP_FOREGROUND,
+    focusedBorderColor: TAB_ACTIVE_FG,
+    titleColor: POPUP_FOREGROUND,
     title: "",
     bottomTitle: "Escape to close",
     position: "absolute",
     overflow: "hidden",
-    backgroundColor: DEFAULT_BACKGROUND,
+    backgroundColor: POPUP_BACKGROUND,
+    zIndex: POPUP_Z_INDEX,
   })
   const text = new TextRenderable(renderer, {
     id: "action-menu-text",
     content: "",
-    fg: DEFAULT_FOREGROUND,
+    fg: POPUP_FOREGROUND,
+    bg: POPUP_BACKGROUND,
     selectable: false,
     wrapMode: "none",
     width: "100%",
@@ -72,10 +77,12 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
   let prompt = ""
   let selectedIndex = 0
   let open = false
+  let contentWidth = 40
 
   const paint = (): void => {
-    const promptLines = prompt.length === 0 ? [] : [prompt, ""]
-    text.content = [...promptLines, ...renderActionMenuLines(items, selectedIndex)].join("\n")
+    const wrapped = prompt.length === 0 ? [] : wrapMessage(prompt, contentWidth)
+    const promptSection = wrapped.length === 0 ? [] : [...wrapped, ""]
+    text.content = [...promptSection, ...renderActionMenuLines(items, selectedIndex)].join("\n")
   }
 
   return {
@@ -130,23 +137,31 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
       pressed.onPress()
       return true
     },
-    layout(host: Dimensions, terminalHeight: number) {
+    layout(terminalWidth: number, terminalHeight: number) {
       if (!open) {
         box.visible = false
         return
       }
-      const hostWidth = Math.max(1, host.x1 - host.x0 + 1)
-      const hostHeight = Math.max(1, host.y1 - host.y0 + 1)
-      const longestItem = items.reduce((widest, item) => Math.max(widest, item.key.length + actionMenuLabel(item).length + 4), 0)
-      const longestPrompt = prompt.split("\n").reduce((widest, line) => Math.max(widest, line.length), 0)
-      const width = Math.max(20, Math.min(72, Math.min(hostWidth - 4, Math.max(longestItem + 4, longestPrompt + 4))))
-      const promptLines = prompt.length === 0 ? 0 : prompt.split("\n").length + 1
-      const height = Math.max(3, Math.min(terminalHeight - 4, items.length + promptLines + 2))
-      box.left = host.x0 + Math.floor((hostWidth - width) / 2)
-      box.top = host.y0 + Math.floor((hostHeight - height) / 2)
-      box.width = width
-      box.height = height
+      // Lazygit's confirmation vs menu max widths: 80 for confirmation-like
+      // (prompt + few items) and 90 for generic menus. Use 80 when the menu
+      // carries a prompt (the confirmation path) to match
+      // `resizeConfirmationPanel`'s `getPopupPanelWidth(80)`, otherwise 90 to
+      // match `resizeMenu`'s 90.
+      const maxWidth = prompt.length > 0 ? 80 : 90
+      const panelWidth = popupPanelWidth(terminalWidth, maxWidth)
+      const nextContentWidth = Math.max(1, panelWidth - 2)
+      contentWidth = nextContentWidth
+      const wrapped = prompt.length === 0 ? [] : wrapMessage(prompt, contentWidth)
+      const promptLinesCount = wrapped.length === 0 ? 0 : wrapped.length + 1
+      const contentHeight = promptLinesCount + items.length
+      const geom = popupPanelGeometry(terminalWidth, terminalHeight, contentWidth, contentHeight)
+      box.left = geom.left
+      box.top = geom.top
+      box.width = geom.width
+      box.height = geom.height
       box.visible = true
+      // Re-render with the width-correct wrapped prompt
+      paint()
     },
   }
 }
