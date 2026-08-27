@@ -17,6 +17,8 @@ import { FinishDialog } from "./finish-dialog"
 import type { ReviewAnchor } from "../../review/core/types"
 import { createRangeAnchor } from "../../review/core/anchors"
 import type { ClipboardPort } from "../clipboard"
+import type { ReviewWorkspaceError } from "./error-state"
+import { isEmptyReview, isDetachedSnapshot } from "./error-state"
 
 export type ReviewWorkspaceOptions = {
   readonly onClose?: () => void
@@ -51,6 +53,37 @@ export class ReviewWorkspace {
   private mouseError: string | null = null
   private overriddenWidth: number | undefined
   private overriddenHeight: number | undefined
+
+  getError(): ReviewWorkspaceError | undefined {
+    return this.controller.error
+  }
+
+  dismissError(): boolean {
+    if (!this.controller.error) return false
+    this.controller.clearError()
+    this.render(this.controller.state)
+    return true
+  }
+
+  async retryError(): Promise<boolean> {
+    const err = this.controller.error
+    if (!err) return false
+    if (err.action !== "retry") return false
+    await this.controller.refreshGeneration()
+    this.render(this.controller.state)
+    return true
+  }
+
+  getWorkspaceStatus(): "empty" | "detached" | "normal" | "error" {
+    const err = this.controller.error
+    if (err) return "error"
+    const state = this.controller.state
+    if (!state) return "normal"
+    if (isEmptyReview(state.document)) return "empty"
+    if (isDetachedSnapshot(state.document)) return "detached"
+    return "normal"
+  }
+
   constructor(
     private readonly renderer: CliRenderer,
     private readonly controller: ReviewWorkspaceController,
@@ -786,9 +819,10 @@ export class ReviewWorkspace {
       const titleLine = lines[0]?.map((s) => s.text).join("") ?? "Branch Review"
       this.root.title = titleLine.slice(0, 80)
       const hints = reviewHints(this.focus, state)
-      const footerBase = this.mouseError ? `Error: ${this.mouseError} — ${hints}` : hints
+      const wsError = this.controller.error
+      const footerBaseRaw = this.mouseError ? `Error: ${this.mouseError} — ${hints}` : wsError ? `${wsError.title}: ${wsError.detail} [${wsError.action}] — ${hints}` : hints
       // Append finish dialog validation message if dialog open
-      const footerContent = this.finishDialog.isOpen() ? `${this.finishDialog.getValidationMessage()} — ${footerBase}` : footerBase
+      const footerContent = this.finishDialog.isOpen() ? `${this.finishDialog.getValidationMessage()} — ${footerBaseRaw}` : footerBaseRaw
       this.footerText.content = footerContent
       const rows = reviewFileRows(state)
       this.sidebarBox.title = `Files ${rows.length}/${state.document.files.length}`
@@ -808,15 +842,28 @@ export class ReviewWorkspace {
       this.streamPane.syncLayout(streamWidth, streamHeight, layout.effectiveMode)
       const streamContent = plan.rows.map(r => r.text.map(s => s.text).join("")).join("\n")
       let extra = this.mouseError ? `\n[Error: ${this.mouseError}]` : ""
+      if (wsError) {
+        extra += `\n[WorkspaceError ${wsError.kind}: ${wsError.title} — ${wsError.detail} — action:${wsError.action}]`
+      }
+      if (!wsError) {
+        if (isEmptyReview(state.document)) extra += `\n[Empty review — no changes between base and HEAD]`
+        else if (isDetachedSnapshot(state.document)) extra += `\n[Detached HEAD snapshot — reviewing ${state.document.generation.headOid.slice(0, 8)}]`
+      }
+      {
+        const binaryFiles = state.document.files.filter((f) => f.source !== "available")
+        if (binaryFiles.length > 0) {
+          extra += `\n[Binary/too-large: ${binaryFiles.map((f) => f.path).join(", ")} — source unavailable, file-level feedback only]`
+        }
+      }
       if (this.feedbackComposer.isOpen()) {
         const draft = this.feedbackComposer.getDraft()
         if (draft) {
-          extra += `\n[Composer open: ${draft.kind}/${draft.severity} ${draft.anchor.kind}${draft.anchor.kind==="range"?` ${draft.anchor.side}:${draft.anchor.startLine}-${draft.anchor.endLine}`:""}]`
+          extra += `\n[Composer open: ${draft.kind}/${draft.severity} ${draft.anchor.kind}${draft.anchor.kind === "range" ? ` ${draft.anchor.side}:${draft.anchor.startLine}-${draft.anchor.endLine}` : ""}]`
           if (this.feedbackComposer.canShowReplacement()) extra += " [replacement visible]"
         }
       }
       if (this.pendingRangeAnchor) {
-        extra += `\n[Range selected: ${this.pendingRangeAnchor.kind} ${"side" in this.pendingRangeAnchor ? this.pendingRangeAnchor.side+":"+this.pendingRangeAnchor.startLine+"-"+this.pendingRangeAnchor.endLine : ""}]`
+        extra += `\n[Range selected: ${this.pendingRangeAnchor.kind} ${"side" in this.pendingRangeAnchor ? this.pendingRangeAnchor.side + ":" + this.pendingRangeAnchor.startLine + "-" + this.pendingRangeAnchor.endLine : ""}]`
       }
       if (state.feedback.length > 0) {
         const grouped = this.feedbackPane.getGrouped()

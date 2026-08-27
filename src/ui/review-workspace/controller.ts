@@ -16,6 +16,16 @@ import { ReviewArtifactStore, finishReviewTransaction } from "../../review/stora
 import { currentBranchRef, inferReviewBase, resolveRefOid, reviewBaseCandidates } from "../../git/base-inference"
 import { emptyReviewDatabaseV2 } from "../../review/storage/schemas"
 import type { ReviewDecision } from "../../review/core/artifact"
+import { buildReviewArtifact } from "../../review/core/artifact"
+import type { ReviewArtifactV1 } from "../../review/core/artifact"
+import { isAncestor } from "../../review/git/load-review-projection"
+import {
+  type ReviewWorkspaceError,
+  classifyLoadError,
+  createCorruptStateError,
+  createStorageError,
+  createHistoryRewrittenError,
+} from "./error-state"
 
 export type ReviewWorkspaceControllerOptions = {
   readonly runner: GitRunner
@@ -38,9 +48,9 @@ export class ReviewWorkspaceController {
   private readonly nowImpl: () => string
   private readonly randomIdImpl: () => string
   private _state: ReviewState | undefined
-  private _error: string | undefined
+  private _error: ReviewWorkspaceError | undefined
   private listeners = new Set<Listener>()
-  private generationToken = 0
+  private requestId = 0
   private destroyed = false
   private activeReviewId: string | undefined
   private activeGenerationId: string | undefined
@@ -68,7 +78,7 @@ export class ReviewWorkspaceController {
     return this._state
   }
 
-  get error(): string | undefined {
+  get error(): ReviewWorkspaceError | undefined {
     return this._error
   }
 
@@ -76,31 +86,70 @@ export class ReviewWorkspaceController {
     return this.activeReviewId
   }
 
+  get generationId(): string | undefined {
+    return this.activeGenerationId
+  }
+
+  get base(): string | undefined {
+    return this.baseRef
+  }
+
+  clearError(): void {
+    if (this._error === undefined) return
+    this._error = undefined
+    this.publish()
+  }
+
   get refreshGeneration(): () => Promise<void> {
     return async () => {
       if (this.baseRef === undefined || this.destroyed) return
-      const token = ++this.generationToken
+      const token = ++this.requestId
       const capturedGeneration = this.activeGenerationId
       const capturedReviewId = this.activeReviewId
+      const capturedBase = this.baseRef
+      // Capture for qualified validation
+      const qualified = { requestId: token, reviewId: capturedReviewId, generationId: capturedGeneration }
       try {
-        const doc = await this.loadDocumentImpl(this.baseRef)
-        if (this.destroyed || token !== this.generationToken) return
-        if (capturedReviewId !== undefined && doc.identity.id !== capturedReviewId) return
-        if (capturedGeneration !== undefined && doc.generation.id === capturedGeneration) return
+        // Build new document off-screen (no publish yet)
+        const doc = await this.loadDocumentImpl(capturedBase)
+        // Qualification: discard stale responses
+        if (this.destroyed || token !== this.requestId) return
+        if (qualified.reviewId !== undefined && doc.identity.id !== qualified.reviewId) return
+        // If same generation, no work
+        if (qualified.generationId !== undefined && doc.generation.id === qualified.generationId) return
+        // Reconcile off-screen (atomic)
+        let nextState: ReviewState
         if (this._state === undefined) {
-          this._state = createInitialReviewState(doc)
+          nextState = createInitialReviewState(doc)
         } else {
-          this._state = reconcileReviewState(this._state, doc)
+          // Preserve draft via reconciliation (reducer keeps draft); compute off-screen
+          nextState = reconcileReviewState(this._state, doc)
         }
+        // Check history rewritten for Since Last Review availability
+        let historyError: ReviewWorkspaceError | undefined
+        if (nextState.lastSubmission) {
+          try {
+            const ancestor = await isAncestor(this.runner, nextState.lastSubmission.headOid, doc.generation.headOid)
+            if (!ancestor) {
+              historyError = createHistoryRewrittenError(nextState.lastSubmission.headOid, doc.generation.headOid)
+            }
+          } catch {
+            // If ancestor check fails, do not block publish
+          }
+        }
+        // Atomic swap: publish once
+        this._state = nextState
         this.activeReviewId = doc.identity.id
         this.activeGenerationId = doc.generation.id
-        this._error = undefined
+        this._error = historyError
         this.publish()
         await this.persistState()
+        // If persist failed, error will be set inside persistState
       } catch (err) {
-        if (token !== this.generationToken) return
-        const msg = err instanceof Error ? err.message : String(err)
-        this._error = msg
+        if (token !== this.requestId) return
+        // Failure retains last complete document, updates error only
+        const typed = classifyLoadError(err)
+        this._error = typed
         this.publish()
       }
     }
@@ -108,19 +157,45 @@ export class ReviewWorkspaceController {
 
   async open(baseRef?: string): Promise<ReviewState> {
     if (this.destroyed) throw new Error("controller destroyed")
-    const token = ++this.generationToken
+    const token = ++this.requestId
     let resolvedBase = baseRef
     if (resolvedBase === undefined) {
-      resolvedBase = await this.resolveBase()
+      try {
+        resolvedBase = await this.resolveBase()
+      } catch (err) {
+        const typed = classifyLoadError(err)
+        this._error = typed
+        this.publish()
+        throw err
+      }
     }
-    if (this.destroyed || token !== this.generationToken) throw new Error("open cancelled")
+    if (this.destroyed || token !== this.requestId) throw new Error("open cancelled")
 
-    const doc = await this.loadDocumentImpl(resolvedBase)
-    if (this.destroyed || token !== this.generationToken) throw new Error("open cancelled")
+    let doc: ReviewDocument
+    try {
+      doc = await this.loadDocumentImpl(resolvedBase)
+    } catch (err) {
+      if (token !== this.requestId) throw new Error("open cancelled")
+      const typed = classifyLoadError(err)
+      this._error = typed
+      this.publish()
+      throw err
+    }
+    if (this.destroyed || token !== this.requestId) throw new Error("open cancelled")
 
+    // Load persisted state and detect corrupt quarantine
     let persistedState: ReviewState | undefined
+    let corruptError: ReviewWorkspaceError | undefined
     try {
       const db = this.stateStore ? await this.stateStore.load() : emptyReviewDatabaseV2()
+      // Detect quarantine warning even when db is empty
+      const warning = this.stateStore?.quarantineWarning
+      if (warning) {
+        // Extract quarantine path from warning string
+        const pathMatch = warning.match(/moved to (\S+)/)
+        const qPath = pathMatch?.[1] ?? warning
+        corruptError = createCorruptStateError(qPath, warning)
+      }
       const persisted = db.reviews[doc.identity.id]
       if (persisted !== undefined) {
         const initial = createInitialReviewState(doc)
@@ -138,22 +213,33 @@ export class ReviewWorkspaceController {
         }
         persistedState = reconcileReviewState(reconstructed, doc)
       }
-    } catch {
+    } catch (err) {
+      // Persisted load failure -> storage error but still allow open with fresh state
+      const typed = createStorageError(err instanceof Error ? err.message : String(err))
+      corruptError = typed
       persistedState = undefined
     }
 
     const nextState = persistedState ?? createInitialReviewState(doc)
     const finalState = persistedState ? persistedState : nextState
 
-    if (token !== this.generationToken) throw new Error("open cancelled")
+    if (token !== this.requestId) throw new Error("open cancelled")
 
     this._state = finalState
     this.baseRef = resolvedBase
     this.activeReviewId = doc.identity.id
     this.activeGenerationId = doc.generation.id
-    this._error = undefined
+    // Preserve corrupt/storage warning as error while still publishing document
+    // Empty review and detached snapshot are status, not errors -> do not override corrupt error
+    this._error = corruptError
     this.publish()
-    await this.persistState()
+    try {
+      await this.persistState()
+    } catch (err) {
+      // persistState already sets storage error
+      void err
+    }
+    // If corruptError exists, it remains; otherwise success clears error
     return finalState
   }
 
@@ -164,7 +250,7 @@ export class ReviewWorkspaceController {
     if (next === current) return
     this._state = next
     this.publish()
-    void this.persistState()
+    void this.persistState().catch(() => undefined)
     if (action.type === "feedback/update-draft" || action.type === "feedback/start-draft") {
       if (this.activeReviewId && this.stateStore) {
         const draft = this._state.draft
@@ -186,12 +272,12 @@ export class ReviewWorkspaceController {
   }
 
   async loadProjection(projection: ReviewProjection): Promise<void> {
-    const token = ++this.generationToken
+    const token = ++this.requestId
     const capturedReviewId = this.activeReviewId
     const capturedGeneration = this.activeGenerationId
     this.dispatch({ type: "projection/set", projection })
     await Promise.resolve()
-    if (token !== this.generationToken) return
+    if (token !== this.requestId) return
     if (capturedReviewId !== this.activeReviewId) return
     if (capturedGeneration !== this.activeGenerationId) return
   }
@@ -205,7 +291,7 @@ export class ReviewWorkspaceController {
     if (this._state === undefined) throw new Error("no review state")
     if (!this.stateStore || !this.artifactStore) throw new Error("stores required for finish")
     const reviewId = this._state.document.identity.id
-    let reuseArtifact: import("../../review/core/artifact").ReviewArtifactV1 | undefined
+    let reuseArtifact: ReviewArtifactV1 | undefined
     let artifactIdFromMarker: string | undefined
     try {
       const db = await this.stateStore.load()
@@ -242,7 +328,6 @@ export class ReviewWorkspaceController {
     }
     const artifactId = artifactIdFromMarker ?? this.randomIdImpl()
     const submittedAt = this.nowImpl()
-    const { buildReviewArtifact } = await import("../../review/core/artifact")
     const artifact = buildReviewArtifact(this._state, { id: artifactId, submittedAt, decision: input.decision, summary: input.summary })
     const next = await finishReviewTransaction({
       stateStore: this.stateStore,
@@ -389,7 +474,7 @@ export class ReviewWorkspaceController {
     if (this.destroyed) return
     this.destroyed = true
     this.listeners.clear()
-    this.generationToken++
+    this.requestId++
     if (this.activeReviewId && this.stateStore) {
       void this.stateStore.flush().catch(() => undefined)
     }
@@ -412,7 +497,12 @@ export class ReviewWorkspaceController {
         baseByHead: { ...db.baseByHead, [headKey]: { baseRef: this._state!.document.identity.baseRef } },
         reviews: { ...db.reviews, [reviewId]: persisted },
       }))
-    } catch {}
+    } catch (err) {
+      const typed = createStorageError(err instanceof Error ? err.message : String(err))
+      this._error = typed
+      this.publish()
+      throw err
+    }
   }
 
   private async resolveBase(): Promise<string> {
@@ -422,6 +512,14 @@ export class ReviewWorkspaceController {
     if (headKey !== undefined && this.stateStore) {
       try {
         const db = await this.stateStore.load()
+        // Surface corrupt-state warning if present during base resolution as well
+        const warning = this.stateStore.quarantineWarning
+        if (warning) {
+          const pathMatch = warning.match(/moved to (\S+)/)
+          const qPath = pathMatch?.[1] ?? warning
+          this._error = createCorruptStateError(qPath, warning)
+          this.publish()
+        }
         const remembered = db.baseByHead[headKey]?.baseRef
         if (remembered && (await resolveRefOid(this.runner, remembered)) !== undefined) {
           return remembered
@@ -433,7 +531,10 @@ export class ReviewWorkspaceController {
       if (inferred.kind === "confident") return inferred.ref
       const candidates = inferred.kind === "choose" ? inferred.candidates : await reviewBaseCandidates(this.runner)
       if (candidates.length > 0) return candidates[0] as string
-    } catch {}
+    } catch (err) {
+      // Classify as git or invalid-base
+      throw classifyLoadError(err)
+    }
     // Fallback for test seam where git repo is fake and loader is injected
     // Do not throw here; let the injected loader decide. Return a default that will be passed to loadDocument
     return "refs/heads/main"

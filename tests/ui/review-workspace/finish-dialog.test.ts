@@ -187,7 +187,7 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
     expect(result.reason === "projection-switched" || result.ok === true || result.ok === false).toBe(true)
     // Ensure after switch, projection is aggregate or since-last-review
     const kind = controller.state?.projection.kind
-    expect(["aggregate", "since-last-review"]).toContain(kind)
+    expect(["aggregate", "since-last-review"]).toContain(kind as string)
   })
 
   test("transaction failure preserves pending state", async () => {

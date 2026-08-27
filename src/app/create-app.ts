@@ -149,6 +149,7 @@ export function createApp(options: CreateAppOptions): App {
     if (latestGeometry !== undefined) await uiStateStore.save(latestGeometry)
   }
   let view!: RootView
+  let screenController!: AppScreenController
   let refsWatcher!: RefsWatcher
   let indexWatcher: IndexWatcher | undefined
   let indexWatcherStart: Promise<void> | undefined
@@ -227,6 +228,34 @@ export function createApp(options: CreateAppOptions): App {
     if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
     await refsWatcher.resync()
   })
+  // Coalesced review generation refresh: at most one in-flight, one queued.
+  let pendingReviewRefresh: Promise<void> | undefined
+  let reviewRefreshQueued = false
+  const scheduleCoalescedReviewRefresh = async (): Promise<void> => {
+    if (!screenController || screenController.shouldRenderRepository()) return
+    if (pendingReviewRefresh) {
+      reviewRefreshQueued = true
+      return
+    }
+    pendingReviewRefresh = (async () => {
+      do {
+        reviewRefreshQueued = false
+        const cur = screenController.active
+        if (cur.kind === "branch-review") {
+          try {
+            await cur.controller.refreshGeneration()
+          } catch {}
+        }
+      } while (reviewRefreshQueued)
+    })()
+    try {
+      await pendingReviewRefresh
+    } finally {
+      pendingReviewRefresh = undefined
+    }
+  }
+
+
   /**
    * Notices refs moving underneath the app. Declared ahead of the view because the view's
    * `onMutationSettled` re-seeds it; created unconditionally (it is inert until polled) so that
@@ -235,13 +264,23 @@ export function createApp(options: CreateAppOptions): App {
   refsWatcher = new RefsWatcher({
     snapshot: () => loadRefsSnapshot(options.runner),
     onExternalChange: async () => {
+      const isReviewActive = !(screenController?.shouldRenderRepository() ?? true)
+      if (isReviewActive) {
+        // Hidden repository refresh without repainting the review screen
+        void controller.refresh().catch(() => undefined)
+        await scheduleCoalescedReviewRefresh()
+        return
+      }
       await controller.refresh()
       if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
     },
-    isBusy: () => refreshInFlight || view.isMutating,
+    isBusy: () => {
+      const isReviewActive = !(screenController?.shouldRenderRepository() ?? true)
+      if (isReviewActive) return false
+      const isMutating = (view as unknown as { isMutating?: boolean } | undefined)?.isMutating === true
+      return refreshInFlight || isMutating
+    },
   })
-
-  let screenController!: AppScreenController
   view = new RootView(renderer, controller.state, {
     onStageFile: async (path) => {
       try { await controller.stageFile(path) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
@@ -459,7 +498,13 @@ export function createApp(options: CreateAppOptions): App {
         ...(backgroundOptions.externalChangeIntervalMs === undefined ? {} : { externalChangeIntervalMs: backgroundOptions.externalChangeIntervalMs }),
         // Everything the UI drives goes through `runUiMutation`, so this is lazygit's
         // `backgroundRefreshesPaused()` for githunk: no background git while the user's own runs.
-        isBusy: () => refreshInFlight || view.isMutating,
+        // Branch Review reconciliation must not be paused by busy/composer – it preserves draft.
+        isBusy: () => {
+          const isReviewActive = !(screenController?.shouldRenderRepository() ?? true)
+          if (isReviewActive) return false
+          const isMutating = (view as unknown as { isMutating?: boolean } | undefined)?.isMutating === true
+          return refreshInFlight || isMutating
+        },
         // A background fetch fails whenever the network does. The command log already carries the
         // failure; a banner would fight with whatever the user is reading.
         onError: () => undefined,
