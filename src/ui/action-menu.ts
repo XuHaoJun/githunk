@@ -1,5 +1,5 @@
-import { BoxRenderable, RGBA, TextRenderable, type CliRenderer } from "@opentui/core"
-import { TAB_ACTIVE_FG } from "./theme"
+import { BoxRenderable, RGBA, StyledText, TextRenderable, bg, bold, dim, fg, type CliRenderer, type TextChunk } from "@opentui/core"
+import { ANSI_CYAN, SELECTED_LINE_BG, TAB_ACTIVE_FG, brightenAnsiForeground } from "./theme"
 import { popupPanelWidth, popupPanelGeometry, wrapMessage } from "./popup-layout"
 /**
  * A titled, keyed, actionable menu — lazygit's `types.CreateMenuOptions` / `types.MenuItem`
@@ -25,11 +25,63 @@ function actionMenuLabel(item: ActionMenuItem): string {
   return item.disabledReason === undefined ? item.label : `${item.label} (unavailable: ${item.disabledReason})`
 }
 
+function plainChunk(text: string): TextChunk {
+  return { __isChunk: true as const, text } as unknown as TextChunk
+}
+
+function highlightChunk(chunk: TextChunk, selectedBg: (input: TextChunk) => TextChunk): TextChunk {
+  const current = (chunk as unknown as { fg?: unknown }).fg as RGBA | undefined
+  const brightened = current === undefined ? chunk : fg(brightenAnsiForeground(current as unknown as RGBA))(chunk)
+  return bold(selectedBg(brightened)) as unknown as TextChunk
+}
+
 export function renderActionMenuLines(items: readonly ActionMenuItem[], selectedIndex: number): readonly string[] {
   const keyWidth = items.reduce((widest, item) => Math.max(widest, item.key.length), 0)
   return items.map((item, index) =>
     `${index === selectedIndex ? ">" : " "} ${item.key.padEnd(keyWidth, " ")}  ${actionMenuLabel(item)}`,
   )
+}
+
+function renderActionMenuStyledContent(
+  items: readonly ActionMenuItem[],
+  selectedIndex: number,
+  prompt: string,
+  contentWidth: number,
+): StyledText {
+  const chunks: TextChunk[] = []
+  const wrapped = prompt.length === 0 ? [] : wrapMessage(prompt, contentWidth)
+  for (let i = 0; i < wrapped.length; i++) {
+    chunks.push(plainChunk(wrapped[i] ?? ""))
+    chunks.push(plainChunk("\n"))
+  }
+  if (wrapped.length > 0 && items.length > 0) {
+    chunks.push(plainChunk("\n"))
+  }
+  const keyWidth = items.reduce((widest, item) => Math.max(widest, item.key.length), 0)
+  const selectedBg = bg(SELECTED_LINE_BG)
+  for (let idx = 0; idx < items.length; idx++) {
+    const item = items[idx]!
+    const isSelected = idx === selectedIndex
+    const lineChunks: TextChunk[] = []
+    lineChunks.push(plainChunk(isSelected ? ">" : " "))
+    lineChunks.push(plainChunk(" "))
+    const paddedKey = item.key.padEnd(keyWidth, " ")
+    // lazygit: menu_context.go:147 `style.FgCyan.Sprint(...)` for the key column
+    lineChunks.push(fg(ANSI_CYAN)(paddedKey) as unknown as TextChunk)
+    lineChunks.push(plainChunk("  "))
+    const label = actionMenuLabel(item)
+    // lazygit: `style.FgDefault.SetStrikethrough()` for disabled rows — OpenTUI has no strikethrough, use dim
+    const labelChunk = item.disabledReason === undefined ? plainChunk(label) : (dim(label) as unknown as TextChunk)
+    lineChunks.push(labelChunk)
+    if (isSelected) {
+      const highlighted = lineChunks.map((c) => highlightChunk(c, selectedBg))
+      chunks.push(...highlighted)
+    } else {
+      chunks.push(...lineChunks)
+    }
+    if (idx < items.length - 1) chunks.push(plainChunk("\n"))
+  }
+  return new StyledText(chunks)
 }
 
 export type ActionMenuHandle = {
@@ -52,7 +104,7 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
     borderStyle: "rounded",
     borderColor: TAB_ACTIVE_FG,
     focusedBorderColor: TAB_ACTIVE_FG,
-    titleColor: POPUP_FOREGROUND,
+    titleColor: TAB_ACTIVE_FG,
     title: "",
     bottomTitle: "Escape to close",
     position: "absolute",
@@ -80,9 +132,7 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
   let contentWidth = 40
 
   const paint = (): void => {
-    const wrapped = prompt.length === 0 ? [] : wrapMessage(prompt, contentWidth)
-    const promptSection = wrapped.length === 0 ? [] : [...wrapped, ""]
-    text.content = [...promptSection, ...renderActionMenuLines(items, selectedIndex)].join("\n")
+    text.content = renderActionMenuStyledContent(items, selectedIndex, prompt, contentWidth)
   }
 
   return {
@@ -103,7 +153,7 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
       prompt = ""
       selectedIndex = 0
       box.visible = false
-      text.content = ""
+      text.content = new StyledText([])
     },
     handleKey(name: string): boolean {
       if (!open) return false
