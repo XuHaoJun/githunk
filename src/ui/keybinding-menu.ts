@@ -34,7 +34,7 @@ export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandl
     borderStyle: "rounded",
     borderColor: TAB_ACTIVE_FG,
     focusedBorderColor: TAB_ACTIVE_FG,
-    titleColor: POPUP_FOREGROUND,
+    titleColor: TAB_ACTIVE_FG,
     title: "Keybindings",
     bottomTitle: "Escape or ? to close",
     position: "absolute",
