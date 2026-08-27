@@ -1,6 +1,7 @@
 import type { CliRenderer, StyledText } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import type { CommitStatus, CommitSummary } from "../../domain/commit"
+import { filterItems } from "../../app/filter"
 import { createPane, type PaneHandle } from "./common"
 import { commitGraphRows } from "../commit-graph"
 import { AUTHOR_COLUMN_WIDTH, authorColor, authorInitials } from "../author-style"
@@ -16,46 +17,33 @@ import {
 const paneStates = new WeakMap<PaneHandle, ListState>()
 
 export function formatRelativeTime(authoredAt: string, now: Date): string {
-  const then = new Date(authoredAt).getTime()
-  if (Number.isNaN(then)) return ""
-  const diffMs = now.getTime() - then
-  const diffSec = Math.round(diffMs / 1000)
-  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" })
-  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ["year", 365 * 24 * 60 * 60],
-    ["month", 30 * 24 * 60 * 60],
-    ["week", 7 * 24 * 60 * 60],
-    ["day", 24 * 60 * 60],
-    ["hour", 60 * 60],
-    ["minute", 60],
-    ["second", 1],
-  ]
-  for (const [unit, secs] of units) {
-    if (Math.abs(diffSec) >= secs || unit === "second") {
-      const value = Math.round(diffSec / secs)
-      return rtf.format(-value, unit)
-    }
-  }
-  return rtf.format(0, "second")
+  const date = new Date(authoredAt)
+  if (Number.isNaN(date.getTime())) return ""
+  const diffMs = now.getTime() - date.getTime()
+  const seconds = Math.floor(diffMs / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months}mo`
+  return `${Math.floor(months / 12)}y`
 }
 
 /**
  * lazygit's `getHashColor` switch on `models.CommitStatus`
- * (pkg/gui/presentation/commits.go:485-501). The hash is the panel's only signal for how far a
- * commit has travelled, so a fixed colour would lose it: red is local-only, yellow is pushed but
- * not yet on a main branch, green is merged. The diffed-commit and cherry-picked overrides
- * (commits.go:503-511) need panels githunk does not have yet.
+ * (pkg/gui/presentation/commits.go:138-145): the hash is coloured by whether the commit has
+ * been pushed, is merged into the main branch, or is still local-only.
  */
 function commitHashColor(status: CommitStatus | undefined) {
   switch (status) {
-    case "unpushed":
-      return COMMIT_HASH_UNPUSHED_FG
-    case "pushed":
-      return COMMIT_HASH_PUSHED_FG
-    case "merged":
-      return COMMIT_HASH_MERGED_FG
-    default:
-      return COMMIT_HASH_DEFAULT_FG
+    case "unpushed": return COMMIT_HASH_UNPUSHED_FG
+    case "pushed": return COMMIT_HASH_PUSHED_FG
+    case "merged": return COMMIT_HASH_MERGED_FG
+    default: return COMMIT_HASH_DEFAULT_FG
   }
 }
 
@@ -65,9 +53,9 @@ function commitHashColor(status: CommitStatus | undefined) {
  * The graph's pipe colour is the author colour, exactly as lazygit's
  * `loadPipesets` derives it, so a lane and its author read as one thing.
  */
-export function buildCommitRows(commits: readonly CommitSummary[], now: Date): ListRow[] {
+export function buildCommitRows(commits: readonly CommitSummary[], now: Date, filter = ""): ListRow[] {
   const graphs = commitGraphRows(commits, (_commit, index) => authorColor(commits[index]!.authorName))
-  return commits.map((commit, index) => {
+  const rows = commits.map((commit, index) => {
     const graph = graphs[index]
     const shortHash = commit.oid.length >= 8 ? commit.oid.slice(0, 8) : commit.shortOid
     const initials = authorInitials(commit.authorName).padEnd(AUTHOR_COLUMN_WIDTH, " ")
@@ -79,10 +67,12 @@ export function buildCommitRows(commits: readonly CommitSummary[], now: Date): L
         { text: initials, priority: 3, color: authorColor(commit.authorName) },
         { text: graph?.text ?? "", priority: 0, segments: graph?.segments ?? [] },
         { text: commit.subject, priority: 2, flex: true },
-        { text: relative, priority: 4, style: "dim" },
+        { text: relative, priority: 4, style: "dim" as const },
       ],
     }
   })
+  if (filter.length === 0) return rows
+  return [...filterItems(filter, rows, (row) => `${row.columns[0]?.text ?? ""} ${row.columns[3]?.text ?? row.id}`)]
 }
 
 export function renderCommitRows(
@@ -116,28 +106,23 @@ export function getCommitsListState(pane: PaneHandle): ListState | undefined {
 export function getSelectedCommit(pane: PaneHandle, model: AppModel): CommitSummary | undefined {
   const commits = model.commits ?? []
   const state = paneStates.get(pane)
-  if (state?.selectedId !== undefined) return commits.find((c) => c.oid === state.selectedId)
-  // Fallback to first if state missing
-  const index = state?.selectedIndex ?? 0
-  return commits[index]
+  if (state === undefined || state.selectedId === undefined) return undefined
+  return commits.find((commit) => commit.oid === state.selectedId)
 }
 
 export function moveCommitsCursor(pane: PaneHandle, model: AppModel, direction: "next" | "previous"): CommitSummary | undefined {
   const commits = model.commits ?? []
   if (commits.length === 0) return undefined
-  let state = paneStates.get(pane)
-  if (state === undefined) {
-    updateCommitsPane(pane, model)
-    state = paneStates.get(pane)
-    if (state === undefined) return commits[0]
-  }
+  const state = paneStates.get(pane)
+  if (state === undefined) return undefined
+  const currentIndex = state.selectedIndex
   const delta = direction === "next" ? 1 : -1
-  const current = state.selectedIndex
-  const nextIndex = Math.max(0, Math.min(commits.length - 1, current + delta))
-  const nextId = commits[nextIndex]!.oid
-  const nextState = selectListRow(state, nextId)
+  const nextIndex = Math.max(0, Math.min(commits.length - 1, currentIndex + delta))
+  if (nextIndex === currentIndex) return commits[currentIndex]
+  const nextState = selectListRow(state, commits[nextIndex]!.oid)
   paneStates.set(pane, nextState)
-  const content = renderListRows(nextState, true, 80)
+  const width = 80
+  const content = renderListRows(nextState, true, width)
   pane.update(content)
   return commits[nextIndex]
 }
@@ -157,11 +142,9 @@ export function updateCommitsPane(pane: PaneHandle, model: AppModel): void {
   let state = createListState(rows)
   if (prevId !== undefined) {
     const withPrev = selectListRow(state, prevId)
-    // selectListRow returns same state if not found; preserve fallback
     if (withPrev.selectedId === prevId) state = withPrev
   }
   paneStates.set(pane, state)
-  // Render with a generous width; full-row highlight visible when caller renders with focused true
   const content = renderListRows(state, false, 80)
   pane.update(content)
   pane.box.bottomTitle = undefined
