@@ -26,6 +26,10 @@ import {
   createStorageError,
   createHistoryRewrittenError,
 } from "./error-state"
+import { HighlightCache } from "../../review/git/highlight/highlight-cache"
+import type { HighlightPayload } from "../../review/git/highlight/highlight-payload"
+import { loadHighlightForPatch } from "../../review/git/highlight/highlight-adapter"
+import { getEffectiveHighlightAppearance } from "./syntax-theme"
 
 export type ReviewWorkspaceControllerOptions = {
   readonly runner: GitRunner
@@ -58,6 +62,9 @@ export class ReviewWorkspaceController {
   private sourceContextCache = new Map<string, readonly string[]>()
   private pendingGapRequests = new Map<string, number>()
   private gapRequestCounter = 0
+  private highlightCache = new HighlightCache(50)
+  private highlightByFileKey = new Map<string, HighlightPayload>()
+  private highlightRequestId = 0
   constructor(options: ReviewWorkspaceControllerOptions) {
     this.runner = options.runner
     this.stateStore = options.stateStore
@@ -89,9 +96,62 @@ export class ReviewWorkspaceController {
   get generationId(): string | undefined {
     return this.activeGenerationId
   }
-
   get base(): string | undefined {
     return this.baseRef
+  }
+
+  getHighlightByFileKey(): ReadonlyMap<string, HighlightPayload> {
+    return this.highlightByFileKey
+  }
+
+  private fileToPatch(file: ReviewFile): string | null {
+    if (file.hunks.length === 0) return null
+    if (file.source === "binary" || file.kind === "binary" || file.source === "too-large") return null
+    const header = `diff --git a/${file.path} b/${file.path}\n--- a/${file.path}\n+++ b/${file.path}\n`
+    const hunks = file.hunks.map((h) => `@@ -${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@\n${h.lines.join("\n")}`).join("\n")
+    return header + hunks + "\n"
+  }
+
+  private triggerHighlightLoad(generationId: string): void {
+    const requestToken = ++this.highlightRequestId
+    const capturedGeneration = generationId
+    const capturedRequestId = this.requestId
+    void (async () => {
+      const state = this._state
+      if (!state || this.destroyed) return
+      if (capturedGeneration !== this.activeGenerationId) return
+      // For each file, try cache then load
+      for (const file of state.document.files) {
+        if (this.destroyed) return
+        if (requestToken !== this.highlightRequestId) return
+        if (capturedGeneration !== this.activeGenerationId) return
+        if (capturedRequestId !== this.requestId) return
+        const appearance = getEffectiveHighlightAppearance()
+        const cacheKey = this.highlightCache.cacheKey(file.key, file.contentId, capturedGeneration, appearance)
+        const cached = this.highlightCache.get(cacheKey)
+        if (cached) {
+          if (this.highlightByFileKey.get(file.key) !== cached) {
+            this.highlightByFileKey.set(file.key, cached)
+            this.publish()
+          }
+          continue
+        }
+        const patch = this.fileToPatch(file)
+        if (!patch) continue
+        try {
+          const payload = await loadHighlightForPatch(patch, file.key, appearance)
+          if (requestToken !== this.highlightRequestId) return
+          if (capturedGeneration !== this.activeGenerationId) return
+          if (capturedRequestId !== this.requestId) return
+          if (!payload) continue
+          this.highlightCache.set(cacheKey, payload)
+          this.highlightByFileKey.set(file.key, payload)
+          this.publish()
+        } catch {
+          // ignore highlight failures
+        }
+      }
+    })()
   }
 
   clearError(): void {
@@ -143,6 +203,8 @@ export class ReviewWorkspaceController {
         this.activeGenerationId = doc.generation.id
         this._error = historyError
         this.publish()
+        this.highlightByFileKey.clear()
+        this.triggerHighlightLoad(doc.generation.id)
         await this.persistState()
         // If persist failed, error will be set inside persistState
       } catch (err) {
@@ -233,6 +295,8 @@ export class ReviewWorkspaceController {
     // Empty review and detached snapshot are status, not errors -> do not override corrupt error
     this._error = corruptError
     this.publish()
+    this.highlightByFileKey.clear()
+    this.triggerHighlightLoad(doc.generation.id)
     try {
       await this.persistState()
     } catch (err) {

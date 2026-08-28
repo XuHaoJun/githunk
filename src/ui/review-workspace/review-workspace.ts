@@ -11,6 +11,7 @@ import { planReviewIntent } from "../../review/core/intents"
 import { coverageForFile, visibleReviewFiles, sortedReviewFeedback } from "../../review/core/selectors"
 import { ReviewStreamPane } from "./stream-pane"
 import { planReviewRows, reviewFileStartOffset } from "./row-planner"
+import { installReviewStreamHighlights, releaseReviewStreamHighlights } from "./review-highlight-text"
 import { FeedbackComposer } from "./feedback-composer"
 import { FeedbackPane } from "./feedback-pane"
 import { FinishDialog } from "./finish-dialog"
@@ -192,7 +193,8 @@ export class ReviewWorkspace {
         if (hitSidebar) {
           const sidebarHeight = Math.max(1, this.sidebarBox.height - 2)
           const stateForWheel = this.controller.state
-          const fileRowCount = stateForWheel ? reviewFileRows(stateForWheel).length : this.sidebarText.content.split("\n").length
+          const rawContent = this.sidebarText.content as unknown as string
+          const fileRowCount = stateForWheel ? reviewFileRows(stateForWheel).length : String(rawContent).split("\n").length
           const maxStart = Math.max(0, fileRowCount - sidebarHeight)
           this.sidebarViewportStart = Math.max(0, Math.min(maxStart, this.sidebarViewportStart + delta))
           this.render(this.controller.state)
@@ -294,6 +296,12 @@ export class ReviewWorkspace {
     } catch {}
     try {
       this.root.onMouse = undefined
+    } catch {}
+    try {
+      releaseReviewStreamHighlights(this.streamText)
+    } catch {}
+    try {
+      releaseReviewStreamHighlights(this.streamText)
     } catch {}
     try {
       this.root.destroyRecursively()
@@ -910,6 +918,7 @@ export class ReviewWorkspace {
       const streamWidth = layout.stream.width
       const streamHeight = layout.stream.height
       this.streamPane.syncLayout(streamWidth, streamHeight, layout.effectiveMode)
+      const highlightByFileKey = this.controller.getHighlightByFileKey()
       const rowOptions = {
         viewportStart: this.viewportStart,
         viewportHeight: streamHeight,
@@ -918,6 +927,7 @@ export class ReviewWorkspace {
         showLineNumbers: true,
         wrapLines: false,
         expandedSourceByGap: this.controller.getExpandedSourceByGap(),
+        highlightByFileKey,
       } as const
       if (state.reveal.fileTopToken !== this.lastFileTopToken) {
         const fileKey = state.selection.fileKey
@@ -932,7 +942,6 @@ export class ReviewWorkspace {
       this.streamPane.setLastPlanForTest(plan)
       const visiblePlanStart = Math.max(0, this.viewportStart - plan.start)
       const visiblePlanRows = plan.rows.slice(visiblePlanStart, visiblePlanStart + streamHeight)
-      const streamContent = visiblePlanRows.map((row) => row.text.map((span) => span.text).join("")).join("\n")
       let extra = this.mouseError ? `\n[Error: ${this.mouseError}]` : ""
       if (wsError) {
         extra += `\n[WorkspaceError ${wsError.kind}: ${wsError.title} — ${wsError.detail} — action:${wsError.action}]`
@@ -962,8 +971,18 @@ export class ReviewWorkspace {
       if (this.finishDialog.isOpen()) {
         extra += `\n[Finish: ${this.finishDialog.getValidationMessage()}]`
       }
-      this.streamText.content = streamContent + extra
+      const visibleText = visiblePlanRows.map((row) => row.text.map((span) => span.text).join("")).join("\n")
+      const fullText = visibleText + extra
+      // Use pane-buffer highlights when syntax tokens are present, otherwise plain content
+      const hasHighlight = visiblePlanRows.some((row) => row.text.some((span) => (span as unknown as { fg?: string }).fg !== undefined))
+      if (hasHighlight) {
+        installReviewStreamHighlights(this.streamText, fullText, visiblePlanRows)
+      } else {
+        releaseReviewStreamHighlights(this.streamText)
+        this.streamText.content = fullText
+      }
     } else {
+      releaseReviewStreamHighlights(this.streamText)
       this.root.title = "Branch Review — loading…"
       this.headerText.content = "loading…"
       this.footerText.content = ""

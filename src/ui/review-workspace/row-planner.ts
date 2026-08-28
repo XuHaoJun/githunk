@@ -2,7 +2,7 @@ import type { ReviewState } from "../../review/core/state"
 import type { ReviewFile, ReviewHunk, ReviewFeedback } from "../../review/core/types"
 import { cellWidth } from "../cell-width"
 
-export type ReviewTextSpan = Readonly<{ text: string; style: "plain" | "dim" | "addition" | "deletion" | "hunk" | "feedback" }>
+export type ReviewTextSpan = Readonly<{ text: string; style: "plain" | "dim" | "addition" | "deletion" | "hunk" | "feedback"; fg?: string }>
 export type ReviewRow = Readonly<{
   kind: "file-header" | "hunk-header" | "diff" | "gap" | "feedback" | "binary" | "too-large"
   fileKey: string
@@ -23,6 +23,7 @@ export type PlanReviewRowsOptions = Readonly<{
   wrapLines?: boolean
   overscan?: number
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>
+  highlightByFileKey?: ReadonlyMap<string, import("../../review/git/highlight/highlight-payload").HighlightPayload>
 }>
 
 export const DEFAULT_OVERSCAN = 10
@@ -135,8 +136,10 @@ function fileCacheKey(file: ReviewFile, opts: PlanReviewRowsOptions, state: Revi
   const expanded = state.expandedGaps.filter(g => g.fileKey === file.key && g.expanded).map(g => g.gapId).sort().join(",")
   const feedbacks = state.feedback.filter(f => f.anchor.fileKey === file.key)
   const feedbackRev = feedbacks.map(f => `${f.id}:${f.updatedAt}`).sort().join("|")
-  // Include width, mode, showLineNumbers, wrapLines, digits (line number width), expanded, feedback
-  return `${file.contentId}|${opts.width}|${opts.effectiveMode}|${!!opts.showLineNumbers}|${!!opts.wrapLines}|${digits}|${expanded}|${feedbackRev}`
+  const highlightKey = opts.highlightByFileKey?.get(file.key)
+    ? `${opts.highlightByFileKey.get(file.key)!.theme}:${opts.highlightByFileKey.get(file.key)!.additionLines.length}:${opts.highlightByFileKey.get(file.key)!.deletionLines.length}`
+    : "nohl"
+  return `${file.contentId}|${opts.width}|${opts.effectiveMode}|${!!opts.showLineNumbers}|${!!opts.wrapLines}|${digits}|${expanded}|${feedbackRev}|${highlightKey}`
 }
 
 function computeGapBefore(file: ReviewFile, hunkIndex: number): { lineCount: number; oldRange: [number, number]; newRange: [number, number] } | null {
@@ -346,6 +349,10 @@ function buildRowsForFile(
     return rows
   }
 
+  const highlight = opts.highlightByFileKey?.get(file.key)
+  let highlightAdditionIdx = 0
+  let highlightDeletionIdx = 0
+
   for (let hunkIdx = 0; hunkIdx < file.hunks.length; hunkIdx++) {
     const hunk = file.hunks[hunkIdx]!
     // Gap before this hunk
@@ -467,16 +474,50 @@ function buildRowsForFile(
       const nextRaw = hunk.lines[li+1]
       const hasNoNewlineMarkerAfter = nextRaw !== undefined && nextRaw.startsWith("\\")
 
+      // Resolve highlight tokens for this line (windowed, per-file sequential indexes)
+      let highlightedSpans: readonly ReviewTextSpan[] | null = null
+      if (highlight && !wrapLines) {
+        let tokens: readonly { readonly text: string; readonly fg?: string }[] | null = null
+        if (kind === "addition") {
+          tokens = highlight.additionLines[highlightAdditionIdx] ?? null
+          highlightAdditionIdx++
+        } else if (kind === "deletion") {
+          tokens = highlight.deletionLines[highlightDeletionIdx] ?? null
+          highlightDeletionIdx++
+        } else {
+          const add = highlight.additionLines[highlightAdditionIdx] ?? null
+          const del = highlight.deletionLines[highlightDeletionIdx] ?? null
+          tokens = add ?? del
+          highlightAdditionIdx++
+          highlightDeletionIdx++
+        }
+        if (tokens !== null) {
+          const spans: ReviewTextSpan[] = []
+          if (showLineNumbers) {
+            const oldStr = curOld === null ? " ".repeat(digits) : String(curOld).padStart(digits, " ")
+            const newStr = curNew === null ? " ".repeat(digits) : String(curNew).padStart(digits, " ")
+            spans.push({ text: `${oldStr} ${newStr} `, style: "dim" })
+          }
+          const markerStyle = kind === "addition" ? "addition" : kind === "deletion" ? "deletion" : "plain"
+          spans.push({ text: prefix === " " ? " " : prefix, style: markerStyle })
+          if (tokens.length === 0) {
+            highlightedSpans = spans
+          } else {
+            for (const tok of tokens) {
+              const t = tabExpanded(tok.text)
+              spans.push({ text: t, style: kind === "addition" ? "addition" : kind === "deletion" ? "deletion" : "plain", ...(tok.fg ? { fg: tok.fg } : {}) })
+            }
+            highlightedSpans = spans
+          }
+        }
+      }
+
       // Build base spans for one logical row, but possibly split into wrapped continuations
       const baseSpans = formatDiffRowText(prefix, content, curOld, curNew, digits, showLineNumbers, kind)
       // Wrap handling: produce multiple ReviewRows if needed
       if (wrapLines) {
         const avail = perColumnAvailable(width, showLineNumbers, digits, mode)
-        // For measure, if content width over avail, split content
-        // We split content only, preserving gutter/marker on first row and indent on continuations
-        // Compute chunks for content
-        const chunks = splitByCellWidth(content, Math.max(1, avail - 2)) // -1 marker -1 space
-        // If only one chunk and marker included, we just push one row with baseSpans
+        const chunks = splitByCellWidth(content, Math.max(1, avail - 2))
         if (chunks.length <= 1) {
           rows.push({
             kind: "diff",
@@ -484,7 +525,7 @@ function buildRowsForFile(
             hunkIndex: hunkIdx,
             oldLine: curOld,
             newLine: curNew,
-            text: baseSpans,
+            text: highlightedSpans ?? baseSpans,
           })
         } else {
           for (let ci = 0; ci < chunks.length; ci++) {
@@ -492,13 +533,11 @@ function buildRowsForFile(
             const isFirst = ci===0
             let text: readonly ReviewTextSpan[]
             if (isFirst) {
-              text = formatDiffRowText(prefix, chunk, curOld, curNew, digits, showLineNumbers, kind)
+              text = highlightedSpans ?? formatDiffRowText(prefix, chunk, curOld, curNew, digits, showLineNumbers, kind)
             } else {
-              // Continuation: no line numbers, indented
               const indent = showLineNumbers ? " ".repeat(digits*2+2) : ""
               const contSpans: ReviewTextSpan[] = []
               if (indent) contSpans.push({ text: indent, style: "dim" })
-              // marker only on first row? Continuations show " " as marker placeholder
               contSpans.push({ text: " ", style: "plain" })
               contSpans.push({ text: chunk, style: kind==="addition" ? "addition" : kind==="deletion" ? "deletion" : "plain" })
               text = contSpans
@@ -520,7 +559,7 @@ function buildRowsForFile(
           hunkIndex: hunkIdx,
           oldLine: curOld,
           newLine: curNew,
-          text: baseSpans,
+          text: highlightedSpans ?? baseSpans,
         })
       }
 
