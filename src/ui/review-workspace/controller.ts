@@ -29,6 +29,7 @@ import {
 import { HighlightCache } from "../../review/git/highlight/highlight-cache"
 import type { HighlightPayload } from "../../review/git/highlight/highlight-payload"
 import { loadHighlightForPatch } from "../../review/git/highlight/highlight-adapter"
+import { highlightInWorker, isWorkerAvailable } from "../../review/git/highlight/highlight-worker-client"
 import { getEffectiveHighlightAppearance } from "./syntax-theme"
 
 export type ReviewWorkspaceControllerOptions = {
@@ -112,6 +113,17 @@ export class ReviewWorkspaceController {
     return header + hunks + "\n"
   }
 
+  private isCodeFile(path: string): boolean {
+    const lower = path.toLowerCase()
+    // Only highlight code-like extensions; skip docs, images, etc. to avoid CPU and wrong highlight
+    return /\.(ts|js|tsx|jsx|mjs|cjs|mts|cts|py|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|rb|sh|yaml|yml|toml|sql|html|css|scss|less|json|zig|dart|lua|exs|ex)$/.test(lower)
+  }
+
+  private isLargeFile(file: ReviewFile): boolean {
+    const total = file.hunks.reduce((sum, h) => sum + h.lines.length, 0)
+    return total > 40
+  }
+
   private triggerHighlightLoad(generationId: string): void {
     const requestToken = ++this.highlightRequestId
     const capturedGeneration = generationId
@@ -120,38 +132,145 @@ export class ReviewWorkspaceController {
       const state = this._state
       if (!state || this.destroyed) return
       if (capturedGeneration !== this.activeGenerationId) return
-      // For each file, try cache then load
-      for (const file of state.document.files) {
+      // Batch highlights: collect payloads and publish once, yield between files to keep UI responsive
+      const appearance = getEffectiveHighlightAppearance()
+      const pendingUpdates = new Map<string, import("../../review/git/highlight/highlight-payload").HighlightPayload>()
+      let processed = 0
+      // Prioritize visible/selected files first to keep initial highlight fast and avoid hang on large branch (161 files)
+      const files = [...state.document.files]
+      const selectedKey = state.selection.fileKey
+      const selectedIdx = selectedKey ? files.findIndex((f) => f.key === selectedKey) : -1
+      // Build priority order: selected file, neighbors, then first 10, then rest; filter to code files and limit initial to small files
+      const prioritized: typeof files = []
+      const seen = new Set<string>()
+      const addIfCode = (f: typeof files[number], allowLarge = false) => {
+        if (!this.isCodeFile(f.path)) return
+        if (seen.has(f.key)) return
+        const totalLines = f.hunks.reduce((s, h) => s + h.lines.length, 0)
+        if (!allowLarge && totalLines > 500) return
+        seen.add(f.key)
+        prioritized.push(f)
+      }
+      if (selectedIdx >= 0) {
+        addIfCode(files[selectedIdx]!, true)
+        if (selectedIdx - 1 >= 0) addIfCode(files[selectedIdx - 1]!, true)
+        if (selectedIdx + 1 < files.length) addIfCode(files[selectedIdx + 1]!, true)
+      }
+      for (const f of files) {
+        if (prioritized.length >= 10) break
+        addIfCode(f)
+      }
+      // Only highlight first 20 code files initially to avoid hang on 23k line branch; rest will be lazy on viewport
+      // (was: for (const f of files) addIfCode(f) and deferred large)
+      // Large files deferred to lazy highlight on visibility
+      
+      // Process in batches of 4 concurrent highlights (worker can handle queue, main thread limited)
+      const BATCH_SIZE = 4
+      for (let batchStart = 0; batchStart < prioritized.length; batchStart += BATCH_SIZE) {
         if (this.destroyed) return
         if (requestToken !== this.highlightRequestId) return
         if (capturedGeneration !== this.activeGenerationId) return
         if (capturedRequestId !== this.requestId) return
-        const appearance = getEffectiveHighlightAppearance()
-        const cacheKey = this.highlightCache.cacheKey(file.key, file.contentId, capturedGeneration, appearance)
-        const cached = this.highlightCache.get(cacheKey)
-        if (cached) {
-          if (this.highlightByFileKey.get(file.key) !== cached) {
-            this.highlightByFileKey.set(file.key, cached)
-            this.publish()
-          }
-          continue
-        }
-        const patch = this.fileToPatch(file)
-        if (!patch) continue
-        try {
-          const payload = await loadHighlightForPatch(patch, file.key, appearance)
-          if (requestToken !== this.highlightRequestId) return
-          if (capturedGeneration !== this.activeGenerationId) return
-          if (capturedRequestId !== this.requestId) return
+        const batch = prioritized.slice(batchStart, batchStart + BATCH_SIZE)
+        const results = await Promise.all(
+          batch.map(async (file) => {
+            const cacheKey = this.highlightCache.cacheKey(file.key, file.contentId, capturedGeneration, appearance)
+            const cached = this.highlightCache.get(cacheKey)
+            if (cached) return { file, payload: cached, cached: true }
+            const patch = this.fileToPatch(file)
+            if (!patch) return { file, payload: null, cached: false }
+            try {
+              let payload: import("../../review/git/highlight/highlight-payload").HighlightPayload | null
+              if (this.isLargeFile(file) && isWorkerAvailable()) {
+                try {
+                  payload = await highlightInWorker(patch, file.key, appearance)
+                } catch {
+                  payload = await loadHighlightForPatch(patch, file.key, appearance)
+                }
+              } else {
+                payload = await loadHighlightForPatch(patch, file.key, appearance)
+              }
+              return { file, payload, cached: false }
+            } catch {
+              return { file, payload: null, cached: false }
+            }
+          }),
+        )
+        for (const { file, payload, cached } of results) {
           if (!payload) continue
-          this.highlightCache.set(cacheKey, payload)
-          this.highlightByFileKey.set(file.key, payload)
-          this.publish()
-        } catch {
-          // ignore highlight failures
+          const hasFg = payload.additionLines.some((l) => l && l.some((t) => t.fg)) || payload.deletionLines.some((l) => l && l.some((t) => t.fg))
+          if (!hasFg) continue
+          if (!cached) {
+            const cacheKey = this.highlightCache.cacheKey(file.key, file.contentId, capturedGeneration, appearance)
+            this.highlightCache.set(cacheKey, payload)
+          }
+          pendingUpdates.set(file.key, payload)
         }
+        processed += batch.length
+        // Publish incrementally for first batch, then every 2 batches
+        if (pendingUpdates.size > 0 && (batchStart === 0 || batchStart % (BATCH_SIZE * 2) === 0)) {
+          for (const [k, v] of pendingUpdates) this.highlightByFileKey.set(k, v)
+          pendingUpdates.clear()
+          this.publish()
+          await new Promise<void>((r) => setTimeout(r, 0))
+        }
+        // Yield to event loop between batches
+        await new Promise<void>((r) => setTimeout(r, 0))
+        // Early exit if cancelled
+        if (requestToken !== this.highlightRequestId) return
+        if (capturedGeneration !== this.activeGenerationId) return
+        if (capturedRequestId !== this.requestId) return
+      }
+      if (pendingUpdates.size > 0) {
+        for (const [k, v] of pendingUpdates) this.highlightByFileKey.set(k, v)
+        this.publish()
       }
     })()
+  }
+
+  async ensureHighlightForFiles(fileKeys: readonly string[]): Promise<void> {
+    const state = this._state
+    if (!state || this.destroyed) return
+    const generationId = this.activeGenerationId
+    if (!generationId) return
+    const appearance = getEffectiveHighlightAppearance()
+    for (const key of fileKeys) {
+      if (this.highlightByFileKey.has(key)) continue
+      const file = state.document.files.find((f) => f.key === key)
+      if (!file || !this.isCodeFile(file.path)) continue
+      const cacheKey = this.highlightCache.cacheKey(key, file.contentId, generationId, appearance)
+      const cached = this.highlightCache.get(cacheKey)
+      if (cached) {
+        this.highlightByFileKey.set(key, cached)
+        this.publish()
+        continue
+      }
+      const patch = this.fileToPatch(file)
+      if (!patch) continue
+      try {
+        let payload: import("../../review/git/highlight/highlight-payload").HighlightPayload | null
+        if (this.isLargeFile(file) && isWorkerAvailable()) {
+          try {
+            payload = await highlightInWorker(patch, key, appearance)
+          } catch {
+            payload = await loadHighlightForPatch(patch, key, appearance)
+          }
+        } else {
+          payload = await loadHighlightForPatch(patch, key, appearance)
+        }
+        if (!payload) continue
+        const hasFg = payload.additionLines.some((l) => l && l.some((t) => t.fg)) || payload.deletionLines.some((l) => l && l.some((t) => t.fg))
+        if (!hasFg) continue
+        this.highlightCache.set(cacheKey, payload)
+        this.highlightByFileKey.set(key, payload)
+        this.publish()
+      } catch {
+        // ignore
+      }
+      // Yield to keep UI responsive
+      await new Promise<void>((r) => setTimeout(r, 0))
+      if (this.destroyed) return
+    }
   }
 
   clearError(): void {
