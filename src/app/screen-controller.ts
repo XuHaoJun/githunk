@@ -1,8 +1,20 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AppController } from "./controller"
 import type { RootView } from "../ui/root-view"
-import { ReviewWorkspace } from "../ui/review-workspace/review-workspace"
+import { ReactReviewHost } from "../ui/review-workspace/react-review-host"
 import { ReviewWorkspaceController } from "../ui/review-workspace/controller"
+export type ReviewScreenRoot = Readonly<{
+  findDescendantById: (id: string) => unknown
+}>
+
+export type ReviewScreenView = Readonly<{
+  root: ReviewScreenRoot
+  destroy: () => void
+  handleSidebarClick: (fileKey: string) => boolean
+  handleKeyPress: (key: string) => boolean
+  getFocus: () => string
+  getStreamPane: () => { getViewportStart: () => number }
+}>
 
 export type RepositoryScreen = {
   readonly kind: "repository"
@@ -13,7 +25,7 @@ export type RepositoryScreen = {
 export type BranchReviewScreen = {
   readonly kind: "branch-review"
   readonly controller: ReviewWorkspaceController
-  readonly view: ReviewWorkspace
+  readonly view: ReviewScreenView
 }
 
 export type ActiveScreen = RepositoryScreen | BranchReviewScreen
@@ -23,7 +35,7 @@ export type AppScreenControllerOptions = {
   readonly repositoryView?: RootView | undefined
   readonly renderer?: CliRenderer | undefined
   readonly createReviewController: () => ReviewWorkspaceController
-  readonly createReviewView: (controller: ReviewWorkspaceController, onClose: () => void) => ReviewWorkspace
+  readonly createReviewView: (controller: ReviewWorkspaceController, onClose: () => void) => ReviewScreenView
 }
 export class AppScreenController {
   private activeScreen: ActiveScreen
@@ -193,6 +205,9 @@ export class AppScreenController {
       this._reviewHandlerCount = 0
     }
     this._timerCount = 0
+    if (this.opts.renderer) {
+      try { ReactReviewHost.disposeRenderer(this.opts.renderer) } catch {}
+    }
   }
 
   private countReviewTimers(controller: ReviewWorkspaceController): number {

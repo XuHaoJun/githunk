@@ -918,7 +918,6 @@ export class ReviewWorkspace {
       const streamWidth = layout.stream.width
       const streamHeight = layout.stream.height
       this.streamPane.syncLayout(streamWidth, streamHeight, layout.effectiveMode)
-      const highlightByFileKey = this.controller.getHighlightByFileKey()
       const rowOptions = {
         viewportStart: this.viewportStart,
         viewportHeight: streamHeight,
@@ -927,7 +926,6 @@ export class ReviewWorkspace {
         showLineNumbers: true,
         wrapLines: false,
         expandedSourceByGap: this.controller.getExpandedSourceByGap(),
-        highlightByFileKey,
       } as const
       if (state.reveal.fileTopToken !== this.lastFileTopToken) {
         const fileKey = state.selection.fileKey
@@ -942,9 +940,6 @@ export class ReviewWorkspace {
       this.streamPane.setLastPlanForTest(plan)
       const visiblePlanStart = Math.max(0, this.viewportStart - plan.start)
       const visiblePlanRows = plan.rows.slice(visiblePlanStart, visiblePlanStart + streamHeight)
-      // Lazy highlight: request highlight for visible files not yet highlighted (scroll is lazy, scrollbar correct via totalRows)
-      const visibleFileKeys = [...new Set(visiblePlanRows.map((r) => r.fileKey).filter((k): k is string => !!k))]
-      void this.controller.ensureHighlightForFiles(visibleFileKeys)
       let extra = this.mouseError ? `\n[Error: ${this.mouseError}]` : ""
       if (wsError) {
         extra += `\n[WorkspaceError ${wsError.kind}: ${wsError.title} — ${wsError.detail} — action:${wsError.action}]`

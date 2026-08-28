@@ -34,10 +34,11 @@ export function moveReviewSelection(
   const currentVisibleIndex = indexOfFile(visible, current.fileKey)
   // For hunk navigation we may need to flatten hunks
   if (unit === "file") {
-    if (currentVisibleIndex < 0) return null
     const delta = direction === "next" ? 1 : -1
-    const nextIndex = clamp(currentVisibleIndex + delta, 0, visible.length - 1)
-    if (nextIndex === currentVisibleIndex) return null
+    const nextIndex = currentVisibleIndex < 0
+      ? direction === "next" ? 0 : visible.length - 1
+      : clamp(currentVisibleIndex + delta, 0, visible.length - 1)
+    if (currentVisibleIndex >= 0 && nextIndex === currentVisibleIndex) return null
     const nextFile = visible[nextIndex]!
     return {
       selection: { fileKey: nextFile.key, hunkIndex: 0 },
@@ -61,16 +62,12 @@ export function moveReviewSelection(
 
   let currentCursorIndex = cursors.findIndex((c) => c.fileKey === current.fileKey && c.hunkIndex === current.hunkIndex)
   if (currentCursorIndex < 0) {
-    // If file has no hunks and hunkIndex is 0, find file position
-    // Try to locate by fileKey only
+    // A filtered-out selection has no cursor; begin from the nearest visible boundary.
     if (current.fileKey !== null) {
       const fileIdx = indexOfFile(visible, current.fileKey)
-      if (fileIdx >= 0) {
-        // approximate index as first hunk of that file
-        currentCursorIndex = cursors.findIndex((c) => c.fileKey === current.fileKey)
-      }
+      if (fileIdx >= 0) currentCursorIndex = cursors.findIndex((c) => c.fileKey === current.fileKey)
     }
-    if (currentCursorIndex < 0) return null
+    if (currentCursorIndex < 0) currentCursorIndex = direction === "next" ? -1 : cursors.length
   }
 
   const delta = direction === "next" ? 1 : -1
@@ -78,10 +75,9 @@ export function moveReviewSelection(
   if (nextIndex === currentCursorIndex) return null
   const next = cursors[nextIndex]!
   const crossesFile = next.fileKey !== current.fileKey
-  const crossesForward = crossesFile && delta > 0
   return {
     selection: { fileKey: next.fileKey, hunkIndex: next.hunkIndex },
-    reveal: crossesForward
+    reveal: crossesFile
       ? { fileTopToken: state.reveal.fileTopToken + 1, hunkToken: state.reveal.hunkToken, scrollToFeedback: false }
       : { fileTopToken: state.reveal.fileTopToken, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: false },
   }

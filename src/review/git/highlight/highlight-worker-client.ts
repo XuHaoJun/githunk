@@ -1,6 +1,7 @@
 import type { HighlightPayload } from "./highlight-payload"
 
 type WorkerRequest = {
+  version: 1
   id: number
   patch: string
   fileKey: string
@@ -8,129 +9,138 @@ type WorkerRequest = {
 }
 
 type WorkerResponse =
-  | { id: number; ok: true; payload: HighlightPayload | null }
-  | { id: number; ok: false; message: string }
+  | { version: 1; id: number; ok: true; payload: HighlightPayload | null }
+  | { version: 1; id: number; ok: false; message: string }
 
 type Pending = {
   id: number
-  resolve: (v: HighlightPayload | null) => void
-  reject: (e: Error) => void
+  request: WorkerRequest
+  resolve: (value: HighlightPayload | null) => void
+  reject: (error: Error) => void
+  timer?: ReturnType<typeof setTimeout>
+  timeoutMs?: number
 }
 
+export const HIGHLIGHT_WORKER_TIMEOUT_MS = 2_000
+
 let worker: Worker | null = null
+let workerFactory: (() => Worker) | undefined
 let nextId = 1
 let active: Pending | null = null
 const queue: Pending[] = []
-const pendingById = new Map<number, Pending>()
 
-function getWorker(): Worker | null {
-  if (worker) return worker
+function unrefWorker(nextWorker: Worker): void {
+  ;(nextWorker as Worker & { unref?: () => void }).unref?.()
+}
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  ;(timer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.()
+}
+
+function terminateWorker(): void {
+  const current = worker
+  worker = null
+  if (!current) return
   try {
-    worker = new Worker(new URL("./highlight-worker.ts", import.meta.url))
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-      const data = event.data
-      const pending = pendingById.get(data.id)
-      if (!pending) return
-      pendingById.delete(data.id)
-      if (active && active.id === data.id) {
-        active = null
-      } else {
-        // Remove from queue if it was queued (not active)
-        const idx = queue.findIndex((p) => p.id === data.id)
-        if (idx >= 0) queue.splice(idx, 1)
-      }
-      if (data.ok) pending.resolve(data.payload)
-      else pending.reject(new Error(data.message))
-      runNext()
-    }
-    worker.onerror = (event) => {
-      const err = new Error((event as unknown as { message?: string }).message || "highlight worker error")
-      // Fail all pending
-      if (active) {
-        active.reject(err)
-        active = null
-      }
-      for (const p of queue) p.reject(err)
-      queue.length = 0
-      pendingById.clear()
-      try {
-        worker?.terminate()
-      } catch {}
-      worker = null
-    }
-    return worker
-  } catch {
-    return null
+    current.onmessage = null
+    current.onerror = null
+  } catch {}
+  try {
+    void current.terminate()
+  } catch {}
+}
+
+function resetWorker(error: Error): void {
+  const pending = [active, ...queue].filter((request): request is Pending => request !== null)
+  active = null
+  queue.length = 0
+  for (const request of pending) {
+    if (request.timer !== undefined) clearTimeout(request.timer)
+    request.reject(error)
   }
+  terminateWorker()
+}
+
+function handleWorkerError(event: ErrorEvent | Error): void {
+  const message = event instanceof Error ? event.message : event.message
+  resetWorker(new Error(message || "highlight worker error"))
+}
+
+function handleWorkerMessage(event: MessageEvent<WorkerResponse>): void {
+  const response = event.data
+  const request = active
+  if (!request || response.version !== 1 || response.id !== request.id) return
+  active = null
+  if (request.timer !== undefined) clearTimeout(request.timer)
+  if (response.ok) request.resolve(response.payload)
+  else request.reject(new Error(response.message))
+  runNext()
+}
+
+function createWorker(): Worker {
+  const factory = workerFactory ?? (() => new Worker(new URL("./highlight-worker.ts", import.meta.url)))
+  const nextWorker = factory()
+  unrefWorker(nextWorker)
+  nextWorker.onmessage = handleWorkerMessage
+  nextWorker.onerror = handleWorkerError
+  worker = nextWorker
+  return nextWorker
 }
 
 function runNext(): void {
-  if (active) return
-  const next = queue.shift()
-  if (!next) return
-  active = next
-  const w = getWorker()
-  if (!w) {
-    next.reject(new Error("worker unavailable"))
-    active = null
-    runNext()
+  if (active || queue.length === 0) return
+  const request = queue.shift()!
+  active = request
+  let currentWorker: Worker
+  try {
+    currentWorker = worker ?? createWorker()
+    currentWorker.postMessage(request.request)
+  } catch (error) {
+    resetWorker(error instanceof Error ? error : new Error(String(error)))
     return
   }
-  // Find request data for this pending - we need to store patch etc. alongside pending
-  // To avoid extra map, we attach request to pending via closure? Instead we store pending with request.
-  // For simplicity, we will keep request data in a separate map
-  const req = requestById.get(next.id)
-  if (!req) {
-    next.reject(new Error("missing request"))
-    active = null
-    runNext()
-    return
-  }
-  w.postMessage(req)
+  const timeoutMs = request.timeoutMs ?? HIGHLIGHT_WORKER_TIMEOUT_MS
+  request.timer = setTimeout(() => {
+    if (active?.id !== request.id) return
+    resetWorker(new Error(`highlight worker timed out after ${timeoutMs} ms`))
+  }, timeoutMs)
+  unrefTimer(request.timer)
 }
 
-const requestById = new Map<number, WorkerRequest>()
+export function registerHighlightWorker(nextWorker: Worker): Worker {
+  if (worker && worker !== nextWorker) resetWorker(new Error("highlight worker was replaced"))
+  unrefWorker(nextWorker)
+  nextWorker.onmessage = handleWorkerMessage
+  nextWorker.onerror = handleWorkerError
+  worker = nextWorker
+  return nextWorker
+}
 
-export function highlightInWorker(patch: string, fileKey: string, appearance: "dark" | "light"): Promise<HighlightPayload | null> {
-  const w = getWorker()
-  if (!w) return Promise.reject(new Error("worker unavailable"))
+export function highlightInWorker(
+  patch: string,
+  fileKey: string,
+  appearance: "dark" | "light",
+  timeoutMs = HIGHLIGHT_WORKER_TIMEOUT_MS,
+): Promise<HighlightPayload | null> {
+  if (typeof Worker === "undefined" && worker === null && workerFactory === undefined) {
+    return Promise.reject(new Error("worker unavailable"))
+  }
   const id = nextId++
-  const req: WorkerRequest = { id, patch, fileKey, appearance }
-  const { promise, resolve, reject } = Promise.withResolvers<HighlightPayload | null>()
-  const pending: Pending = { id, resolve, reject }
-  pendingById.set(id, pending)
-  requestById.set(id, req)
-  queue.push(pending)
-  // Clean up request after settle
-  const origResolve = pending.resolve
-  const origReject = pending.reject
-  pending.resolve = (v) => {
-    requestById.delete(id)
-    origResolve(v)
-  }
-  pending.reject = (e) => {
-    requestById.delete(id)
-    origReject(e)
-  }
-  if (!active) runNext()
-  return promise
+  const request: WorkerRequest = { version: 1, id, patch, fileKey, appearance }
+  return new Promise<HighlightPayload | null>((resolve, reject) => {
+    queue.push({ id, request, resolve, reject, timeoutMs })
+    runNext()
+  })
 }
 
 export function disposeHighlightWorker(): void {
-  try {
-    worker?.terminate()
-  } catch {}
-  worker = null
-  if (active) {
-    active.reject(new Error("disposed"))
-    active = null
-  }
-  for (const p of queue) p.reject(new Error("disposed"))
-  queue.length = 0
-  pendingById.clear()
-  requestById.clear()
+  resetWorker(new Error("highlight worker disposed"))
 }
 
 export function isWorkerAvailable(): boolean {
-  return getWorker() !== null
+  return worker !== null || typeof Worker !== "undefined"
+}
+
+export function setHighlightWorkerFactoryForTests(factory: (() => Worker) | undefined): void {
+  resetWorker(new Error("highlight worker factory changed"))
+  workerFactory = factory
 }

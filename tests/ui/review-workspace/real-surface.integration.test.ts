@@ -1,20 +1,22 @@
 import { describe, expect, test } from "bun:test"
-import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
+import { act } from "react"
+import { BoxRenderable, type CliRenderer } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { createApp } from "../../../src/app/create-app"
 import { GitRunner } from "../../../src/git/runner"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity, sha256Tuple } from "../../../src/review/core/identity"
 import type { ReviewDocument, ReviewFile } from "../../../src/review/core/types"
-import type { ReviewWorkspace } from "../../../src/ui/review-workspace/review-workspace"
-
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 function reviewFile(path: string, lines: readonly string[]): ReviewFile {
+  const oldCount = lines.filter((line) => line[0] !== "+").length
+  const newCount = lines.filter((line) => line[0] !== "-").length
   const hunk = createReviewHunk({
     index: 0,
     oldStart: 1,
-    oldCount: 1,
+    oldCount,
     newStart: 1,
-    newCount: lines.length,
+    newCount,
     lines,
   })
   return {
@@ -27,23 +29,15 @@ function reviewFile(path: string, lines: readonly string[]): ReviewFile {
     newMode: "100644",
     contentId: sha256Tuple([path, ...lines]),
     patchDigest: sha256Tuple(lines),
-    stats: { additions: lines.filter((line) => line.startsWith("+")).length, deletions: 0 },
+    stats: { additions: lines.filter((line) => line.startsWith("+")).length, deletions: lines.filter((line) => line.startsWith("-")).length },
     hunks: [hunk],
     source: "available",
   }
 }
 
 function documentForSurface(): ReviewDocument {
-  const identity = createReviewIdentity({
-    headRef: "refs/heads/feature",
-    headOid: "a".repeat(40),
-    baseRef: "refs/heads/main",
-  })
-  const generation = createReviewGeneration({
-    baseOid: "b".repeat(40),
-    mergeBaseOid: "c".repeat(40),
-    headOid: "a".repeat(40),
-  })
+  const identity = createReviewIdentity({ headRef: "refs/heads/feature", headOid: "a".repeat(40), baseRef: "refs/heads/main" })
+  const generation = createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "c".repeat(40), headOid: "a".repeat(40) })
   const longFirstFile = Array.from({ length: 60 }, (_, index) => `+export const line${index + 1} = ${index + 1}`)
   return createReviewDocument({
     identity,
@@ -57,9 +51,17 @@ function documentForSurface(): ReviewDocument {
   })
 }
 
+async function flushReact(setup: Awaited<ReturnType<typeof createTestRenderer>>): Promise<void> {
+  await act(async () => {
+    await setup.renderOnce()
+    await Bun.sleep(0)
+    await setup.renderOnce()
+  })
+}
+
 describe("review workspace real surface", () => {
   test("renders file rows and a full-height diff surface", async () => {
-    const setup = await createTestRenderer({ width: 100, height: 30 })
+    const setup = await createTestRenderer({ width: 100, height: 30, useMouse: true, enableMouseMovement: true })
     const app = createApp({
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
@@ -69,29 +71,30 @@ describe("review workspace real surface", () => {
 
     try {
       const screen = app.screenController!
-      await screen.openBranchReview()
+      await act(async () => {
+        await screen.openBranchReview()
+      })
       await setup.flush()
       expect(screen.active.kind).toBe("branch-review")
       if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
       const workspace = screen.active.view
-      const sidebar = workspace.root.findDescendantById("review-sidebar-text") as TextRenderable | undefined
-      const stream = workspace.root.findDescendantById("review-stream-text") as TextRenderable | undefined
-
-      expect(sidebar, "the Files box must own actual file-row content").toBeDefined()
-      expect(sidebar!.plainText).toContain("src/first.ts")
-      expect(sidebar!.plainText).toContain("src/second.ts")
-      expect(sidebar!.plainText).toContain("src/third.ts")
-      expect(stream).toBeDefined()
-      expect(stream!.plainText.split("\n").length).toBeGreaterThanOrEqual(20)
-      expect(setup.captureCharFrame()).toContain("src/second.ts")
+      expect(workspace.root.findDescendantById("react-review-sidebar")).toBeDefined()
+      expect(workspace.root.findDescendantById("review-diff-scrollbox")).toBeDefined()
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("src/first.ts")
+      expect(frame).toContain("src/second.ts")
+      expect(frame).toContain("src/third.ts")
+      expect(frame.split("\n").length).toBeGreaterThanOrEqual(20)
     } finally {
-      app.destroy()
-      setup.renderer.destroy()
+      await act(async () => {
+        app.destroy()
+        setup.renderer.destroy()
+      })
     }
   })
 
   test("sidebar keyboard navigation selects and reveals the next file", async () => {
-    const setup = await createTestRenderer({ width: 100, height: 30 })
+    const setup = await createTestRenderer({ width: 100, height: 30, useMouse: true, enableMouseMovement: true })
     const app = createApp({
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
@@ -101,28 +104,30 @@ describe("review workspace real surface", () => {
 
     try {
       const screen = app.screenController!
-      await screen.openBranchReview()
+      await act(async () => {
+        await screen.openBranchReview()
+      })
       await setup.flush()
       if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
       const workspace = screen.active.view
-      const sidebar = workspace.root.findDescendantById("review-sidebar-text") as TextRenderable
-      const stream = workspace.root.findDescendantById("review-stream-text") as TextRenderable
-
-      expect(workspace.handleKeyPress("tab")).toBe(true)
-      expect(workspace.getFocus()).toBe("sidebar")
-      expect(workspace.handleKeyPress("j")).toBe(true)
-      await setup.flush()
+      await act(async () => {
+        expect(workspace.handleKeyPress("tab")).toBe(true)
+        expect(workspace.getFocus()).toBe("sidebar")
+        expect(workspace.handleKeyPress("j")).toBe(true)
+      })
+      await flushReact(setup)
       expect(screen.active.controller.state?.selection.fileKey).toBe("src/second.ts")
-      expect(sidebar.plainText).toContain("> ◐ src/second.ts")
-      expect(stream.plainText).toContain("src/second.ts")
+      expect(setup.captureCharFrame()).toContain("> ◐ src/second.ts")
     } finally {
-      app.destroy()
-      setup.renderer.destroy()
+      await act(async () => {
+        app.destroy()
+        setup.renderer.destroy()
+      })
     }
   })
 
   test("mouse click on a visible sidebar row selects and reveals that file", async () => {
-    const setup = await createTestRenderer({ width: 100, height: 30 })
+    const setup = await createTestRenderer({ width: 100, height: 30, useMouse: true, enableMouseMovement: true })
     const app = createApp({
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
@@ -132,26 +137,34 @@ describe("review workspace real surface", () => {
 
     try {
       const screen = app.screenController!
-      await screen.openBranchReview()
+      await act(async () => {
+        await screen.openBranchReview()
+      })
       await setup.flush()
       if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
       const workspace = screen.active.view
-      const sidebar = workspace.root.findDescendantById("review-sidebar-text") as TextRenderable
-      const sidebarBox = workspace.root.findDescendantById("review-sidebar") as BoxRenderable
-      const stream = workspace.root.findDescendantById("review-stream-text") as TextRenderable
-      await setup.mockMouse.click(sidebarBox.x + 2, sidebarBox.y + 3)
-      await setup.flush()
+      const sidebarBox = workspace.root.findDescendantById("react-review-sidebar") as BoxRenderable
+      const thirdRow = workspace.root.findDescendantById("review-file-row:src/third.ts") as BoxRenderable
+      expect(sidebarBox).toBeDefined()
+      expect(thirdRow).toBeDefined()
+      await act(async () => {
+        await setup.mockMouse.click(thirdRow.x + 1, thirdRow.y)
+        await setup.renderOnce()
+        await Bun.sleep(0)
+        await setup.renderOnce()
+      })
       expect(screen.active.controller.state?.selection.fileKey).toBe("src/third.ts")
-      expect(sidebar.plainText).toContain("> ◐ src/third.ts")
-      expect(stream.plainText).toContain("src/third.ts")
+      expect(setup.captureCharFrame()).toContain("> ◐ src/third.ts")
     } finally {
-      app.destroy()
-      setup.renderer.destroy()
+      await act(async () => {
+        app.destroy()
+        setup.renderer.destroy()
+      })
     }
   })
 
   test("mouse wheel over the diff scrolls the windowed stream", async () => {
-    const setup = await createTestRenderer({ width: 100, height: 30 })
+    const setup = await createTestRenderer({ width: 100, height: 30, useMouse: true, enableMouseMovement: true })
     const app = createApp({
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
@@ -161,23 +174,31 @@ describe("review workspace real surface", () => {
 
     try {
       const screen = app.screenController!
-      await screen.openBranchReview()
+      await act(async () => {
+        await screen.openBranchReview()
+      })
       await setup.flush()
       if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
       const workspace = screen.active.view
-      const streamBox = workspace.root.findDescendantById("review-stream") as BoxRenderable
-      const streamText = workspace.root.findDescendantById("review-stream-text") as TextRenderable
+      const streamBox = workspace.root.findDescendantById("react-review-diff") as BoxRenderable
+      const scrollBox = workspace.root.findDescendantById("review-diff-scrollbox") as { width: number }
 
-      expect(streamBox.x, "review-stream box must be laid out").toBeGreaterThan(0)
-      expect(streamText, "review-stream-text must exist under review-stream").toBeDefined()
-      expect(streamText.width, "review-stream-text must occupy the box").toBeGreaterThanOrEqual(10)
+      expect(streamBox.x, "review diff box must be laid out").toBeGreaterThan(0)
+      expect(scrollBox, "persistent review scrollbox must exist").toBeDefined()
+      expect(scrollBox.width, "review scrollbox must occupy the box").toBeGreaterThanOrEqual(10)
       expect(workspace.getStreamPane().getViewportStart()).toBe(0)
-      await setup.mockMouse.scroll(streamBox.x + 2, streamBox.y + 2, "down")
-      await setup.flush()
+      await act(async () => {
+        await setup.mockMouse.scroll(streamBox.x + 2, streamBox.y + 2, "down")
+        await setup.renderOnce()
+        await Bun.sleep(0)
+        await setup.renderOnce()
+      })
       expect(workspace.getStreamPane().getViewportStart()).toBeGreaterThan(0)
     } finally {
-      app.destroy()
-      setup.renderer.destroy()
+      await act(async () => {
+        app.destroy()
+        setup.renderer.destroy()
+      })
     }
   })
 })

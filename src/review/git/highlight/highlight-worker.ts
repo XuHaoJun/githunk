@@ -2,6 +2,7 @@
 import { loadHighlightForPatch } from "./highlight-adapter"
 
 type WorkerRequest = {
+  version: 1
   id: number
   patch: string
   fileKey: string
@@ -9,19 +10,20 @@ type WorkerRequest = {
 }
 
 type WorkerResponse =
-  | { id: number; ok: true; payload: import("./highlight-payload").HighlightPayload | null }
-  | { id: number; ok: false; message: string }
+  | { version: 1; id: number; ok: true; payload: import("./highlight-payload").HighlightPayload | null }
+  | { version: 1; id: number; ok: false; message: string }
 
 declare const self: Worker
 
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
-  const { id, patch, fileKey, appearance } = event.data
+  const { id, patch, fileKey, appearance, version } = event.data
   try {
+    if (version !== 1) throw new Error(`unsupported highlight worker protocol: ${String(version)}`)
     const payload = await loadHighlightForPatch(patch, fileKey, appearance)
-    const response: WorkerResponse = { id, ok: true, payload }
-    ;(self as unknown as { postMessage: (msg: WorkerResponse) => void }).postMessage(response)
-  } catch (e) {
-    const response: WorkerResponse = { id, ok: false, message: e instanceof Error ? e.message : String(e) }
-    ;(self as unknown as { postMessage: (msg: WorkerResponse) => void }).postMessage(response)
+    const response: WorkerResponse = { version: 1, id, ok: true, payload }
+    self.postMessage(response)
+  } catch (error) {
+    const response: WorkerResponse = { version: 1, id, ok: false, message: error instanceof Error ? error.message : String(error) }
+    self.postMessage(response)
   }
 }

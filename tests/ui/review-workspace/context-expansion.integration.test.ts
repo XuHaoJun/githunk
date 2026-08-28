@@ -47,6 +47,24 @@ describe("context expansion — generation qualification and caching", () => {
     expect(cached).toBeDefined()
     expect(cached!.length).toBeGreaterThan(0)
   })
+  test("collapses a gap when source context is unavailable", async () => {
+    const identity = createReviewIdentity({ headRef:"refs/heads/feature", headOid:"a".repeat(40), baseRef:"refs/heads/main" })
+    const generation = createReviewGeneration({ baseOid:"b".repeat(40), mergeBaseOid:"c".repeat(40), headOid:"a".repeat(40) })
+    const h1 = makeHunk(0, 1, 1, [" a"])
+    const h2 = makeHunk(1, 10, 10, [" x"])
+    const file = { key:"src/unavailable.ts", path:"src/unavailable.ts", kind:"modified" as const, oldBlobOid:"o1", newBlobOid:"n1", oldMode:"100644", newMode:"100644", contentId:"content-unavailable", patchDigest:"patch-unavailable", stats:{ additions:0, deletions:0 }, hunks:[h1,h2], source:"available" as const }
+    const doc = createReviewDocument({ identity, generation, commits:[], files:[file] })
+    const fakeRunner = { run: async () => ({ stdout:"", stderr:"", exitCode:0 }) } as unknown as GitRunner
+    const controller = new ReviewWorkspaceController({
+      runner: fakeRunner,
+      loadDocument: async () => doc,
+      loadSourceContextImpl: async () => ({ ok:false, error:{ kind:"unavailable", fileKey:file.key, side:"new", reason:"missing blob" } }),
+    })
+    await controller.open("refs/heads/main")
+    await controller.expandGap(file.key, "before:1")
+
+    expect(controller.state?.expandedGaps.some((gap) => gap.gapId === "before:1" && gap.expanded)).toBe(false)
+  })
 
   test("publishes returned lines only when request still matches — stale generation discarded", async () => {
     const identity = createReviewIdentity({ headRef:"refs/heads/feature", headOid:"a".repeat(40), baseRef:"refs/heads/main" })
@@ -119,6 +137,10 @@ describe("context expansion — generation qualification and caching", () => {
     await controller.expandGap("src/a.ts", "before:1")
     expect(callCount).toBe(1)
     expect(controller.getExpandedGapLines("src/a.ts", "before:1")).toBeDefined()
+    controller.clearSourceContextCache()
+    await controller.ensureExpandedGapSource("src/a.ts", "before:1")
+    expect(controller.state?.expandedGaps.some(g=>g.gapId==="before:1" && g.expanded)).toBe(true)
+    expect(callCount).toBe(2)
   })
 
   test("row-planner uses cached source lines for expanded gaps", async () => {

@@ -103,12 +103,11 @@ describe("navigation", () => {
     let s = createInitialReviewState(doc)
     s = reduceReviewState(s, planReviewIntent(s, { type: "filter/set-query", query: "b" }))
     expect(visibleReviewFiles(s).map((f) => f.key)).toEqual(["b"])
-    // hunk move on filtered single file should clamp
+    // Hidden selections re-anchor at the visible boundary instead of getting stuck.
     const moved = reduceReviewState(s, planReviewIntent(s, { type: "selection/move", unit: "file", direction: "next" }))
-    expect(moved).toBe(s)
-    // file move on filtered single visible file is no-op even though doc has more files
+    expect(moved.selection.fileKey).toBe("b")
     const moved2 = moveReviewSelection(s, "file", "next")
-    expect(moved2).toBeNull()
+    expect(moved2?.selection.fileKey).toBe("b")
   })
 
   test("empty documents return null for moves", () => {

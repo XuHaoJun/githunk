@@ -160,4 +160,22 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     expect(newText).not.toMatch(/git (add|commit|checkout|push|pull|fetch|branch|stash)/)
     expect(projFiles).not.toContain("src/untracked.tmp")
   }, 30000)
+  test("repository bindings stay inactive while the React review screen is mounted", async () => {
+    repository = await createTempRepository()
+    await createBranchFixture(repository)
+    await seedBase(repository, "refs/heads/feature/payment", "refs/heads/main")
+    harness = await createShellHarness({ repository, width: 120, height: 40 })
+
+    await harness.pressKey("b")
+    for (let i = 0; i < 50 && harness.app.screenController.active.kind !== "branch-review"; i++) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 20))
+      await harness.flush()
+    }
+    expect(harness.app.screenController.active.kind).toBe("branch-review")
+    const repositoryView = harness.app.view!
+    const focusBefore = repositoryView.focusManager.active
+
+    await harness.pressKey("2")
+    expect(repositoryView.focusManager.active).toBe(focusBefore)
+  }, 30000)
 })

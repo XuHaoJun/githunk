@@ -26,11 +26,6 @@ import {
   createStorageError,
   createHistoryRewrittenError,
 } from "./error-state"
-import { HighlightCache } from "../../review/git/highlight/highlight-cache"
-import type { HighlightPayload } from "../../review/git/highlight/highlight-payload"
-import { loadHighlightForPatch } from "../../review/git/highlight/highlight-adapter"
-import { highlightInWorker, isWorkerAvailable } from "../../review/git/highlight/highlight-worker-client"
-import { getEffectiveHighlightAppearance } from "./syntax-theme"
 
 export type ReviewWorkspaceControllerOptions = {
   readonly runner: GitRunner
@@ -63,9 +58,6 @@ export class ReviewWorkspaceController {
   private sourceContextCache = new Map<string, readonly string[]>()
   private pendingGapRequests = new Map<string, number>()
   private gapRequestCounter = 0
-  private highlightCache = new HighlightCache(50)
-  private highlightByFileKey = new Map<string, HighlightPayload>()
-  private highlightRequestId = 0
   constructor(options: ReviewWorkspaceControllerOptions) {
     this.runner = options.runner
     this.stateStore = options.stateStore
@@ -101,177 +93,6 @@ export class ReviewWorkspaceController {
     return this.baseRef
   }
 
-  getHighlightByFileKey(): ReadonlyMap<string, HighlightPayload> {
-    return this.highlightByFileKey
-  }
-
-  private fileToPatch(file: ReviewFile): string | null {
-    if (file.hunks.length === 0) return null
-    if (file.source === "binary" || file.kind === "binary" || file.source === "too-large") return null
-    const header = `diff --git a/${file.path} b/${file.path}\n--- a/${file.path}\n+++ b/${file.path}\n`
-    const hunks = file.hunks.map((h) => `@@ -${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@\n${h.lines.join("\n")}`).join("\n")
-    return header + hunks + "\n"
-  }
-
-  private isCodeFile(path: string): boolean {
-    const lower = path.toLowerCase()
-    // Only highlight code-like extensions; skip docs, images, etc. to avoid CPU and wrong highlight
-    return /\.(ts|js|tsx|jsx|mjs|cjs|mts|cts|py|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|rb|sh|yaml|yml|toml|sql|html|css|scss|less|json|zig|dart|lua|exs|ex)$/.test(lower)
-  }
-
-  private isLargeFile(file: ReviewFile): boolean {
-    const total = file.hunks.reduce((sum, h) => sum + h.lines.length, 0)
-    return total > 40
-  }
-
-  private triggerHighlightLoad(generationId: string): void {
-    const requestToken = ++this.highlightRequestId
-    const capturedGeneration = generationId
-    const capturedRequestId = this.requestId
-    void (async () => {
-      const state = this._state
-      if (!state || this.destroyed) return
-      if (capturedGeneration !== this.activeGenerationId) return
-      // Batch highlights: collect payloads and publish once, yield between files to keep UI responsive
-      const appearance = getEffectiveHighlightAppearance()
-      const pendingUpdates = new Map<string, import("../../review/git/highlight/highlight-payload").HighlightPayload>()
-      let processed = 0
-      // Prioritize visible/selected files first to keep initial highlight fast and avoid hang on large branch (161 files)
-      const files = [...state.document.files]
-      const selectedKey = state.selection.fileKey
-      const selectedIdx = selectedKey ? files.findIndex((f) => f.key === selectedKey) : -1
-      // Build priority order: selected file, neighbors, then first 10, then rest; filter to code files and limit initial to small files
-      const prioritized: typeof files = []
-      const seen = new Set<string>()
-      const addIfCode = (f: typeof files[number], allowLarge = false) => {
-        if (!this.isCodeFile(f.path)) return
-        if (seen.has(f.key)) return
-        const totalLines = f.hunks.reduce((s, h) => s + h.lines.length, 0)
-        if (!allowLarge && totalLines > 500) return
-        seen.add(f.key)
-        prioritized.push(f)
-      }
-      if (selectedIdx >= 0) {
-        addIfCode(files[selectedIdx]!, true)
-        if (selectedIdx - 1 >= 0) addIfCode(files[selectedIdx - 1]!, true)
-        if (selectedIdx + 1 < files.length) addIfCode(files[selectedIdx + 1]!, true)
-      }
-      for (const f of files) {
-        if (prioritized.length >= 10) break
-        addIfCode(f)
-      }
-      // Only highlight first 20 code files initially to avoid hang on 23k line branch; rest will be lazy on viewport
-      // (was: for (const f of files) addIfCode(f) and deferred large)
-      // Large files deferred to lazy highlight on visibility
-      
-      // Process in batches of 4 concurrent highlights (worker can handle queue, main thread limited)
-      const BATCH_SIZE = 4
-      for (let batchStart = 0; batchStart < prioritized.length; batchStart += BATCH_SIZE) {
-        if (this.destroyed) return
-        if (requestToken !== this.highlightRequestId) return
-        if (capturedGeneration !== this.activeGenerationId) return
-        if (capturedRequestId !== this.requestId) return
-        const batch = prioritized.slice(batchStart, batchStart + BATCH_SIZE)
-        const results = await Promise.all(
-          batch.map(async (file) => {
-            const cacheKey = this.highlightCache.cacheKey(file.key, file.contentId, capturedGeneration, appearance)
-            const cached = this.highlightCache.get(cacheKey)
-            if (cached) return { file, payload: cached, cached: true }
-            const patch = this.fileToPatch(file)
-            if (!patch) return { file, payload: null, cached: false }
-            try {
-              let payload: import("../../review/git/highlight/highlight-payload").HighlightPayload | null
-              if (this.isLargeFile(file) && isWorkerAvailable()) {
-                try {
-                  payload = await highlightInWorker(patch, file.key, appearance)
-                } catch {
-                  payload = await loadHighlightForPatch(patch, file.key, appearance)
-                }
-              } else {
-                payload = await loadHighlightForPatch(patch, file.key, appearance)
-              }
-              return { file, payload, cached: false }
-            } catch {
-              return { file, payload: null, cached: false }
-            }
-          }),
-        )
-        for (const { file, payload, cached } of results) {
-          if (!payload) continue
-          const hasFg = payload.additionLines.some((l) => l && l.some((t) => t.fg)) || payload.deletionLines.some((l) => l && l.some((t) => t.fg))
-          if (!hasFg) continue
-          if (!cached) {
-            const cacheKey = this.highlightCache.cacheKey(file.key, file.contentId, capturedGeneration, appearance)
-            this.highlightCache.set(cacheKey, payload)
-          }
-          pendingUpdates.set(file.key, payload)
-        }
-        processed += batch.length
-        // Publish incrementally for first batch, then every 2 batches
-        if (pendingUpdates.size > 0 && (batchStart === 0 || batchStart % (BATCH_SIZE * 2) === 0)) {
-          for (const [k, v] of pendingUpdates) this.highlightByFileKey.set(k, v)
-          pendingUpdates.clear()
-          this.publish()
-          await new Promise<void>((r) => setTimeout(r, 0))
-        }
-        // Yield to event loop between batches
-        await new Promise<void>((r) => setTimeout(r, 0))
-        // Early exit if cancelled
-        if (requestToken !== this.highlightRequestId) return
-        if (capturedGeneration !== this.activeGenerationId) return
-        if (capturedRequestId !== this.requestId) return
-      }
-      if (pendingUpdates.size > 0) {
-        for (const [k, v] of pendingUpdates) this.highlightByFileKey.set(k, v)
-        this.publish()
-      }
-    })()
-  }
-
-  async ensureHighlightForFiles(fileKeys: readonly string[]): Promise<void> {
-    const state = this._state
-    if (!state || this.destroyed) return
-    const generationId = this.activeGenerationId
-    if (!generationId) return
-    const appearance = getEffectiveHighlightAppearance()
-    for (const key of fileKeys) {
-      if (this.highlightByFileKey.has(key)) continue
-      const file = state.document.files.find((f) => f.key === key)
-      if (!file || !this.isCodeFile(file.path)) continue
-      const cacheKey = this.highlightCache.cacheKey(key, file.contentId, generationId, appearance)
-      const cached = this.highlightCache.get(cacheKey)
-      if (cached) {
-        this.highlightByFileKey.set(key, cached)
-        this.publish()
-        continue
-      }
-      const patch = this.fileToPatch(file)
-      if (!patch) continue
-      try {
-        let payload: import("../../review/git/highlight/highlight-payload").HighlightPayload | null
-        if (this.isLargeFile(file) && isWorkerAvailable()) {
-          try {
-            payload = await highlightInWorker(patch, key, appearance)
-          } catch {
-            payload = await loadHighlightForPatch(patch, key, appearance)
-          }
-        } else {
-          payload = await loadHighlightForPatch(patch, key, appearance)
-        }
-        if (!payload) continue
-        const hasFg = payload.additionLines.some((l) => l && l.some((t) => t.fg)) || payload.deletionLines.some((l) => l && l.some((t) => t.fg))
-        if (!hasFg) continue
-        this.highlightCache.set(cacheKey, payload)
-        this.highlightByFileKey.set(key, payload)
-        this.publish()
-      } catch {
-        // ignore
-      }
-      // Yield to keep UI responsive
-      await new Promise<void>((r) => setTimeout(r, 0))
-      if (this.destroyed) return
-    }
-  }
 
   clearError(): void {
     if (this._error === undefined) return
@@ -282,6 +103,7 @@ export class ReviewWorkspaceController {
   get refreshGeneration(): () => Promise<void> {
     return async () => {
       if (this.baseRef === undefined || this.destroyed) return
+      const startRevision = this._state?.revision ?? -1
       const token = ++this.requestId
       const capturedGeneration = this.activeGenerationId
       const capturedReviewId = this.activeReviewId
@@ -296,6 +118,8 @@ export class ReviewWorkspaceController {
         if (qualified.reviewId !== undefined && doc.identity.id !== qualified.reviewId) return
         // If same generation, no work
         if (qualified.generationId !== undefined && doc.generation.id === qualified.generationId) return
+        this.sourceContextCache.clear()
+        this.pendingGapRequests.clear()
         // Reconcile off-screen (atomic)
         let nextState: ReviewState
         if (this._state === undefined) {
@@ -316,14 +140,17 @@ export class ReviewWorkspaceController {
             // If ancestor check fails, do not block publish
           }
         }
+        if (this.destroyed || token !== this.requestId) return
+        const latestState = this._state
+        if (latestState && latestState.revision !== startRevision) {
+          nextState = reconcileReviewState(latestState, doc)
+        }
         // Atomic swap: publish once
         this._state = nextState
         this.activeReviewId = doc.identity.id
         this.activeGenerationId = doc.generation.id
         this._error = historyError
         this.publish()
-        this.highlightByFileKey.clear()
-        this.triggerHighlightLoad(doc.generation.id)
         await this.persistState()
         // If persist failed, error will be set inside persistState
       } catch (err) {
@@ -363,6 +190,8 @@ export class ReviewWorkspaceController {
       throw err
     }
     if (this.destroyed || token !== this.requestId) throw new Error("open cancelled")
+    this.sourceContextCache.clear()
+    this.pendingGapRequests.clear()
 
     // Load persisted state and detect corrupt quarantine
     let persistedState: ReviewState | undefined
@@ -414,8 +243,6 @@ export class ReviewWorkspaceController {
     // Empty review and detached snapshot are status, not errors -> do not override corrupt error
     this._error = corruptError
     this.publish()
-    this.highlightByFileKey.clear()
-    this.triggerHighlightLoad(doc.generation.id)
     try {
       await this.persistState()
     } catch (err) {
@@ -474,6 +301,7 @@ export class ReviewWorkspaceController {
     if (this._state === undefined) throw new Error("no review state")
     if (!this.stateStore || !this.artifactStore) throw new Error("stores required for finish")
     const reviewId = this._state.document.identity.id
+    const generationId = this._state.document.generation.id
     let reuseArtifact: ReviewArtifactV1 | undefined
     let artifactIdFromMarker: string | undefined
     try {
@@ -489,15 +317,29 @@ export class ReviewWorkspaceController {
             const res = parseReviewArtifactV1(parsed)
             if (res.ok) {
               const artifact = res.value
+              const matchesCurrentGeneration = artifact.review.id === reviewId && artifact.generation.id === generationId
               const matchesInput = artifact.decision === input.decision && artifact.summary === input.summary
-              if (matchesInput) {
+              const currentFeedbackIds = new Set(this._state!.feedback.map((entry) => entry.id))
+              const artifactFeedbackIds = new Set(artifact.feedback.map((entry) => entry.id))
+              const feedbackMatches = currentFeedbackIds.size === artifactFeedbackIds.size && [...currentFeedbackIds].every((id) => artifactFeedbackIds.has(id))
+              const currentViewedActive = Object.values(this._state!.viewed).filter((record) => {
+                const file = this._state!.document.files.find((candidate) => candidate.key === record.fileKey)
+                return file !== undefined && record.path === file.path && record.contentId === file.contentId
+              }).length
+              const coverageMatches = artifact.coverage.viewed.length === currentViewedActive
+              if (matchesInput && matchesCurrentGeneration && feedbackMatches && coverageMatches) {
                 reuseArtifact = artifact
+              } else {
+                artifactIdFromMarker = undefined
               }
-            }
           }
         }
       }
+      }
     } catch {}
+    if (!this._state || this._state.document.identity.id !== reviewId || this._state.document.generation.id !== generationId) {
+      throw new Error("review changed while finishing")
+    }
     if (reuseArtifact) {
       const next = await finishReviewTransaction({
         stateStore: this.stateStore,
@@ -526,17 +368,31 @@ export class ReviewWorkspaceController {
   async expandGap(fileKey: string, gapId: string): Promise<void> {
     const current = this._state
     if (!current) throw new Error("no review state")
-    const file = current.document.files.find(f => f.key === fileKey)
+    const file = current.document.files.find((candidate) => candidate.key === fileKey)
     if (!file) throw new Error(`file not found: ${fileKey}`)
-    // Toggle gap expanded state via reducer
-    const beforeExpanded = current.expandedGaps.some(g => g.fileKey === fileKey && g.gapId === gapId && g.expanded)
+    const beforeExpanded = current.expandedGaps.some((gap) => gap.fileKey === fileKey && gap.gapId === gapId && gap.expanded)
     this.dispatch({ type: "gap/toggle", fileKey, gapId })
-    const after = this._state!
-    const nowExpanded = after.expandedGaps.some(g => g.fileKey === fileKey && g.gapId === gapId && g.expanded)
-    // If we just collapsed, nothing to load
-    if (!nowExpanded) return
-    if (beforeExpanded) return
-    // Compute source context request for this gap
+    const after = this._state
+    const nowExpanded = after?.expandedGaps.some((gap) => gap.fileKey === fileKey && gap.gapId === gapId && gap.expanded) ?? false
+    if (!nowExpanded || beforeExpanded) return
+    await this.loadExpandedGapSource(fileKey, gapId, after!.document.identity.id, after!.document.generation.id)
+  }
+
+  async ensureExpandedGapSource(fileKey: string, gapId: string): Promise<void> {
+    const current = this._state
+    if (!current) return
+    if (!current.expandedGaps.some((gap) => gap.fileKey === fileKey && gap.gapId === gapId && gap.expanded)) return
+    const file = current.document.files.find((candidate) => candidate.key === fileKey)
+    if (!file) return
+    await this.loadExpandedGapSource(fileKey, gapId, current.document.identity.id, current.document.generation.id)
+  }
+
+  private async loadExpandedGapSource(fileKey: string, gapId: string, reviewId: string, generationId: string): Promise<void> {
+    if (this.destroyed) return
+    const current = this._state
+    if (!current) return
+    const file = current.document.files.find((candidate) => candidate.key === fileKey)
+    if (!file) return
     const parsed = gapId.match(/^(before|trailing):(\d+)$/)
     if (!parsed) throw new Error(`invalid gapId: ${gapId}`)
     const position = parsed[1] as "before" | "trailing"
@@ -545,49 +401,57 @@ export class ReviewWorkspaceController {
     if (!gapAddress) return
     const side: "old" | "new" = file.kind === "deleted" ? "old" : "new"
     const range = side === "old" ? gapAddress.oldRange : gapAddress.newRange
-    const startLine = range[0]
-    const endLine = range[1]
-    const cacheKey = `${file.contentId}:${side}:${startLine}:${endLine}`
-    if (this.sourceContextCache.has(cacheKey)) return
+    const cacheKey = `${file.contentId}:${side}:${range[0]}:${range[1]}`
+    if (this.sourceContextCache.has(cacheKey) || this.pendingGapRequests.has(cacheKey)) return
     const request: SourceContextRequest = {
-      reviewId: current.document.identity.id,
-      generationId: current.document.generation.id,
+      reviewId,
+      generationId,
       fileKey,
       side,
-      startLine,
-      endLine,
+      startLine: range[0],
+      endLine: range[1],
     }
-    const capturedReviewId = request.reviewId
-    const capturedGenerationId = request.generationId
     const requestToken = ++this.gapRequestCounter
     this.pendingGapRequests.set(cacheKey, requestToken)
+    const collapseIfCurrent = (): void => {
+      const latest = this._state
+      if (!latest || this.destroyed || latest.document.identity.id !== reviewId || latest.document.generation.id !== generationId) return
+      if (latest.expandedGaps.some((gap) => gap.fileKey === fileKey && gap.gapId === gapId && gap.expanded)) {
+        this.dispatch({ type: "gap/toggle", fileKey, gapId })
+      }
+    }
     let outcome: SourceContextOutcome
     try {
-      if (this.loadSourceContextImpl) {
-        outcome = await this.loadSourceContextImpl(request)
-      } else {
-        outcome = await loadSourceContext(this.runner, current.document, request)
-      }
+      outcome = this.loadSourceContextImpl
+        ? await this.loadSourceContextImpl(request)
+        : await loadSourceContext(this.runner, current.document, request)
     } catch {
-      this.pendingGapRequests.delete(cacheKey)
+      if (this.pendingGapRequests.get(cacheKey) === requestToken) {
+        this.pendingGapRequests.delete(cacheKey)
+        collapseIfCurrent()
+      }
       return
     }
-    // Generation-qualified check: discard if review/generation/file/side no longer matches
+
     const latest = this._state
-    if (!latest) { this.pendingGapRequests.delete(cacheKey); return }
-    if (latest.document.identity.id !== capturedReviewId) { this.pendingGapRequests.delete(cacheKey); return }
-    if (latest.document.generation.id !== capturedGenerationId) { this.pendingGapRequests.delete(cacheKey); return }
-    const latestFile = latest.document.files.find(f => f.key === fileKey)
-    if (!latestFile) { this.pendingGapRequests.delete(cacheKey); return }
-    if (this.pendingGapRequests.get(cacheKey) !== requestToken) { this.pendingGapRequests.delete(cacheKey); return }
+    const ownsRequest = this.pendingGapRequests.get(cacheKey) === requestToken
+    if (this.destroyed || !latest || latest.document.identity.id !== reviewId || latest.document.generation.id !== generationId || !latest.document.files.some((candidate) => candidate.key === fileKey) || !ownsRequest) {
+      if (ownsRequest) this.pendingGapRequests.delete(cacheKey)
+      return
+    }
     this.pendingGapRequests.delete(cacheKey)
-    if (!outcome.ok) return
-    // Cache by content id and source range
+    if (!outcome.ok) {
+      collapseIfCurrent()
+      return
+    }
+    const expectedLineCount = request.endLine - request.startLine + 1
+    if (outcome.result.reviewId !== reviewId || outcome.result.generationId !== generationId || outcome.result.fileKey !== fileKey || outcome.result.side !== side || outcome.result.startLine !== request.startLine || outcome.result.lines.length === 0 || outcome.result.lines.length > expectedLineCount) {
+      collapseIfCurrent()
+      return
+    }
     this.sourceContextCache.set(cacheKey, outcome.result.lines)
-    // Notify listeners to re-render (publish without state mutation, but we bump revision via no-op? Just publish)
     this.publish()
   }
-
   getExpandedGapLines(fileKey: string, gapId: string): readonly string[] | undefined {
     const current = this._state
     if (!current) return undefined
@@ -606,7 +470,7 @@ export class ReviewWorkspaceController {
   }
 
   getExpandedSourceByGap(): ReadonlyMap<string, readonly string[]> {
-    // Return map keyed by `${fileKey}:${gapId}` -> lines for row-planner consumption
+    // Renderer-neutral source map keyed by `${fileKey}:${gapId}`.
     const map = new Map<string, readonly string[]>()
     const current = this._state
     if (!current) return map
@@ -643,14 +507,13 @@ export class ReviewWorkspaceController {
       return null
     }
   }
-
-  loadSourceContext(): Promise<unknown> {
-    return Promise.resolve(undefined)
-  }
-
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
+  }
+
+  loadSourceContext(): Promise<unknown> {
+    return Promise.resolve(undefined)
   }
 
   destroy(): void {
@@ -658,6 +521,8 @@ export class ReviewWorkspaceController {
     this.destroyed = true
     this.listeners.clear()
     this.requestId++
+    this.pendingGapRequests.clear()
+    this.sourceContextCache.clear()
     if (this.activeReviewId && this.stateStore) {
       void this.stateStore.flush().catch(() => undefined)
     }

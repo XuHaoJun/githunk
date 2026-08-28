@@ -146,6 +146,7 @@ export type RootViewOptions = {
   readonly onToggleAllFiles?: () => Promise<void>
   readonly onScopeChange?: (scope: WorkingTreeScope) => Promise<void>
   readonly onOpenBranchReview?: () => Promise<void>
+  readonly isBranchReviewActive?: () => boolean
   readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
   readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
   readonly onSelectFile?: (path: string) => void
@@ -240,6 +241,7 @@ export class RootView {
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
   private readonly onScopeChange: ((scope: WorkingTreeScope) => Promise<void>) | undefined
   private readonly onOpenBranchReview: (() => Promise<void>) | undefined
+  private readonly isBranchReviewActive: (() => boolean) | undefined
   private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
   private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
   private readonly onSelectFile: ((path: string) => void) | undefined
@@ -354,6 +356,7 @@ export class RootView {
     this.onApplyStash = options.onApplyStash
     this.onScopeChange = options.onScopeChange
     this.onOpenBranchReview = options.onOpenBranchReview
+    this.isBranchReviewActive = options.isBranchReviewActive
     this.onQuit = options.onQuit
     this.onGeometryChange = options.onGeometryChange
     this.onMutationSettled = options.onMutationSettled
@@ -551,6 +554,7 @@ export class RootView {
       this.recomputeLayout()
     }
     this.handleKey = (key: KeyEvent) => {
+      if (this.isBranchReviewActive?.()) return
       const normalized = normalizeKey(key)
       const routedKey = {
         ...key,
@@ -3896,6 +3900,7 @@ export class RootView {
       }
     }
     this.root.onMouse = (event: MouseEvent) => {
+      if (this.isBranchReviewActive?.()) return
       const scrollInfo = (event as unknown as { scroll?: { direction: string; delta: number } }).scroll
       if ((event.type as string) === "scroll") {
         this.pendingClick = undefined

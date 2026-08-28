@@ -13,9 +13,9 @@ import { isAbsolute, resolve } from "node:path"
 import { IndexWatcher } from "./index-watcher"
 import { LOG_ACTIONS } from "./log-actions"
 import { seedCommandLog } from "./command-log-tips"
-import { AppScreenController } from "./screen-controller"
+import { AppScreenController, type ReviewScreenView } from "./screen-controller"
 import { ReviewWorkspaceController } from "../ui/review-workspace/controller"
-import { ReviewWorkspace } from "../ui/review-workspace/review-workspace"
+import { ReactReviewHost } from "../ui/review-workspace/react-review-host"
 import { ReviewStateStore } from "../review/storage/review-state-store"
 import { ReviewArtifactStore } from "../review/storage/review-artifact-store"
 
@@ -128,9 +128,14 @@ export function createApp(options: CreateAppOptions): App {
       repositoryView: undefined,
       renderer: undefined,
       createReviewController: makeReviewController,
-      createReviewView: (rc, onClose) => {
-        return { destroy() {}, root: undefined } as unknown as ReviewWorkspace
-      },
+      createReviewView: (): ReviewScreenView => ({
+        root: { findDescendantById: () => undefined },
+        destroy: () => undefined,
+        handleSidebarClick: () => false,
+        handleKeyPress: () => false,
+        getFocus: () => "stream",
+        getStreamPane: () => ({ getViewportStart: () => 0 }),
+      }),
     })
     return {
       controller,
@@ -304,6 +309,7 @@ export function createApp(options: CreateAppOptions): App {
         throw error
       }
     },
+    isBranchReviewActive: () => screenController?.active.kind === "branch-review",
     onApplySelection: async (document, indexes, reverse) => {
       if (!(screenController?.shouldRenderRepository() ?? true)) return
       try { await controller.applySelection(document, indexes, { reverse, wholeFile: false }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
@@ -451,7 +457,7 @@ export function createApp(options: CreateAppOptions): App {
     repositoryView: view,
     renderer,
     createReviewController: makeReviewController,
-    createReviewView: (rc, onClose) => new ReviewWorkspace(renderer, rc, { onClose }),
+    createReviewView: (rc, onClose) => new ReactReviewHost(renderer, rc, onClose),
   })
 
   /**
