@@ -130,6 +130,10 @@ export class ReactReviewHost {
       this.onClose()
       return true
     }
+    if (normalized.toLowerCase() === "b") {
+      this.onClose()
+      return true
+    }
     if (normalized === "ctrl+s" || normalized === "ctrl-s") {
       if (this.finishDialog.isOpen()) {
         const submittedController = this.controller

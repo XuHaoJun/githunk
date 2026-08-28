@@ -95,8 +95,8 @@ function keyName(key: KeyEvent): string {
 }
 
 function consume(event: KeyEvent): void {
-  event.preventDefault()
-  event.stopPropagation()
+  try { (event as unknown as { preventDefault?: () => void }).preventDefault?.() } catch {}
+  try { (event as unknown as { stopPropagation?: () => void }).stopPropagation?.() } catch {}
 }
 type RangeStart = Readonly<{ fileKey: string; hunkIndex: number; side: "old" | "new"; startLine: number }>
 
@@ -504,6 +504,13 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     }
     if (name === "0" || name === "1" || name === "2") {
       setLayoutMode(name === "0" ? "auto" : name === "1" ? "split" : "stack")
+      consume(event)
+      return
+    }
+    if (name.toLowerCase() === "b") {
+      const filterActuallyFocused = (filterInputRef.current as unknown as { focused?: boolean } | null)?.focused === true
+      if (filterActuallyFocused || current?.draft || helpOpen || finishDialog.isOpen()) return
+      onClose()
       consume(event)
       return
     }

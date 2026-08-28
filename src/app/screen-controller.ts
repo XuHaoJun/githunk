@@ -166,7 +166,28 @@ export class AppScreenController {
     try { current.view.destroy() } catch {}
     try { current.controller.destroy() } catch {}
 
-    const viewObj = this.opts.repositoryView as unknown as { root?: { visible?: boolean } } | undefined
+    // React's createRoot unmount clears renderer.root's React-managed subtree;
+    // imperative children added before React (githunk-root) are detached as a side effect.
+    // Re-attach after the reconciler has flushed. Try immediately, then after microtask and macrotask.
+    const viewObj0 = this.opts.repositoryView as unknown as { root?: { visible?: boolean; parent?: unknown; id?: string } } | undefined
+    const rendererRoot0 = this.opts.renderer?.root as unknown as { add?: (node: unknown) => void; id?: string } | undefined
+    if (viewObj0?.root && (viewObj0.root as unknown as { parent?: unknown }).parent == null && rendererRoot0?.add) {
+      try { rendererRoot0.add(viewObj0.root) } catch {}
+    }
+    await Promise.resolve()
+    const viewObj2 = this.opts.repositoryView as unknown as { root?: { visible?: boolean; parent?: unknown; id?: string } } | undefined
+    const rendererRoot2 = this.opts.renderer?.root as unknown as { add?: (node: unknown) => void; id?: string } | undefined
+    if (viewObj2?.root && (viewObj2.root as unknown as { parent?: unknown }).parent == null && rendererRoot2?.add) {
+      try { rendererRoot2.add(viewObj2.root) } catch {}
+    }
+    // In case the first microtask was too early for flushSyncWork, retry on next tick.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    const viewObj3 = this.opts.repositoryView as unknown as { root?: { visible?: boolean; parent?: unknown } } | undefined
+    const rendererRoot3 = this.opts.renderer?.root as unknown as { add?: (node: unknown) => void } | undefined
+    if (viewObj3?.root && (viewObj3.root as unknown as { parent?: unknown }).parent == null && rendererRoot3?.add) {
+      try { rendererRoot3.add(viewObj3.root) } catch {}
+    }
+    const viewObj = viewObj3
     if (viewObj?.root) {
       try { (viewObj.root as { visible: boolean }).visible = true } catch {}
     }
@@ -191,6 +212,13 @@ export class AppScreenController {
     this.activeScreen = { kind: "repository", controller: this.opts.repositoryController, view: this.opts.repositoryView }
     this._reviewHandlerCount = Math.max(0, this._reviewHandlerCount - 1)
     this._timerCount = 0
+    try {
+      const repoViewWithUpdate = this.opts.repositoryView as unknown as { update?: (model: unknown) => void } | undefined
+      const repoCtrlState = (this.opts.repositoryController as unknown as { state?: unknown })?.state
+      if (repoViewWithUpdate?.update && repoCtrlState !== undefined) {
+        repoViewWithUpdate.update(repoCtrlState)
+      }
+    } catch {}
     this.opts.renderer?.requestRender?.()
   }
 
