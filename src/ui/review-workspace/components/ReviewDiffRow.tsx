@@ -1,3 +1,4 @@
+import { cleanLastNewline } from "@pierre/diffs"
 import { StyledText, parseColor, type TextChunk } from "@opentui/core"
 import type { HunkDiffRow, HunkRenderSpan, HunkSplitCell, HunkStackCell } from "../hunk-diff-row-model"
 import { resolveHunkSplitPaneWidths, resolveHunkSplitCellGeometry, resolveHunkStackCellGeometry, expandHunkDiffTabs } from "../hunk-code-columns"
@@ -48,7 +49,7 @@ function fitSpans(spans: readonly HunkRenderSpan[], width: number, fallbackFg: s
   const result: HunkRenderSpan[] = []
   let used = 0
   for (const span of spans) {
-    const expanded = expandHunkDiffTabs(span.text)
+    const expanded = expandHunkDiffTabs(cleanLastNewline(span.text))
     let text = ""
     let spanWidth = 0
     for (const character of expanded) {

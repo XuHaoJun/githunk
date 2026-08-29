@@ -10,6 +10,12 @@ type CapturedSetup = Readonly<{
   captureSpans: () => Readonly<{ lines: readonly Readonly<{ spans: readonly CapturedSpan[] }>[] }>
 }>
 
+type LayoutNode = Readonly<{
+  x: number
+  width: number
+  _childrenInLayoutOrder?: readonly LayoutNode[]
+}>
+
 function textSpan(setup: CapturedSetup, text: string) {
   return setup.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes(text))
 }
@@ -33,6 +39,15 @@ const emptySplitRow: Extract<HunkDiffRow, { type: "split-line" }> = {
   hunkIndex: 0,
   left: { kind: "empty", sign: " ", lineNumber: 42, spans: [{ text: "gap" }] },
   right: { kind: "context", sign: " ", lineNumber: 42, spans: [{ text: "same" }] },
+}
+
+const emptyAdditionSplitRow: Extract<HunkDiffRow, { type: "split-line" }> = {
+  type: "split-line",
+  key: "parity:empty-addition",
+  fileKey: "parity",
+  hunkIndex: 0,
+  left: { kind: "context", sign: " ", lineNumber: 1, spans: [{ text: "before\n" }] },
+  right: { kind: "addition", sign: "+", lineNumber: 1, spans: [{ text: "\n" }] },
 }
 
 const stackRow: Extract<HunkDiffRow, { type: "stack-line" }> = {
@@ -80,6 +95,20 @@ describe("Review diff row parity", () => {
       expect(rgb(textSpan(setup, "gap")?.bg)).toEqual([39, 43, 49])
       expect(rgb(textSpan(setup, "same")?.bg)).toEqual([13, 17, 23])
       expect(rgb(textSpan(setup, "42 ")?.bg)).toEqual([13, 17, 23])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("keeps split panes aligned when an added line is empty", async () => {
+    const setup = await renderRow(emptyAdditionSplitRow, true, true)
+    try {
+      const root = setup.renderer.root as unknown as LayoutNode
+      const panes = root._childrenInLayoutOrder?.[0]?._childrenInLayoutOrder ?? []
+      expect(panes.map((pane) => ({ x: pane.x, width: pane.width }))).toEqual([
+        { x: 0, width: 20 },
+        { x: 20, width: 20 },
+      ])
     } finally {
       await act(async () => setup.renderer.destroy())
     }
