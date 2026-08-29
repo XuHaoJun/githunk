@@ -18,6 +18,23 @@ index 111..222 100644
     expect(JSON.stringify(payload)).not.toContain("HastNode")
   })
 
+  test("uses Hunk github-dark-default syntax colors", async () => {
+    const patch = `diff --git a/foo.ts b/foo.ts
+index 111..222 100644
+--- a/foo.ts
++++ b/foo.ts
+@@ -1,1 +1,1 @@
+-const x: number = 1
++const y: string = "hi"
+`
+    const payload = await loadHighlightForPatch(patch, "foo.ts", "dark")
+    const addition = payload?.additionLines.find((line) => line?.some((token) => token.text.includes("\"hi\"")))
+    const keyword = addition?.find((token) => token.text.trim() === "const")
+    const string = addition?.find((token) => token.text.includes("\"hi\""))
+    expect(keyword?.fg).toBe("#FF7B72")
+    expect(string?.fg).toBe("#A5D6FF")
+  })
+
   test("returns null for binary patch", async () => {
     const patch = "Binary files a/foo.png and b/foo.png differ\n"
     expect(await loadHighlightForPatch(patch, "foo.png")).toBeNull()

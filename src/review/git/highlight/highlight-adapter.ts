@@ -5,14 +5,10 @@ import {
   parsePatchFiles,
   getFiletypeFromFileName,
 } from "@pierre/diffs"
-import { pierreThemeForAppearance } from "../../../ui/review-workspace/syntax-theme"
+import { syntaxThemeForAppearance } from "../../../ui/review-workspace/syntax-theme"
 import { sanitizePatch } from "../patch-adapter"
 import { hastLinesToTokens } from "./highlight-hast"
 import { MAX_HIGHLIGHTED_DIFF_LINES, type HighlightPayload } from "./highlight-payload"
-
-function pierreThemeFor(appearance: "dark" | "light"): string {
-  return pierreThemeForAppearance(appearance)
-}
 
 function isBinaryPatch(patch: string): boolean {
   return patch.includes("GIT binary patch") || patch.includes("Binary files ")
@@ -68,7 +64,7 @@ export async function loadHighlightForPatch(
     }
   })()
 
-  const themeName = pierreThemeFor(appearance)
+  const themeName = syntaxThemeForAppearance(appearance)
   // Prepare highlighter options
   let highlighter
   try {

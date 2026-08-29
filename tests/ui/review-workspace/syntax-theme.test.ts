@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { getEffectiveHighlightAppearance, pierreThemeForAppearance, syntaxHighlightThemeName } from "../../../src/ui/review-workspace/syntax-theme"
+import { getEffectiveHighlightAppearance, syntaxThemeForAppearance, syntaxHighlightThemeName } from "../../../src/ui/review-workspace/syntax-theme"
 
 describe("syntax theme", () => {
-  test("picks dark theme by default", () => {
-    expect(pierreThemeForAppearance("dark")).toBe("pierre-dark")
-    expect(pierreThemeForAppearance("light")).toBe("pierre-light")
-    expect(syntaxHighlightThemeName("dark")).toBe("pierre-dark")
+  test("uses Hunk default syntax themes", () => {
+    expect(syntaxThemeForAppearance("dark")).toBe("github-dark-default")
+    expect(syntaxThemeForAppearance("light")).toBe("github-light-default")
+    expect(syntaxHighlightThemeName("dark")).toBe("github-dark-default")
   })
 
   test("effective appearance defaults to dark and respects env", () => {

@@ -1,7 +1,7 @@
 export type HighlightAppearance = "dark" | "light"
 
-export function pierreThemeForAppearance(appearance: HighlightAppearance): string {
-  return appearance === "light" ? "pierre-light" : "pierre-dark"
+export function syntaxThemeForAppearance(appearance: HighlightAppearance): string {
+  return appearance === "light" ? "github-light-default" : "github-dark-default"
 }
 
 /**
@@ -17,5 +17,5 @@ export function getEffectiveHighlightAppearance(): HighlightAppearance {
 }
 
 export function syntaxHighlightThemeName(appearance: HighlightAppearance): string {
-  return pierreThemeForAppearance(appearance)
+  return syntaxThemeForAppearance(appearance)
 }
