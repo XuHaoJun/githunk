@@ -26,7 +26,14 @@ export type ReviewDiffPaneProps = Readonly<{
   onViewportChange?: (top: number) => void
   selectedFeedbackId?: string | null
   selectedFileRevealToken?: number
+  selectedHunkRevealToken?: number
   scrollRef?: { current: ScrollBoxRenderable | null }
+}>
+type SelectionRevealRequest = Readonly<{
+  fileKey: string
+  hunkIndex: number
+  token: number | undefined
+  fileRevealToken: number | undefined
 }>
 
 type SectionWindow = Readonly<{
@@ -87,13 +94,17 @@ export function ReviewDiffPane({
   onViewportChange,
   selectedFeedbackId,
   selectedFileRevealToken,
+  selectedHunkRevealToken,
   scrollRef: externalScrollRef,
 }: ReviewDiffPaneProps) {
   const ownedScrollRef = useRef<ScrollBoxRenderable | null>(null)
   const scrollRef = externalScrollRef ?? ownedScrollRef
   const [scrollTop, setScrollTop] = useState(0)
-  const revealRef = useRef<{ file: HunkReviewFile; files: readonly HunkReviewFile[]; layout: "split" | "stack"; height: number; hunkIndex: number } | null>(null)
   const previousFileRevealTokenRef = useRef(selectedFileRevealToken)
+  const previousSelectionRef = useRef<{ fileKey: string | null; hunkIndex: number } | null>(null)
+  const previousHunkRevealTokenRef = useRef<number | undefined>(undefined)
+  const pendingSelectionRevealRequestRef = useRef<SelectionRevealRequest | null>(null)
+  const pendingSelectionRevealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const window = useMemo(
     () => sectionWindow(files, state, layout, scrollTop, height, overscan, expandedSourceByGap),
     [expandedSourceByGap, files, height, layout, overscan, scrollTop, state.expandedGaps, state.feedback],
@@ -125,29 +136,6 @@ export function ReviewDiffPane({
       scrollBox.viewport.off("resized", sync)
     }
   }, [files.length])
-
-  useLayoutEffect(() => {
-    if (!selectedFileKey) return
-    const index = files.findIndex((file) => file.id === selectedFileKey)
-    const selectedFile = index < 0 ? undefined : files[index]
-    if (!selectedFile) return
-    const previous = revealRef.current
-    if (previous && previous.file === selectedFile && previous.files === files && previous.layout === layout && previous.height === height && previous.hunkIndex === selectedHunkIndex) return
-    revealRef.current = { file: selectedFile, files, layout, height, hunkIndex: selectedHunkIndex }
-    const sectionTop = window.offsets[index] ?? 0
-    const sectionHeight = window.heights[index] ?? 0
-    const hunkOffset = hunkSectionRowOffset(selectedFile, layout, Math.max(0, selectedHunkIndex), state, expandedSourceByGap)
-    const target = sectionTop + Math.min(Math.max(0, hunkOffset), Math.max(0, sectionHeight - 1))
-    const targetEnd = target + 1
-    const currentEnd = scrollTop + Math.max(1, height)
-    if (target < scrollTop || targetEnd > currentEnd) {
-      const nextTop = Math.min(Math.max(0, target), Math.max(0, window.total - height))
-      const scrollBox = scrollRef.current
-      if (scrollBox) scrollBox.scrollTop = nextTop
-      setScrollTop(nextTop)
-      onViewportChange?.(nextTop)
-    }
-  }, [expandedSourceByGap, files, height, layout, onViewportChange, scrollTop, selectedFileKey, selectedHunkIndex, state, window])
   useLayoutEffect(() => {
     if (selectedFileRevealToken === undefined || previousFileRevealTokenRef.current === selectedFileRevealToken || !selectedFileKey) return
 
@@ -164,6 +152,114 @@ export function ReviewDiffPane({
     setScrollTop(target)
     onViewportChange?.(target)
   }, [files, height, onViewportChange, scrollRef, selectedFileKey, selectedFileRevealToken, state.reveal.scrollToFeedback, window])
+
+  // Keep file-top and hunk reveals as ordered requests: a batched cross-file move can
+  // change both, and the later hunk request must win.
+  useLayoutEffect(() => {
+    const currentSelection = { fileKey: selectedFileKey, hunkIndex: selectedHunkIndex }
+    const previousSelection = previousSelectionRef.current
+    const selectionChanged = previousSelection === null
+      || previousSelection.fileKey !== selectedFileKey
+      || previousSelection.hunkIndex !== selectedHunkIndex
+    const previousHunkRevealToken = previousHunkRevealTokenRef.current
+    const hunkRevealRequested = selectedHunkRevealToken !== undefined
+      && previousHunkRevealToken !== selectedHunkRevealToken
+    const pendingRequest = pendingSelectionRevealRequestRef.current
+    const pendingRequestMatches = pendingRequest !== null
+      && pendingRequest.fileKey === selectedFileKey
+      && pendingRequest.hunkIndex === selectedHunkIndex
+      && pendingRequest.token === selectedHunkRevealToken
+      && pendingRequest.fileRevealToken === selectedFileRevealToken
+    const shouldReveal = selectedHunkRevealToken === undefined
+      ? selectionChanged || pendingRequestMatches
+      : hunkRevealRequested
+        || (state.reveal.scrollToFeedback && selectionChanged)
+        || pendingRequestMatches
+    const clearPendingTimers = () => {
+      for (const timer of pendingSelectionRevealTimersRef.current) clearTimeout(timer)
+      pendingSelectionRevealTimersRef.current = []
+    }
+
+    if (!selectedFileKey) {
+      clearPendingTimers()
+      if (!shouldReveal) {
+        pendingSelectionRevealRequestRef.current = null
+        previousSelectionRef.current = currentSelection
+        previousHunkRevealTokenRef.current = selectedHunkRevealToken
+      }
+      return
+    }
+
+    if (!shouldReveal) {
+      clearPendingTimers()
+      pendingSelectionRevealRequestRef.current = null
+      previousSelectionRef.current = currentSelection
+      previousHunkRevealTokenRef.current = selectedHunkRevealToken
+      return
+    }
+
+    const index = files.findIndex((file) => file.id === selectedFileKey)
+    const selectedFile = index < 0 ? undefined : files[index]
+    // Filtered files may reappear after this effect; retain the request so it is not lost.
+    if (!selectedFile) {
+      pendingSelectionRevealRequestRef.current = {
+        fileKey: selectedFileKey,
+        hunkIndex: selectedHunkIndex,
+        token: selectedHunkRevealToken,
+        fileRevealToken: selectedFileRevealToken,
+      }
+      return
+    }
+
+    previousSelectionRef.current = currentSelection
+    previousHunkRevealTokenRef.current = selectedHunkRevealToken
+    const request: SelectionRevealRequest = {
+      fileKey: selectedFileKey,
+      hunkIndex: selectedHunkIndex,
+      token: selectedHunkRevealToken,
+      fileRevealToken: selectedFileRevealToken,
+    }
+    pendingSelectionRevealRequestRef.current = request
+    clearPendingTimers()
+
+    const sectionTop = window.offsets[index] ?? 0
+    const sectionHeight = window.heights[index] ?? 0
+    const hunkOffset = hunkSectionRowOffset(selectedFile, layout, Math.max(0, selectedHunkIndex), state, expandedSourceByGap)
+    const target = sectionTop + Math.min(Math.max(0, hunkOffset), Math.max(0, sectionHeight - 1))
+
+    const revealSelection = () => {
+      const scrollBox = scrollRef.current
+      if (!scrollBox) return
+      const viewportHeight = Math.max(1, Math.floor(scrollBox.viewport.height || height))
+      const currentTop = Math.max(0, Math.floor(scrollBox.scrollTop))
+      const currentEnd = currentTop + viewportHeight
+      if (target < currentTop || target + 1 > currentEnd) {
+        const nextTop = Math.min(Math.max(0, target), Math.max(0, window.total - viewportHeight))
+        scrollBox.scrollTop = nextTop
+        setScrollTop(nextTop)
+        onViewportChange?.(nextTop)
+      }
+    }
+
+    revealSelection()
+    const retryDelays = [0, 16, 48]
+    pendingSelectionRevealTimersRef.current = retryDelays.map((delay, retryIndex) => setTimeout(() => {
+      const currentRequest = pendingSelectionRevealRequestRef.current
+      if (
+        currentRequest === null
+        || currentRequest.fileKey !== request.fileKey
+        || currentRequest.hunkIndex !== request.hunkIndex
+        || currentRequest.token !== request.token
+        || currentRequest.fileRevealToken !== request.fileRevealToken
+      ) return
+      revealSelection()
+      if (retryIndex === retryDelays.length - 1) {
+        pendingSelectionRevealRequestRef.current = null
+        pendingSelectionRevealTimersRef.current = []
+      }
+    }, delay))
+    return clearPendingTimers
+  }, [expandedSourceByGap, files, height, layout, onViewportChange, selectedFileKey, selectedFileRevealToken, selectedHunkIndex, selectedHunkRevealToken, state])
 
   const leadingSpacer = window.offsets[window.first] ?? 0
   const trailingSpacer = window.total - (window.offsets[window.last + 1] ?? window.total)

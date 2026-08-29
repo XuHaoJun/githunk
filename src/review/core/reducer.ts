@@ -102,12 +102,16 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (!file) return state
       const maxIndex = file.hunks.length === 0 ? 0 : file.hunks.length - 1
       const clamped = Math.min(Math.max(action.hunkIndex, 0), Math.max(0, maxIndex))
-      if (state.selection.fileKey === action.fileKey && state.selection.hunkIndex === clamped) {
+      const reveal = action.reveal === "hunk"
+        ? { ...state.reveal, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: false }
+        : state.reveal
+      if (state.selection.fileKey === action.fileKey && state.selection.hunkIndex === clamped && reveal === state.reveal) {
         return state
       }
       return {
         ...state,
         selection: { fileKey: action.fileKey, hunkIndex: clamped },
+        reveal,
         revision: state.revision + 1,
       }
     }

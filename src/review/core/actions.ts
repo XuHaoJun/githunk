@@ -4,7 +4,7 @@ import type { ReviewProjection, ViewedRecord, ExpandedGap, ReviewSelection } fro
 export type ReviewAction =
   | { type: "selection/select-file"; fileKey: string }
   | { type: "selection/move"; unit: "file" | "hunk"; direction: "next" | "previous" }
-  | { type: "selection/viewport-anchor"; fileKey: string; hunkIndex: number }
+  | { type: "selection/viewport-anchor"; fileKey: string; hunkIndex: number; reveal?: "hunk" }
   | { type: "filter/set-query"; query: string }
   | { type: "filter/set-scope"; scope: "all" | "unreviewed" | "changed" | "feedback" }
   | { type: "projection/set"; projection: ReviewProjection }

@@ -6,7 +6,7 @@ import type { ReviewAnchor, ReviewFeedback, ReviewFeedbackDraft } from "./types"
 export type ReviewIntent =
   | { type: "selection/select-file"; fileKey: string }
   | { type: "selection/move"; unit: "file" | "hunk"; direction: "next" | "previous" }
-  | { type: "selection/viewport-anchor"; fileKey: string; hunkIndex: number }
+  | { type: "selection/viewport-anchor"; fileKey: string; hunkIndex: number; reveal?: "hunk" }
   | { type: "filter/set-query"; query: string }
   | { type: "filter/set-scope"; scope: "all" | "unreviewed" | "changed" | "feedback" }
   | { type: "projection/set"; projection: ReviewProjection }
@@ -157,7 +157,12 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
     case "selection/viewport-anchor": {
       validateFileKey(state, intent.fileKey)
       validateHunkBounds(state, intent.fileKey, intent.hunkIndex)
-      return { type: "selection/viewport-anchor", fileKey: intent.fileKey, hunkIndex: intent.hunkIndex }
+      return {
+        type: "selection/viewport-anchor",
+        fileKey: intent.fileKey,
+        hunkIndex: intent.hunkIndex,
+        ...(intent.reveal ? { reveal: intent.reveal } : {}),
+      }
     }
     case "filter/set-query": {
       const normalized = intent.query.trim()

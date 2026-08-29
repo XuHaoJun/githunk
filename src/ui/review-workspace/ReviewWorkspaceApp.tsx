@@ -187,6 +187,7 @@ function fallbackSelectionIntent(
     type: "selection/viewport-anchor",
     fileKey: target.key,
     hunkIndex: direction === "next" ? 0 : Math.max(0, target.hunks.length - 1),
+    ...(unit === "hunk" ? { reveal: "hunk" as const } : {}),
   }
 }
 
@@ -376,7 +377,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       controller.dispatch(planReviewIntent(current, { type: "selection/select-file", fileKey: file.key }))
       if (feedback.anchor.kind === "range") {
         const latest = controller.state
-        if (latest) controller.dispatch(planReviewIntent(latest, { type: "selection/viewport-anchor", fileKey: file.key, hunkIndex: feedback.anchor.ownerHunkIndex }))
+        if (latest) controller.dispatch(planReviewIntent(latest, { type: "selection/viewport-anchor", fileKey: file.key, hunkIndex: feedback.anchor.ownerHunkIndex, reveal: "hunk" }))
       }
       setFocus("stream")
       session.invalidate()
@@ -624,7 +625,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         const targetFile = current.document.files.find((file) => file.key === target.fileKey)
         if (targetFile) {
           try {
-            controller.dispatch(planReviewIntent(current, { type: "selection/viewport-anchor", fileKey: target.fileKey, hunkIndex: target.hunkIndex }))
+            controller.dispatch(planReviewIntent(current, { type: "selection/viewport-anchor", fileKey: target.fileKey, hunkIndex: target.hunkIndex, reveal: "hunk" }))
           } catch {}
         }
       }
@@ -826,6 +827,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             selectedFileKey={state.selection.fileKey}
             selectedHunkIndex={state.selection.hunkIndex}
             selectedFileRevealToken={state.reveal.fileTopRequestToken}
+            selectedHunkRevealToken={state.reveal.hunkToken}
             highlightByFileKey={highlightResult.highlights}
             onVisibleFileKeysChange={onVisibleFileKeysChange}
             expandedSourceByGap={expandedSourceByGap}

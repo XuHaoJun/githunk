@@ -77,7 +77,7 @@ describe("navigation", () => {
     expect(s.reveal.fileTopRequestToken).toBe(1)
     const clamped = reduceReviewState(s, planReviewIntent(s, { type: "selection/move", unit: "hunk", direction: "next" }))
     expect(clamped).toBe(s)
-    // Backward cross-file moves keep legacy file-top history but do not request a file-top align.
+    // Backward cross-file moves keep legacy file-top history and request a hunk reveal.
     const fileTopTokenBeforePrevious = clamped.reveal.fileTopToken
     const fileTopRequestTokenBeforePrevious = clamped.reveal.fileTopRequestToken
     const hunkTokenBeforePrevious = clamped.reveal.hunkToken
@@ -85,7 +85,7 @@ describe("navigation", () => {
     expect(s2.selection).toEqual({ fileKey: "a", hunkIndex: 1 })
     expect(s2.reveal.fileTopToken).toBe(fileTopTokenBeforePrevious + 1)
     expect(s2.reveal.fileTopRequestToken).toBe(fileTopRequestTokenBeforePrevious)
-    expect(s2.reveal.hunkToken).toBe(hunkTokenBeforePrevious)
+    expect(s2.reveal.hunkToken).toBe(hunkTokenBeforePrevious + 1)
     s2 = reduceReviewState(s2, planReviewIntent(s2, { type: "selection/move", unit: "hunk", direction: "previous" }))
     expect(s2.selection).toEqual({ fileKey: "a", hunkIndex: 0 })
     const clampedPrev = reduceReviewState(s2, planReviewIntent(s2, { type: "selection/move", unit: "hunk", direction: "previous" }))

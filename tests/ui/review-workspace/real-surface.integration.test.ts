@@ -7,7 +7,7 @@ import { GitRunner } from "../../../src/git/runner"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity, sha256Tuple } from "../../../src/review/core/identity"
 import type { ReviewDocument, ReviewFile } from "../../../src/review/core/types"
-import { hunkSectionRowCount } from "../../../src/ui/review-workspace/components/ReviewDiffSection"
+import { hunkSectionRowCount, hunkSectionRowOffset } from "../../../src/ui/review-workspace/components/ReviewDiffSection"
 import { toHunkReviewFile } from "../../../src/ui/review-workspace/hunk-review-model"
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 function reviewFile(path: string, lines: readonly string[]): ReviewFile {
@@ -291,6 +291,94 @@ describe("review workspace real surface", () => {
 
       expect(screen.active.controller.state?.selection.fileKey).toBe("src/first.ts")
       expect(scrollBox.scrollTop).toBe(1)
+    } finally {
+      await act(async () => {
+        app.destroy()
+        setup.renderer.destroy()
+      })
+    }
+  })
+
+  test("rapid next-and-previous hunk navigation reveals the final selected hunk", async () => {
+    const makeMultiHunkFile = (path: string): ReviewFile => {
+      const hunks = Array.from({ length: 12 }, (_, index) => {
+        const lines = [...Array.from({ length: 9 }, () => " context"), "-old", "+new"]
+        return createReviewHunk({
+          index,
+          oldStart: index * 20 + 1,
+          oldCount: 10,
+          newStart: index * 20 + 1,
+          newCount: 10,
+          lines,
+        })
+      })
+      return {
+        key: path,
+        path,
+        kind: "modified",
+        oldBlobOid: "1".repeat(40),
+        newBlobOid: sha256Tuple([path]),
+        oldMode: "100644",
+        newMode: "100644",
+        contentId: sha256Tuple([path, "content"]),
+        patchDigest: sha256Tuple([path, "patch"]),
+        stats: { additions: 12, deletions: 12 },
+        hunks,
+        source: "available",
+      }
+    }
+    const first = makeMultiHunkFile("src/first.ts")
+    const second = makeMultiHunkFile("src/second.ts")
+    const base = documentForSurface()
+    const document = createReviewDocument({
+      ...base,
+      files: [first, second],
+    })
+    const setup = await createTestRenderer({ width: 100, height: 12, useMouse: true, enableMouseMovement: true })
+    const app = createApp({
+      repositoryRoot: "/tmp/does-not-exist",
+      runner: new GitRunner("/tmp/does-not-exist"),
+      renderer: setup.renderer as unknown as CliRenderer,
+      reviewLoaders: { loadDocument: async () => document },
+    } as unknown as Parameters<typeof createApp>[0])
+
+    try {
+      const screen = app.screenController!
+      await act(async () => {
+        await screen.openBranchReview()
+      })
+      await setup.flush()
+      if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
+      const workspace = screen.active.view
+      const scrollBox = workspace.root.findDescendantById("review-diff-scrollbox") as unknown as {
+        scrollTop: number
+        viewport: { height: number }
+      }
+
+      await act(async () => {
+        await setup.mockInput.pressKeys(Array.from({ length: 13 }, () => "]"))
+        await setup.renderOnce()
+        await setup.renderOnce()
+      })
+
+      const state = screen.active.controller.state
+      expect(state?.selection).toEqual({ fileKey: "src/second.ts", hunkIndex: 1 })
+      const firstHeight = hunkSectionRowCount(toHunkReviewFile(first), "split", state!)
+      const forwardTargetTop = firstHeight + hunkSectionRowOffset(toHunkReviewFile(second), "split", 1, state!)
+      expect(forwardTargetTop).toBeGreaterThanOrEqual(scrollBox.scrollTop)
+      expect(forwardTargetTop).toBeLessThan(scrollBox.scrollTop + Math.max(1, scrollBox.viewport.height))
+
+      await act(async () => {
+        await setup.mockInput.pressKeys(["[", "["])
+        await setup.renderOnce()
+        await setup.renderOnce()
+      })
+
+      const backwardState = screen.active.controller.state
+      expect(backwardState?.selection).toEqual({ fileKey: "src/first.ts", hunkIndex: 11 })
+      const backwardTargetTop = hunkSectionRowOffset(toHunkReviewFile(first), "split", 11, backwardState!)
+      expect(backwardTargetTop).toBeGreaterThanOrEqual(scrollBox.scrollTop)
+      expect(backwardTargetTop).toBeLessThan(scrollBox.scrollTop + Math.max(1, scrollBox.viewport.height))
     } finally {
       await act(async () => {
         app.destroy()

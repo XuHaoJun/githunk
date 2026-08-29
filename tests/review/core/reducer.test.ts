@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createReviewDocument } from "../../../src/review/core/document"
+import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { planReviewIntent } from "../../../src/review/core/intents"
@@ -67,6 +67,25 @@ describe("semantic-only state and explicit reveal tokens", () => {
     // anchoring to same position is no-op (same object)
     const s2 = reduceReviewState(s1, planReviewIntent(s1, { type: "selection/viewport-anchor", fileKey: "src/b.ts", hunkIndex: 0 }))
     expect(s2).toBe(s1)
+  })
+  test("explicit viewport anchoring requests a repeatable hunk reveal", () => {
+    const hunk = createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["+x"] })
+    const doc = makeDoc([makeFile({ key: "src/a.ts", path: "src/a.ts", hunks: [hunk] })])
+    const s0 = createInitialReviewState(doc)
+    const s1 = reduceReviewState(s0, planReviewIntent(s0, {
+      type: "selection/viewport-anchor",
+      fileKey: "src/a.ts",
+      hunkIndex: 0,
+      reveal: "hunk",
+    }))
+    expect(s1.reveal.hunkToken).toBe(s0.reveal.hunkToken + 1)
+    const s2 = reduceReviewState(s1, planReviewIntent(s1, {
+      type: "selection/viewport-anchor",
+      fileKey: "src/a.ts",
+      hunkIndex: 0,
+      reveal: "hunk",
+    }))
+    expect(s2.reveal.hunkToken).toBe(s1.reveal.hunkToken + 1)
   })
 
   test("filter normalization preserves document order and matches normalized paths", () => {

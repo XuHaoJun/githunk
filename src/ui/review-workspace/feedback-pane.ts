@@ -62,7 +62,7 @@ export class FeedbackPane {
         // Also update viewport anchor to hunkIndex for range feedback
         // Use viewport-anchor intent to reveal hunk
         try {
-          const vp = planReviewIntent(this.controller.state!, { type: "selection/viewport-anchor", fileKey, hunkIndex: anchor.ownerHunkIndex })
+          const vp = planReviewIntent(this.controller.state!, { type: "selection/viewport-anchor", fileKey, hunkIndex: anchor.ownerHunkIndex, reveal: "hunk" })
           this.controller.dispatch(vp)
         } catch {
           // fallback just file selection

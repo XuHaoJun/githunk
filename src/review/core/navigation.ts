@@ -84,7 +84,7 @@ export function moveReviewSelection(
       ? {
           fileTopToken: state.reveal.fileTopToken + 1,
           fileTopRequestToken: crossesFileForward ? state.reveal.fileTopRequestToken + 1 : state.reveal.fileTopRequestToken,
-          hunkToken: state.reveal.hunkToken,
+          hunkToken: crossesFileForward ? state.reveal.hunkToken : state.reveal.hunkToken + 1,
           scrollToFeedback: false,
         }
       : {
