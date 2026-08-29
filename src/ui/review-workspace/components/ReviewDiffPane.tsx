@@ -56,8 +56,9 @@ function sectionWindow(
   const heights: number[] = []
   const offsets: number[] = [0]
   let total = 0
-  for (const file of files) {
-    const height = hunkSectionRowCount(file, layout, state, expandedSourceByGap)
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index]!
+    const height = hunkSectionRowCount(file, layout, state, expandedSourceByGap, index > 0)
     heights.push(height)
     total += height
     offsets.push(total)
@@ -224,7 +225,7 @@ export function ReviewDiffPane({
 
     const sectionTop = window.offsets[index] ?? 0
     const sectionHeight = window.heights[index] ?? 0
-    const hunkOffset = hunkSectionRowOffset(selectedFile, layout, Math.max(0, selectedHunkIndex), state, expandedSourceByGap)
+    const hunkOffset = hunkSectionRowOffset(selectedFile, layout, Math.max(0, selectedHunkIndex), state, expandedSourceByGap, index > 0)
     const target = sectionTop + Math.min(Math.max(0, hunkOffset), Math.max(0, sectionHeight - 1))
 
     const revealSelection = () => {
@@ -301,6 +302,7 @@ export function ReviewDiffPane({
                   layout={layout}
                   width={width}
                   selectedHunkIndex={file.id === selectedFileKey ? selectedHunkIndex : -1}
+                  showDivider={fileIndex > 0}
                   showLineNumbers={showLineNumbers}
                   wrapLines={wrapLines}
                   rowStart={rowStart}

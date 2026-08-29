@@ -22,6 +22,7 @@ export type ReviewDiffSectionProps = Readonly<{
   onSelectDiffRow?: (row: HunkDiffRow) => void
   onToggleGap?: (gapId: string) => void
   selectedFeedbackId?: string | null
+  showDivider: boolean
 }>
 
 function lineDigits(file: HunkReviewFile): number {
@@ -62,10 +63,12 @@ export function hunkSectionRowCount(
   layout: "split" | "stack",
   state?: ReviewState,
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
+  showDivider = false,
 ): number {
+  const dividerRows = showDivider ? 1 : 0
   const feedbackCount = state?.feedback.filter((feedback) => feedback.anchor.fileKey === file.id).length ?? 0
-  if (file.kind === "binary" || file.reviewFile.source === "binary" || file.reviewFile.source === "too-large") return 2 + feedbackCount
-  let count = 1
+  if (file.kind === "binary" || file.reviewFile.source === "binary" || file.reviewFile.source === "too-large") return dividerRows + 2 + feedbackCount
+  let count = dividerRows + 1
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
     const gap = hunkGapBefore(file, hunkIndex)
     if (gap) {
@@ -103,9 +106,11 @@ export function hunkSectionRowOffset(
   hunkIndex: number,
   state?: ReviewState,
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
+  showDivider = false,
 ): number {
-  if (hunkIndex <= 0) return 1
-  let offset = 1
+  const dividerRows = showDivider ? 1 : 0
+  if (hunkIndex <= 0) return dividerRows + 1
+  let offset = dividerRows + 1
   const end = Math.min(hunkIndex, file.metadata.hunks.length)
   for (let index = 0; index < end; index += 1) {
     const gap = hunkGapBefore(file, index)
@@ -142,6 +147,7 @@ export function ReviewDiffSection({
   onSelectDiffRow,
   onToggleGap,
   selectedFeedbackId,
+  showDivider,
 }: ReviewDiffSectionProps) {
   const rows = useMemo(
     () => rowsFor(file, state, layout, width, showLineNumbers, wrapLines, highlight, expandedSourceByGap),
@@ -149,17 +155,18 @@ export function ReviewDiffSection({
   )
   const digits = lineDigits(file)
   const selectProps = onSelect ? { onMouseUp: () => onSelect() } : {}
-  const totalRows = hunkSectionRowCount(file, layout, state, expandedSourceByGap)
+  const totalRows = hunkSectionRowCount(file, layout, state, expandedSourceByGap, showDivider)
   const visibleStart = Math.max(0, Math.min(totalRows, Math.floor(rowStart)))
   const visibleEnd = Math.max(visibleStart, Math.min(totalRows, Math.ceil(rowEnd ?? totalRows)))
   const hasDiffRows = rows.some((row) => row.type !== "feedback")
+  const sectionChromeRows = showDivider ? 1 : 0
   const contentRows = hasDiffRows ? rows : rows.filter((row) => row.type === "feedback")
   const visibleContentRows = contentRows.filter((_, index) => {
-    const fullIndex = hasDiffRows ? index + 1 : index + 2
+    const fullIndex = index + (hasDiffRows ? 1 : 2) + sectionChromeRows
     return fullIndex >= visibleStart && fullIndex < visibleEnd
   })
-  const showHeader = visibleStart <= 0 && visibleEnd > 0
-  const showExplanation = !hasDiffRows && visibleStart <= 1 && visibleEnd > 1
+  const showHeader = visibleStart <= sectionChromeRows && visibleEnd > sectionChromeRows
+  const showExplanation = !hasDiffRows && visibleStart <= sectionChromeRows + 1 && visibleEnd > sectionChromeRows + 1
   const renderRow = (row: HunkDiffRow) => {
     const rowClick = row.type === "collapsed" && onToggleGap
       ? () => onToggleGap(row.gapId)
@@ -186,6 +193,11 @@ export function ReviewDiffSection({
   return (
     <box id={`review-section:${file.id}`} style={{ width: "100%", height: totalRows, flexShrink: 0, flexDirection: "column" }}>
       {visibleStart > 0 ? <box key="review-section-leading-spacer" style={{ width: "100%", height: visibleStart }} /> : null}
+      {showDivider && visibleStart <= 0 && visibleEnd > 0 ? (
+        <box key="review-section-divider" id={`review-section-divider:${file.id}`} style={{ width: "100%", height: 1, flexShrink: 0, paddingLeft: 1, paddingRight: 1 }}>
+          <text content={"─".repeat(Math.max(0, width - 2))} fg="#666666" wrapMode="none" truncate={true} />
+        </box>
+      ) : null}
       {showHeader ? (
         <box style={{ width: "100%", height: 1 }} {...selectProps}>
           <text content={file.previousPath ? `${file.path} ← ${file.previousPath}` : file.path} wrapMode="none" truncate={true} />

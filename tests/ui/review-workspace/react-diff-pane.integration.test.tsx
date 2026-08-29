@@ -159,4 +159,35 @@ describe("React review diff pane", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("renders a divider between adjacent file sections", async () => {
+    const files = [
+      makeFile("src/first.ts", ["-const old = 1", "+const next = 2"]),
+      makeFile("src/second.ts", ["-const old = 3", "+const next = 4"]),
+    ]
+    const setup = await testRender(
+      <ReviewDiffPane
+        files={files.map((file) => toHunkReviewFile(file))}
+        state={makeState(files)}
+        layout="stack"
+        width={80}
+        height={20}
+        selectedFileKey={files[0]!.key}
+        selectedHunkIndex={0}
+      />,
+      { width: 80, height: 20, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const lines = setup.captureCharFrame().split("\n")
+      const firstHeader = lines.findIndex((line) => line.includes("src/first.ts"))
+      const secondHeader = lines.findIndex((line) => line.includes("src/second.ts"))
+      expect(firstHeader).toBeGreaterThanOrEqual(0)
+      expect(secondHeader).toBeGreaterThan(firstHeader)
+      expect(lines.slice(firstHeader + 1, secondHeader).some((line) => /^ *─+ *$/.test(line))).toBe(true)
+      expect(lines.filter((line) => /^ *─+ *$/.test(line))).toHaveLength(1)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
 })

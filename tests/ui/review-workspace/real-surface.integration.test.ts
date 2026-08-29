@@ -364,7 +364,7 @@ describe("review workspace real surface", () => {
       const state = screen.active.controller.state
       expect(state?.selection).toEqual({ fileKey: "src/second.ts", hunkIndex: 1 })
       const firstHeight = hunkSectionRowCount(toHunkReviewFile(first), "split", state!)
-      const forwardTargetTop = firstHeight + hunkSectionRowOffset(toHunkReviewFile(second), "split", 1, state!)
+      const forwardTargetTop = firstHeight + hunkSectionRowOffset(toHunkReviewFile(second), "split", 1, state!, undefined, true)
       expect(forwardTargetTop).toBeGreaterThanOrEqual(scrollBox.scrollTop)
       expect(forwardTargetTop).toBeLessThan(scrollBox.scrollTop + Math.max(1, scrollBox.viewport.height))
 
