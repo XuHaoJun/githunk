@@ -4,7 +4,7 @@ import type { ReviewState } from "../../review/core/state"
 import { computeReviewLayout } from "./layout"
 import type { ReviewLayoutMode } from "./layout"
 import { reviewHeaderLines } from "./header"
-import { reviewFileRows } from "./files-pane"
+import { buildReviewSidebarEntries, getFileStateIcon, sidebarEntryStats } from "./review-sidebar"
 import { REVIEW_COMMANDS, resolveReviewCommand, reviewHints } from "./command-catalog"
 import type { ReviewFocus } from "./command-catalog"
 import { planReviewIntent } from "../../review/core/intents"
@@ -194,7 +194,7 @@ export class ReviewWorkspace {
           const sidebarHeight = Math.max(1, this.sidebarBox.height - 2)
           const stateForWheel = this.controller.state
           const rawContent = this.sidebarText.content as unknown as string
-          const fileRowCount = stateForWheel ? reviewFileRows(stateForWheel).length : String(rawContent).split("\n").length
+          const fileRowCount = stateForWheel ? buildReviewSidebarEntries(stateForWheel).length : String(rawContent).split("\n").length
           const maxStart = Math.max(0, fileRowCount - sidebarHeight)
           this.sidebarViewportStart = Math.max(0, Math.min(maxStart, this.sidebarViewportStart + delta))
           this.render(this.controller.state)
@@ -329,10 +329,11 @@ export class ReviewWorkspace {
     if (!Number.isInteger(visibleRow) || visibleRow < 0) return false
     const state = this.controller.state
     if (!state) return false
-    const row = reviewFileRows(state)[this.sidebarViewportStart + visibleRow]
-    return row === undefined ? false : this.handleSidebarClick(row.fileKey)
+    const entries = buildReviewSidebarEntries(state)
+    const entry = entries[this.sidebarViewportStart + visibleRow]
+    if (!entry || entry.kind !== "file") return false
+    return this.handleSidebarClick(entry.id)
   }
-
   // Alias for test compatibility
   clickFile(fileKey: string): boolean {
     return this.handleSidebarClick(fileKey)
@@ -890,27 +891,34 @@ export class ReviewWorkspace {
       this.footerText.content = this.finishDialog.isOpen()
         ? `${this.finishDialog.getValidationMessage()} — ${footerBase}`
         : footerBase
-
-      const fileRows = reviewFileRows(state)
-      this.sidebarBox.title = `Files ${fileRows.length}/${state.document.files.length}`
-      const selectedRow = fileRows.findIndex((row) => row.fileKey === state.selection.fileKey)
+      const entries = buildReviewSidebarEntries(state)
+      const fileEntries = entries.filter((entry) => entry.kind === "file")
+      this.sidebarBox.title = `Files ${fileEntries.length}/${state.document.files.length}`
+      const selectedEntryIndex = entries.findIndex((entry) => entry.kind === "file" && entry.id === state.selection.fileKey)
       const sidebarHeight = Math.max(1, (layout.sidebar?.height ?? 1) - 2)
-      if (selectedRow >= 0) {
-        if (selectedRow < this.sidebarViewportStart) this.sidebarViewportStart = selectedRow
-        if (selectedRow >= this.sidebarViewportStart + sidebarHeight) {
-          this.sidebarViewportStart = selectedRow - sidebarHeight + 1
+      if (selectedEntryIndex >= 0) {
+        if (selectedEntryIndex < this.sidebarViewportStart) this.sidebarViewportStart = selectedEntryIndex
+        if (selectedEntryIndex >= this.sidebarViewportStart + sidebarHeight) {
+          this.sidebarViewportStart = selectedEntryIndex - sidebarHeight + 1
         }
       }
       this.sidebarViewportStart = Math.min(
         this.sidebarViewportStart,
-        Math.max(0, fileRows.length - sidebarHeight),
+        Math.max(0, entries.length - sidebarHeight),
       )
       const sidebarWidth = Math.max(1, (layout.sidebar?.width ?? 1) - 2)
-      this.sidebarText.content = fileRows
+      this.sidebarText.content = entries
         .slice(this.sidebarViewportStart, this.sidebarViewportStart + sidebarHeight)
-        .map((row) => {
-          const selected = row.fileKey === state.selection.fileKey
-          return truncateReviewSidebarLine(`${selected ? ">" : " "} ${row.marker} ${row.path}`, sidebarWidth)
+        .map((entry) => {
+          if (entry.kind === "group") {
+            return truncateReviewSidebarLine(entry.label, sidebarWidth)
+          }
+          const selected = entry.id === state.selection.fileKey
+          const { icon } = getFileStateIcon(entry)
+          const stats = sidebarEntryStats(entry)
+          const statsText = stats.map((s) => s.text).join(" ")
+          const base = statsText.length > 0 ? `${icon} ${entry.name} ${statsText}` : `${icon} ${entry.name}`
+          return truncateReviewSidebarLine(`${selected ? ">" : " "} ${base}`, sidebarWidth)
         })
         .join("\n")
 

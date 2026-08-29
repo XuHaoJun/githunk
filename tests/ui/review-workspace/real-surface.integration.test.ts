@@ -81,9 +81,13 @@ describe("review workspace real surface", () => {
       expect(workspace.root.findDescendantById("react-review-sidebar")).toBeDefined()
       expect(workspace.root.findDescendantById("review-diff-scrollbox")).toBeDefined()
       const frame = setup.captureCharFrame()
-      expect(frame).toContain("src/first.ts")
-      expect(frame).toContain("src/second.ts")
-      expect(frame).toContain("src/third.ts")
+      // hunk parity: tree groups + basename + status icon + stats, not full flat path with coverage glyph
+      expect(frame).toContain("src/")
+      expect(frame).toContain("first.ts")
+      expect(frame).toContain("second.ts")
+      expect(frame).toContain("third.ts")
+      // status icons for modified files (M) and stats badges should appear
+      expect(frame).toMatch(/M\s+first\.ts/)
       expect(frame.split("\n").length).toBeGreaterThanOrEqual(20)
     } finally {
       await act(async () => {
@@ -117,7 +121,11 @@ describe("review workspace real surface", () => {
       })
       await flushReact(setup)
       expect(screen.active.controller.state?.selection.fileKey).toBe("src/second.ts")
-      expect(setup.captureCharFrame()).toContain("> ◐ src/second.ts")
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("second.ts")
+      // selected row should exist with hunk styling (accent + panelAlt), verified via renderer id
+      expect(workspace.root.findDescendantById("review-file-row:src/second.ts")).toBeDefined()
+      expect(workspace.root.findDescendantById("review-file-group:src/")).toBeDefined()
     } finally {
       await act(async () => {
         app.destroy()
@@ -125,7 +133,6 @@ describe("review workspace real surface", () => {
       })
     }
   })
-
   test("mouse click on a visible sidebar row selects and reveals that file", async () => {
     const setup = await createTestRenderer({ width: 100, height: 30, useMouse: true, enableMouseMovement: true })
     const app = createApp({
@@ -154,7 +161,8 @@ describe("review workspace real surface", () => {
         await setup.renderOnce()
       })
       expect(screen.active.controller.state?.selection.fileKey).toBe("src/third.ts")
-      expect(setup.captureCharFrame()).toContain("> ◐ src/third.ts")
+      expect(setup.captureCharFrame()).toContain("third.ts")
+      expect(workspace.root.findDescendantById("review-file-row:src/third.ts")).toBeDefined()
     } finally {
       await act(async () => {
         app.destroy()

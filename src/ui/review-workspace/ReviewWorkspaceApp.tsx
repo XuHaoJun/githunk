@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { ReviewWorkspaceController } from "./controller"
 import type { ReviewState } from "../../review/core/state"
 import { reviewHeaderLines } from "./header"
-import { reviewFileRows } from "./files-pane"
+import { buildReviewSidebarEntries, getFileStateIcon, REVIEW_SIDEBAR_THEME, sidebarEntryStats, sidebarEntryStatsWidth } from "./review-sidebar"
 import { toHunkReviewFiles } from "./hunk-review-model"
 import { ReviewDiffPane } from "./components/ReviewDiffPane"
 import { useReviewHighlights } from "./hooks/useReviewHighlights"
@@ -15,7 +15,7 @@ import { coverageForFile, sortedReviewFeedback, visibleReviewFiles } from "../..
 import type { HunkDiffRow } from "./hunk-diff-row-model"
 import type { ReviewAnchor } from "../../review/core/types"
 import type { ReactReviewSession } from "./react-review-session"
-
+import { cellWidth } from "../cell-width"
 export type ReviewWorkspaceAppProps = Readonly<{
   session: ReactReviewSession
 }>
@@ -53,16 +53,25 @@ function headerText(state: ReviewState, width: number, error?: { title: string; 
   return new StyledText(chunks)
 }
 
-function sidebarRows(state: ReviewState) {
-  return reviewFileRows(state)
+function fitText(text: string, width: number, overflowMarker = "."): string {
+  if (cellWidth(text) <= width) return text
+  if (width <= 0) return ""
+  if (width === 1) return overflowMarker.slice(0, 1)
+  let out = ""
+  let w = 0
+  for (const ch of text) {
+    const cw = cellWidth(ch)
+    if (w + cw > width - 1) break
+    out += ch
+    w += cw
+  }
+  return `${out}${overflowMarker}`
 }
 
-function sidebarRowText(state: ReviewState, row: ReturnType<typeof reviewFileRows>[number]): StyledText {
-  const markerStyle = row.hasFeedback ? "feedback" : row.coverage === "viewed" ? "viewed" : row.coverage === "changed-after-review" ? "changed" : "plain"
-  return new StyledText([
-    textChunk(row.fileKey === state.selection.fileKey ? "> " : "  ", "plain"),
-    textChunk(`${row.marker} ${row.path}`, markerStyle),
-  ])
+function padText(text: string, width: number): string {
+  const w = cellWidth(text)
+  if (w >= width) return text
+  return text + " ".repeat(width - w)
 }
 
 function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "stream" | "sidebar" | "filter"): string {
@@ -214,6 +223,10 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const composerHeight = state?.draft ? (canShowReplacementDraft(state) ? 9 : 6) : 0
   const diffHeight = Math.max(1, dimensions.height - 4 - composerHeight - 2)
   const files = useMemo(() => state ? toHunkReviewFiles(visibleReviewFiles(state)) : [], [state?.document, state?.feedback, state?.filter, state?.viewed])
+  const sidebarEntries = useMemo(() => state ? buildReviewSidebarEntries(state) : [], [state])
+  const sidebarFileEntries = useMemo(() => sidebarEntries.filter((entry) => entry.kind === "file") as Extract<typeof sidebarEntries[number], { kind: "file" }>[], [sidebarEntries])
+  const sidebarStatsWidth = useMemo(() => Math.max(0, ...sidebarFileEntries.map((entry) => sidebarEntryStatsWidth(entry))), [sidebarFileEntries])
+  const sidebarTextWidth = Math.max(8, sidebarWidth - 2)
   const expandedSourceByGap = useMemo(() => {
     const next = typeof controller.getExpandedSourceByGap === "function" ? controller.getExpandedSourceByGap() : new Map<string, readonly string[]>()
     const previous = expandedSourceRef.current
@@ -749,11 +762,56 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             </box>
             <scrollbox id="react-review-sidebar-scrollbox" width="100%" flexGrow={1} scrollY={true} viewportCulling={true} verticalScrollbarOptions={{ visible: false }}>
               <box style={{ width: "100%", flexDirection: "column" }}>
-                {sidebarRows(state).map((row) => (
-                  <box key={row.fileKey} id={`review-file-row:${row.fileKey}`} style={{ width: "100%", height: 1 }} onMouseUp={() => selectFile(row.fileKey)}>
-                    <text content={sidebarRowText(state, row)} wrapMode="none" truncate={true} />
-                  </box>
-                ))}
+                {sidebarEntries.map((entry) => {
+                  if (entry.kind === "group") {
+                    return (
+                      <box key={entry.id} id={`review-file-group:${entry.label}`} style={{ width: "100%", height: 1, backgroundColor: REVIEW_SIDEBAR_THEME.panel, paddingLeft: 1 }}>
+                        <text fg={REVIEW_SIDEBAR_THEME.muted}>{fitText(entry.label, sidebarTextWidth)}</text>
+                      </box>
+                    )
+                  }
+                  const selected = entry.id === state.selection.fileKey
+                  const rowBackground = selected ? REVIEW_SIDEBAR_THEME.panelAlt : REVIEW_SIDEBAR_THEME.panel
+                  const stats = sidebarEntryStats(entry)
+                  const { icon, color } = getFileStateIcon(entry)
+                  const iconWidth = icon ? 2 : 0
+                  const statsSectionWidth = sidebarStatsWidth > 0 ? sidebarStatsWidth + 1 : 0
+                  const nameWidth = Math.max(1, sidebarTextWidth - 1 - iconWidth - statsSectionWidth)
+                  return (
+                    <box
+                      key={entry.id}
+                      id={`review-file-row:${entry.id}`}
+                      style={{ width: "100%", height: 1, backgroundColor: rowBackground, flexDirection: "row" }}
+                      onMouseUp={() => selectFile(entry.id)}
+                    >
+                      <box style={{ width: 1, height: 1, backgroundColor: selected ? REVIEW_SIDEBAR_THEME.accent : rowBackground }} />
+                      <box style={{ flexGrow: 1, height: 1, paddingLeft: 0, flexDirection: "row", backgroundColor: rowBackground }}>
+                        {icon ? <text fg={color}>{`${icon} `}</text> : null}
+                        <text fg={REVIEW_SIDEBAR_THEME.text}>{padText(fitText(entry.name, nameWidth), nameWidth)}</text>
+                        {statsSectionWidth > 0 ? (
+                          <box style={{ width: statsSectionWidth, height: 1, flexDirection: "row", justifyContent: "flex-end", backgroundColor: rowBackground }}>
+                            {stats.map((stat, index) => (
+                              <box key={`${entry.id}:${stat.kind}`} style={{ height: 1, flexDirection: "row", backgroundColor: rowBackground }}>
+                                {index > 0 ? <text fg={selected ? REVIEW_SIDEBAR_THEME.text : REVIEW_SIDEBAR_THEME.muted}> </text> : null}
+                                <text
+                                  fg={
+                                    stat.kind === "agent-comment"
+                                      ? REVIEW_SIDEBAR_THEME.noteBorder
+                                      : stat.kind === "addition"
+                                        ? REVIEW_SIDEBAR_THEME.badgeAdded
+                                        : REVIEW_SIDEBAR_THEME.badgeRemoved
+                                  }
+                                >
+                                  {stat.text}
+                                </text>
+                              </box>
+                            ))}
+                          </box>
+                        ) : null}
+                      </box>
+                    </box>
+                  )
+                })}
               </box>
             </scrollbox>
           </box>
