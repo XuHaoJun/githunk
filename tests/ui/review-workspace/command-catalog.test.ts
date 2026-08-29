@@ -34,7 +34,7 @@ function makeState(projection: ReviewState["projection"]): ReviewState {
     revision: 0,
     projection,
     selection: { fileKey: "src/a.ts", hunkIndex: 0 },
-    reveal: { fileTopToken: 0, hunkToken: 0, scrollToFeedback: false },
+    reveal: { fileTopToken: 0, fileTopRequestToken: 0, hunkToken: 0, scrollToFeedback: false },
     filter: { query: "", scope: "all" },
     viewed: {},
     feedback: [],

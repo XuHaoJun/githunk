@@ -24,7 +24,7 @@ function makeReviewState(): ReviewState {
     revision: 0,
     projection: { kind: "aggregate" },
     selection: { fileKey: null, hunkIndex: 0 },
-    reveal: { fileTopToken: 0, hunkToken: 0, scrollToFeedback: false },
+    reveal: { fileTopToken: 0, fileTopRequestToken: 0, hunkToken: 0, scrollToFeedback: false },
     filter: { query: "", scope: "all" },
     viewed: {
       k1: { fileKey: "k1", path: "a.ts", contentId: "cid1", generationId: doc.generation.id, viewedAt: new Date().toISOString() },

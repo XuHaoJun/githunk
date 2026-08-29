@@ -82,7 +82,7 @@ function makeState(overrides?: Partial<ReviewState> & { files?: ReviewFile[] }):
     revision: 0,
     projection: { kind: "aggregate" },
     selection: { fileKey: files[0]?.key ?? null, hunkIndex: 0 },
-    reveal: { fileTopToken: 0, hunkToken: 0, scrollToFeedback: false },
+    reveal: { fileTopToken: 0, fileTopRequestToken: 0, hunkToken: 0, scrollToFeedback: false },
     filter: { query: "", scope: "all" },
     viewed: {},
     feedback: [],

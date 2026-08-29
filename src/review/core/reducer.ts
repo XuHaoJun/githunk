@@ -76,6 +76,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       const nextSelection = { fileKey: file.key, hunkIndex: 0 }
       const nextReveal = {
         fileTopToken: state.reveal.fileTopToken + 1,
+        fileTopRequestToken: state.reveal.fileTopRequestToken + 1,
         hunkToken: state.reveal.hunkToken,
         scrollToFeedback: false,
       }
@@ -286,8 +287,8 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (!target) return state
       const crossesFile = target.fileKey !== state.selection.fileKey
       const nextReveal = crossesFile
-        ? { fileTopToken: state.reveal.fileTopToken + 1, hunkToken: state.reveal.hunkToken, scrollToFeedback: true }
-        : { fileTopToken: state.reveal.fileTopToken, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: true }
+        ? { fileTopToken: state.reveal.fileTopToken + 1, fileTopRequestToken: state.reveal.fileTopRequestToken, hunkToken: state.reveal.hunkToken, scrollToFeedback: true }
+        : { fileTopToken: state.reveal.fileTopToken, fileTopRequestToken: state.reveal.fileTopRequestToken, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: true }
       return {
         ...state,
         selection: { fileKey: target.fileKey, hunkIndex: target.hunkIndex },
@@ -300,8 +301,8 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (!target) return state
       const crossesFile = target.fileKey !== state.selection.fileKey
       const nextReveal = crossesFile
-        ? { fileTopToken: state.reveal.fileTopToken + 1, hunkToken: state.reveal.hunkToken, scrollToFeedback: true }
-        : { fileTopToken: state.reveal.fileTopToken, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: true }
+        ? { fileTopToken: state.reveal.fileTopToken + 1, fileTopRequestToken: state.reveal.fileTopRequestToken, hunkToken: state.reveal.hunkToken, scrollToFeedback: true }
+        : { fileTopToken: state.reveal.fileTopToken, fileTopRequestToken: state.reveal.fileTopRequestToken, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: true }
       return {
         ...state,
         selection: { fileKey: target.fileKey, hunkIndex: target.hunkIndex },

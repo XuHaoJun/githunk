@@ -825,6 +825,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             height={diffHeight}
             selectedFileKey={state.selection.fileKey}
             selectedHunkIndex={state.selection.hunkIndex}
+            selectedFileRevealToken={state.reveal.fileTopRequestToken}
             highlightByFileKey={highlightResult.highlights}
             onVisibleFileKeysChange={onVisibleFileKeysChange}
             expandedSourceByGap={expandedSourceByGap}

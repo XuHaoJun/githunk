@@ -7,6 +7,8 @@ import { GitRunner } from "../../../src/git/runner"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity, sha256Tuple } from "../../../src/review/core/identity"
 import type { ReviewDocument, ReviewFile } from "../../../src/review/core/types"
+import { hunkSectionRowCount } from "../../../src/ui/review-workspace/components/ReviewDiffSection"
+import { toHunkReviewFile } from "../../../src/ui/review-workspace/hunk-review-model"
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 function reviewFile(path: string, lines: readonly string[]): ReviewFile {
   const oldCount = lines.filter((line) => line[0] !== "+").length
@@ -202,6 +204,93 @@ describe("review workspace real surface", () => {
         await setup.renderOnce()
       })
       expect(workspace.getStreamPane().getViewportStart()).toBeGreaterThan(0)
+    } finally {
+      await act(async () => {
+        app.destroy()
+        setup.renderer.destroy()
+      })
+    }
+  })
+  test("mouse click on a sidebar row aligns the selected file at the diff top", async () => {
+    const base = documentForSurface()
+    const document = {
+      ...base,
+      files: [
+        base.files[0]!,
+        base.files[1]!,
+        reviewFile("src/tail.ts", Array.from({ length: 60 }, (_, index) => `+export const tail${index + 1} = ${index + 1}`)),
+      ],
+    }
+    const setup = await createTestRenderer({ width: 100, height: 30, useMouse: true, enableMouseMovement: true })
+    const app = createApp({
+      repositoryRoot: "/tmp/does-not-exist",
+      runner: new GitRunner("/tmp/does-not-exist"),
+      renderer: setup.renderer as unknown as CliRenderer,
+      reviewLoaders: { loadDocument: async () => document },
+    } as unknown as Parameters<typeof createApp>[0])
+
+    try {
+      const screen = app.screenController!
+      await act(async () => {
+        await screen.openBranchReview()
+      })
+      await setup.flush()
+      if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
+      const workspace = screen.active.view
+      const secondRow = workspace.root.findDescendantById("review-file-row:src/second.ts") as BoxRenderable
+      const scrollBox = workspace.root.findDescendantById("review-diff-scrollbox") as unknown as { scrollTop: number }
+
+      await act(async () => {
+        await setup.mockMouse.click(secondRow.x + 1, secondRow.y)
+      })
+      await setup.flush()
+
+      const state = screen.active.controller.state
+      const expectedFileTop = hunkSectionRowCount(toHunkReviewFile(document.files[0]!), "split", state!)
+      expect(scrollBox.scrollTop).toBe(expectedFileTop)
+      expect(workspace.getStreamPane().getViewportStart()).toBe(expectedFileTop)
+    } finally {
+      await act(async () => {
+        app.destroy()
+        setup.renderer.destroy()
+      })
+    }
+  })
+
+  test("previous hunk navigation reveals the selected hunk, not only its file", async () => {
+    const setup = await createTestRenderer({ width: 100, height: 30, useMouse: true, enableMouseMovement: true })
+    const app = createApp({
+      repositoryRoot: "/tmp/does-not-exist",
+      runner: new GitRunner("/tmp/does-not-exist"),
+      renderer: setup.renderer as unknown as CliRenderer,
+      reviewLoaders: { loadDocument: async () => documentForSurface() },
+    } as unknown as Parameters<typeof createApp>[0])
+
+    try {
+      const screen = app.screenController!
+      await act(async () => {
+        await screen.openBranchReview()
+      })
+      await setup.flush()
+      if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
+      const workspace = screen.active.view
+      const scrollBox = workspace.root.findDescendantById("review-diff-scrollbox") as unknown as { scrollTop: number }
+
+      await act(async () => {
+        expect(workspace.handleKeyPress("tab")).toBe(true)
+        expect(workspace.handleKeyPress("j")).toBe(true)
+      })
+      await flushReact(setup)
+      expect(screen.active.controller.state?.selection.fileKey).toBe("src/second.ts")
+
+      await act(async () => {
+        expect(workspace.handleKeyPress("tab")).toBe(true)
+        expect(workspace.handleKeyPress("[")).toBe(true)
+      })
+      await flushReact(setup)
+
+      expect(screen.active.controller.state?.selection.fileKey).toBe("src/first.ts")
+      expect(scrollBox.scrollTop).toBe(1)
     } finally {
       await act(async () => {
         app.destroy()

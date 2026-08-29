@@ -69,15 +69,23 @@ describe("navigation", () => {
     s = reduceReviewState(s, planReviewIntent(s, { type: "selection/move", unit: "hunk", direction: "next" }))
     expect(s.selection).toEqual({ fileKey: "a", hunkIndex: 1 })
     expect(s.reveal.hunkToken).toBe(1)
+    expect(s.reveal.fileTopRequestToken).toBe(0)
     s = reduceReviewState(s, planReviewIntent(s, { type: "selection/move", unit: "hunk", direction: "next" }))
     // crosses to next file -> fileTopToken increments
     expect(s.selection).toEqual({ fileKey: "b", hunkIndex: 0 })
     expect(s.reveal.fileTopToken).toBe(1)
+    expect(s.reveal.fileTopRequestToken).toBe(1)
     const clamped = reduceReviewState(s, planReviewIntent(s, { type: "selection/move", unit: "hunk", direction: "next" }))
     expect(clamped).toBe(s)
-    // previous
+    // Backward cross-file moves keep legacy file-top history but do not request a file-top align.
+    const fileTopTokenBeforePrevious = clamped.reveal.fileTopToken
+    const fileTopRequestTokenBeforePrevious = clamped.reveal.fileTopRequestToken
+    const hunkTokenBeforePrevious = clamped.reveal.hunkToken
     let s2 = reduceReviewState(clamped, planReviewIntent(clamped, { type: "selection/move", unit: "hunk", direction: "previous" }))
     expect(s2.selection).toEqual({ fileKey: "a", hunkIndex: 1 })
+    expect(s2.reveal.fileTopToken).toBe(fileTopTokenBeforePrevious + 1)
+    expect(s2.reveal.fileTopRequestToken).toBe(fileTopRequestTokenBeforePrevious)
+    expect(s2.reveal.hunkToken).toBe(hunkTokenBeforePrevious)
     s2 = reduceReviewState(s2, planReviewIntent(s2, { type: "selection/move", unit: "hunk", direction: "previous" }))
     expect(s2.selection).toEqual({ fileKey: "a", hunkIndex: 0 })
     const clampedPrev = reduceReviewState(s2, planReviewIntent(s2, { type: "selection/move", unit: "hunk", direction: "previous" }))
@@ -128,8 +136,10 @@ describe("navigation", () => {
     expect(t1).not.toBeNull()
     expect(t1!.reveal.hunkToken).toBe(s0.reveal.hunkToken + 1)
     expect(t1!.reveal.fileTopToken).toBe(s0.reveal.fileTopToken)
+    expect(t1!.reveal.fileTopRequestToken).toBe(s0.reveal.fileTopRequestToken)
     const s1 = reduceReviewState(s0, planReviewIntent(s0, { type: "selection/move", unit: "hunk", direction: "next" }))
     const t2 = moveReviewSelection(s1, "hunk", "next")
     expect(t2!.reveal.fileTopToken).toBe(s1.reveal.fileTopToken + 1)
+    expect(t2!.reveal.fileTopRequestToken).toBe(s1.reveal.fileTopRequestToken + 1)
   })
 })

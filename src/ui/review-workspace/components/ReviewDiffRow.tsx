@@ -14,6 +14,13 @@ const COLORS = {
   collapsed: "#8c8c8c",
   feedback: "#c397d8",
 } as const
+const BACKGROUNDS = {
+  panel: "#1e2329",
+  context: "#0d1117",
+  addition: "#173322",
+  deletion: "#3c1e21",
+  empty: "#272b31",
+} as const
 
 type Side = "left" | "right"
 
@@ -27,11 +34,12 @@ function color(value: string) {
   return parsed
 }
 
-function chunk(text: string, fg?: string): TextChunk {
+function chunk(text: string, fg?: string, bg?: string): TextChunk {
   return {
     __isChunk: true,
     text,
     ...(fg ? { fg: color(fg) } : {}),
+    ...(bg ? { bg: color(bg) } : {}),
   }
 }
 
@@ -81,11 +89,13 @@ function cellChunks(
   const gutterText = padCells(gutter, geometry.gutterWidth)
   const contentWidth = geometry.contentWidth
   const fallback = COLORS[cell.kind]
+  const contentBackground = BACKGROUNDS[cell.kind]
+  const gutterBackground = cell.kind === "empty" ? BACKGROUNDS.context : contentBackground
   const fitted = fitSpans(cell.spans, contentWidth, fallback)
-  const chunks: TextChunk[] = [chunk(marker, markerColor)]
-  if (gutterText.length > 0) chunks.push(chunk(gutterText, COLORS.gutter))
-  for (const span of fitted.spans) chunks.push(chunk(span.text, span.fg ?? fallback))
-  chunks.push(chunk(" ".repeat(Math.max(0, contentWidth - fitted.usedWidth)), fallback))
+  const chunks: TextChunk[] = [chunk(marker, markerColor, BACKGROUNDS.panel)]
+  if (gutterText.length > 0) chunks.push(chunk(gutterText, COLORS.gutter, gutterBackground))
+  for (const span of fitted.spans) chunks.push(chunk(span.text, span.fg ?? fallback, span.bg ?? contentBackground))
+  chunks.push(chunk(" ".repeat(Math.max(0, contentWidth - fitted.usedWidth)), fallback, contentBackground))
   return new StyledText(chunks)
 }
 
@@ -101,11 +111,13 @@ function stackChunks(
     : ""
   const gutterText = padCells(gutter, geometry.gutterWidth)
   const fallback = COLORS[cell.kind]
+  const contentBackground = BACKGROUNDS[cell.kind]
+  const gutterBackground = contentBackground
   const fitted = fitSpans(cell.spans, geometry.contentWidth, fallback)
-  const chunks: TextChunk[] = [chunk(cell.sign, fallback)]
-  if (gutterText.length > 0) chunks.push(chunk(gutterText, COLORS.gutter))
-  for (const span of fitted.spans) chunks.push(chunk(span.text, span.fg ?? fallback))
-  chunks.push(chunk(" ".repeat(Math.max(0, geometry.contentWidth - fitted.usedWidth)), fallback))
+  const chunks: TextChunk[] = [chunk(cell.sign, fallback, BACKGROUNDS.panel)]
+  if (gutterText.length > 0) chunks.push(chunk(gutterText, COLORS.gutter, gutterBackground))
+  for (const span of fitted.spans) chunks.push(chunk(span.text, span.fg ?? fallback, span.bg ?? contentBackground))
+  chunks.push(chunk(" ".repeat(Math.max(0, geometry.contentWidth - fitted.usedWidth)), fallback, contentBackground))
   return new StyledText(chunks)
 }
 
@@ -118,12 +130,11 @@ export type ReviewDiffRowProps = Readonly<{
   onClick?: () => void
 }>
 
-export function ReviewDiffRow({ row, width, digits, showLineNumbers, selected = false, onClick }: ReviewDiffRowProps) {
+export function ReviewDiffRow({ row, width, digits, showLineNumbers, onClick }: ReviewDiffRowProps) {
   const clickProps = onClick ? { onMouseUp: () => onClick() } : {}
-  const selectionStyle = selected ? { backgroundColor: "#303030" } : {}
   if (row.type === "hunk-header") {
     return (
-      <box id={row.key} style={{ width: "100%", height: 1, ...selectionStyle }} {...clickProps}>
+      <box id={row.key} style={{ width: "100%", height: 1 }} {...clickProps}>
         <text content={new StyledText([chunk(row.text, COLORS.header)])} wrapMode="none" truncate={true} />
       </box>
     )
@@ -131,7 +142,7 @@ export function ReviewDiffRow({ row, width, digits, showLineNumbers, selected = 
 
   if (row.type === "collapsed") {
     return (
-      <box id={row.key} style={{ width: "100%", height: 1, ...selectionStyle }} {...clickProps}>
+      <box id={row.key} style={{ width: "100%", height: 1 }} {...clickProps}>
         <text content={new StyledText([chunk(row.text, COLORS.collapsed)])} wrapMode="none" truncate={true} />
       </box>
     )
@@ -139,7 +150,7 @@ export function ReviewDiffRow({ row, width, digits, showLineNumbers, selected = 
   if (row.type === "feedback") {
     const style = row.resolution === "active" ? COLORS.feedback : COLORS.collapsed
     return (
-      <box id={row.key} style={{ width: "100%", height: 1, ...selectionStyle }} {...clickProps}>
+      <box id={row.key} style={{ width: "100%", height: 1 }} {...clickProps}>
         <text content={new StyledText([chunk(row.text, style)])} wrapMode="none" truncate={true} />
       </box>
     )
@@ -148,7 +159,7 @@ export function ReviewDiffRow({ row, width, digits, showLineNumbers, selected = 
   if (row.type === "split-line") {
     const { leftWidth, rightWidth } = resolveHunkSplitPaneWidths(width)
     return (
-      <box id={row.key} style={{ width: "100%", height: 1, flexDirection: "row", ...selectionStyle }} {...clickProps}>
+      <box id={row.key} style={{ width: "100%", height: 1, flexDirection: "row" }} {...clickProps}>
         <text content={cellChunks(row.left, "left", leftWidth, digits, showLineNumbers)} wrapMode="none" truncate={true} />
         <text content={cellChunks(row.right, "right", rightWidth, digits, showLineNumbers)} wrapMode="none" truncate={true} />
       </box>
@@ -156,7 +167,7 @@ export function ReviewDiffRow({ row, width, digits, showLineNumbers, selected = 
   }
 
   return (
-    <box id={row.key} style={{ width: "100%", height: 1, ...selectionStyle }} {...clickProps}>
+    <box id={row.key} style={{ width: "100%", height: 1 }} {...clickProps}>
       <text content={stackChunks(row.cell, width, digits, showLineNumbers)} wrapMode="none" truncate={true} />
     </box>
   )

@@ -44,6 +44,7 @@ export function moveReviewSelection(
       selection: { fileKey: nextFile.key, hunkIndex: 0 },
       reveal: {
         fileTopToken: state.reveal.fileTopToken + 1,
+        fileTopRequestToken: state.reveal.fileTopRequestToken + 1,
         hunkToken: state.reveal.hunkToken,
         scrollToFeedback: false,
       },
@@ -74,11 +75,23 @@ export function moveReviewSelection(
   const nextIndex = clamp(currentCursorIndex + delta, 0, cursors.length - 1)
   if (nextIndex === currentCursorIndex) return null
   const next = cursors[nextIndex]!
+  // Forward cross-file hunk navigation owns the file header; backward navigation must keep the hunk reveal.
   const crossesFile = next.fileKey !== current.fileKey
+  const crossesFileForward = crossesFile && direction === "next"
   return {
     selection: { fileKey: next.fileKey, hunkIndex: next.hunkIndex },
     reveal: crossesFile
-      ? { fileTopToken: state.reveal.fileTopToken + 1, hunkToken: state.reveal.hunkToken, scrollToFeedback: false }
-      : { fileTopToken: state.reveal.fileTopToken, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: false },
+      ? {
+          fileTopToken: state.reveal.fileTopToken + 1,
+          fileTopRequestToken: crossesFileForward ? state.reveal.fileTopRequestToken + 1 : state.reveal.fileTopRequestToken,
+          hunkToken: state.reveal.hunkToken,
+          scrollToFeedback: false,
+        }
+      : {
+          fileTopToken: state.reveal.fileTopToken,
+          fileTopRequestToken: state.reveal.fileTopRequestToken,
+          hunkToken: state.reveal.hunkToken + 1,
+          scrollToFeedback: false,
+        },
   }
 }

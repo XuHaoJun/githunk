@@ -25,6 +25,7 @@ export type ReviewDiffPaneProps = Readonly<{
   onVisibleFileKeysChange?: (fileKeys: readonly string[]) => void
   onViewportChange?: (top: number) => void
   selectedFeedbackId?: string | null
+  selectedFileRevealToken?: number
   scrollRef?: { current: ScrollBoxRenderable | null }
 }>
 
@@ -85,12 +86,14 @@ export function ReviewDiffPane({
   onVisibleFileKeysChange,
   onViewportChange,
   selectedFeedbackId,
+  selectedFileRevealToken,
   scrollRef: externalScrollRef,
 }: ReviewDiffPaneProps) {
   const ownedScrollRef = useRef<ScrollBoxRenderable | null>(null)
   const scrollRef = externalScrollRef ?? ownedScrollRef
   const [scrollTop, setScrollTop] = useState(0)
   const revealRef = useRef<{ file: HunkReviewFile; files: readonly HunkReviewFile[]; layout: "split" | "stack"; height: number; hunkIndex: number } | null>(null)
+  const previousFileRevealTokenRef = useRef(selectedFileRevealToken)
   const window = useMemo(
     () => sectionWindow(files, state, layout, scrollTop, height, overscan, expandedSourceByGap),
     [expandedSourceByGap, files, height, layout, overscan, scrollTop, state.expandedGaps, state.feedback],
@@ -142,8 +145,25 @@ export function ReviewDiffPane({
       const scrollBox = scrollRef.current
       if (scrollBox) scrollBox.scrollTop = nextTop
       setScrollTop(nextTop)
+      onViewportChange?.(nextTop)
     }
-  }, [expandedSourceByGap, files, height, layout, scrollTop, selectedFileKey, selectedHunkIndex, state, window])
+  }, [expandedSourceByGap, files, height, layout, onViewportChange, scrollTop, selectedFileKey, selectedHunkIndex, state, window])
+  useLayoutEffect(() => {
+    if (selectedFileRevealToken === undefined || previousFileRevealTokenRef.current === selectedFileRevealToken || !selectedFileKey) return
+
+    const index = files.findIndex((file) => file.id === selectedFileKey)
+    if (index < 0) return
+
+    previousFileRevealTokenRef.current = selectedFileRevealToken
+    if (state.reveal.scrollToFeedback) return
+
+    const sectionTop = window.offsets[index] ?? 0
+    const target = Math.min(Math.max(0, sectionTop), Math.max(0, window.total - height))
+    const scrollBox = scrollRef.current
+    if (scrollBox) scrollBox.scrollTop = target
+    setScrollTop(target)
+    onViewportChange?.(target)
+  }, [files, height, onViewportChange, scrollRef, selectedFileKey, selectedFileRevealToken, state.reveal.scrollToFeedback, window])
 
   const leadingSpacer = window.offsets[window.first] ?? 0
   const trailingSpacer = window.total - (window.offsets[window.last + 1] ?? window.total)

@@ -44,7 +44,7 @@ function makeState(opts?: {
     revision: 0,
     projection: opts?.projection ?? { kind: "aggregate" },
     selection: { fileKey: files[0]?.key ?? null, hunkIndex: 0 },
-    reveal: { fileTopToken: 0, hunkToken: 0, scrollToFeedback: false },
+    reveal: { fileTopToken: 0, fileTopRequestToken: 0, hunkToken: 0, scrollToFeedback: false },
     filter: { query: "", scope: "all" },
     viewed: viewedValue,
     feedback: [],
