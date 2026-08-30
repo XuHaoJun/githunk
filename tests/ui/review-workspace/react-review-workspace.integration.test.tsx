@@ -99,6 +99,37 @@ describe("React review workspace", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("scrolls diff with j/k while stream focus starts active", async () => {
+    const file = makeFile(
+      "src/scroll.ts",
+      Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`),
+    )
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession([file])} />, { width: 120, height: 10 })
+
+    try {
+      await flush(setup)
+      const scrollBox = setup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
+        focused: boolean
+        scrollTop: number
+      }
+      expect(scrollBox.focused).toBe(true)
+      expect(scrollBox.scrollTop).toBe(0)
+      await act(async () => {
+        setup.mockInput.pressKey("j")
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(scrollBox.scrollTop).toBe(1)
+      await act(async () => {
+        setup.mockInput.pressKey("k")
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(scrollBox.scrollTop).toBe(0)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
   test("routes Escape through the React host close boundary", async () => {
     const file = makeFile("src/only.ts", ["-const old = 1", "+const next = 2"])
     let closeCalls = 0
@@ -120,7 +151,7 @@ describe("React review workspace", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
-  test("routes layout keys to the React diff pane", async () => {
+  test("cycles layout through the L key without consuming panel numbers", async () => {
     const file = makeFile("src/layout.ts", ["-const old = 1", "+const next = 2"])
     const setup = await testRender(
       <ReviewWorkspaceApp session={makeSession([file])} />,
@@ -131,9 +162,205 @@ describe("React review workspace", () => {
       await flush(setup)
       expect(setup.renderer.root.findDescendantById("react-review-diff")).toBeDefined()
       expect(setup.captureCharFrame()).toContain("layout(split)")
-      await act(async () => await setup.mockInput.typeText("2"))
+      await act(async () => {
+        await setup.mockInput.typeText("l")
+        await Bun.sleep(30)
+      })
       await flush(setup)
       expect(setup.captureCharFrame()).toContain("layout(stack)")
+      await act(async () => {
+        await setup.mockInput.typeText("l")
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(setup.captureCharFrame()).toContain("layout(split)")
+      await act(async () => {
+        await setup.mockInput.typeText("l")
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(setup.captureCharFrame()).toContain("layout(stack)")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("focuses lazygit panels with 0 and 1 and highlights active chrome", async () => {
+    const files = [
+      makeFile("src/first.ts", ["-old", "+new"]),
+      makeFile("src/second.ts", ["-before", "+after"]),
+    ]
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession(files)} />,
+      { width: 120, height: 30 },
+    )
+
+    try {
+      await flush(setup)
+      const sidebar = setup.renderer.root.findDescendantById("react-review-sidebar") as unknown as {
+        borderColor: { intent: string; slot?: number }
+        titleColor?: { intent: string; slot?: number }
+        title?: string
+      }
+      const sidebarScroll = setup.renderer.root.findDescendantById("react-review-sidebar-scrollbox") as unknown as {
+        focused: boolean
+      }
+      const diff = setup.renderer.root.findDescendantById("react-review-diff") as unknown as {
+        borderColor: { intent: string; slot?: number }
+        titleColor?: { intent: string; slot?: number }
+        title?: string
+      }
+      const diffScroll = setup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
+        focused: boolean
+      }
+      const filter = setup.renderer.root.findDescendantById("review-file-filter-input") as unknown as {
+        focused: boolean
+      }
+      expect(diffScroll.focused).toBe(true)
+      expect(sidebarScroll.focused).toBe(false)
+      expect(diff.title).toContain("[0]")
+      expect(sidebar.title).toContain("[1]")
+      expect(diff.borderColor.intent).toBe("indexed")
+      expect(diff.borderColor.slot).toBe(2)
+      expect(diff.titleColor?.intent).toBe("indexed")
+      expect(sidebar.borderColor.intent).toBe("default")
+
+      await act(async () => await setup.mockInput.typeText("1"))
+      await flush(setup)
+      expect(sidebarScroll.focused).toBe(true)
+      expect(diffScroll.focused).toBe(false)
+      expect(sidebar.borderColor.intent).toBe("indexed")
+      expect(sidebar.borderColor.slot).toBe(2)
+      expect(sidebar.titleColor?.intent).toBe("indexed")
+      expect(diff.borderColor.intent).toBe("default")
+
+      await act(async () => await setup.mockInput.typeText("0"))
+      await flush(setup)
+      expect(diffScroll.focused).toBe(true)
+      expect(sidebarScroll.focused).toBe(false)
+      expect(diff.borderColor.intent).toBe("indexed")
+      expect(diff.borderColor.slot).toBe(2)
+      expect(sidebar.borderColor.intent).toBe("default")
+      await act(async () => {
+        setup.mockInput.pressTab()
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(sidebarScroll.focused).toBe(true)
+      expect(filter.focused).toBe(false)
+      expect(diffScroll.focused).toBe(false)
+
+      await act(async () => {
+        setup.mockInput.pressTab()
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(sidebarScroll.focused).toBe(false)
+      expect(filter.focused).toBe(true)
+      expect(diffScroll.focused).toBe(false)
+
+      await act(async () => {
+        setup.mockInput.pressTab()
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(sidebarScroll.focused).toBe(false)
+      expect(filter.focused).toBe(false)
+      expect(diffScroll.focused).toBe(true)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("focuses the clicked panel and keeps its chrome highlighted", async () => {
+    const files = [
+      makeFile("src/first.ts", ["-old", "+new"]),
+      makeFile("src/second.ts", ["-before", "+after"]),
+    ]
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession(files)} />,
+      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const sidebar = setup.renderer.root.findDescendantById("react-review-sidebar") as unknown as {
+        x: number
+        y: number
+        borderColor: { intent: string; slot?: number }
+      }
+      const diff = setup.renderer.root.findDescendantById("react-review-diff") as unknown as {
+        x: number
+        y: number
+        borderColor: { intent: string; slot?: number }
+      }
+
+      await act(async () => {
+        await setup.mockMouse.click(sidebar.x + 2, sidebar.y + 2)
+      })
+      await flush(setup)
+      expect(sidebar.borderColor.intent).toBe("indexed")
+      expect(sidebar.borderColor.slot).toBe(2)
+      expect(diff.borderColor.intent).toBe("default")
+
+      await act(async () => {
+        await setup.mockMouse.click(diff.x + 2, diff.y + 2)
+      })
+      await flush(setup)
+      expect(diff.borderColor.intent).toBe("indexed")
+      expect(diff.borderColor.slot).toBe(2)
+      expect(sidebar.borderColor.intent).toBe("default")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("documents numeric panel focus in the help dialog", async () => {
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession([makeFile("src/help.ts", ["-old", "+new"])])} />,
+      { width: 120, height: 30 },
+    )
+
+    try {
+      await flush(setup)
+      await act(async () => {
+        await setup.mockInput.typeText("?")
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("0  focus diff")
+      expect(frame).toContain("1  focus files")
+      expect(frame).toContain("l  cycle layout")
+      expect(frame).not.toContain("0/1/2  auto / split / stack")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("keeps the visible diff focused when the sidebar is hidden", async () => {
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession([makeFile("src/narrow.ts", ["-old", "+new"])])} />,
+      { width: 70, height: 30 },
+    )
+
+    try {
+      await flush(setup)
+      expect(setup.renderer.root.findDescendantById("react-review-sidebar")).toBeUndefined()
+      const diffScroll = setup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
+        focused: boolean
+      }
+      expect(diffScroll.focused).toBe(true)
+
+      await act(async () => {
+        setup.mockInput.pressTab()
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(diffScroll.focused).toBe(true)
+
+      await act(async () => {
+        await setup.mockInput.typeText("/")
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(diffScroll.focused).toBe(true)
     } finally {
       await act(async () => setup.renderer.destroy())
     }

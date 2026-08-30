@@ -58,7 +58,7 @@ describe("React review surface on the current large branch", () => {
       expect(setup.captureCharFrame()).toContain(document.files[0]?.path ?? "")
 
       await act(async () => {
-        await setup.mockInput.typeText("2")
+        await setup.mockInput.typeText("l")
         await Bun.sleep(30)
       })
       await flush(setup)

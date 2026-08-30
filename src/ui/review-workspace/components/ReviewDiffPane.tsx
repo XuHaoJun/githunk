@@ -27,6 +27,7 @@ export type ReviewDiffPaneProps = Readonly<{
   selectedFeedbackId?: string | null
   selectedFileRevealToken?: number
   selectedHunkRevealToken?: number
+  focused?: boolean
   scrollRef?: { current: ScrollBoxRenderable | null }
 }>
 type SelectionRevealRequest = Readonly<{
@@ -96,6 +97,7 @@ export function ReviewDiffPane({
   selectedFeedbackId,
   selectedFileRevealToken,
   selectedHunkRevealToken,
+  focused,
   scrollRef: externalScrollRef,
 }: ReviewDiffPaneProps) {
   const ownedScrollRef = useRef<ScrollBoxRenderable | null>(null)
@@ -269,6 +271,7 @@ export function ReviewDiffPane({
     <scrollbox
       id="review-diff-scrollbox"
       ref={scrollRef}
+      {...(focused === undefined ? {} : { focused })}
       width="100%"
       height="100%"
       scrollY={true}

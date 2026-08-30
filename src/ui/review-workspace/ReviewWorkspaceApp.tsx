@@ -16,6 +16,7 @@ import type { HunkDiffRow } from "./hunk-diff-row-model"
 import type { ReviewAnchor } from "../../review/core/types"
 import type { ReactReviewSession } from "./react-review-session"
 import { cellWidth } from "../cell-width"
+import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
 export type ReviewWorkspaceAppProps = Readonly<{
   session: ReactReviewSession
 }>
@@ -76,7 +77,7 @@ function padText(text: string, width: number): string {
 
 function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "stream" | "sidebar" | "filter"): string {
   const selected = state.selection.fileKey ?? "none"
-  return `j/k:scroll | ]/[ :hunk | ./,:file | n/N:unreviewed | }:feedback | v:range | c:comment | e:edit d:delete a:reanchor | r:viewed | R:finish | 0/1/2:layout(${layout}) | ${focus} | Esc:close — ${selected}`
+  return `j/k:scroll | ]/[ :hunk | ./,:file | n/N:unreviewed | }:feedback | v:range | c:comment | e:edit d:delete a:reanchor | r:viewed | R:finish | 0:diff 1:files | l:layout(${layout}) | ${focus} | Esc:close — ${selected}`
 }
 function feedbackDraftText(state: ReviewState): string {
   const draft = state.draft
@@ -223,6 +224,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const layout: "split" | "stack" = layoutMode === "auto" ? (diffWidth >= 64 ? "split" : "stack") : layoutMode
   const composerHeight = state?.draft ? (canShowReplacementDraft(state) ? 9 : 6) : 0
   const diffHeight = Math.max(1, dimensions.height - 4 - composerHeight - 2)
+  const sidebarFocused = focus === "sidebar" || focus === "filter"
+  const diffFocused = focus === "stream"
   const files = useMemo(() => state ? toHunkReviewFiles(visibleReviewFiles(state)) : [], [state?.document, state?.feedback, state?.filter, state?.viewed])
   const sidebarEntries = useMemo(() => state ? buildReviewSidebarEntries(state) : [], [state])
   const sidebarFileEntries = useMemo(() => sidebarEntries.filter((entry) => entry.kind === "file") as Extract<typeof sidebarEntries[number], { kind: "file" }>[], [sidebarEntries])
@@ -265,6 +268,9 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     setFocus("stream")
 
   }, [active])
+  useEffect(() => {
+    if (sidebarWidth === 0 && focus !== "stream") setFocus("stream")
+  }, [focus, sidebarWidth])
   const toggleGap = useCallback((fileKey: string, gapId: string) => {
     if (typeof controller.expandGap !== "function") return
     void controller.expandGap(fileKey, gapId).catch(() => {})
@@ -488,7 +494,9 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     }
     if (focus === "filter") {
       if (name === "tab") {
-        setFocus((currentFocus) => currentFocus === "stream" ? "sidebar" : currentFocus === "sidebar" ? "filter" : "stream")
+        setFocus((currentFocus) => sidebarWidth === 0
+          ? "stream"
+          : currentFocus === "stream" ? "sidebar" : currentFocus === "sidebar" ? "filter" : "stream")
         consume(event)
         return
       }
@@ -501,13 +509,19 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       return
     }
     if (name === "tab") {
-      setFocus((currentFocus) => currentFocus === "stream" ? "sidebar" : currentFocus === "sidebar" ? "filter" : "stream")
+      setFocus((currentFocus) => sidebarWidth === 0
+        ? "stream"
+        : currentFocus === "stream" ? "sidebar" : currentFocus === "sidebar" ? "filter" : "stream")
       consume(event)
       return
     }
     if (name === "/") {
-      setFocus("filter")
-      filterInputRef.current?.focus()
+      if (sidebarWidth > 0) {
+        setFocus("filter")
+        filterInputRef.current?.focus()
+      } else {
+        setFocus("stream")
+      }
       consume(event)
       return
     }
@@ -516,8 +530,17 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       consume(event)
       return
     }
-    if (name === "0" || name === "1" || name === "2") {
-      setLayoutMode(name === "0" ? "auto" : name === "1" ? "split" : "stack")
+    if (name === "0" || name === "1") {
+      setFocus(name === "1" && sidebarWidth > 0 ? "sidebar" : "stream")
+      consume(event)
+      return
+    }
+    if (name.toLowerCase() === "l") {
+      setLayoutMode((currentMode) => {
+        const currentLayout = currentMode === "auto" ? (diffWidth >= 64 ? "split" : "stack") : currentMode
+        if (currentLayout === "split") return "stack"
+        return diffWidth >= 64 ? "auto" : "split"
+      })
       consume(event)
       return
     }
@@ -659,13 +682,19 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         intent = { type: "selection/move", unit: "file", direction: "next" }
         navigationUnit = "file"
         navigationDirection = "next"
-      } else diffScrollRef.current?.scrollBy(1)
+      } else {
+        diffScrollRef.current?.scrollBy(1)
+        consume(event)
+      }
     } else if (name === "k" || name === "up" || name === "ArrowUp") {
       if (focus === "sidebar") {
         intent = { type: "selection/move", unit: "file", direction: "previous" }
         navigationUnit = "file"
         navigationDirection = "previous"
-      } else diffScrollRef.current?.scrollBy(-1)
+      } else {
+        diffScrollRef.current?.scrollBy(-1)
+        consume(event)
+      }
     } else if (name === ".") {
       intent = { type: "selection/move", unit: "file", direction: "next" }
       navigationUnit = "file"
@@ -706,13 +735,13 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     )
   }
 
-  const selectFile = (fileKey: string) => {
+  const selectFile = (fileKey: string, nextFocus: "stream" | "sidebar" = "stream") => {
     try {
       controller.dispatch(planReviewIntent(state, { type: "selection/select-file", fileKey }))
       setSelectedFeedbackId(null)
       pendingDeleteFeedbackRef.current = null
       setPendingDeleteFeedbackId(null)
-      setFocus("stream")
+      setFocus(nextFocus)
     } catch {
       // A stale click can race a generation refresh; the next published state rebinds the row.
     }
@@ -730,7 +759,14 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       </box>
       <box id="react-review-body" style={{ width: "100%", flexGrow: 1, flexDirection: "row", overflow: "hidden" }}>
         {sidebarWidth > 0 ? (
-          <box id="react-review-sidebar" style={{ width: sidebarWidth, height: "100%", flexShrink: 0, border: true, flexDirection: "column" }}>
+          <box
+            id="react-review-sidebar"
+            borderColor={sidebarFocused ? ANSI_GREEN : DEFAULT_FOREGROUND}
+            title={`[1] Files ${sidebarFileEntries.length}/${state.document.files.length}`}
+            titleColor={sidebarFocused ? ANSI_GREEN : DEFAULT_FOREGROUND}
+            style={{ width: sidebarWidth, height: "100%", flexShrink: 0, border: true, flexDirection: "column" }}
+            onMouseDown={() => setFocus("sidebar")}
+          >
             <box id="review-file-filter" style={{ width: "100%", height: 1, flexShrink: 0, flexDirection: "row" }}>
               <text content="/ " fg={COLORS.dim} />
               <input
@@ -761,7 +797,16 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
                 }}
               />
             </box>
-            <scrollbox id="react-review-sidebar-scrollbox" width="100%" flexGrow={1} scrollY={true} viewportCulling={true} verticalScrollbarOptions={{ visible: false }}>
+            <scrollbox
+              id="react-review-sidebar-scrollbox"
+              focused={focus === "sidebar"}
+              width="100%"
+              flexGrow={1}
+              scrollY={true}
+              viewportCulling={true}
+              verticalScrollbarOptions={{ visible: false }}
+              onMouseDown={() => setFocus("sidebar")}
+            >
               <box style={{ width: "100%", flexDirection: "column" }}>
                 {sidebarEntries.map((entry) => {
                   if (entry.kind === "group") {
@@ -783,7 +828,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
                       key={entry.id}
                       id={`review-file-row:${entry.id}`}
                       style={{ width: "100%", height: 1, backgroundColor: rowBackground, flexDirection: "row" }}
-                      onMouseUp={() => selectFile(entry.id)}
+                      onMouseDown={() => setFocus("sidebar")}
+                      onMouseUp={() => selectFile(entry.id, "sidebar")}
                     >
                       <box style={{ width: 1, height: 1, backgroundColor: selected ? REVIEW_SIDEBAR_THEME.accent : rowBackground }} />
                       <box style={{ flexGrow: 1, height: 1, paddingLeft: 0, flexDirection: "row", backgroundColor: rowBackground }}>
@@ -817,13 +863,22 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             </scrollbox>
           </box>
         ) : null}
-        <box id="react-review-diff" style={{ width: "100%", height: "100%", flexGrow: 1, border: true }}>
+        <box
+          id="react-review-diff"
+          borderColor={diffFocused ? ANSI_GREEN : DEFAULT_FOREGROUND}
+          title={`[0] Diff — ${layout}`}
+          titleColor={diffFocused ? ANSI_GREEN : DEFAULT_FOREGROUND}
+          style={{ width: "100%", height: "100%", flexGrow: 1, border: true, minWidth: 0 }}
+          onMouseDown={() => setFocus("stream")}
+        >
           <ReviewDiffPane
             files={files}
             state={state}
             layout={layout}
             width={diffWidth}
             height={diffHeight}
+            focused={focus === "stream"}
+            scrollRef={diffScrollRef}
             selectedFileKey={state.selection.fileKey}
             selectedHunkIndex={state.selection.hunkIndex}
             selectedFileRevealToken={state.reveal.fileTopRequestToken}
@@ -860,7 +915,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           id="review-help-dialog"
           style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: 14, zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
         >
-          <text content={"Review commands\nj/k or arrows  scroll / move\n]/[  next / previous hunk\n./,  next / previous file\nn/N  next / previous unreviewed\n}/ {  next / previous feedback\nv  select current hunk range\nc  comment at selection\n e  edit   d  delete twice   a  reanchor\nr  mark viewed   R  finish\n0/1/2  auto / split / stack\nEsc  close this help"} wrapMode="none" truncate={true} />
+          <text content={"Review commands\nj/k or arrows  scroll / move\n]/[  next / previous hunk\n./,  next / previous file\nn/N  next / previous unreviewed\n}/ {  next / previous feedback\nv  select current hunk range\nc  comment at selection\n e  edit   d  delete twice   a  reanchor\nr  mark viewed   R  finish\n0  focus diff   1  focus files   Tab  cycle focus   l  cycle layout\nEsc  close this help"} wrapMode="none" truncate={true} />
         </box>
       ) : null}
       {state.draft ? (
