@@ -212,6 +212,8 @@ export class AppScreenController {
     this.activeScreen = { kind: "repository", controller: this.opts.repositoryController, view: this.opts.repositoryView }
     this._reviewHandlerCount = Math.max(0, this._reviewHandlerCount - 1)
     this._timerCount = 0
+    // Repository state may have changed while its view was hidden; reload it before repainting.
+    await this.opts.repositoryController.refresh()
     try {
       const repoViewWithUpdate = this.opts.repositoryView as unknown as { update?: (model: unknown) => void } | undefined
       const repoCtrlState = (this.opts.repositoryController as unknown as { state?: unknown })?.state

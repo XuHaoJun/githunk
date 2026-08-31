@@ -633,6 +633,7 @@ export class RootView {
     }
     updateStatusPane(this.panes.status, model)
     this.refreshFilesPanel(model)
+    this.renderFilesPane()
     this.refreshBranchesPanel(model)
     this.renderBranchesPane()
     const localChild = this.branchesPanel.child

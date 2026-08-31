@@ -160,6 +160,30 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     expect(newText).not.toMatch(/git (add|commit|checkout|push|pull|fetch|branch|stash)/)
     expect(projFiles).not.toContain("src/untracked.tmp")
   }, 30000)
+  test("returning from branch review refreshes repository working-tree files", async () => {
+    repository = await createTempRepository()
+    await createBranchFixture(repository)
+    await seedBase(repository, "refs/heads/feature/payment", "refs/heads/main")
+    harness = await createShellHarness({ repository, width: 120, height: 40 })
+
+    const app = harness.app
+    const screen = app.screenController as unknown as {
+      active: { kind: string }
+      openBranchReview: () => Promise<void>
+      closeBranchReview: () => Promise<void>
+    }
+    await screen.openBranchReview()
+    expect(screen.active.kind).toBe("branch-review")
+
+    await repository.write("src/payment.ts", "export const pay = 99 // changed while reviewing\nline2\nline3\n")
+    await screen.closeBranchReview()
+    await harness.flush()
+    expect(screen.active.kind).toBe("repository")
+    expect(app.controller.state.files.find((file) => file.path === "src/payment.ts")?.worktreeStatus).toBe("M")
+    const patchText = app.controller.state.patches.map((section) => section.text).join("\n")
+    expect(patchText).toContain("+export const pay = 99 // changed while reviewing")
+    expect(harness.app.view?.renderedListText("files")).toContain("M payment.ts")
+  }, 30000)
   test("repository bindings stay inactive while the React review screen is mounted", async () => {
     repository = await createTempRepository()
     await createBranchFixture(repository)

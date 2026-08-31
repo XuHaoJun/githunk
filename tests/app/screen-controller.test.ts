@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { AppScreenController, type ActiveScreen } from "../../src/app/screen-controller"
+import type { AppController } from "../../src/app/controller"
 import type { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
 import type { ReviewWorkspace } from "../../src/ui/review-workspace/review-workspace"
 
@@ -16,9 +17,13 @@ function stubRepoView() {
     setFocus(v: string | undefined) { focusId = v },
     hide() { hidden = true },
     show() { hidden = false },
+
     destroy() { destroyed = true },
     update() {},
   } as unknown as import('../../src/ui/root-view').RootView
+}
+function stubRepositoryController() {
+  return { refresh: async () => undefined } as unknown as AppController
 }
 
 function stubReviewView() {
@@ -56,7 +61,7 @@ describe("AppScreenController lifecycle", () => {
     const reviewView = stubReviewView()
     const reviewController = stubReviewController()
     const controller = new AppScreenController({
-      repositoryController: {} as unknown as import('../../src/app/controller').AppController,
+      repositoryController: stubRepositoryController(),
       repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
       createReviewView: () => reviewView as unknown as ReviewWorkspace,
@@ -78,7 +83,7 @@ describe("AppScreenController lifecycle", () => {
     const reviewView = stubReviewView()
     const reviewController = stubReviewController()
     const controller = new AppScreenController({
-      repositoryController: {} as unknown as import('../../src/app/controller').AppController,
+      repositoryController: stubRepositoryController(),
       repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
       createReviewView: () => reviewView as unknown as ReviewWorkspace,
@@ -115,7 +120,7 @@ describe("AppScreenController lifecycle", () => {
   test("repeated open/close leaves one key handler and no timer leak", async () => {
     const repoView = stubRepoView()
     const controller = new AppScreenController({
-      repositoryController: {} as unknown as import('../../src/app/controller').AppController,
+      repositoryController: stubRepositoryController(),
       repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
       createReviewController: () => stubReviewController() as unknown as ReviewWorkspaceController,
       createReviewView: () => stubReviewView() as unknown as ReviewWorkspace,
