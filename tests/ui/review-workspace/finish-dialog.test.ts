@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test"
+import { createHash } from "node:crypto"
 import { ReviewWorkspaceController } from "../../../src/ui/review-workspace/controller"
 import { FinishDialog } from "../../../src/ui/review-workspace/finish-dialog"
 import { FeedbackComposer } from "../../../src/ui/review-workspace/feedback-composer"
@@ -12,7 +12,7 @@ import { createTempRepository, type TempRepository } from "../../helpers/temp-re
 import { GitRunner as RealRunner } from "../../../src/git/runner"
 import { ReviewStateStore } from "../../../src/review/storage/review-state-store"
 import { ReviewArtifactStore } from "../../../src/review/storage/review-artifact-store"
-import { renderReviewArtifactMarkdown } from "../../../src/review/core/artifact"
+import { renderReviewArtifactMarkdown, buildReviewArtifact } from "../../../src/review/core/artifact"
 
 function fakeRunner(): GitRunner {
   return { run: async () => ({ stdout: "", stderr: "", exitCode: 0 }) } as unknown as GitRunner
@@ -223,7 +223,7 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
     }
   })
 
-  test("retry reuses artifact id", async () => {
+  test("Since Last marker is rejected and aggregate rebuild proceeds", async () => {
     let repo: TempRepository | undefined
     let controller: ReviewWorkspaceController | undefined
     let stateStore: ReviewStateStore | undefined
@@ -267,17 +267,16 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       const reviewId = doc.identity.id
       const markerId = db1.reviews[reviewId]?.submissionInProgress?.artifactId
       expect(markerId).toBe("art-1")
+      const aggregateArtifact = buildReviewArtifact(controller.state!, { id: "art-1", submittedAt: "2026-08-28T00:00:00.000Z", decision: "comment", summary: "summary" })
+      await origCreate(aggregateArtifact)
+      const rawAggregate = await artifactStore.readRaw(reviewId, "art-1")
+      const sinceLastRaw = JSON.stringify({ ...JSON.parse(rawAggregate!), projection: { kind: "since-last-review", fromHeadOid: "old-head" } }) + "\n"
+      await Bun.write(await artifactStore.resolvePath(reviewId, "art-1"), sinceLastRaw)
+      const sinceLastDigest = createHash("sha256").update(sinceLastRaw, "utf8").digest("hex")
+      await stateStore.saveSemanticChange((db) => ({ ...db, reviews: { ...db.reviews, [reviewId]: { ...db.reviews[reviewId]!, submissionInProgress: { artifactId: "art-1", digest: sinceLastDigest } } } }))
+      const rebuilt = await dialog.submit()
+      expect(rebuilt.ok).toBe(true)
       artifactStore.createExclusive = origCreate
-      call = 99
-      dialog.setDecision("comment")
-      dialog.setSummary("summary")
-      const res2 = await dialog.submit()
-      expect(res2.ok).toBe(true)
-      expect(res2.artifactId).toBe("art-1")
-      const loaded100 = await artifactStore.load(reviewId, "art-100")
-      expect(loaded100).toBeUndefined()
-      const loaded1 = await artifactStore.load(reviewId, "art-1")
-      expect(loaded1?.id).toBe("art-1")
     } finally {
       try { await controller?.flushDrafts?.().catch(() => {}) } catch {}
       try { await stateStore?.flush().catch(() => {}) } catch {}

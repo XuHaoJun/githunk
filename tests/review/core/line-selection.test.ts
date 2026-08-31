@@ -66,6 +66,8 @@ describe("semantic line selection", () => {
     expect(state.draft?.replacement).toBe(" ")
     expect(() => planReviewIntent(state, { type: "feedback/create", id: "s", createdAt: new Date().toISOString() })).toThrow("non-empty")
     const db = { version: 2 as const, baseByHead: {}, reviews: { [d.identity.id]: persistedFromReviewState(state) } }
-    expect(parseReviewDatabaseV2(JSON.parse(serializeReviewDatabaseV2(db))).ok).toBe(true)
+    const parsed = parseReviewDatabaseV2(JSON.parse(serializeReviewDatabaseV2(db)))
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) expect(parsed.value.reviews[d.identity.id]!.draft?.replacement).toBe(" ")
   })
 })
