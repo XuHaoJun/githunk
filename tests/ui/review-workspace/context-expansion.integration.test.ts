@@ -98,7 +98,7 @@ describe("context expansion — generation qualification and caching", () => {
     // Use internal: set state to doc2 via reconcile
     const reconciled = reconcileReviewState(controller.state!, doc2)
     const emptyViewed = {} as unknown as Record<string, ViewedRecord>
-    controller.dispatch({ type:"document/reconciled", document: doc2, viewed: emptyViewed, feedback: reconciled.feedback, selection: reconciled.selection, expandedGaps: reconciled.expandedGaps })
+    controller.dispatch({ type:"document/reconciled", document: doc2, viewed: emptyViewed, feedback: reconciled.feedback, selection: reconciled.selection, lineSelection: reconciled.lineSelection, expandedGaps: reconciled.expandedGaps })
     // Now resolve stale load with gen1
     const result: SourceContextResult = { reviewId: pendingReq!.reviewId, generationId: pendingReq!.generationId, fileKey: pendingReq!.fileKey, side: pendingReq!.side, startLine: pendingReq!.startLine, lines:["stale line"] }
     resolveLoad({ ok:true, result })

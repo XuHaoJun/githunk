@@ -204,8 +204,8 @@ export class ReviewWorkspaceController {
           ...initial,
           selection: persisted.selection as ReviewSelection,
           lineSelection: persisted.lineSelection,
+          filter: persisted.filter,
           viewed: persisted.viewed as Record<string, ViewedRecord>,
-          feedback: persisted.feedback,
           draft: persisted.draft,
           expandedGaps: persisted.expandedGaps as readonly ExpandedGap[],
           lastSubmission: persisted.lastSubmission,
@@ -307,7 +307,7 @@ export class ReviewWorkspaceController {
                 return file !== undefined && record.path === file.path && record.contentId === file.contentId
               }).length
               const coverageMatches = artifact.coverage.viewed.length === currentViewedActive
-              if (matchesInput && matchesCurrentGeneration && feedbackMatches && coverageMatches) {
+              if (matchesInput && matchesCurrentGeneration && feedbackMatches && coverageMatches && artifact.projection.kind === "aggregate") {
                 reuseArtifact = artifact
               } else {
                 artifactIdFromMarker = undefined
