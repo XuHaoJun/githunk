@@ -357,7 +357,7 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     expect(restarted.state?.draft).toBeNull()
     const restartAppLog = harness.app.controller.state.commandLog.slice(restartLogStart).map((line) => line.spans.map((span) => span.text).join(""))
     const allAppLog = [...firstAppLog, ...restartAppLog]
-    const readOnlyGitVerb = /^(?:rev-parse|status|diff|numstat|show|log|merge-base|ls-files|ls-tree|cat-file|for-each-ref|symbolic-ref|name-rev|describe|check-ignore|check-attr|remote|config)(?:\s|$)/u
+    const readOnlyGitVerb = /^(?:rev-parse|status|diff|numstat|show|log|merge-base|ls-files|ls-tree|cat-file|for-each-ref|symbolic-ref|name-rev|describe|check-ignore|check-attr)(?:\s|$)/u
     for (const commandRecord of allAppLog) {
       const command = commandRecord.trim()
       if (command.length > 0) expect(command).toMatch(/^git /u)

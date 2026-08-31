@@ -49,3 +49,10 @@ No documentation wording correction was supported by implementation evidence, so
 ## Concerns
 
 The repository-wide typecheck and test commands remain red for the known diagnostics above; affected Task 6 focused suites pass. The full test command also traverses the checked-in `learn-projects/hunk` project, whose optional dependencies are unavailable in this checkout.
+
+## Round-two follow-up
+
+- Removed broad `remote` and `config` verbs from the no-mutation allow-list; only the read-only Git verbs used by the review flow remain accepted.
+- Added concrete deferred key aliases `space` and `b` for page navigation and `left`/`right` for horizontal scrolling to the resolver guard, preserving checks across stream, sidebar, filter, composer, any, and global focus.
+- Round-two required final batch was rerun after cleanup: `bun run typecheck` failed with the same 76 known diagnostics; `bun test` reported `4152 pass`, `220 fail`, `4400 tests`; `bun run check` failed on those same diagnostics; `git diff --check` produced no output.
+- Round-two focused result: `23 pass`, `0 fail`, `686 expect() calls` across the acceptance, command-catalog, and real-surface suites.
