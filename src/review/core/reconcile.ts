@@ -1,6 +1,7 @@
 import type { ReviewDocument, ReviewFeedback, ReviewFile } from "./types"
 import type { ExpandedGap, ReviewSelection, ViewedRecord, ReviewState, ReviewLineSelection } from "./state"
-import { createLineSelection } from "./anchors"
+import { reconcileAnchor, createLineSelection } from "./anchors"
+import { reduceReviewState } from "./reducer"
 
 export type ReviewFileMatchResult = Readonly<{
   exact: ReadonlyMap<string, ReviewFile>

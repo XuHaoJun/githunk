@@ -123,22 +123,12 @@ function validateAnchor(state: ReviewState, anchor: ReviewAnchor): void {
     }
   }
 }
-
-function validateSuggestionPrerequisites(state: ReviewState, anchor: ReviewAnchor, kind: "note" | "suggestion", replacement?: string): void {
+function validateSuggestionPrerequisites(state: ReviewState, anchor: ReviewAnchor, kind: "note" | "suggestion", replacement?: string, strict = true): void {
   if (kind !== "suggestion") return
-  if (anchor.kind !== "range") {
-    throw new ReviewIntentValidationError("suggestion-invalid", `suggestion requires a range anchor`)
-  }
-  if (anchor.side !== "new") {
-    throw new ReviewIntentValidationError("suggestion-invalid", `suggestion requires new-side range`)
-  }
-  if (!replacement || replacement.trim().length === 0) {
-    throw new ReviewIntentValidationError("suggestion-invalid", `suggestion requires non-empty replacement text`)
-  }
+  if (anchor.kind !== "range" || anchor.side !== "new") throw new ReviewIntentValidationError("suggestion-invalid", "suggestion requires new-side range")
+  if (strict && (!replacement || replacement.trim().length === 0)) throw new ReviewIntentValidationError("suggestion-invalid", "suggestion requires non-empty replacement text")
   const file = state.document.files.find((f) => f.key === anchor.fileKey)
-  if (file && (file.source === "binary" || file.source === "too-large")) {
-    throw new ReviewIntentValidationError("suggestion-invalid", `suggestion not allowed for binary or too-large files`)
-  }
+  if (file && (file.source === "binary" || file.source === "too-large")) throw new ReviewIntentValidationError("suggestion-invalid", "suggestion not allowed")
 }
 
 function validateNonEmptyId(id: string): void {
@@ -228,13 +218,7 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
     case "feedback/start-draft": {
       validateNonEmptyId(intent.anchor.fileKey)
       validateAnchor(state, intent.anchor)
-      if (intent.kind !== "note" && intent.kind !== "suggestion") {
-        throw new ReviewIntentValidationError("body-invalid", `invalid kind ${intent.kind as string}`)
-      }
-      if (intent.severity !== "comment" && intent.severity !== "blocking") {
-        throw new ReviewIntentValidationError("body-invalid", `invalid severity ${intent.severity as string}`)
-      }
-      validateSuggestionPrerequisites(state, intent.anchor, intent.kind, intent.replacement)
+      validateSuggestionPrerequisites(state, intent.anchor, intent.kind, intent.replacement, false)
       const body = intent.body ?? ""
       const draft = {
         anchor: intent.anchor,

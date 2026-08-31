@@ -122,9 +122,6 @@ const draftSchema = z
       if (val.anchor.kind !== "range" || val.anchor.side !== "new") {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "suggestion requires new-side range anchor", path: ["anchor"] })
       }
-      if (!val.replacement || val.replacement.trim().length === 0) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "suggestion requires non-empty replacement", path: ["replacement"] })
-      }
     }
   })
 
