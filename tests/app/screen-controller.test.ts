@@ -3,6 +3,7 @@ import { AppScreenController, type ActiveScreen } from "../../src/app/screen-con
 import type { AppController } from "../../src/app/controller"
 import type { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
 import type { ReviewWorkspace } from "../../src/ui/review-workspace/review-workspace"
+import type { ReviewState } from "../../src/review/core/state"
 
 function stubRepoView() {
   let destroyed = false
@@ -35,13 +36,15 @@ function stubReviewView() {
   } as unknown as ReviewWorkspace & { destroyedFlag: boolean }
 }
 
-function stubReviewController(opts: { openImpl?: () => Promise<void> } = {}) {
+function stubReviewController(opts: { openImpl?: () => Promise<void>; destroyImpl?: () => Promise<void> } = {}) {
   let destroyed = false
+  let destroyStarted = false
   let openCalls = 0
   return {
     get destroyedFlag() { return destroyed },
+    get destroyStartedFlag() { return destroyStarted },
     get openCalls() { return openCalls },
-    state: undefined as unknown as import('../../src/review/core/state').ReviewState,
+    state: undefined as unknown as ReviewState,
     open: async () => {
       openCalls += 1
       if (opts.openImpl) await opts.openImpl()
@@ -51,8 +54,12 @@ function stubReviewController(opts: { openImpl?: () => Promise<void> } = {}) {
     loadProjection: async () => {},
     finishReview: async () => {},
     subscribe: () => () => {},
-    destroy() { destroyed = true },
-  } as unknown as ReviewWorkspaceController & { destroyedFlag: boolean; openCalls: number }
+    destroy: async () => {
+      destroyStarted = true
+      if (opts.destroyImpl) await opts.destroyImpl()
+      destroyed = true
+    },
+  } as unknown as ReviewWorkspaceController & { destroyedFlag: boolean; destroyStartedFlag: boolean; openCalls: number }
 }
 
 describe("AppScreenController lifecycle", () => {
@@ -136,20 +143,30 @@ describe("AppScreenController lifecycle", () => {
     const timers = (controller as unknown as { timerCount?: number; activeTimers?: number }).timerCount ?? (controller as unknown as { timerCount?: number; activeTimers?: number }).activeTimers ?? 0
     expect(timers).toBe(0)
   })
-
   test("view construction failure awaits review controller cleanup", async () => {
     const repoView = stubRepoView()
-    const reviewController = stubReviewController()
+    let releaseDestroy!: () => void
+    const destroyGate = new Promise<void>((resolve) => { releaseDestroy = resolve })
+    const reviewController = stubReviewController({ destroyImpl: async () => destroyGate })
     const controller = new AppScreenController({
       repositoryController: stubRepositoryController(),
       repositoryView: repoView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
       createReviewView: () => { throw new Error("view construction failed") },
     })
+    const opening = controller.openBranchReview()
+    let settled = false
+    opening.then(() => { settled = true }, () => { settled = true })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-    await expect(controller.openBranchReview()).rejects.toThrow("view construction failed")
+    const reviewLifecycle = reviewController as unknown as { destroyedFlag: boolean; destroyStartedFlag: boolean }
+    expect(reviewLifecycle.destroyStartedFlag).toBe(true)
+    expect(reviewLifecycle.destroyedFlag).toBe(false)
+    expect(settled).toBe(false)
+
+    releaseDestroy()
+    await expect(opening).rejects.toThrow("view construction failed")
     expect(controller.active.kind).toBe("repository")
-    const reviewLifecycle = reviewController as unknown as { destroyedFlag: boolean }
     expect(reviewLifecycle.destroyedFlag).toBe(true)
   })
 

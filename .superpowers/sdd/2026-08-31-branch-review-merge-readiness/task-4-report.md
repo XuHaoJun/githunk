@@ -135,3 +135,27 @@ Ran 10 tests across 3 files.
 ```
 
 The exact Task 4 focused suite still passes: 66 tests, 0 failures, 305 expect() calls across 9 files.
+
+## Round-4 test-quality fix
+
+The `createReviewView()` failure regression now gates the review controller's `destroy()` behind a promise. It asserts that `openBranchReview()` remains pending while cleanup is blocked, then releases cleanup and verifies the original view-construction error plus final controller destruction.
+
+Round-4 lifecycle and acceptance verification:
+
+```text
+bun test tests/app/screen-controller.test.ts tests/ui/review-workspace/lifecycle.integration.test.ts tests/acceptance/branch-review-artifact.integration.test.ts
+
+10 pass
+0 fail
+76 expect() calls
+Ran 10 tests across 3 files.
+```
+
+Exact Task 4 focused suite:
+
+```text
+66 pass
+0 fail
+305 expect() calls
+Ran 66 tests across 9 files.
+```
