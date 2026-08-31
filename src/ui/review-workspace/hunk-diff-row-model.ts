@@ -88,6 +88,7 @@ export type HunkDiffAddress = Readonly<{
  * Non-source rows and empty split cells intentionally have no addresses.
  */
 export function hunkDiffAddresses(row: HunkDiffRow): readonly HunkDiffAddress[] {
+  if ((row.type === "split-line" || row.type === "stack-line") && row.isExpansionRow) return []
   if (row.type === "split-line") {
     const addresses: HunkDiffAddress[] = []
     if (row.left.kind !== "empty" && row.left.lineNumber !== undefined) {

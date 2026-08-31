@@ -3,6 +3,7 @@ import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import type { ReviewState } from "../../../review/core/state"
 import type { HighlightPayload } from "../../../review/git/highlight/highlight-payload"
 import type { HunkDiffAddress } from "../hunk-diff-row-model"
+import type { HunkReviewFile } from "../hunk-review-model"
 import { ReviewDiffSection, hunkSectionRowCount, hunkSectionRowOffset } from "./ReviewDiffSection"
 
 export type ReviewDiffPaneProps = Readonly<{

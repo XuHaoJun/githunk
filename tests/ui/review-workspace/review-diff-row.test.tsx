@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import { act } from "react"
 import { ReviewDiffRow } from "../../../src/ui/review-workspace/components/ReviewDiffRow"
-import { hunkDiffAddresses } from "../../../src/ui/review-workspace/hunk-diff-row-model"
+import { hunkDiffAddresses, type HunkDiffRow } from "../../../src/ui/review-workspace/hunk-diff-row-model"
 
 type CapturedColor = Readonly<{ toInts: () => readonly number[] }>
 type CapturedSpan = Readonly<{ text: string; bg?: CapturedColor }>

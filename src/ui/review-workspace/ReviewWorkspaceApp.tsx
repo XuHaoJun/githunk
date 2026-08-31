@@ -664,6 +664,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       const direction = commandId === "review.moveDown" ? "next" : "previous"
       if (focus === "sidebar") {
         try { controller.dispatch(planReviewIntent(current, { type: "selection/move", unit: "file", direction })) } catch {}
+        setRangeStart(null)
+        setPendingRangeAnchor(null)
       } else {
         const selected = current.lineSelection
         if (!selected) {
@@ -684,6 +686,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             controller.dispatch(planReviewIntent(current, { type: "selection/move-line", direction }))
           } catch {}
         }
+        setRangeStart(null)
+        setPendingRangeAnchor(null)
         diffScrollRef.current?.scrollBy(direction === "next" ? 1 : -1)
       }
       return true
@@ -705,6 +709,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           if (fallback && controller.state) controller.dispatch(planReviewIntent(controller.state, fallback))
         }
       } catch {}
+      setRangeStart(null)
+      setPendingRangeAnchor(null)
       return true
     }
     if (commandId === "review.nextUnreviewed" || commandId === "review.prevUnreviewed") {
@@ -712,6 +718,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       if (target) {
         try { controller.dispatch(planReviewIntent(current, { type: "selection/select-file", fileKey: target })) } catch {}
       }
+      setRangeStart(null)
+      setPendingRangeAnchor(null)
       return true
     }
     if (commandId === "review.nextFeedback" || commandId === "review.prevFeedback") {
@@ -720,6 +728,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         setSelectedFeedbackId(target.feedbackId)
         try { controller.dispatch(planReviewIntent(current, { type: "selection/viewport-anchor", fileKey: target.fileKey, hunkIndex: target.hunkIndex, reveal: "hunk" })) } catch {}
       }
+      setRangeStart(null)
+      setPendingRangeAnchor(null)
       return true
     }
     if (commandId === "review.markViewed") {
@@ -818,7 +828,6 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       return true
     }
     if (commandId === "review.cycleFilterScope") {
-      const scopes = ["all", "unreviewed", "changed", "feedback"] as const
       const index = scopes.indexOf(current.filter.scope)
       const scope = scopes[(index + 1) % scopes.length] ?? "all"
       try { controller.dispatch(planReviewIntent(current, { type: "filter/set-scope", scope })) } catch {}
@@ -827,6 +836,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     if (commandId === "review.finishReview") {
       if (current.draft || suggestionReplacementInvalid(current)) return false
       finishDialog.open()
+      session.invalidate()
       return true
     }
     if (commandId === "review.selectFile" && typeof payload === "object" && payload !== null && "fileKey" in payload) {
@@ -929,19 +939,27 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         const hasReplacement = canShowReplacementDraft(current)
         const backwards = event.shift === true
         if (composerFocus === "body") {
-          setComposerFocus(backwards ? "controls" : hasReplacement ? "replacement" : "controls")
+          if (backwards) {
+            setComposerFocus("controls")
+            setComposerControlIndex(5)
+          } else {
+            setComposerFocus(hasReplacement ? "replacement" : "controls")
+          }
         } else if (composerFocus === "replacement") {
           setComposerFocus(backwards ? "body" : "controls")
+          if (!backwards) setComposerControlIndex(0)
         } else {
           const controlCount = 6
           if (backwards && composerControlIndex > 0) {
             setComposerControlIndex((index) => index - 1)
           } else if (!backwards && composerControlIndex < controlCount - 1) {
             setComposerControlIndex((index) => index + 1)
+          } else if (backwards) {
+            setComposerFocus(hasReplacement ? "replacement" : "body")
+            if (!hasReplacement) setComposerControlIndex(0)
           } else {
-            setComposerFocus(backwards ? "replacement" : "body")
-            if (!backwards) setComposerControlIndex(0)
-            else setComposerControlIndex(controlCount - 1)
+            setComposerFocus("body")
+            setComposerControlIndex(0)
           }
         }
         consume(event)
@@ -973,6 +991,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   function selectFile(fileKey: string, nextFocus: "stream" | "sidebar" = "stream"): void {
     if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
     const current = controller.state
+      setRangeStart(null)
+      setPendingRangeAnchor(null)
     if (!current) return
     try {
       controller.dispatch(planReviewIntent(current, { type: "selection/select-file", fileKey }))
@@ -1172,6 +1192,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             onVisibleFileKeysChange={onVisibleFileKeysChange}
             expandedSourceByGap={expandedSourceByGap}
             onToggleGap={toggleGap}
+            onSelectFile={(fileKey) => { executeCommand("review.selectFile", { fileKey, nextFocus: "stream" }) }}
             onSelectFeedback={(feedbackId) => { executeCommand("review.selectFeedback", feedbackId) }}
             onSelectDiffAddress={(address) => { executeCommand("review.selectDiffLine", address) }}
             selectedFeedbackId={selectedFeedbackId}
