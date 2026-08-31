@@ -75,9 +75,9 @@ describe("feedback lifecycle", () => {
     // old side suggestion should fail
     const oldAnchor = createRangeAnchor(file, { side: "old", startLine: 2, endLine: 2 })
     expect(() => planReviewIntent(state, { type: "feedback/start-draft", anchor: oldAnchor, kind: "suggestion", severity: "comment", body: "fix", replacement: "new" })).toThrow()
-    // new side without replacement should fail
     const newAnchor = createRangeAnchor(file, { side: "new", startLine: 2, endLine: 2 })
-    expect(() => planReviewIntent(state, { type: "feedback/start-draft", anchor: newAnchor, kind: "suggestion", severity: "comment", body: "fix", replacement: "" })).toThrow()
+    // new side may open with an absent or blank replacement; create remains strict
+    expect(() => planReviewIntent(state, { type: "feedback/start-draft", anchor: newAnchor, kind: "suggestion", severity: "comment", body: "fix", replacement: "" })).not.toThrow()
     // file anchor suggestion should fail
     const fileAnchor = createFileAnchor(file)
     expect(() => planReviewIntent(state, { type: "feedback/start-draft", anchor: fileAnchor, kind: "suggestion", severity: "comment", body: "fix", replacement: "rep" })).toThrow()
