@@ -289,6 +289,43 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
     }
   })
 
+  test("retry reuses aggregate marker artifact id", async () => {
+    let repo: TempRepository | undefined
+    let controller: ReviewWorkspaceController | undefined
+    let stateStore: ReviewStateStore | undefined
+    try {
+      repo = await createTempRepository()
+      const runner = new RealRunner(repo.path)
+      stateStore = new ReviewStateStore(runner)
+      const artifactStore = new ReviewArtifactStore(runner)
+      const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] as unknown as ReviewFile["hunks"] })
+      const doc = makeDoc([file])
+      let call = 0
+      controller = new ReviewWorkspaceController({ runner, stateStore, artifactStore, loadDocument: async () => doc, now: () => "2026-08-28T00:00:00.000Z", randomId: () => { call++; return `art-${call}` } })
+      await controller.open("refs/heads/main")
+      const anchor = createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 })
+      controller.dispatch(planReviewIntent(controller.state!, { type: "feedback/start-draft", anchor, kind: "note", severity: "comment", body: "note" }))
+      controller.dispatch(planReviewIntent(controller.state!, { type: "feedback/create", id: "f1", createdAt: "2026-08-28T00:00:00.000Z" }))
+      const dialog = new FinishDialog({ controller, clipboard: fakeClipboard(), stateStore, artifactStore })
+      dialog.open(); dialog.setDecision("comment"); dialog.setSummary("summary")
+      const original = artifactStore.createExclusive.bind(artifactStore)
+      let first = true
+      artifactStore.createExclusive = async (artifact) => { if (first) { first = false; throw new Error("first failure") }; return original(artifact) }
+      expect((await dialog.submit()).ok).toBe(false)
+      expect((await stateStore.load()).reviews[doc.identity.id]?.submissionInProgress?.artifactId).toBe("art-1")
+      artifactStore.createExclusive = original
+      call = 99
+      const retry = await dialog.submit()
+      expect(retry.ok).toBe(true)
+      expect(retry.artifactId).toBe("art-1")
+      expect(await artifactStore.load(doc.identity.id, "art-100")).toBeUndefined()
+      expect((await artifactStore.load(doc.identity.id, "art-1"))?.id).toBe("art-1")
+    } finally {
+      try { await controller?.flushDrafts?.().catch(() => {}) } catch {}
+      try { await stateStore?.flush().catch(() => {}) } catch {}
+      await repo?.cleanup()
+    }
+  })
   test("deterministic Markdown clipboard text from persisted artifact, never remote message", async () => {
     let repo: TempRepository | undefined
     let controller: ReviewWorkspaceController | undefined
