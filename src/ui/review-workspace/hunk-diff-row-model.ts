@@ -72,6 +72,44 @@ export type HunkDiffRow =
       isExpansionRow?: true
       expandedGapKey?: string
     }>
+export type HunkDiffAddress = Readonly<{
+  fileKey: string
+  hunkIndex: number
+  side: "old" | "new"
+  line: number
+}>
+
+/**
+ * Return the source locations represented by a rendered row.
+ *
+ * Split rows retain both sides so the renderer can resolve the actual cell
+ * that received a click. Stack rows may contain both line numbers (context),
+ * and callers should prefer the new side for a single stack-row selection.
+ * Non-source rows and empty split cells intentionally have no addresses.
+ */
+export function hunkDiffAddresses(row: HunkDiffRow): readonly HunkDiffAddress[] {
+  if (row.type === "split-line") {
+    const addresses: HunkDiffAddress[] = []
+    if (row.left.kind !== "empty" && row.left.lineNumber !== undefined) {
+      addresses.push({ fileKey: row.fileKey, hunkIndex: row.hunkIndex, side: "old", line: row.left.lineNumber })
+    }
+    if (row.right.kind !== "empty" && row.right.lineNumber !== undefined) {
+      addresses.push({ fileKey: row.fileKey, hunkIndex: row.hunkIndex, side: "new", line: row.right.lineNumber })
+    }
+    return addresses
+  }
+  if (row.type === "stack-line") {
+    const addresses: HunkDiffAddress[] = []
+    if (row.cell.oldLineNumber !== undefined) {
+      addresses.push({ fileKey: row.fileKey, hunkIndex: row.hunkIndex, side: "old", line: row.cell.oldLineNumber })
+    }
+    if (row.cell.newLineNumber !== undefined) {
+      addresses.push({ fileKey: row.fileKey, hunkIndex: row.hunkIndex, side: "new", line: row.cell.newLineNumber })
+    }
+    return addresses
+  }
+  return []
+}
 
 export type HunkRowBuildOptions = Readonly<{
   width: number
@@ -217,6 +255,15 @@ function appendGapRows(
     }
   }
 }
+
+function feedbackAnchorText(file: HunkReviewFile, feedback: ReviewState["feedback"][number]): string {
+  if (feedback.anchor.kind === "file") return `${file.path} file`
+  const line = feedback.anchor.startLine === feedback.anchor.endLine
+    ? `${feedback.anchor.startLine}`
+    : `${feedback.anchor.startLine}-${feedback.anchor.endLine}`
+  return `${file.path} ${feedback.anchor.side}:${line}`
+}
+
 function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: ReviewState, mode: "split" | "stack"): void {
   for (const feedback of state.feedback) {
     if (feedback.anchor.fileKey !== file.id) continue
@@ -231,7 +278,7 @@ function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: Re
       feedbackId: feedback.id,
       severity: feedback.severity,
       resolution: feedback.resolution,
-      text: `${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} [e]dit [d]elete [a]nchor`,
+      text: `${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} [e]dit [d]elete [a]nchor`,
     })
   }
 }

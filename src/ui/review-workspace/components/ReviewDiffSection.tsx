@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import type { ReviewState } from "../../../review/core/state"
 import type { HighlightPayload } from "../../../review/git/highlight/highlight-payload"
 import type { HunkReviewFile } from "../hunk-review-model"
-import { buildHunkSplitRows, buildHunkStackRows, hunkGapBefore, type HunkDiffRow } from "../hunk-diff-rows"
+import { buildHunkSplitRows, buildHunkStackRows, hunkGapBefore, hunkDiffAddresses, type HunkDiffAddress, type HunkDiffRow } from "../hunk-diff-rows"
 import { ReviewDiffRow } from "./ReviewDiffRow"
 
 export type ReviewDiffSectionProps = Readonly<{
@@ -19,7 +19,7 @@ export type ReviewDiffSectionProps = Readonly<{
   rowEnd?: number
   onSelect?: () => void
   onSelectFeedback?: (feedbackId: string) => void
-  onSelectDiffRow?: (row: HunkDiffRow) => void
+  onSelectDiffAddress?: (address: HunkDiffAddress) => void
   onToggleGap?: (gapId: string) => void
   selectedFeedbackId?: string | null
   showDivider: boolean
@@ -144,7 +144,7 @@ export function ReviewDiffSection({
   rowEnd,
   onSelect,
   onSelectFeedback,
-  onSelectDiffRow,
+  onSelectDiffAddress,
   onToggleGap,
   selectedFeedbackId,
   showDivider,
@@ -172,11 +172,29 @@ export function ReviewDiffSection({
       ? () => onToggleGap(row.gapId)
       : row.type === "feedback" && onSelectFeedback
         ? () => onSelectFeedback(row.feedbackId)
-        : (row.type === "split-line" || row.type === "stack-line") && onSelectDiffRow
-          ? () => onSelectDiffRow(row)
+        : (row.type === "split-line" || row.type === "stack-line") && onSelectDiffAddress
+          ? (side?: "old" | "new") => {
+              const addresses = hunkDiffAddresses(row)
+              const address = row.type === "split-line"
+                ? addresses.find((candidate) => candidate.side === side)
+                : addresses.find((candidate) => candidate.side === "new") ?? addresses[0]
+              if (address) onSelectDiffAddress(address)
+            }
           : row.type === "hunk-header" && row.hunkIndex === selectedHunkIndex
             ? onSelect
             : undefined
+    const selected = row.type === "feedback"
+      ? row.feedbackId === selectedFeedbackId
+      : row.type === "hunk-header"
+        ? row.hunkIndex === selectedHunkIndex
+        : (row.type === "split-line" || row.type === "stack-line") && state.lineSelection !== null
+          ? hunkDiffAddresses(row).some((address) =>
+              address.fileKey === state.lineSelection?.fileKey
+              && address.hunkIndex === state.lineSelection?.hunkIndex
+              && address.side === state.lineSelection?.side
+              && address.line === state.lineSelection?.line,
+            )
+          : false
     return (
       <ReviewDiffRow
         key={row.key}
@@ -184,7 +202,7 @@ export function ReviewDiffSection({
         width={width}
         digits={digits}
         showLineNumbers={showLineNumbers}
-        selected={row.type === "feedback" ? row.feedbackId === selectedFeedbackId : row.hunkIndex === selectedHunkIndex}
+        selected={selected}
         {...(rowClick ? { onClick: rowClick } : {})}
       />
     )

@@ -61,7 +61,7 @@ export class FeedbackComposer {
     const state = this.controller.state
     if (!state) return false
     const file = state.document.files.find((f) => f.key === draft.anchor.fileKey)
-    if (file && (file.source === "binary" || file.source === "too-large")) return false
+    if (!file || file.source === "binary" || file.source === "too-large") return false
     return true
   }
 
@@ -165,8 +165,7 @@ export class FeedbackComposer {
       if (anchor.kind !== "range" || anchor.side !== "new") return false
     }
     try {
-      const extra = kind === "suggestion" && state.draft.replacement === undefined ? { replacement: "placeholder" } : {}
-      const action = planReviewIntent(state, { type: "feedback/update-draft", kind, ...extra })
+      const action = planReviewIntent(state, { type: "feedback/update-draft", kind })
       this.controller.dispatch(action)
       this.controls = this.getRelevantControls()
       return true
@@ -204,7 +203,8 @@ export class FeedbackComposer {
     if (!state?.draft) return false
     if (!this.canShowReplacement()) return false
     try {
-      this.controller.dispatch({ type: "feedback/update-draft", patch: { replacement } })
+      const action = planReviewIntent(state, { type: "feedback/update-draft", replacement })
+      this.controller.dispatch(action)
       return true
     } catch {
       return false

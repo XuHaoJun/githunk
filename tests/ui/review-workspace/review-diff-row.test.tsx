@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import { act } from "react"
 import { ReviewDiffRow } from "../../../src/ui/review-workspace/components/ReviewDiffRow"
-import type { HunkDiffRow } from "../../../src/ui/review-workspace/hunk-diff-row-model"
+import { hunkDiffAddresses } from "../../../src/ui/review-workspace/hunk-diff-row-model"
 
 type CapturedColor = Readonly<{ toInts: () => readonly number[] }>
 type CapturedSpan = Readonly<{ text: string; bg?: CapturedColor }>
@@ -71,7 +71,7 @@ async function renderRow(row: HunkDiffRow, selected = false, showLineNumbers = f
 
 describe("Review diff row parity", () => {
   test("paints hunk patch backgrounds on split additions and deletions", async () => {
-    const setup = await renderRow(splitRow, true)
+    const setup = await renderRow(splitRow)
     try {
       expect(rgb(textSpan(setup, "old")?.bg)).toEqual([60, 30, 33])
       expect(rgb(textSpan(setup, "new")?.bg)).toEqual([23, 51, 34])
@@ -81,7 +81,7 @@ describe("Review diff row parity", () => {
   })
 
   test("paints hunk patch background on stack additions", async () => {
-    const setup = await renderRow(stackRow, true)
+    const setup = await renderRow(stackRow)
     try {
       expect(rgb(textSpan(setup, "new")?.bg)).toEqual([23, 51, 34])
     } finally {
@@ -90,7 +90,7 @@ describe("Review diff row parity", () => {
   })
 
   test("keeps empty split gutters on the editor surface", async () => {
-    const setup = await renderRow(emptySplitRow, true, true)
+    const setup = await renderRow(emptySplitRow, false, true)
     try {
       expect(rgb(textSpan(setup, "gap")?.bg)).toEqual([39, 43, 49])
       expect(rgb(textSpan(setup, "same")?.bg)).toEqual([13, 17, 23])
@@ -114,17 +114,55 @@ describe("Review diff row parity", () => {
     }
   })
 
-  test("does not paint a selected background over diff rows", () => {
-    const renderedRow = ReviewDiffRow({
-      row: splitRow,
-      width: 40,
-      digits: 1,
-      showLineNumbers: false,
-      selected: true,
-    }) as unknown as {
-      props?: { style?: Readonly<Record<string, unknown>> }
-    }
+  test("extracts only real source addresses and keeps both split sides", () => {
+    expect(hunkDiffAddresses(splitRow)).toEqual([
+      { fileKey: "parity", hunkIndex: 0, side: "old", line: 1 },
+      { fileKey: "parity", hunkIndex: 0, side: "new", line: 1 },
+    ])
+    expect(hunkDiffAddresses(emptySplitRow)).toEqual([
+      { fileKey: "parity", hunkIndex: 0, side: "new", line: 42 },
+    ])
+    expect(hunkDiffAddresses({
+      type: "collapsed",
+      key: "parity:gap",
+      fileKey: "parity",
+      hunkIndex: 0,
+      gapId: "before:1",
+      lineCount: 1,
+      oldRange: [1, 1],
+      newRange: [1, 1],
+      expanded: false,
+      text: "gap",
+    })).toEqual([])
+    expect(hunkDiffAddresses({
+      type: "hunk-header",
+      key: "parity:header",
+      fileKey: "parity",
+      hunkIndex: 0,
+      text: "@@",
+    })).toEqual([])
+    expect(hunkDiffAddresses(stackRow)).toEqual([
+      { fileKey: "parity", hunkIndex: 0, side: "new", line: 1 },
+    ])
+    expect(hunkDiffAddresses({
+      type: "stack-line",
+      key: "parity:stack-context",
+      fileKey: "parity",
+      hunkIndex: 0,
+      cell: { kind: "context", sign: " ", oldLineNumber: 7, newLineNumber: 8, spans: [{ text: "same" }] },
+    })).toEqual([
+      { fileKey: "parity", hunkIndex: 0, side: "old", line: 7 },
+      { fileKey: "parity", hunkIndex: 0, side: "new", line: 8 },
+    ])
+  })
 
-    expect(renderedRow.props?.style).not.toHaveProperty("backgroundColor")
+  test("paints a selected background into the generated StyledText", async () => {
+    const setup = await renderRow(splitRow, true)
+    try {
+      expect(rgb(textSpan(setup, "old")?.bg)).toEqual([38, 79, 120])
+      expect(rgb(textSpan(setup, "new")?.bg)).toEqual([38, 79, 120])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
 })

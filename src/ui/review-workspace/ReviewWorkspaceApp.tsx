@@ -11,10 +11,10 @@ import { toHunkReviewFiles } from "./hunk-review-model"
 import { ReviewDiffPane } from "./components/ReviewDiffPane"
 import { useReviewHighlights } from "./hooks/useReviewHighlights"
 import { planReviewIntent } from "../../review/core/intents"
-import { createFileAnchor, createRangeAnchor } from "../../review/core/anchors"
-import { coverageForFile, sortedReviewFeedback, visibleReviewFiles } from "../../review/core/selectors"
-import type { HunkDiffRow } from "./hunk-diff-row-model"
+import { createFileAnchor, createLineSelection, createRangeAnchor, sideLinesForHunk } from "../../review/core/anchors"
 import type { ReviewAnchor } from "../../review/core/types"
+import { coverageForFile, sortedReviewFeedback, visibleReviewFiles } from "../../review/core/selectors"
+import type { HunkDiffAddress } from "./hunk-diff-row-model"
 import type { ReactReviewSession } from "./react-review-session"
 import { cellWidth } from "../cell-width"
 import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
@@ -123,11 +123,11 @@ function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "str
 function feedbackDraftText(state: ReviewState): string {
   const draft = state.draft
   if (!draft) return ""
-  const anchor = draft.anchor.kind === "range"
-    ? `${draft.anchor.fileKey} ${draft.anchor.side}:${draft.anchor.startLine}-${draft.anchor.endLine}`
-    : `${draft.anchor.fileKey} file`
+  const file = state.document.files.find((candidate) => candidate.key === draft.anchor.fileKey)
+  const anchor = file ? anchorLabel(file, draft.anchor) : `${draft.anchor.fileKey} file`
   return `Feedback composer — ${draft.kind}/${draft.severity} — ${anchor}\nCtrl-S save · Esc cancel`
 }
+
 function canShowReplacementDraft(state: ReviewState): boolean {
   const draft = state.draft
   if (!draft || draft.kind !== "suggestion" || draft.anchor.kind !== "range" || draft.anchor.side !== "new") return false
@@ -135,6 +135,9 @@ function canShowReplacementDraft(state: ReviewState): boolean {
   return file !== undefined && file.source !== "binary" && file.source !== "too-large"
 }
 
+function suggestionReplacementInvalid(state: ReviewState): boolean {
+  return state.draft?.kind === "suggestion" && (state.draft.replacement ?? "").trim().length === 0
+}
 function draftId(): string {
   try { return crypto.randomUUID() } catch { return Math.random().toString(36).slice(2) }
 }
@@ -149,40 +152,31 @@ function consume(event: KeyEvent): void {
   try { (event as unknown as { preventDefault?: () => void }).preventDefault?.() } catch {}
   try { (event as unknown as { stopPropagation?: () => void }).stopPropagation?.() } catch {}
 }
-type RangeStart = Readonly<{ fileKey: string; hunkIndex: number; side: "old" | "new"; startLine: number }>
+type RangeStart = HunkDiffAddress
 
-function hunkRangeForSelection(file: ReviewState["document"]["files"][number], hunkIndex: number): { side: "old" | "new"; startLine: number; endLine: number } | null {
+function anchorLabel(file: ReviewState["document"]["files"][number], anchor: ReviewAnchor): string {
+  if (anchor.kind === "file") return `${file.path} file`
+  const lineLabel = anchor.startLine === anchor.endLine ? `${anchor.startLine}` : `${anchor.startLine}-${anchor.endLine}`
+  return `${file.path} ${anchor.side}:${lineLabel}`
+}
+
+function addressFromLineSelection(lineSelection: ReviewState["lineSelection"]): HunkDiffAddress | null {
+  if (!lineSelection) return null
+  return {
+    fileKey: lineSelection.fileKey,
+    hunkIndex: lineSelection.hunkIndex,
+    side: lineSelection.side,
+    line: lineSelection.line,
+  }
+}
+
+function firstValidLineAddress(file: ReviewState["document"]["files"][number], hunkIndex: number): HunkDiffAddress | null {
   const hunk = file.hunks[hunkIndex]
   if (!hunk) return null
-  const side = hunk.newCount > 0 ? "new" : "old"
-  const startLine = side === "new" ? hunk.newStart : hunk.oldStart
-  const count = side === "new" ? hunk.newCount : hunk.oldCount
-  return count > 0 ? { side, startLine, endLine: startLine + count - 1 } : null
+  const preferredSide = sideLinesForHunk(hunk, "new").length > 0 ? "new" : "old"
+  const line = sideLinesForHunk(hunk, preferredSide)[0]?.lineNumber
+  return line === undefined ? null : { fileKey: file.key, hunkIndex, side: preferredSide, line }
 }
-
-function rangeAnchorForHunk(file: ReviewState["document"]["files"][number], hunkIndex: number): ReviewAnchor | null {
-  const range = hunkRangeForSelection(file, hunkIndex)
-  if (!range) return null
-  try {
-    return createRangeAnchor(file, range)
-  } catch {
-    return null
-  }
-}
-
-function rowLineAddress(row: HunkDiffRow): { side: "old" | "new"; line: number } | null {
-  if (row.type === "split-line") {
-    if (row.right.kind !== "empty" && row.right.lineNumber !== undefined) return { side: "new", line: row.right.lineNumber }
-    if (row.left.kind !== "empty" && row.left.lineNumber !== undefined) return { side: "old", line: row.left.lineNumber }
-    return null
-  }
-  if (row.type === "stack-line") {
-    if (row.cell.newLineNumber !== undefined) return { side: "new", line: row.cell.newLineNumber }
-    if (row.cell.oldLineNumber !== undefined) return { side: "old", line: row.cell.oldLineNumber }
-  }
-  return null
-}
-
 function nextUnreviewedFile(state: ReviewState, direction: "next" | "previous"): string | null {
   const files = state.document.files
   if (files.length === 0) return null
@@ -253,6 +247,10 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const [selectedFeedbackId, setSelectedFeedbackId] = useState<string | null>(null)
   const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null)
   const [pendingDeleteFeedbackId, setPendingDeleteFeedbackId] = useState<string | null>(null)
+  const [composerFocus, setComposerFocus] = useState<"body" | "replacement" | "controls">("body")
+  const [composerControlIndex, setComposerControlIndex] = useState(0)
+  const [reanchorFeedbackId, setReanchorFeedbackId] = useState<string | null>(null)
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null)
   const resizingSidebarRef = useRef(false)
@@ -372,6 +370,10 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     setSelectedFeedbackId(null)
     setEditingFeedbackId(null)
     setPendingDeleteFeedbackId(null)
+    setReanchorFeedbackId(null)
+    setFeedbackMessage(null)
+    setComposerFocus("body")
+    setComposerControlIndex(0)
     pendingDeleteFeedbackRef.current = null
     setHelpOpen(false)
     setFocus("stream")
@@ -385,6 +387,19 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   useEffect(() => {
     if (sidebarWidth === 0 && focus !== "stream") setFocus("stream")
   }, [focus, sidebarWidth])
+  useLayoutEffect(() => {
+    if (!state?.draft) return
+    if (composerFocus === "body") {
+      composerBodyRef.current?.focus()
+      replacementRef.current?.blur()
+    } else if (composerFocus === "replacement" && canShowReplacementDraft(state)) {
+      composerBodyRef.current?.blur()
+      replacementRef.current?.focus()
+    } else {
+      composerBodyRef.current?.blur()
+      replacementRef.current?.blur()
+    }
+  }, [composerFocus, state?.draft])
   const toggleGap = useCallback((fileKey: string, gapId: string) => {
     if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
     if (typeof controller.expandGap !== "function") return
@@ -403,6 +418,11 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     const current = controller.state
     const draft = current?.draft
     if (!current || !draft) return
+    if (suggestionReplacementInvalid(current)) {
+      setFeedbackMessage("Suggestion replacement cannot be empty.")
+      session.invalidate()
+      return
+    }
     try {
       if (editingFeedbackId) {
         const existing = current.feedback.find((feedback) => feedback.id === editingFeedbackId)
@@ -425,6 +445,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       }
       pendingDeleteFeedbackRef.current = null
       setPendingDeleteFeedbackId(null)
+      setComposerFocus("body")
+      setFeedbackMessage(null)
       session.invalidate()
     } catch {}
   }, [controller, editingFeedbackId, session])
@@ -451,22 +473,71 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const reanchorFeedback = useCallback((feedbackId: string) => {
     const current = controller.state
     const feedback = current?.feedback.find((entry) => entry.id === feedbackId)
-    const fileKey = current?.selection.fileKey
-    const file = current && fileKey ? current.document.files.find((candidate) => candidate.key === fileKey) : undefined
-    if (!current || !feedback || !file) return
-    const anchor = feedback.kind === "suggestion"
-      ? rangeAnchorForHunk(file, current.selection.hunkIndex)
-      : feedback.anchor.kind === "range"
-        ? rangeAnchorForHunk(file, current.selection.hunkIndex) ?? createFileAnchor(file)
-        : createFileAnchor(file)
-    if (!anchor || (feedback.kind === "suggestion" && anchor.kind !== "range")) return
+    if (!current || !feedback) return
+    const fileKey = current.selection.fileKey
+    const file = fileKey ? current.document.files.find((candidate) => candidate.key === fileKey) : undefined
+    if (!file) {
+      setFeedbackMessage("Select the file containing the feedback before re-anchoring.")
+      setReanchorFeedbackId(feedbackId)
+      session.invalidate()
+      return
+    }
+
+    const selectedAddress = addressFromLineSelection(current.lineSelection)
+    const pending = pendingRangeAnchor
+      && pendingRangeAnchor.fileKey === file.key
+      && pendingRangeAnchor.contentId === file.contentId
+      ? pendingRangeAnchor
+      : null
+    let anchor: ReviewAnchor | null = null
+    if (feedback.kind === "suggestion" || feedback.anchor.kind === "range") {
+      anchor = pending
+      if (!anchor && selectedAddress && selectedAddress.fileKey === file.key) {
+        try {
+          anchor = createRangeAnchor(file, {
+            side: selectedAddress.side,
+            startLine: selectedAddress.line,
+            endLine: selectedAddress.line,
+          })
+        } catch {}
+      }
+    } else if (pending) {
+      anchor = pending
+    } else if (selectedAddress && selectedAddress.fileKey === file.key) {
+      try {
+        anchor = createRangeAnchor(file, {
+          side: selectedAddress.side,
+          startLine: selectedAddress.line,
+          endLine: selectedAddress.line,
+        })
+      } catch {}
+    } else {
+      anchor = createFileAnchor(file)
+    }
+    if (!anchor || (feedback.kind === "suggestion" && (anchor.kind !== "range" || anchor.side !== "new"))) {
+      setReanchorFeedbackId(feedbackId)
+      setFeedbackMessage(
+        feedback.kind === "suggestion"
+          ? "Select a current new-side line or range, then press a to re-anchor this suggestion."
+          : "Select a current diff line or range, then press a to re-anchor this feedback.",
+      )
+      session.invalidate()
+      return
+    }
     try {
       controller.dispatch(planReviewIntent(current, { type: "feedback/reanchor", id: feedbackId, anchor, updatedAt: new Date().toISOString() }))
+      setReanchorFeedbackId(null)
+      setFeedbackMessage(null)
+      setPendingRangeAnchor(null)
       pendingDeleteFeedbackRef.current = null
       setPendingDeleteFeedbackId(null)
       session.invalidate()
-    } catch {}
-  }, [controller, session])
+    } catch {
+      setReanchorFeedbackId(feedbackId)
+      setFeedbackMessage("The selected source is not a valid anchor for this feedback.")
+      session.invalidate()
+    }
+  }, [controller, pendingRangeAnchor, session])
 
   const editFeedback = useCallback((feedbackId: string) => {
     const current = controller.state
@@ -483,6 +554,9 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       }))
       setEditingFeedbackId(feedbackId)
       setSelectedFeedbackId(feedbackId)
+      setComposerFocus("body")
+      setComposerControlIndex(0)
+      setFeedbackMessage(null)
       session.invalidate()
     } catch {}
   }, [controller, session])
@@ -506,29 +580,44 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       session.invalidate()
     } catch {}
   }, [controller, session])
-  const selectDiffRow = useCallback((row: HunkDiffRow) => {
+  const selectDiffAddress = useCallback((address: HunkDiffAddress) => {
     if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
-    const address = rowLineAddress(row)
     const current = controller.state
-    if (!address || !current) return
-    const file = current.document.files.find((candidate) => candidate.key === row.fileKey)
+    if (!current) return
+    const file = current.document.files.find((candidate) => candidate.key === address.fileKey)
     if (!file) return
-    if (!rangeStart || rangeStart.fileKey !== row.fileKey || rangeStart.hunkIndex !== row.hunkIndex || rangeStart.side !== address.side) {
-      setRangeStart({ fileKey: row.fileKey, hunkIndex: row.hunkIndex, side: address.side, startLine: address.line })
-      setPendingRangeAnchor(null)
-      return
-    }
     try {
-      setPendingRangeAnchor(createRangeAnchor(file, {
+      const selection = createLineSelection(file, {
+        hunkIndex: address.hunkIndex,
         side: address.side,
-        startLine: Math.min(rangeStart.startLine, address.line),
-        endLine: Math.max(rangeStart.startLine, address.line),
-      }))
-      setRangeStart(null)
-    } catch {
-      setPendingRangeAnchor(null)
-    }
-  }, [controller, rangeStart])
+        line: address.line,
+      })
+      controller.dispatch(planReviewIntent(current, { type: "selection/set-line", selection }))
+      setFocus("stream")
+      const previousRange = rangeStart
+      if (!previousRange
+        || previousRange.fileKey !== address.fileKey
+        || previousRange.hunkIndex !== address.hunkIndex
+        || previousRange.side !== address.side) {
+        setRangeStart(address)
+        setPendingRangeAnchor(null)
+      } else {
+        try {
+          setPendingRangeAnchor(createRangeAnchor(file, {
+            side: address.side,
+            startLine: Math.min(previousRange.line, address.line),
+            endLine: Math.max(previousRange.line, address.line),
+          }))
+          setRangeStart(null)
+        } catch {
+          setRangeStart(address)
+          setPendingRangeAnchor(null)
+        }
+      }
+      setFeedbackMessage(null)
+      session.invalidate()
+    } catch {}
+  }, [controller, rangeStart, session])
   const executeCommand = useCallback((commandId: string, payload?: unknown): boolean => {
     const current = controller.state
     if (commandId === "review.focusDiff") {
@@ -576,6 +665,25 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       if (focus === "sidebar") {
         try { controller.dispatch(planReviewIntent(current, { type: "selection/move", unit: "file", direction })) } catch {}
       } else {
+        const selected = current.lineSelection
+        if (!selected) {
+          const file = current.selection.fileKey
+            ? current.document.files.find((candidate) => candidate.key === current.selection.fileKey)
+            : undefined
+          const address = file ? firstValidLineAddress(file, current.selection.hunkIndex) : null
+          if (address && file) {
+            try {
+              const lineSelection = createLineSelection(file, address)
+              controller.dispatch(planReviewIntent(current, { type: "selection/set-line", selection: lineSelection }))
+              setRangeStart(null)
+              setPendingRangeAnchor(null)
+            } catch {}
+          }
+        } else {
+          try {
+            controller.dispatch(planReviewIntent(current, { type: "selection/move-line", direction }))
+          } catch {}
+        }
         diffScrollRef.current?.scrollBy(direction === "next" ? 1 : -1)
       }
       return true
@@ -622,26 +730,29 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       return true
     }
     if (commandId === "review.toggleRange") {
-      const fileKey = current.selection.fileKey
-      const file = fileKey ? current.document.files.find((candidate) => candidate.key === fileKey) : undefined
-      const range = file ? hunkRangeForSelection(file, current.selection.hunkIndex) : null
-      if (file && range) {
+      const lineAddress = addressFromLineSelection(current.lineSelection)
+      const file = lineAddress ? current.document.files.find((candidate) => candidate.key === lineAddress.fileKey) : undefined
+      if (lineAddress && file) {
         if (!rangeStart) {
-          setRangeStart({ fileKey: file.key, hunkIndex: current.selection.hunkIndex, side: range.side, startLine: range.startLine })
+          setRangeStart(lineAddress)
           setPendingRangeAnchor(null)
-        } else if (rangeStart.fileKey === file.key && rangeStart.hunkIndex === current.selection.hunkIndex && rangeStart.side === range.side) {
+        } else if (
+          rangeStart.fileKey === lineAddress.fileKey
+          && rangeStart.hunkIndex === lineAddress.hunkIndex
+          && rangeStart.side === lineAddress.side
+        ) {
           try {
             setPendingRangeAnchor(createRangeAnchor(file, {
-              side: range.side,
-              startLine: Math.min(rangeStart.startLine, range.endLine),
-              endLine: Math.max(rangeStart.startLine, range.endLine),
+              side: lineAddress.side,
+              startLine: Math.min(rangeStart.line, lineAddress.line),
+              endLine: Math.max(rangeStart.line, lineAddress.line),
             }))
+            setRangeStart(null)
           } catch {
             setPendingRangeAnchor(null)
           }
-          setRangeStart(null)
         } else {
-          setRangeStart({ fileKey: file.key, hunkIndex: current.selection.hunkIndex, side: range.side, startLine: range.startLine })
+          setRangeStart(lineAddress)
           setPendingRangeAnchor(null)
         }
       }
@@ -649,11 +760,22 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     }
     if (commandId === "review.createFeedback") {
       if (focus !== "stream" || current.draft) return false
-      const file = current.document.files.find((candidate) => candidate.key === current.selection.fileKey)
+      const lineAddress = addressFromLineSelection(current.lineSelection)
+      const fileKey = current.selection.fileKey
+      const file = fileKey ? current.document.files.find((candidate) => candidate.key === fileKey) : undefined
       if (file) {
-        const anchor = pendingRangeAnchor && pendingRangeAnchor.fileKey === file.key
-          ? pendingRangeAnchor
-          : { kind: "file" as const, fileKey: file.key, contentId: file.contentId }
+        let anchor: ReviewAnchor = createFileAnchor(file)
+        if (pendingRangeAnchor && pendingRangeAnchor.fileKey === file.key && pendingRangeAnchor.contentId === file.contentId) {
+          anchor = pendingRangeAnchor
+        } else if (lineAddress && lineAddress.fileKey === file.key) {
+          try {
+            anchor = createRangeAnchor(file, {
+              side: lineAddress.side,
+              startLine: lineAddress.line,
+              endLine: lineAddress.line,
+            })
+          } catch {}
+        }
         try {
           controller.dispatch(planReviewIntent(current, {
             type: "feedback/start-draft",
@@ -663,9 +785,15 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             body: "",
           }))
           setEditingFeedbackId(null)
+          setComposerFocus("body")
+          setComposerControlIndex(0)
           pendingDeleteFeedbackRef.current = null
           setPendingDeleteFeedbackId(null)
-          if (anchor.kind === "range") setPendingRangeAnchor(null)
+          setFeedbackMessage(null)
+          if (anchor.kind === "range") {
+            setPendingRangeAnchor(null)
+            setRangeStart(null)
+          }
         } catch {}
       }
       return true
@@ -697,8 +825,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       return true
     }
     if (commandId === "review.finishReview") {
+      if (current.draft || suggestionReplacementInvalid(current)) return false
       finishDialog.open()
-      session.invalidate()
       return true
     }
     if (commandId === "review.selectFile" && typeof payload === "object" && payload !== null && "fileKey" in payload) {
@@ -706,8 +834,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       selectFile(selection.fileKey, selection.nextFocus ?? "stream")
       return true
     }
-    if (commandId === "review.selectDiffLine" && payload) {
-      selectDiffRow(payload as HunkDiffRow)
+    if (commandId === "review.selectDiffLine" && payload && typeof payload === "object") {
+      selectDiffAddress(payload as HunkDiffAddress)
       return true
     }
     if (commandId === "review.selectFeedback" && typeof payload === "string") {
@@ -715,7 +843,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       return true
     }
     return false
-  }, [controller, deleteFeedback, diffWidth, editFeedback, finishDialog, focus, onClose, pendingRangeAnchor, rangeStart, reanchorFeedback, selectedFeedbackId, selectFeedback, selectDiffRow, session, sidebarWidth, toggleGap])
+  }, [controller, deleteFeedback, diffWidth, editFeedback, finishDialog, focus, onClose, pendingRangeAnchor, rangeStart, reanchorFeedback, selectedFeedbackId, selectFeedback, selectDiffAddress, session, sidebarWidth, toggleGap])
 
   const handleKey = useCallback((event: KeyEvent) => {
     if (!active) return
@@ -727,6 +855,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       if (current?.draft) {
         try { controller.dispatch(planReviewIntent(current, { type: "feedback/cancel-draft" })) } catch {}
         setEditingFeedbackId(null)
+        setComposerFocus("body")
+        setComposerControlIndex(0)
         session.invalidate()
         consume(event)
         return
@@ -760,6 +890,12 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         consume(event)
         return
       }
+      if (reanchorFeedbackId) {
+        setReanchorFeedbackId(null)
+        setFeedbackMessage(null)
+        consume(event)
+        return
+      }
       if (rangeStart || pendingRangeAnchor) {
         setRangeStart(null)
         setPendingRangeAnchor(null)
@@ -790,6 +926,24 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         saveDraft()
         consume(event)
       } else if (name === "tab") {
+        const hasReplacement = canShowReplacementDraft(current)
+        const backwards = event.shift === true
+        if (composerFocus === "body") {
+          setComposerFocus(backwards ? "controls" : hasReplacement ? "replacement" : "controls")
+        } else if (composerFocus === "replacement") {
+          setComposerFocus(backwards ? "body" : "controls")
+        } else {
+          const controlCount = 6
+          if (backwards && composerControlIndex > 0) {
+            setComposerControlIndex((index) => index - 1)
+          } else if (!backwards && composerControlIndex < controlCount - 1) {
+            setComposerControlIndex((index) => index + 1)
+          } else {
+            setComposerFocus(backwards ? "replacement" : "body")
+            if (!backwards) setComposerControlIndex(0)
+            else setComposerControlIndex(controlCount - 1)
+          }
+        }
         consume(event)
       }
       return
@@ -805,7 +959,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     const command = resolveReviewCommand(normalized, focus)
     if (!command || (current && !command.available(current))) return
     if (executeCommand(command.id)) consume(event)
-  }, [active, controller, executeCommand, finishDialog, focus, helpOpen, onClose, pendingDeleteFeedbackId, pendingRangeAnchor, rangeStart, saveDraft, session, submitFinish])
+  }, [active, composerControlIndex, composerFocus, controller, executeCommand, finishDialog, focus, helpOpen, onClose, pendingDeleteFeedbackId, pendingRangeAnchor, rangeStart, reanchorFeedbackId, saveDraft, session, submitFinish])
   useKeyboard(handleKey)
 
   if (!state) {
@@ -834,6 +988,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     && state.draft.anchor.kind === "range"
     && state.draft.anchor.side === "new"
     && state.document.files.some((file) => file.key === state.draft?.anchor.fileKey && file.source !== "binary" && file.source !== "too-large")
+  const replacementInvalid = suggestionReplacementInvalid(state)
   const orphanedFeedback = state.feedback.filter((feedback) => !state.document.files.some((file) => file.key === feedback.anchor.fileKey))
 
   return (
@@ -1017,9 +1172,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             onVisibleFileKeysChange={onVisibleFileKeysChange}
             expandedSourceByGap={expandedSourceByGap}
             onToggleGap={toggleGap}
-            onSelectFile={(fileKey) => { executeCommand("review.selectFile", { fileKey }) }}
             onSelectFeedback={(feedbackId) => { executeCommand("review.selectFeedback", feedbackId) }}
-            onSelectDiffRow={(row) => { executeCommand("review.selectDiffLine", row) }}
+            onSelectDiffAddress={(address) => { executeCommand("review.selectDiffLine", address) }}
             selectedFeedbackId={selectedFeedbackId}
             onViewportChange={session.setViewportStart}
           />
@@ -1035,23 +1189,40 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
                 if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
                 executeCommand("review.selectFeedback", feedback.id)
               }}>
-              <text content={`${feedback.resolution} feedback ${feedback.id} — `} wrapMode="none" truncate={true} />
+              <text
+                content={`${feedback.resolution} feedback ${feedback.id} — ${feedback.anchor.kind === "range" ? `${feedback.anchor.side}:${feedback.anchor.startLine === feedback.anchor.endLine ? feedback.anchor.startLine : `${feedback.anchor.startLine}-${feedback.anchor.endLine}`}` : "file"} — [a]nchor`}
+                wrapMode="none"
+                truncate={true}
+              />
               <box id={`review-delete-feedback:${feedback.id}`} onMouseUp={() => {
                 if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
                 deleteFeedback(feedback.id)
               }}>
                 <text content={pendingDeleteFeedbackId === feedback.id ? "[delete again]" : "[delete]"} wrapMode="none" truncate={true} />
               </box>
+              <box id={`review-reanchor-feedback:${feedback.id}`} onMouseUp={() => {
+                if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+                reanchorFeedback(feedback.id)
+              }}>
+                <text content="[re-anchor]" wrapMode="none" truncate={true} />
               </box>
+        </box>
           ))}
+        </box>
+      ) : null}
+      {feedbackMessage ? (
+        <box id="review-feedback-message" style={{ position: "absolute", left: 1, bottom: orphanedFeedback.length > 0 ? Math.min(5, orphanedFeedback.length + 1) : 1, width: Math.max(20, dimensions.width - 2), height: 1, zIndex: 55, backgroundColor: "#202020" }}>
+          <text content={feedbackMessage} wrapMode="none" truncate={true} />
         </box>
       ) : null}
       {state.draft ? (
         <box id="review-feedback-composer" style={{ width: "100%", height: composerHeight, flexShrink: 0, border: true, flexDirection: "column" }}>
           <text content={feedbackDraftText(state)} wrapMode="none" truncate={true} />
           <box id="review-feedback-controls" style={{ width: "100%", height: 1, flexDirection: "row" }}>
-            <box id="review-feedback-kind-note" onMouseUp={() => {
+            <box id="review-feedback-kind-note" style={composerFocus === "controls" && composerControlIndex === 0 ? { backgroundColor: "#365f8a" } : {}} onMouseUp={() => {
               if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+              setComposerFocus("controls")
+              setComposerControlIndex(0)
               const latest = controller.state
               if (!latest?.draft) return
               try {
@@ -1061,19 +1232,24 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             }}>
               <text content={state.draft.kind === "note" ? "[Note]" : " Note "} />
             </box>
-            <box id="review-feedback-kind-suggestion" onMouseUp={() => {
+            <box id="review-feedback-kind-suggestion" style={composerFocus === "controls" && composerControlIndex === 1 ? { backgroundColor: "#365f8a" } : {}} onMouseUp={() => {
               if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+              setComposerFocus("controls")
+              setComposerControlIndex(1)
               const latest = controller.state
               if (!latest?.draft || !suggestionAllowed) return
               try {
-                controller.dispatch(planReviewIntent(latest, { type: "feedback/update-draft", kind: "suggestion", replacement: "placeholder" }))
+                controller.dispatch(planReviewIntent(latest, { type: "feedback/update-draft", kind: "suggestion" }))
+                setFeedbackMessage(null)
                 session.invalidate()
               } catch {}
             }}>
               <text content={state.draft.kind === "suggestion" ? "[Suggestion]" : " Suggestion "} />
             </box>
-            <box id="review-feedback-severity-comment" onMouseUp={() => {
+            <box id="review-feedback-severity-comment" style={composerFocus === "controls" && composerControlIndex === 2 ? { backgroundColor: "#365f8a" } : {}} onMouseUp={() => {
               if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+              setComposerFocus("controls")
+              setComposerControlIndex(2)
               const latest = controller.state
               if (!latest?.draft) return
               try {
@@ -1083,8 +1259,10 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             }}>
               <text content={state.draft.severity === "comment" ? "[Comment]" : " Comment "} />
             </box>
-            <box id="review-feedback-severity-blocking" onMouseUp={() => {
+            <box id="review-feedback-severity-blocking" style={composerFocus === "controls" && composerControlIndex === 3 ? { backgroundColor: "#365f8a" } : {}} onMouseUp={() => {
               if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+              setComposerFocus("controls")
+              setComposerControlIndex(3)
               const latest = controller.state
               if (!latest?.draft) return
               try {
@@ -1094,6 +1272,29 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             }}>
               <text content={state.draft.severity === "blocking" ? "[Blocking]" : " Blocking "} />
             </box>
+            <box id="review-feedback-save" style={composerFocus === "controls" && composerControlIndex === 4 ? { backgroundColor: "#365f8a" } : {}} onMouseUp={() => {
+              if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current || replacementInvalid) return
+              setComposerFocus("controls")
+              setComposerControlIndex(4)
+              saveDraft()
+            }}>
+              <text content={replacementInvalid ? "[Save disabled]" : " [Save] "} />
+            </box>
+            <box id="review-feedback-cancel" style={composerFocus === "controls" && composerControlIndex === 5 ? { backgroundColor: "#365f8a" } : {}} onMouseUp={() => {
+              if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+              setComposerFocus("controls")
+              setComposerControlIndex(5)
+              const latest = controller.state
+              if (!latest?.draft) return
+              try {
+                controller.dispatch(planReviewIntent(latest, { type: "feedback/cancel-draft" }))
+                setEditingFeedbackId(null)
+                setComposerFocus("body")
+                session.invalidate()
+              } catch {}
+            }}>
+              <text content=" [Cancel] " />
+            </box>
           </box>
           <textarea
             id="review-feedback-body"
@@ -1101,13 +1302,15 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             width="100%"
             height={2}
             initialValue={state.draft.body}
-            focused={true}
+            focused={composerFocus === "body"}
             keyBindings={[{ name: "escape", action: "submit" }]}
             onSubmit={() => {
               const latest = controller.state
               if (latest?.draft) {
                 try { controller.dispatch(planReviewIntent(latest, { type: "feedback/cancel-draft" })) } catch {}
                 setEditingFeedbackId(null)
+                setComposerFocus("body")
+                setComposerControlIndex(0)
                 session.invalidate()
               }
             }}
@@ -1117,6 +1320,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               if (name === "escape" && latest?.draft) {
                 try { controller.dispatch(planReviewIntent(latest, { type: "feedback/cancel-draft" })) } catch {}
                 setEditingFeedbackId(null)
+                setComposerFocus("body")
+                setComposerControlIndex(0)
                 session.invalidate()
                 consume(event)
               } else if (event.ctrl && name.toLowerCase() === "s" && latest?.draft) {
@@ -1132,22 +1337,28 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             }}
           />
           {canShowReplacementDraft(state) ? (
-            <textarea
-              id="review-feedback-replacement"
-              ref={replacementRef}
-              width="100%"
-              height={2}
-              initialValue={state.draft.replacement ?? ""}
-              focused={false}
-              wrapMode="char"
-              placeholder="Replacement text"
-              onContentChange={() => {
-                const replacement = replacementRef.current?.plainText ?? ""
-                const latest = controller.state
-                if (!latest?.draft || latest.draft.replacement === replacement) return
-                try { controller.dispatch({ type: "feedback/update-draft", patch: { replacement } }) } catch {}
-              }}
-            />
+            <>
+              <textarea
+                id="review-feedback-replacement"
+                ref={replacementRef}
+                width="100%"
+                height={2}
+                initialValue={state.draft.replacement ?? ""}
+                focused={composerFocus === "replacement"}
+                wrapMode="char"
+                placeholder="Replacement text"
+                onContentChange={() => {
+                  const replacement = replacementRef.current?.plainText ?? ""
+                  const latest = controller.state
+                  if (!latest?.draft || latest.draft.replacement === replacement) return
+                  try {
+                    controller.dispatch(planReviewIntent(latest, { type: "feedback/update-draft", replacement }))
+                    session.invalidate()
+                  } catch {}
+                }}
+              />
+              {replacementInvalid ? <text id="review-feedback-replacement-error" content="Invalid replacement: enter non-whitespace text." wrapMode="none" truncate={true} /> : null}
+            </>
           ) : null}
         </box>
       ) : null}

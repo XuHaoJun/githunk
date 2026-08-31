@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import type { ReviewState } from "../../../review/core/state"
 import type { HighlightPayload } from "../../../review/git/highlight/highlight-payload"
-import type { HunkReviewFile } from "../hunk-review-model"
+import type { HunkDiffAddress } from "../hunk-diff-row-model"
 import { ReviewDiffSection, hunkSectionRowCount, hunkSectionRowOffset } from "./ReviewDiffSection"
 
 export type ReviewDiffPaneProps = Readonly<{
@@ -20,7 +20,7 @@ export type ReviewDiffPaneProps = Readonly<{
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>
   onSelectFile?: (fileKey: string) => void
   onSelectFeedback?: (feedbackId: string) => void
-  onSelectDiffRow?: (row: import("../hunk-diff-row-model").HunkDiffRow) => void
+  onSelectDiffAddress?: (address: HunkDiffAddress) => void
   onToggleGap?: (fileKey: string, gapId: string) => void
   onVisibleFileKeysChange?: (fileKeys: readonly string[]) => void
   onViewportChange?: (top: number) => void
@@ -90,7 +90,7 @@ export function ReviewDiffPane({
   expandedSourceByGap,
   onSelectFile,
   onSelectFeedback,
-  onSelectDiffRow,
+  onSelectDiffAddress,
   onToggleGap,
   onVisibleFileKeysChange,
   onViewportChange,
@@ -314,7 +314,7 @@ export function ReviewDiffPane({
                   {...(expandedSourceByGap ? { expandedSourceByGap } : {})}
                   {...(select ? { onSelect: select } : {})}
                   {...(onSelectFeedback ? { onSelectFeedback } : {})}
-                  {...(onSelectDiffRow ? { onSelectDiffRow } : {})}
+                  {...(onSelectDiffAddress ? { onSelectDiffAddress } : {})}
                   {...(selectedFeedbackId !== undefined ? { selectedFeedbackId } : {})}
                   {...(onToggleGap ? { onToggleGap: (gapId: string) => onToggleGap(file.id, gapId) } : {})}
                 />

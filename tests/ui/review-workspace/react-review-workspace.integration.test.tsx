@@ -853,7 +853,7 @@ describe("React review workspace", () => {
         await setup.mockInput.typeText("a")
         await Bun.sleep(30)
       })
-      expect(getState().feedback.find((entry) => entry.id === "reanchor-feedback")?.resolution).toBe("active")
+      expect(getState().feedback.find((entry) => entry.id === "reanchor-feedback")?.resolution).toBe("stale")
       await act(async () => {
         await setup.mockInput.typeText("}")
         await Bun.sleep(30)
@@ -865,6 +865,75 @@ describe("React review workspace", () => {
       })
       await flush(setup)
       expect(getState().feedback.map((entry) => entry.id)).toEqual(["reanchor-feedback"])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("selects split sides semantically and creates an exact same-side range", async () => {
+    const file = makeFile("src/semantic-click.ts", ["-old one", "-old two", "+new one", "+new two"])
+    const { session, getState } = makeInteractiveSession([file], [])
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={session} />,
+      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const firstRow = setup.renderer.root.findDescendantById("src/semantic-click.ts:split:0:change:0:0") as unknown as { x: number; y: number; width: number }
+      const secondRow = setup.renderer.root.findDescendantById("src/semantic-click.ts:split:0:change:1:1") as unknown as { x: number; y: number; width: number }
+      await act(async () => {
+        await setup.mockMouse.click(firstRow.x + Math.max(1, Math.floor(firstRow.width * 3 / 4)), firstRow.y)
+        await setup.mockMouse.click(secondRow.x + Math.max(1, Math.floor(secondRow.width * 3 / 4)), secondRow.y)
+      })
+      await flush(setup)
+      expect(getState().lineSelection).toMatchObject({ fileKey: file.key, hunkIndex: 0, side: "new", line: 2 })
+      await act(async () => {
+        setup.mockInput.typeText("c")
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(getState().draft?.anchor).toMatchObject({ kind: "range", fileKey: file.key, side: "new", startLine: 1, endLine: 2, ownerHunkIndex: 0 })
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("keeps suggestion drafts empty until edited and cycles replacement focus", async () => {
+    const file = makeFile("src/suggestion.ts", ["-old", "+new"])
+    const session = makeSession([file])
+    const controller = session.controller as unknown as { state: NonNullable<ReviewWorkspaceController["state"]> }
+    controller.state = {
+      ...controller.state,
+      draft: {
+        anchor: createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 }),
+        kind: "suggestion",
+        severity: "comment",
+        body: "fix this",
+      },
+    }
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
+    try {
+      await flush(setup)
+      const replacement = setup.renderer.root.findDescendantById("review-feedback-replacement") as unknown as { plainText: string; focused: boolean }
+      expect(replacement.plainText).toBe("")
+      expect(setup.captureCharFrame()).not.toContain("placeholder")
+      await act(async () => {
+        setup.mockInput.pressTab()
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(replacement.focused).toBe(true)
+      await act(async () => {
+        setup.mockInput.pressKey("s", { ctrl: true })
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(controller.state.draft).not.toBeNull()
+      expect(setup.captureCharFrame()).toContain("Invalid replacement")
+      await act(async () => {
+        setup.mockInput.pressKey("R", { shift: true })
+        await Bun.sleep(30)
+      })
+      expect(session.finishDialog.isOpen()).toBe(false)
     } finally {
       await act(async () => setup.renderer.destroy())
     }
