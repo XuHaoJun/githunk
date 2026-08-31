@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { ReviewWorkspaceController } from "../../../src/ui/review-workspace/controller"
+import { ReactReviewHost } from "../../../src/ui/review-workspace/react-review-host"
 import { ReviewStateStore, persistedFromReviewState } from "../../../src/review/storage/review-state-store"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewIdentity, createReviewGeneration } from "../../../src/review/core/identity"
@@ -66,11 +67,26 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     const stateStore = {
       load: async () => db,
       saveSemanticChange: async (updater: (value: typeof db) => typeof db) => { written = updater(db) },
+      flush: async () => undefined,
     } as unknown as ReviewStateStore
     const controller = new ReviewWorkspaceController({ runner: fakeRunner(), stateStore, loadDocument: async () => doc })
     const state = await controller.open("refs/heads/main")
     expect(state.projection).toEqual({ kind: "aggregate" })
     expect(written?.reviews[doc.identity.id]?.projection).toEqual({ kind: "aggregate" })
+    const setup = await createTestRenderer({ width: 120, height: 24 })
+    const host = new ReactReviewHost(setup.renderer as unknown as CliRenderer, controller, () => undefined)
+    try {
+      await setup.renderOnce()
+      await setup.renderOnce()
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("[Aggregate]")
+      expect(frame).not.toContain("Since Last")
+      expect(frame).not.toContain("Commit")
+    } finally {
+      host.destroy()
+      controller.destroy()
+      await setup.renderer.destroy()
+    }
   })
   test("slow generation A followed by fast generation B: old result discarded, fast wins", async () => {
     const fileA = makeFile({ key: "a", path: "src/a.ts", contentId: "content-A", patchDigest: "patch-A", hunks: [makeHunk(0, [" a"])] })

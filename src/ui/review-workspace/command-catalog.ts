@@ -41,6 +41,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream"],
     available: always,
     intent: "selection/move",
+    hint: "hunk",
   },
   {
     id: "review.prevHunk",
@@ -48,6 +49,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["["],
     focus: ["stream"],
     available: always,
+    hint: "hunk",
     intent: "selection/move",
   },
   {
@@ -57,6 +59,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream", "sidebar"],
     available: always,
     intent: "selection/move",
+    hint: "file",
   },
   {
     id: "review.prevFile",
@@ -65,6 +68,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream", "sidebar"],
     available: always,
     intent: "selection/move",
+    hint: "file",
   },
   {
     id: "review.nextUnreviewed",
@@ -73,6 +77,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream", "sidebar"],
     available: always,
     intent: "selection/select-file",
+    hint: "unreviewed",
   },
   {
     id: "review.prevUnreviewed",
@@ -80,7 +85,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["N"],
     focus: ["stream", "sidebar"],
     available: always,
-    intent: "selection/select-file",
+    hint: "unreviewed",
   },
   {
     id: "review.nextFeedback",
@@ -88,7 +93,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["}"],
     focus: ["stream", "sidebar"],
     available: always,
-    intent: "feedback/next",
+    hint: "feedback",
   },
   {
     id: "review.prevFeedback",
@@ -96,7 +101,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["{"],
     focus: ["stream", "sidebar"],
     available: always,
-    intent: "feedback/previous",
+    hint: "feedback",
   },
   {
     id: "review.focusFilter",
@@ -104,7 +109,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["/"],
     focus: ["sidebar", "stream"],
     available: always,
-    intent: "filter/set-query",
+    hint: "filter",
   },
   {
     id: "review.focusDiff",
@@ -133,7 +138,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["v"],
     focus: ["stream"],
     available: always,
-    intent: "selection/viewport-anchor",
+    hint: "range",
   },
   {
     id: "review.createFeedback",
@@ -141,7 +146,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["c"],
     focus: ["stream"],
     available: always,
-    intent: "feedback/start-draft",
+    hint: "comment",
   },
   {
     id: "review.markViewed",
@@ -149,7 +154,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["r"],
     focus: ["stream", "sidebar"],
     available: (state) => canMarkViewedInProjection(state),
-    intent: "viewed/mark",
+    hint: "viewed",
   },
   {
     id: "review.layoutCycle",
@@ -188,6 +193,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["e"],
     focus: ["stream", "sidebar"],
     available: always,
+    hint: "edit",
   },
   {
     id: "review.deleteFeedback",
@@ -195,6 +201,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["d"],
     focus: ["stream", "sidebar"],
     available: always,
+    hint: "delete",
   },
   {
     id: "review.reanchorFeedback",
@@ -202,6 +209,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["a"],
     focus: ["stream", "sidebar"],
     available: always,
+    hint: "reanchor",
   },
   {
     id: "review.expandGap",
@@ -209,6 +217,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["z"],
     focus: ["stream"],
     available: always,
+    hint: "expand",
   },
   {
     id: "review.cycleFilterScope",
@@ -216,6 +225,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["f"],
     focus: ["stream", "sidebar"],
     available: always,
+    hint: "filter scope",
   },
   {
     id: "review.finishReview",
@@ -223,6 +233,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["R"],
     focus: ["any"],
     available: always,
+    hint: "finish",
   },
   {
     id: "review.help",
@@ -230,6 +241,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["?"],
     focus: ["any"],
     available: always,
+    hint: "help",
   },
   {
     id: "review.close",
@@ -237,6 +249,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["escape"],
     focus: ["any"],
     available: always,
+    hint: "close",
   },
 ] as const
 

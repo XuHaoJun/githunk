@@ -87,12 +87,38 @@ function padText(text: string, width: number): string {
 
 function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "stream" | "sidebar" | "filter"): string {
   const selected = state.selection.fileKey ?? "none"
-  const key = (id: string): string => {
-    const value = REVIEW_COMMANDS.find((candidate) => candidate.id === id)?.keys[0] ?? ""
+  const entryFor = (id: string) => REVIEW_COMMANDS.find((candidate) => candidate.id === id)
+  const keyFor = (id: string): string => {
+    const value = entryFor(id)?.keys[0] ?? ""
     return value === "tab" ? "Tab" : value
   }
-  const title = (id: string): string => REVIEW_COMMANDS.find((candidate) => candidate.id === id)?.title ?? ""
-  return `${key("review.focusDiff")} ${title("review.focusDiff")} | ${key("review.focusFiles")} ${title("review.focusFiles")} | ${key("review.toggleFocus")} ${title("review.toggleFocus")} | ${key("review.layoutCycle")} ${title("review.layoutCycle")}(${layout}) | ${key("review.moveDown")}/${key("review.moveUp")}:scroll | ]/[ :hunk | ./,:file | n/N:unreviewed | }:feedback | v:range | c:comment | r:viewed | R:finish | ${focus} | Esc:close — ${selected}`
+  const labelFor = (id: string): string => entryFor(id)?.hint ?? entryFor(id)?.title ?? id
+  const command = (id: string, panel = false): string => `${keyFor(id)}${panel ? " " : ":"}${labelFor(id)}`
+  const pair = (first: string, second: string): string => `${keyFor(first)}/${keyFor(second)}:${labelFor(first)}`
+  const hints = [
+    command("review.focusDiff", true),
+    command("review.focusFiles", true),
+    command("review.toggleFocus", true),
+    `${command("review.layoutCycle", true)}(${layout})`,
+    pair("review.moveDown", "review.moveUp"),
+    pair("review.nextHunk", "review.prevHunk"),
+    pair("review.nextFile", "review.prevFile"),
+    pair("review.nextUnreviewed", "review.prevUnreviewed"),
+    pair("review.nextFeedback", "review.prevFeedback"),
+    command("review.focusFilter"),
+    command("review.toggleRange"),
+    command("review.createFeedback"),
+    command("review.editFeedback"),
+    command("review.deleteFeedback"),
+    command("review.reanchorFeedback"),
+    command("review.expandGap"),
+    command("review.cycleFilterScope"),
+    command("review.markViewed"),
+    command("review.finishReview"),
+    command("review.help"),
+    command("review.close"),
+  ]
+  return `${hints.join(" | ")} | ${focus} — ${selected}`
 }
 function feedbackDraftText(state: ReviewState): string {
   const draft = state.draft
@@ -1128,7 +1154,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       {helpOpen ? (
         <box
           id="review-help-dialog"
-          style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: 14, zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
+          style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: Math.min(26, Math.max(14, dimensions.height - 4)), zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
         >
           <text content={`Review commands\n${reviewHelp(focus, state)}\nEsc close this help`} wrapMode="none" truncate={true} />
         </box>

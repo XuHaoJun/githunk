@@ -584,7 +584,12 @@ describe("React review workspace", () => {
       expect(frame).toContain("1 Files")
       expect(frame).toContain("Tab cycle panels")
       expect(frame).toContain("l layout")
-      expect(frame).not.toContain("0/1/2  auto / split / stack")
+      expect(frame).toContain("Begin/end semantic line/range selection")
+      expect(frame).toContain("e Edit selected feedback")
+      expect(frame).toContain("d Delete selected feedback")
+      expect(frame).toContain("a Re-anchor selected feedback")
+      expect(frame).toContain("z Expand context gap")
+      expect(frame).toContain("f Cycle filter scope")
     } finally {
       await act(async () => setup.renderer.destroy())
     }
