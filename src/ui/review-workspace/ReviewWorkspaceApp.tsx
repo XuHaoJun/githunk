@@ -254,6 +254,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const [focus, setFocus] = useState<"stream" | "sidebar" | "filter">("stream")
   const [rangeStart, setRangeStart] = useState<RangeStart | null>(null)
   const [pendingRangeAnchor, setPendingRangeAnchor] = useState<ReviewAnchor | null>(null)
+  const localRangeIdentityRef = useRef<{ generationId: string; fileKey: string; contentId: string } | null>(null)
   const [selectedFeedbackId, setSelectedFeedbackId] = useState<string | null>(null)
   const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null)
   const [pendingDeleteFeedbackId, setPendingDeleteFeedbackId] = useState<string | null>(null)
@@ -410,6 +411,40 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       replacementRef.current?.blur()
     }
   }, [composerFocus, state?.draft])
+  useEffect(() => {
+    const pending = pendingRangeAnchor
+    const start = rangeStart
+    if (!start && !pending) {
+      localRangeIdentityRef.current = null
+      return
+    }
+    const localFileKey = start?.fileKey ?? pending?.fileKey
+    const file = localFileKey ? state?.document.files.find((candidate) => candidate.key === localFileKey) : undefined
+    const identity = file && state
+      ? { generationId: state.document.generation.id, fileKey: file.key, contentId: file.contentId }
+      : null
+    const previous = localRangeIdentityRef.current
+    const line = state?.lineSelection
+    const lineMatchesStart = start !== null
+      && line !== null
+      && line !== undefined
+      && line.fileKey === start.fileKey
+      && line.hunkIndex === start.hunkIndex
+      && line.side === start.side
+      && line.contentId === identity?.contentId
+    const changedDocument = previous !== null
+      && (identity === null
+        || previous.generationId !== identity.generationId
+        || previous.fileKey !== identity.fileKey
+        || previous.contentId !== identity.contentId)
+    if (changedDocument || !identity || (start !== null && !lineMatchesStart) || (start === null && (!line || line.fileKey !== pending?.fileKey))) {
+      localRangeIdentityRef.current = null
+      setRangeStart(null)
+      setPendingRangeAnchor(null)
+      return
+    }
+    localRangeIdentityRef.current = identity
+  }, [pendingRangeAnchor, rangeStart, state?.document, state?.lineSelection])
   const toggleGap = useCallback((fileKey: string, gapId: string) => {
     if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
     if (typeof controller.expandGap !== "function") return

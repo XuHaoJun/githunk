@@ -54,7 +54,11 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 function makeInteractiveSession(
   files: readonly ReviewFile[],
   feedback: NonNullable<ReviewWorkspaceController["state"]>["feedback"],
-): { session: ReactReviewSession; getState: () => NonNullable<ReviewWorkspaceController["state"]> } {
+): {
+  session: ReactReviewSession
+  getState: () => NonNullable<ReviewWorkspaceController["state"]>
+  setState: (next: NonNullable<ReviewWorkspaceController["state"]>) => void
+} {
   let state = { ...makeController(files).state!, feedback }
   const listeners = new Set<(next: typeof state) => void>()
   const controller = {
@@ -71,7 +75,14 @@ function makeInteractiveSession(
     getExpandedSourceByGap: () => new Map(),
     expandGap: async () => undefined,
   } as unknown as ReviewWorkspaceController
-  return { session: new ReactReviewSession(controller, () => undefined), getState: () => state }
+  return {
+    session: new ReactReviewSession(controller, () => undefined),
+    getState: () => state,
+    setState: (next) => {
+      state = next
+      for (const listener of listeners) listener(state)
+    },
+  }
 }
 
 describe("React review workspace", () => {
@@ -893,6 +904,51 @@ describe("React review workspace", () => {
       })
       await flush(setup)
       expect(getState().draft?.anchor).toMatchObject({ kind: "range", fileKey: file.key, side: "new", startLine: 1, endLine: 2, ownerHunkIndex: 0 })
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("drops a pending range when the document generation changes", async () => {
+    const file = makeFile("src/refresh-range.ts", ["-old one", "-old two", "+new one", "+new two"])
+    const { session, getState, setState } = makeInteractiveSession([file], [])
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={session} />,
+      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const firstRow = setup.renderer.root.findDescendantById("src/refresh-range.ts:split:0:change:0:0") as unknown as { x: number; y: number; width: number }
+      await act(async () => {
+        await setup.mockMouse.click(firstRow.x + Math.max(1, Math.floor(firstRow.width * 3 / 4)), firstRow.y)
+      })
+      await flush(setup)
+      const refreshedFile: ReviewFile = {
+        ...file,
+        contentId: "content-refresh-range",
+        patchDigest: "patch-refresh-range",
+        hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: ["-changed one", "-changed two", "+fresh one", "+fresh two"] })],
+      }
+      const headOid = "d".repeat(40)
+      const refreshedDocument = createReviewDocument({
+        identity: createReviewIdentity({ headRef: "refs/heads/feature", headOid, baseRef: "refs/heads/main" }),
+        generation: createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "c".repeat(40), headOid }),
+        commits: [],
+        files: [refreshedFile],
+      })
+      await act(async () => {
+        setState({ ...getState(), document: refreshedDocument })
+        session.invalidate()
+      })
+      await flush(setup)
+      const secondRow = setup.renderer.root.findDescendantById("src/refresh-range.ts:split:0:change:1:1") as unknown as { x: number; y: number; width: number }
+      await act(async () => {
+        await setup.mockMouse.click(secondRow.x + Math.max(1, Math.floor(secondRow.width * 3 / 4)), secondRow.y)
+        setup.mockInput.typeText("c")
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(getState().draft?.anchor).toMatchObject({ kind: "range", fileKey: file.key, side: "new", startLine: 2, endLine: 2 })
     } finally {
       await act(async () => setup.renderer.destroy())
     }
