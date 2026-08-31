@@ -5,6 +5,7 @@ import { ReviewStateStore, persistedFromReviewState } from "../../../src/review/
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewIdentity, createReviewGeneration } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
+import { createLineSelection } from "../../../src/review/core/anchors"
 import type { ReviewFile } from "../../../src/review/core/types"
 import type { GitRunner } from "../../../src/git/runner"
 import { createApp } from "../../../src/app/create-app"
@@ -302,5 +303,33 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
 
     app.destroy()
     setup.renderer.destroy()
+  })
+  test("reopen restores persisted semantic selection and review context", async () => {
+    const f = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a", " b"]) ] })
+    const doc = makeDoc([f], "a".repeat(40))
+    const initial = createInitialReviewState(doc)
+    const lineSelection = createLineSelection(f, { hunkIndex: 0, side: "new", line: 1 })
+    const state = {
+      ...initial,
+      lineSelection,
+      selection: { fileKey: "a", hunkIndex: 0 },
+      filter: { query: "needle", scope: "feedback" as const },
+      viewed: {},
+      feedback: [{
+        id: "fb", kind: "note" as const, severity: "comment" as const, body: "note",
+        anchor: { kind: "file" as const, fileKey: "a", contentId: f.contentId },
+        resolution: "active" as const, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }],
+      expandedGaps: [{ fileKey: "a", gapId: "before:1", expanded: true }],
+    }
+    const db = { version: 2 as const, baseByHead: {}, reviews: { [doc.identity.id]: persistedFromReviewState(state) } }
+    const stateStore = { load: async () => db, saveSemanticChange: async () => undefined, flush: async () => undefined } as unknown as ReviewStateStore
+    const controller = new ReviewWorkspaceController({ runner: fakeRunner(), stateStore, loadDocument: async () => doc })
+    const restored = await controller.open("refs/heads/main")
+    expect(restored.lineSelection).toEqual(lineSelection)
+    expect(restored.filter).toEqual(state.filter)
+    expect(restored.feedback).toHaveLength(1)
+    expect(restored.expandedGaps).toEqual(state.expandedGaps)
+    controller.destroy()
   })
 })

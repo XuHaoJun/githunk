@@ -9,6 +9,7 @@ import { reconcileReviewState } from "../../../src/review/core/reconcile"
 import { serializeReviewDatabaseV2, parseReviewDatabaseV2 } from "../../../src/review/storage/schemas"
 import { persistedFromReviewState } from "../../../src/review/storage/review-state-store"
 import { validateFinishReview, buildReviewArtifact } from "../../../src/review/core/artifact"
+import { planReviewIntent } from "../../../src/review/core/intents"
 import type { ReviewFile } from "../../../src/review/core/types"
 
 function file(contentId = "cid"): ReviewFile {
@@ -56,5 +57,15 @@ describe("semantic line selection", () => {
     expect(validateFinishReview(withInvalid, { decision: "comment", summary: "s" })).toEqual({ ok: false, reason: "suggestion-invalid" })
     expect(() => buildReviewArtifact(withInvalid, { id: "x", submittedAt: new Date().toISOString(), decision: "comment", summary: "s" })).toThrow("suggestion-invalid")
     expect(buildReviewArtifact(state, { id: "x", submittedAt: new Date().toISOString(), decision: "comment", summary: "s" }).projection).toEqual({ kind: "aggregate" })
+  })
+  test("blank replacement persists in open draft but strict create rejects it", () => {
+    const d = doc(); const f = file(); const line = createLineSelection(f, { hunkIndex: 0, side: "new", line: 1 })
+    const anchor = { kind: "range" as const, fileKey: "a", contentId: "cid", side: "new" as const, startLine: 1, endLine: 1, ownerHunkIndex: 0, contextDigest: line.contextDigest }
+    let state = createInitialReviewState(d)
+    state = reduceReviewState(state, planReviewIntent(state, { type: "feedback/start-draft", anchor, kind: "suggestion", severity: "comment", body: "fix", replacement: " " }))
+    expect(state.draft?.replacement).toBe(" ")
+    expect(() => planReviewIntent(state, { type: "feedback/create", id: "s", createdAt: new Date().toISOString() })).toThrow("non-empty")
+    const db = { version: 2 as const, baseByHead: {}, reviews: { [d.identity.id]: persistedFromReviewState(state) } }
+    expect(parseReviewDatabaseV2(JSON.parse(serializeReviewDatabaseV2(db))).ok).toBe(true)
   })
 })
