@@ -1,12 +1,13 @@
 import type { ReviewAction } from "./actions"
-import type { ReviewState } from "./state"
+import type { ReviewState, ReviewLineSelection } from "./state"
+import { createLineSelection } from "./anchors"
 import type { ReviewProjection } from "./types"
 import type { ReviewAnchor, ReviewFeedback, ReviewFeedbackDraft } from "./types"
-
 export type ReviewIntent =
   | { type: "selection/select-file"; fileKey: string }
   | { type: "selection/move"; unit: "file" | "hunk"; direction: "next" | "previous" }
-  | { type: "selection/viewport-anchor"; fileKey: string; hunkIndex: number; reveal?: "hunk" }
+  | { type: "selection/set-line"; selection: ReviewLineSelection }
+  | { type: "selection/move-line"; direction: "next" | "previous" }
   | { type: "filter/set-query"; query: string }
   | { type: "filter/set-scope"; scope: "all" | "unreviewed" | "changed" | "feedback" }
   | { type: "projection/set"; projection: ReviewProjection }
@@ -154,6 +155,20 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
     case "selection/move": {
       return { type: "selection/move", unit: intent.unit, direction: intent.direction }
     }
+    case "selection/set-line": {
+      const s = intent.selection
+      validateFileKey(state, s.fileKey)
+      validateHunkBounds(state, s.fileKey, s.hunkIndex)
+      const file = state.document.files.find((f) => f.key === s.fileKey)!
+      try {
+        const expected = createLineSelection(file, { hunkIndex: s.hunkIndex, side: s.side, line: s.line })
+        if (expected.contentId !== s.contentId || expected.contextDigest !== s.contextDigest) throw new Error("identity mismatch")
+      } catch (error) {
+        throw new ReviewIntentValidationError("anchor-invalid", error instanceof Error ? error.message : "invalid line selection")
+      }
+      return { type: "selection/set-line", selection: s }
+    }
+    case "selection/move-line": return { type: "selection/move-line", direction: intent.direction }
     case "selection/viewport-anchor": {
       validateFileKey(state, intent.fileKey)
       validateHunkBounds(state, intent.fileKey, intent.hunkIndex)

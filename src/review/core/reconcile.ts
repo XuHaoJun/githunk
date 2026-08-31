@@ -1,7 +1,6 @@
 import type { ReviewDocument, ReviewFeedback, ReviewFile } from "./types"
-import type { ExpandedGap, ReviewSelection, ViewedRecord, ReviewState } from "./state"
-import { reconcileAnchor } from "./anchors"
-import { reduceReviewState } from "./reducer"
+import type { ExpandedGap, ReviewSelection, ViewedRecord, ReviewState, ReviewLineSelection } from "./state"
+import { createLineSelection } from "./anchors"
 
 export type ReviewFileMatchResult = Readonly<{
   exact: ReadonlyMap<string, ReviewFile>
@@ -319,17 +318,26 @@ export function reconcileReviewState(previous: ReviewState, document: ReviewDocu
     return same ? previous.feedback : reconciled
   })()
   const selection = reconcileSelection(previous.selection, matches, document)
+  let lineSelection: ReviewLineSelection | null = null
+  const oldLine = previous.lineSelection
+  const mapped = oldLine ? matches.previousToCurrent.get(oldLine.fileKey) : undefined
+  if (oldLine && mapped && mapped.contentId === oldLine.contentId) {
+    try {
+      const candidate = createLineSelection(mapped, oldLine)
+      if (candidate.contextDigest === oldLine.contextDigest) lineSelection = candidate
+    } catch {}
+  }
   const expandedGaps = reconcileExpandedGaps(previous.expandedGaps, matches)
   // Idempotent when generation and patch digest unchanged and all derived slices equal – avoids spurious revision bump for no-op reconciliation (I3)
   if (
     viewed === previous.viewed &&
     feedback === previous.feedback &&
+    lineSelection === previous.lineSelection &&
     selection === previous.selection &&
-    expandedGaps === previous.expandedGaps &&
     document.generation.id === previous.document.generation.id &&
     document.aggregatePatchDigest === previous.document.aggregatePatchDigest
   ) {
     return previous
   }
-  return reduceReviewState(previous, { type: "document/reconciled", document, viewed, feedback, selection, expandedGaps })
+  return reduceReviewState(previous, { type: "document/reconciled", document, viewed, feedback, selection, lineSelection, expandedGaps })
 }

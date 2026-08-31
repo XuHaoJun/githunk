@@ -1,6 +1,6 @@
-import type { ReviewState, ReviewSelection, ReviewRevealIntent } from "./state"
+import type { ReviewState, ReviewSelection, ReviewRevealIntent, ReviewLineSelection } from "./state"
 import { visibleReviewFiles } from "./selectors"
-
+import { createLineSelection, sideLinesForHunk } from "./anchors"
 export type ReviewNavigationMove = Readonly<{ unit: "file" | "hunk"; direction: "next" | "previous" }>
 export type ReviewNavigationTarget = Readonly<{
   selection: ReviewSelection
@@ -94,4 +94,17 @@ export function moveReviewSelection(
           scrollToFeedback: false,
         },
   }
+}
+
+export function moveReviewLineSelection(state: ReviewState, direction: "next" | "previous"): ReviewLineSelection | null {
+  const current = state.lineSelection
+  if (!current) return null
+  const file = state.document.files.find((candidate) => candidate.key === current.fileKey)
+  const hunk = file?.hunks.find((candidate) => candidate.index === current.hunkIndex)
+  if (!file || !hunk) return null
+  const lines = sideLinesForHunk(hunk, current.side)
+  const index = lines.findIndex((entry) => entry.lineNumber === current.line)
+  const nextIndex = index + (direction === "next" ? 1 : -1)
+  if (index < 0 || nextIndex < 0 || nextIndex >= lines.length) return null
+  return createLineSelection(file, { hunkIndex: current.hunkIndex, side: current.side, line: lines[nextIndex]!.lineNumber })
 }

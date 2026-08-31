@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { ReviewArtifactV1, SubmittedFeedback } from "../core/artifact"
 import type { ReviewIdentity, ReviewGeneration, ReviewAnchor, ReviewFeedback, ReviewFeedbackDraft } from "../core/types"
-import type { ViewedRecord, ExpandedGap, SubmittedReviewRef, ReviewSelection } from "../core/state"
+import type { ViewedRecord, ExpandedGap, SubmittedReviewRef, ReviewSelection, ReviewLineSelection } from "../core/state"
 
 // ---------------------------------------------------------------------------
 // Domain types (readonly) – not zod inferred
@@ -9,6 +9,7 @@ import type { ViewedRecord, ExpandedGap, SubmittedReviewRef, ReviewSelection } f
 
 export type PersistedReviewState = Readonly<{
   selection: ReviewSelection
+  lineSelection: ReviewLineSelection | null
   filter: Readonly<{ query: string; scope: "all" | "unreviewed" | "changed" | "feedback" }>
   projection: Readonly<{ kind: "aggregate" } | { kind: "since-last-review"; fromHeadOid: string } | { kind: "commit"; oid: string }>
   viewed: Readonly<Record<string, ViewedRecord>>
@@ -161,6 +162,15 @@ const submissionInProgressSchema = z
   })
   .strict()
 
+const lineSelectionSchema = z.object({
+  fileKey: z.string().min(1),
+  hunkIndex: z.number().int().min(0),
+  side: z.enum(["old", "new"]),
+  line: z.number().int().min(1),
+  contentId: z.string().min(1),
+  contextDigest: z.string().min(1),
+}).strict()
+
 const selectionSchema = z
   .object({
     fileKey: z.string().nullable(),
@@ -184,6 +194,7 @@ const projectionSchema = z.discriminatedUnion("kind", [
 const persistedReviewStateSchema = z
   .object({
     selection: selectionSchema,
+    lineSelection: lineSelectionSchema.nullable().optional(),
     filter: filterSchema,
     projection: projectionSchema.optional(),
     viewed: z.record(z.string(), viewedRecordSchema),
@@ -356,7 +367,6 @@ function toExpandedGap(raw: z.infer<typeof expandedGapSchema>): ExpandedGap {
 function toSubmittedRef(raw: z.infer<typeof submittedReviewRefSchema>): SubmittedReviewRef {
   return { artifactId: raw.artifactId, generationId: raw.generationId, headOid: raw.headOid, submittedAt: raw.submittedAt }
 }
-
 function toPersistedReviewState(raw: z.infer<typeof persistedReviewStateSchema>): PersistedReviewState {
   const viewed: Record<string, ViewedRecord> = {}
   for (const [k, v] of Object.entries(raw.viewed)) viewed[k] = toViewedRecord(v)
@@ -365,6 +375,7 @@ function toPersistedReviewState(raw: z.infer<typeof persistedReviewStateSchema>)
   const projection = raw.projection ?? { kind: "aggregate" as const }
   return {
     selection: { fileKey: raw.selection.fileKey, hunkIndex: raw.selection.hunkIndex },
+    lineSelection: raw.lineSelection ?? null,
     filter: { query: raw.filter.query, scope: raw.filter.scope },
     projection,
     viewed,

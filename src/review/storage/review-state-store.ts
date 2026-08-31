@@ -105,6 +105,7 @@ export class ReviewStateStore {
         if (!existingReview) {
           const emptyPersisted: PersistedReviewState = {
             selection: { fileKey: null, hunkIndex: 0 },
+            lineSelection: null,
             filter: { query: "", scope: "all" },
             projection: { kind: "aggregate" },
             viewed: {},
@@ -147,6 +148,7 @@ export class ReviewStateStore {
         if (!existingReview) {
           const emptyPersisted: PersistedReviewState = {
             selection: { fileKey: null, hunkIndex: 0 },
+            lineSelection: null,
             filter: { query: "", scope: "all" },
             projection: { kind: "aggregate" },
             viewed: {},
@@ -177,6 +179,7 @@ export class ReviewStateStore {
 export function persistedFromReviewState(state: ReviewState): PersistedReviewState {
   return {
     selection: state.selection,
+    lineSelection: state.lineSelection,
     filter: state.filter,
     projection: state.projection,
     viewed: state.viewed,

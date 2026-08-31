@@ -1,6 +1,7 @@
 import { sha256Tuple } from "./identity"
 import type { ReviewAnchor, ReviewFile, ReviewHunk } from "./types"
 import type { ReviewDocument } from "./types"
+import type { ReviewLineSelection } from "./state"
 
 export type AnchorReconciliation =
   | { resolution: "active"; anchor: ReviewAnchor }
@@ -18,7 +19,7 @@ function hunkSideRange(hunk: ReviewHunk, side: "old" | "new"): [number, number] 
 
 type SideLine = { lineNumber: number; content: string }
 
-function sideLinesForHunk(hunk: ReviewHunk, side: "old" | "new"): SideLine[] {
+export function sideLinesForHunk(hunk: ReviewHunk, side: "old" | "new"): SideLine[] {
   const result: SideLine[] = []
   let curOld = hunk.oldStart
   let curNew = hunk.newStart
@@ -132,6 +133,22 @@ export function createRangeAnchor(
     ownerHunkIndex: owner.index,
     contextDigest: digest,
   }
+}
+
+export function createLineSelection(
+  file: ReviewFile,
+  input: { hunkIndex: number; side: "old" | "new"; line: number },
+): ReviewLineSelection {
+  if (!Number.isInteger(input.hunkIndex) || input.hunkIndex < 0) throw new Error("invalid hunkIndex")
+  if (input.side !== "old" && input.side !== "new") throw new Error("invalid side")
+  if (!Number.isInteger(input.line) || input.line < 1) throw new Error("invalid line")
+  const hunk = file.hunks.find((candidate) => candidate.index === input.hunkIndex)
+  if (!hunk) throw new Error("hunk not found")
+  if (file.source === "binary" || file.source === "too-large") throw new Error("line selections not allowed")
+  const lines = sideLinesForHunk(hunk, input.side)
+  if (!lines.some((entry) => entry.lineNumber === input.line)) throw new Error("line not found")
+  const anchor = createRangeAnchor(file, { side: input.side, startLine: input.line, endLine: input.line })
+  return { fileKey: file.key, hunkIndex: input.hunkIndex, side: input.side, line: input.line, contentId: anchor.contentId, contextDigest: anchor.contextDigest }
 }
 
 export function reconcileAnchor(anchor: ReviewAnchor, document: ReviewDocument): AnchorReconciliation {

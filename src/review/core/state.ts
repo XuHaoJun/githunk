@@ -9,6 +9,14 @@ export type ViewedRecord = Readonly<{
 }>
 
 export type ReviewSelection = Readonly<{ fileKey: string | null; hunkIndex: number }>
+export type ReviewLineSelection = Readonly<{
+  fileKey: string
+  hunkIndex: number
+  side: "old" | "new"
+  line: number
+  contentId: string
+  contextDigest: string
+}>
 export type ReviewRevealIntent = Readonly<{ fileTopToken: number; fileTopRequestToken: number; hunkToken: number; scrollToFeedback: boolean }>
 export type ExpandedGap = Readonly<{ fileKey: string; gapId: string; expanded: boolean }>
 export type SubmittedReviewRef = Readonly<{ artifactId: string; generationId: string; headOid: string; submittedAt: string }>
@@ -20,6 +28,7 @@ export type ReviewState = Readonly<{
   revision: number
   projection: ReviewProjection
   selection: ReviewSelection
+  lineSelection: ReviewLineSelection | null
   reveal: ReviewRevealIntent
   filter: Readonly<{ query: string; scope: "all" | "unreviewed" | "changed" | "feedback" }>
   viewed: Readonly<Record<string, ViewedRecord>>
@@ -35,6 +44,7 @@ export function createInitialReviewState(document: ReviewDocument): ReviewState 
     revision: 0,
     projection: { kind: "aggregate" },
     selection: { fileKey: firstFile?.key ?? null, hunkIndex: 0 },
+    lineSelection: null,
     reveal: { fileTopToken: 0, fileTopRequestToken: 0, hunkToken: 0, scrollToFeedback: false },
     filter: { query: "", scope: "all" },
     viewed: {},

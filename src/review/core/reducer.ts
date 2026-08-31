@@ -1,7 +1,7 @@
 import type { ReviewAction } from "./actions"
 import type { ReviewState } from "./state"
 import { visibleReviewFiles } from "./selectors"
-import { moveReviewSelection } from "./navigation"
+import { moveReviewSelection, moveReviewLineSelection } from "./navigation"
 
 function projectionsEqual(a: ReviewState["projection"], b: ReviewState["projection"]): boolean {
   if (a.kind !== b.kind) return false
@@ -86,6 +86,16 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         reveal: nextReveal,
         revision: state.revision + 1,
       }
+    }
+    case "selection/set-line": {
+      const s = action.selection
+      if (state.lineSelection && JSON.stringify(state.lineSelection) === JSON.stringify(s)) return state
+      return { ...state, selection: { fileKey: s.fileKey, hunkIndex: s.hunkIndex }, lineSelection: s, revision: state.revision + 1 }
+    }
+    case "selection/move-line": {
+      const next = moveReviewLineSelection(state, action.direction)
+      if (!next) return state
+      return { ...state, lineSelection: next, revision: state.revision + 1 }
     }
     case "selection/move": {
       const target = moveReviewSelection(state, action.unit, action.direction)
@@ -183,31 +193,17 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (!(action.fileKey in state.viewed)) return state
       const copy = { ...state.viewed }
       delete copy[action.fileKey]
-      return {
-        ...state,
-        viewed: copy,
-        revision: state.revision + 1,
-      }
+      return { ...state, viewed: copy, revision: state.revision + 1 }
     }
     case "document/reconciled": {
       const docChanged = action.document !== state.document
       const viewedChanged = action.viewed !== state.viewed
       const feedbackChanged = action.feedback !== state.feedback
-      const selectionChanged =
-        action.selection.fileKey !== state.selection.fileKey || action.selection.hunkIndex !== state.selection.hunkIndex
+      const selectionChanged = action.selection.fileKey !== state.selection.fileKey || action.selection.hunkIndex !== state.selection.hunkIndex
+      const lineSelectionChanged = action.lineSelection !== state.lineSelection
       const gapsChanged = action.expandedGaps !== state.expandedGaps
-      if (!docChanged && !viewedChanged && !feedbackChanged && !selectionChanged && !gapsChanged) {
-        return state
-      }
-      return {
-        ...state,
-        document: action.document,
-        viewed: action.viewed,
-        feedback: action.feedback,
-        selection: action.selection,
-        expandedGaps: action.expandedGaps,
-        revision: state.revision + 1,
-      }
+      if (!docChanged && !viewedChanged && !feedbackChanged && !selectionChanged && !lineSelectionChanged && !gapsChanged) return state
+      return { ...state, document: action.document, viewed: action.viewed, feedback: action.feedback, selection: action.selection, lineSelection: action.lineSelection, expandedGaps: action.expandedGaps, revision: state.revision + 1 }
     }
     case "feedback/start-draft": {
       return {
