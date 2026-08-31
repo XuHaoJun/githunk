@@ -565,6 +565,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     const current = controller.state
     const feedback = current?.feedback.find((entry) => entry.id === feedbackId)
     if (!current || !feedback) return
+    setRangeStart(null)
+    setPendingRangeAnchor(null)
     setSelectedFeedbackId(feedbackId)
     pendingDeleteFeedbackRef.current = null
     setPendingDeleteFeedbackId(null)
@@ -828,6 +830,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       return true
     }
     if (commandId === "review.cycleFilterScope") {
+      const scopes = ["all", "unreviewed", "changed", "feedback"] as const
       const index = scopes.indexOf(current.filter.scope)
       const scope = scopes[(index + 1) % scopes.length] ?? "all"
       try { controller.dispatch(planReviewIntent(current, { type: "filter/set-scope", scope })) } catch {}
