@@ -34,6 +34,7 @@ function makeState(projection: ReviewState["projection"]): ReviewState {
     revision: 0,
     projection,
     selection: { fileKey: "src/a.ts", hunkIndex: 0 },
+    lineSelection: null,
     reveal: { fileTopToken: 0, fileTopRequestToken: 0, hunkToken: 0, scrollToFeedback: false },
     filter: { query: "", scope: "all" },
     viewed: {},
@@ -82,6 +83,34 @@ describe("command-catalog defaults — exact spec §5.4 keys", () => {
     expect(REVIEW_COMMANDS.flatMap((entry) => entry.keys)).not.toContain("2")
     expect(REVIEW_COMMANDS.some((entry) => /projection|since last|commit projection/i.test(entry.title))).toBe(false)
   })
+  test("active help and command resolution omit every deferred surface", () => {
+    const state = makeState({ kind: "aggregate" })
+    const deferredLabels = [
+      "Since Last Review",
+      "individual commit",
+      "trailing final hunk",
+      "page",
+      "half-page",
+      "horizontal scroll",
+      "current-line",
+      "theme",
+      "copy decorations",
+      "agent annotations",
+      "extension panes",
+      "pager",
+      "editor",
+      "git mutation",
+    ]
+    const help = reviewHelp("stream", state)
+    const hints = reviewHints("stream", state)
+    for (const label of deferredLabels) {
+      const pattern = new RegExp(label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "iu")
+      expect(help).not.toMatch(pattern)
+      expect(hints).not.toMatch(pattern)
+      expect(resolveReviewCommand(label, "stream")).toBeUndefined()
+    }
+  })
+
 
   test("uses only spec §5.4 keys — no old Branch Review compatibility aliases", () => {
     const allKeys = REVIEW_COMMANDS.flatMap((c) => c.keys)

@@ -6,8 +6,11 @@ import { createTempRepository } from "../helpers/temp-repository"
 import type { TempRepository } from "../helpers/temp-repository"
 import { createShellHarness } from "../helpers/shell-harness"
 import type { ShellHarness } from "../helpers/shell-harness"
+import { GitRunner } from "../../src/git/runner"
 import type { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
 import { coverageForFile } from "../../src/review/core/selectors"
+import { renderReviewArtifactMarkdown } from "../../src/review/core/artifact"
+import { ReviewArtifactStore } from "../../src/review/storage/review-artifact-store"
 async function createBranchFixture(repository: TempRepository): Promise<void> {
   await repository.write("README.md", "# base\n")
   await repository.git(["add", "README.md"])
@@ -23,7 +26,7 @@ async function createBranchFixture(repository: TempRepository): Promise<void> {
   await repository.write("src/payment.ts", "export const pay = 1\nline2\nline3\n")
   await repository.git(["add", "src/payment.ts"])
   await repository.git(["commit", "-m", "add payment"])
-  await repository.write("src/validation.ts", "export const valid = true\n")
+  await repository.write("src/validation.ts", "export const valid = true\nexport const lower = 1\nexport const upper = 2\n")
   await repository.git(["add", "src/validation.ts"])
   await repository.git(["commit", "-m", "add validation"])
   await repository.write("src/types.ts", "export type T = string\n")
@@ -156,6 +159,186 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     const newText = newLines.map((l) => l.spans.map((s) => s.text).join("")).join("\n")
     expect(newText).not.toMatch(/git (add|commit|checkout|push|pull|fetch|branch|stash)/)
   }, 30000)
+  test("real OpenTUI scenario covers semantic feedback, stale resolution, finish, restart, and no mutation", async () => {
+    repository = await createTempRepository()
+    await createBranchFixture(repository)
+    await seedBase(repository, "refs/heads/feature/payment", "refs/heads/main")
+    harness = await createShellHarness({ repository, width: 120, height: 40 })
+
+    const app = harness.app
+    const initialLogStart = app.controller.state.commandLog.length
+    const screen = harness.app.screenController
+    const openWithB = async (): Promise<void> => {
+      const currentScreen = harness!.app.screenController
+      await harness!.pressKey("b")
+      await currentScreen.openBranchReview()
+      await harness!.flush()
+      expect(currentScreen.active.kind).toBe("branch-review")
+    }
+    await openWithB()
+    const branch = screen.active as Extract<typeof screen.active, { kind: "branch-review" }>
+    const controller = branch.controller
+    const root = branch.view.root
+    const clickNode = async (id: string): Promise<void> => {
+      const node = root.findDescendantById(id) as { screenX?: number; screenY?: number; width?: number; height?: number } | undefined
+      if (!node || node.screenX === undefined || node.screenY === undefined) throw new Error(`missing OpenTUI node ${id}`)
+      await harness!.mockMouse.click(
+        node.screenX + Math.floor(Math.max(1, node.width ?? 1) / 2),
+        node.screenY + Math.floor(Math.max(1, node.height ?? 1) / 2),
+      )
+      await harness!.flush()
+    }
+    const fileRow = (path: string): string => `review-file-row:${path}`
+    const diffRow = (fileKey: string, line: number): string => `${fileKey}:split:0:change:${line}:${line}`
+    const state = () => controller.state!
+    const payment = () => state().document.files.find((file) => file.path === "src/payment.ts")!
+    const validation = () => state().document.files.find((file) => file.path === "src/validation.ts")!
+
+    expect(harness.frame()).toContain("[Aggregate]")
+    await harness.typeText("0")
+    expect(harness.frame()).toContain("[0] Diff")
+    await harness.pressKey("1")
+    expect(harness.frame()).toContain("[1] Files")
+    await harness.pressKey("TAB")
+    expect(harness.frame()).toContain("[1] Files")
+    await harness.pressKey("0")
+    expect(harness.frame()).toContain("[0] Diff")
+    expect(harness.frame()).toContain("stream —")
+
+    // Keyboard selects a changed line, then the mouse selects a different changed line.
+    await clickNode(fileRow(payment().path))
+    await clickNode(diffRow(payment().key, 0))
+    await harness.pressKey("j")
+    expect(state().lineSelection?.fileKey).toBe(payment().key)
+    expect(state().lineSelection?.side).toBe("new")
+    await clickNode(fileRow(validation().path))
+    await clickNode(diffRow(validation().key, 0))
+    expect(state().lineSelection?.fileKey).toBe(validation().key)
+    expect(state().lineSelection?.line).toBe(1)
+
+    // Create and edit a line comment through the active composer.
+    await clickNode(fileRow(payment().path))
+    await clickNode(diffRow(payment().key, 0))
+    await harness.pressKey("c")
+    await clickNode("review-feedback-body")
+    await harness.typeText("payment note")
+    await clickNode("review-feedback-save")
+    expect(state().feedback).toHaveLength(1)
+    const paymentNoteId = state().feedback[0]!.id
+    await harness.typeText("}")
+    await harness.pressKey("e")
+    await clickNode("review-feedback-body")
+    await harness.typeText(" edited")
+    await clickNode("review-feedback-save")
+    expect(state().feedback.find((feedback) => feedback.id === paymentNoteId)?.body).toContain("edited")
+    expect(state().feedback.find((feedback) => feedback.id === paymentNoteId)?.body).toContain("payment note")
+
+    // Create a temporary second item and delete it with the two-step confirmation.
+    await clickNode(fileRow("src/types.ts"))
+    await clickNode(diffRow("src/types.ts", 0))
+    await harness.pressKey("c")
+    await clickNode("review-feedback-body")
+    await harness.typeText("delete me")
+    await clickNode("review-feedback-save")
+    const deletedId = state().feedback.find((feedback) => feedback.body === "delete me")!.id
+    await harness.pressKey("}")
+    await harness.pressKey("}")
+    await harness.pressKey("d")
+    await harness.pressKey("d")
+
+    // Select a two-line new-side range and save a blocking suggestion with real replacement text.
+    await clickNode(fileRow(validation().path))
+    await clickNode(diffRow(validation().key, 0))
+    await clickNode(diffRow(validation().key, 1))
+    await harness.pressKey("c")
+    await clickNode("review-feedback-kind-suggestion")
+    await clickNode("review-feedback-severity-blocking")
+    await clickNode("review-feedback-body")
+    await harness.typeText("replace validation")
+    await clickNode("review-feedback-replacement")
+    await harness.typeText("export const valid = false")
+    await clickNode("review-feedback-save")
+    const suggestion = state().feedback.find((feedback) => feedback.kind === "suggestion")!
+    expect(suggestion.severity).toBe("blocking")
+    expect(suggestion.anchor).toMatchObject({ kind: "range", side: "new", startLine: 1, endLine: 2 })
+    expect(suggestion.replacement).toBe("export const valid = false")
+    await controller.flushDrafts()
+
+    // A real repository commit changes the reviewed payment file; refresh and reopen to reconcile it.
+    const oldGenerationId = controller.generationId
+    await repository.write("src/payment.ts", "export const pay = 2 // changed after review\nline2\nline3\n")
+    await repository.git(["add", "src/payment.ts"])
+    await repository.git(["commit", "-m", "change reviewed payment"])
+    await controller.refreshGeneration()
+    expect(controller.generationId).not.toBe(oldGenerationId)
+    expect(controller.state?.feedback.find((feedback) => feedback.id === paymentNoteId)?.resolution).toBe("stale")
+    await screen.closeBranchReview()
+    await openWithB()
+    const reopenedScreen = screen.active as Extract<typeof screen.active, { kind: "branch-review" }>
+    const reopened = reopenedScreen.controller
+    const reopenedRoot = reopenedScreen.view.root
+    expect(reopened.state?.feedback.find((feedback) => feedback.id === paymentNoteId)?.resolution).toBe("stale")
+    expect(reopened.state?.feedback.find((feedback) => feedback.kind === "suggestion")?.resolution).toBe("active")
+
+    // Finish is visibly blocked until the stale item is re-anchored.
+    await harness.pressKey("R")
+    expect(harness.frame()).toContain("Finish blocked: some feedback is stale or orphaned")
+    await harness.pressKey("ESCAPE")
+    const currentPayment = reopened.state!.document.files.find((file) => file.path === "src/payment.ts")!
+    const currentPaymentRow = `${currentPayment.key}:split:0:change:0:0`
+    const clickReopenedNode = async (id: string): Promise<void> => {
+      const node = reopenedRoot.findDescendantById(id) as { screenX?: number; screenY?: number; width?: number; height?: number } | undefined
+      if (!node || node.screenX === undefined || node.screenY === undefined) throw new Error(`missing reopened OpenTUI node ${id}`)
+      await harness!.mockMouse.click(node.screenX + Math.floor(Math.max(1, node.width ?? 1) / 2), node.screenY + Math.floor(Math.max(1, node.height ?? 1) / 2))
+      await harness!.flush()
+    }
+    await clickReopenedNode(fileRow(currentPayment.path))
+    await harness.pressKey("0")
+    await clickReopenedNode(currentPaymentRow)
+    expect(reopened.state?.lineSelection).not.toBeNull()
+    await clickReopenedNode(`${currentPayment.key}:split:feedback:${paymentNoteId}`)
+    await clickReopenedNode(currentPaymentRow)
+    await harness.typeText("a")
+    expect(reopened.state?.feedback.find((feedback) => feedback.id === paymentNoteId)?.resolution).toBe("active")
+
+    await harness.pressKey("R")
+    expect(harness.frame()).toContain("Finish review")
+    await clickReopenedNode("review-finish-request-changes")
+    await clickReopenedNode("review-finish-summary")
+    await harness.typeText("please apply the validation replacement")
+    await clickReopenedNode("review-finish-submit")
+    await reopened.flushDrafts()
+    expect(reopened.state?.lastSubmission).toBeDefined()
+    expect(reopened.state?.feedback).toEqual([])
+    const artifactId = reopened.state!.lastSubmission!.artifactId
+    const artifactStore = new ReviewArtifactStore(new GitRunner(repository.path))
+    const raw = await artifactStore.readRaw(reopened.state!.document.identity.id, artifactId)
+    expect(raw).toBeDefined()
+    const json = JSON.parse(raw!) as { decision: string; projection: { kind: string }; feedback: readonly { kind: string; replacement?: string }[] }
+    expect(json.decision).toBe("request-changes")
+    expect(json.projection).toEqual({ kind: "aggregate" })
+    expect(json.feedback.some((feedback) => feedback.kind === "suggestion" && feedback.replacement === "export const valid = false")).toBe(true)
+    const artifact = await artifactStore.load(reopened.state!.document.identity.id, artifactId)
+    expect(artifact).toBeDefined()
+    const markdownA = renderReviewArtifactMarkdown(artifact!)
+    const markdownB = renderReviewArtifactMarkdown(artifact!)
+    expect(markdownA).toBe(markdownB)
+    expect(markdownA).toContain("request-changes")
+    expect(markdownA).toContain("export const valid = false")
+    const firstAppLog = app.controller.state.commandLog.slice(initialLogStart).map((line) => line.spans.map((span) => span.text).join(""))
+    const restartRepository = repository
+    await harness.cleanup()
+    harness = await createShellHarness({ repository: restartRepository, width: 120, height: 40 })
+    const restartLogStart = harness.app.controller.state.commandLog.length
+    await openWithB()
+    const restarted = (harness.app.screenController.active as Extract<typeof harness.app.screenController.active, { kind: "branch-review" }>).controller
+    expect(restarted.state?.lastSubmission?.artifactId).toBe(artifactId)
+    expect(restarted.state?.projection).toEqual({ kind: "aggregate" })
+    const restartAppLog = harness.app.controller.state.commandLog.slice(restartLogStart).map((line) => line.spans.map((span) => span.text).join(""))
+    const allAppLog = [...firstAppLog, ...restartAppLog]
+    expect(allAppLog.join("\n")).not.toMatch(/git (add|commit|checkout|push|pull|fetch|branch|stash|reset|rebase|merge|restore|clean)/iu)
+  }, 40000)
+
   test("returning from branch review refreshes repository working-tree files", async () => {
     repository = await createTempRepository()
     await createBranchFixture(repository)

@@ -110,7 +110,7 @@ describe("reviewProgress without scanning patch text", () => {
   })
 })
 
-describe("marking Viewed stores file key, path, content id, generation id, and timestamp", () => {
+describe("active aggregate Viewed coverage", () => {
   test("aggregate marking succeeds", () => {
     const f = file({ path: "src/a.ts", contentId: "c1" })
     const doc = makeDoc([f])
@@ -140,16 +140,4 @@ describe("marking Viewed stores file key, path, content id, generation id, and t
     expect(() => planReviewIntent(sCommit, { type: "viewed/mark", fileKey: "src/a.ts", viewedAt: "2026-08-27T00:00:00.000Z" })).toThrow()
   })
 
-  test("since-last-review eligibility is projection-specific", () => {
-    const f = file({ path: "src/a.ts", contentId: "c1" })
-    const doc = makeDoc([f])
-    const s0 = createInitialReviewState(doc)
-    // since-last-review requires a submitted head that is ancestor; we test that projection/set validates existence
-    // For now, allow marking in since-last-review if file exists; commit already tested refusal.
-    const sSince = reduceReviewState(s0, planReviewIntent(s0, { type: "projection/set", projection: { kind: "since-last-review", fromHeadOid: "c1" } }))
-    expect(sSince.projection.kind).toBe("since-last-review")
-    // Marking in since-last-review should be allowed (subject to future detailed checks)
-    const action = planReviewIntent(sSince, { type: "viewed/mark", fileKey: "src/a.ts", viewedAt: "2026-08-27T00:00:00.000Z" })
-    expect(action.type).toBe("viewed/mark")
-  })
 })

@@ -25,7 +25,7 @@ async function commitAll(repo: TempRepository, message: string): Promise<string>
   return oid.stdout.trim()
 }
 
-describe("projections integration", () => {
+describe("future projection loaders — isolated direct tests", () => {
   test("Since Last Review uses lastHead..HEAD and is view over same identity", async () => {
     const repo = await createTempRepository()
     try {

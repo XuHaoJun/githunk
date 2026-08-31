@@ -6,6 +6,7 @@ import { createApp } from "../../../src/app/create-app"
 import { GitRunner } from "../../../src/git/runner"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity, sha256Tuple } from "../../../src/review/core/identity"
+import { reviewHelp, reviewHints } from "../../../src/ui/review-workspace/command-catalog"
 import type { ReviewDocument, ReviewFile } from "../../../src/review/core/types"
 import { hunkSectionRowCount, hunkSectionRowOffset } from "../../../src/ui/review-workspace/components/ReviewDiffSection"
 import { toHunkReviewFile } from "../../../src/ui/review-workspace/hunk-review-model"
@@ -387,6 +388,56 @@ describe("review workspace real surface", () => {
       const backwardTargetTop = hunkSectionRowOffset(toHunkReviewFile(first), "split", 11, backwardState!)
       expect(backwardTargetTop).toBeGreaterThanOrEqual(scrollBox.scrollTop)
       expect(backwardTargetTop).toBeLessThan(scrollBox.scrollTop + Math.max(1, scrollBox.viewport.height))
+    } finally {
+      await act(async () => {
+        app.destroy()
+        setup.renderer.destroy()
+      })
+    }
+  })
+  test("active OpenTUI help and footer do not expose deferred features", async () => {
+    const setup = await createTestRenderer({ width: 180, height: 30, useMouse: true, enableMouseMovement: true })
+    const app = createApp({
+      repositoryRoot: "/tmp/does-not-exist",
+      runner: new GitRunner("/tmp/does-not-exist"),
+      renderer: setup.renderer as unknown as CliRenderer,
+      reviewLoaders: { loadDocument: async () => documentForSurface() },
+    } as unknown as Parameters<typeof createApp>[0])
+
+    try {
+      const screen = app.screenController!
+      await act(async () => {
+        await screen.openBranchReview()
+      })
+      await setup.flush()
+      expect(screen.active.kind).toBe("branch-review")
+      const deferred = [
+        /since last/iu,
+        /individual commit/iu,
+        /trailing final hunk/iu,
+        /half-page/iu,
+        /horizontal scroll/iu,
+        /current-line/iu,
+        /\btheme\b/iu,
+        /copy decorations/iu,
+        /agent annotations/iu,
+        /extension panes/iu,
+        /\bpager\b/iu,
+        /\beditor\b/iu,
+        /git mutation/iu,
+      ]
+      const footer = setup.captureCharFrame()
+      for (const pattern of deferred) expect(footer).not.toMatch(pattern)
+
+      const activeState = screen.active.kind === "branch-review" ? screen.active.controller.state : undefined
+      expect(activeState).toBeDefined()
+      const help = reviewHelp("stream", activeState!)
+      const hints = reviewHints("stream", activeState!)
+      expect(help).toContain("Mark current file Viewed")
+      for (const pattern of deferred) {
+        expect(help).not.toMatch(pattern)
+        expect(hints).not.toMatch(pattern)
+      }
     } finally {
       await act(async () => {
         app.destroy()
