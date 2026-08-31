@@ -332,4 +332,45 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     expect(restored.expandedGaps).toEqual(state.expandedGaps)
     controller.destroy()
   })
+  test("rejects a response for a different active review identity", async () => {
+    const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] })
+    const docA = makeDoc([file], "a".repeat(40))
+    const identityB = createReviewIdentity({ headRef: "refs/heads/other", headOid: "a".repeat(40), baseRef: "refs/heads/main" })
+    const docB = createReviewDocument({
+      identity: identityB,
+      generation: docA.generation,
+      commits: docA.commits,
+      files: docA.files,
+    })
+    let current = docA
+    const controller = new ReviewWorkspaceController({ runner: fakeRunner(), loadDocument: async () => current })
+    await controller.open("refs/heads/main")
+    current = docB
+    await controller.refreshGeneration()
+    expect(controller.state?.document).toBe(docA)
+    expect(controller.reviewId).toBe(docA.identity.id)
+  })
+
+  test("same-generation refresh retries a failed semantic persistence", async () => {
+    const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] })
+    const doc = makeDoc([file], "a".repeat(40))
+    let db = { version: 2 as const, baseByHead: {}, reviews: {} }
+    let writes = 0
+    const stateStore = {
+      load: async () => db,
+      saveSemanticChange: async (updater: (value: typeof db) => typeof db) => {
+        writes++
+        if (writes === 1) throw new Error("injected persistence failure")
+        db = updater(db)
+      },
+      flush: async () => undefined,
+    } as unknown as ReviewStateStore
+    const controller = new ReviewWorkspaceController({ runner: fakeRunner(), stateStore, loadDocument: async () => doc })
+    await controller.open("refs/heads/main")
+    expect(controller.error?.kind).toBe("storage")
+    await controller.refreshGeneration()
+    expect(writes).toBe(2)
+    expect(controller.error).toBeUndefined()
+    expect(db.reviews[doc.identity.id]).toBeDefined()
+  })
 })

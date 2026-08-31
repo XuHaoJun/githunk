@@ -1,6 +1,6 @@
 import type { ReviewDocument, ReviewFeedback, ReviewFile } from "./types"
 import type { ExpandedGap, ReviewSelection, ViewedRecord, ReviewState, ReviewLineSelection } from "./state"
-import { reconcileAnchor, createLineSelection } from "./anchors"
+import { reconcileAnchor } from "./anchors"
 import { reduceReviewState } from "./reducer"
 
 export type ReviewFileMatchResult = Readonly<{
@@ -322,11 +322,28 @@ export function reconcileReviewState(previous: ReviewState, document: ReviewDocu
   let lineSelection: ReviewLineSelection | null = null
   const oldLine = previous.lineSelection
   const mapped = oldLine ? matches.previousToCurrent.get(oldLine.fileKey) : undefined
-  if (oldLine && mapped && mapped.contentId === oldLine.contentId) {
-    try {
-      const candidate = createLineSelection(mapped, oldLine)
-      if (candidate.contextDigest === oldLine.contextDigest) lineSelection = candidate
-    } catch {}
+  if (oldLine && mapped) {
+    const lineAnchor = {
+      kind: "range" as const,
+      fileKey: mapped.key,
+      contentId: oldLine.contentId,
+      side: oldLine.side,
+      startLine: oldLine.line,
+      endLine: oldLine.line,
+      ownerHunkIndex: oldLine.hunkIndex,
+      contextDigest: oldLine.contextDigest,
+    }
+    const reconciled = reconcileAnchor(lineAnchor, document)
+    if (reconciled.resolution === "active" && reconciled.anchor.kind === "range") {
+      lineSelection = {
+        fileKey: reconciled.anchor.fileKey,
+        hunkIndex: reconciled.anchor.ownerHunkIndex,
+        side: reconciled.anchor.side,
+        line: reconciled.anchor.startLine,
+        contentId: reconciled.anchor.contentId,
+        contextDigest: reconciled.anchor.contextDigest,
+      }
+    }
   }
   const expandedGaps = reconcileExpandedGaps(previous.expandedGaps, matches)
   const lineSelectionEqual = lineSelection === null && previous.lineSelection === null ||
