@@ -137,6 +137,22 @@ describe("AppScreenController lifecycle", () => {
     expect(timers).toBe(0)
   })
 
+  test("view construction failure awaits review controller cleanup", async () => {
+    const repoView = stubRepoView()
+    const reviewController = stubReviewController()
+    const controller = new AppScreenController({
+      repositoryController: stubRepositoryController(),
+      repositoryView: repoView,
+      createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
+      createReviewView: () => { throw new Error("view construction failed") },
+    })
+
+    await expect(controller.openBranchReview()).rejects.toThrow("view construction failed")
+    expect(controller.active.kind).toBe("repository")
+    const reviewLifecycle = reviewController as unknown as { destroyedFlag: boolean }
+    expect(reviewLifecycle.destroyedFlag).toBe(true)
+  })
+
   test("background updates do not render over workspace", async () => {
     const repoView = stubRepoView()
     let updateCalls = 0

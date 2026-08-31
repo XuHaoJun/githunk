@@ -118,3 +118,20 @@ bun test tests/review/core/reconcile.test.ts tests/review/core/artifact.test.ts 
 305 expect() calls
 Ran 66 tests across 9 files.
 ```
+
+## Round-3 re-review fix
+
+`AppScreenController.openBranchReview()` now catches `createReviewView()` failures, awaits the successfully opened review controller's destruction, and then rethrows. Added a lifecycle regression proving the failed view construction leaves no live review controller.
+
+Round-3 lifecycle verification:
+
+```text
+bun test tests/app/screen-controller.test.ts tests/ui/review-workspace/lifecycle.integration.test.ts tests/acceptance/branch-review-artifact.integration.test.ts
+
+10 pass
+0 fail
+73 expect() calls
+Ran 10 tests across 3 files.
+```
+
+The exact Task 4 focused suite still passes: 66 tests, 0 failures, 305 expect() calls across 9 files.

@@ -140,7 +140,13 @@ export class AppScreenController {
         try { await reviewController.destroy() } catch {}
         throw new Error("open superseded")
       }
-      const reviewView = this.opts.createReviewView(reviewController, () => { void this.closeBranchReview() })
+      let reviewView: ReviewScreenView
+      try {
+        reviewView = this.opts.createReviewView(reviewController, () => { void this.closeBranchReview() })
+      } catch (err) {
+        try { await reviewController.destroy() } catch {}
+        throw err
+      }
       if (myToken !== this.openToken) {
         try { reviewView.destroy() } catch {}
         try { await reviewController.destroy() } catch {}
