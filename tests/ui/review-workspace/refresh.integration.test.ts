@@ -332,6 +332,23 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     expect(restored.expandedGaps).toEqual(state.expandedGaps)
     controller.destroy()
   })
+  test("open preserves a recoverable submission marker", async () => {
+    const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] })
+    const doc = makeDoc([file], "a".repeat(40))
+    const marker = { artifactId: "pending-artifact", digest: "digest" }
+    const initial = createInitialReviewState(doc)
+    const persisted = { ...persistedFromReviewState(initial), submissionInProgress: marker }
+    const db = { version: 2 as const, baseByHead: {}, reviews: { [doc.identity.id]: persisted } }
+    let written: typeof db | undefined
+    const stateStore = {
+      load: async () => db,
+      saveSemanticChange: async (updater: (value: typeof db) => typeof db) => { written = updater(db) },
+      flush: async () => undefined,
+    } as unknown as ReviewStateStore
+    const controller = new ReviewWorkspaceController({ runner: fakeRunner(), stateStore, loadDocument: async () => doc })
+    await controller.open("refs/heads/main")
+    expect(written?.reviews[doc.identity.id]?.submissionInProgress).toEqual(marker)
+  })
   test("rejects a response for a different active review identity", async () => {
     const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] })
     const docA = makeDoc([file], "a".repeat(40))

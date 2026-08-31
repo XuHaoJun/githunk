@@ -545,11 +545,17 @@ export class ReviewWorkspaceController {
     const reviewId = this._state.document.identity.id
     const headKey = this._state.document.identity.headRef ?? `detached:${this._state.document.identity.detachedHeadOid ?? this._state.document.generation.headOid}`
     try {
-      await this.stateStore.saveSemanticChange((db) => ({
-        ...db,
-        baseByHead: { ...db.baseByHead, [headKey]: { baseRef: this._state!.document.identity.baseRef } },
-        reviews: { ...db.reviews, [reviewId]: persisted },
-      }))
+      await this.stateStore.saveSemanticChange((db) => {
+        // Submission markers are transaction metadata, not part of the
+        // in-memory aggregate, and must survive open/restart until recovery
+        // or an explicit retry completes them.
+        const submissionInProgress = db.reviews[reviewId]?.submissionInProgress ?? null
+        return {
+          ...db,
+          baseByHead: { ...db.baseByHead, [headKey]: { baseRef: this._state!.document.identity.baseRef } },
+          reviews: { ...db.reviews, [reviewId]: { ...persisted, submissionInProgress } },
+        }
+      })
     } catch (err) {
       const typed = createStorageError(err instanceof Error ? err.message : String(err))
       this._error = typed
