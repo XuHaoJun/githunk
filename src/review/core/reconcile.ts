@@ -333,8 +333,15 @@ export function reconcileReviewState(previous: ReviewState, document: ReviewDocu
   if (
     viewed === previous.viewed &&
     feedback === previous.feedback &&
-    lineSelection === previous.lineSelection &&
+    expandedGaps === previous.expandedGaps &&
     selection === previous.selection &&
+    lineSelection !== null && previous.lineSelection !== null &&
+    lineSelection.fileKey === previous.lineSelection.fileKey &&
+    lineSelection.hunkIndex === previous.lineSelection.hunkIndex &&
+    lineSelection.side === previous.lineSelection.side &&
+    lineSelection.line === previous.lineSelection.line &&
+    lineSelection.contentId === previous.lineSelection.contentId &&
+    lineSelection.contextDigest === previous.lineSelection.contextDigest &&
     document.generation.id === previous.document.generation.id &&
     document.aggregatePatchDigest === previous.document.aggregatePatchDigest
   ) {

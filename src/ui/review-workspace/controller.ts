@@ -203,7 +203,7 @@ export class ReviewWorkspaceController {
         const reconstructed: ReviewState = {
           ...initial,
           selection: persisted.selection as ReviewSelection,
-          filter: persisted.filter,
+          lineSelection: persisted.lineSelection,
           viewed: persisted.viewed as Record<string, ViewedRecord>,
           feedback: persisted.feedback,
           draft: persisted.draft,

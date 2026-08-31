@@ -83,6 +83,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         selection: nextSelection,
+        lineSelection: null,
         reveal: nextReveal,
         revision: state.revision + 1,
       }
@@ -102,6 +103,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (!target) return state
       return {
         ...state,
+        lineSelection: null,
         selection: target.selection,
         reveal: target.reveal,
         revision: state.revision + 1,
@@ -120,6 +122,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       }
       return {
         ...state,
+        lineSelection: null,
         selection: { fileKey: action.fileKey, hunkIndex: clamped },
         reveal,
         revision: state.revision + 1,
@@ -292,6 +295,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         selection: { fileKey: target.fileKey, hunkIndex: target.hunkIndex },
+        lineSelection: null,
         reveal: nextReveal,
         revision: state.revision + 1,
       }
@@ -306,6 +310,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         selection: { fileKey: target.fileKey, hunkIndex: target.hunkIndex },
+        lineSelection: null,
         reveal: nextReveal,
         revision: state.revision + 1,
       }

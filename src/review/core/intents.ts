@@ -8,6 +8,7 @@ export type ReviewIntent =
   | { type: "selection/move"; unit: "file" | "hunk"; direction: "next" | "previous" }
   | { type: "selection/set-line"; selection: ReviewLineSelection }
   | { type: "selection/move-line"; direction: "next" | "previous" }
+  | { type: "selection/viewport-anchor"; fileKey: string; hunkIndex: number; reveal?: "hunk" }
   | { type: "filter/set-query"; query: string }
   | { type: "filter/set-scope"; scope: "all" | "unreviewed" | "changed" | "feedback" }
   | { type: "projection/set"; projection: ReviewProjection }
@@ -242,7 +243,8 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
       const nextKind = intent.kind ?? state.draft.kind
       const nextReplacement = intent.replacement !== undefined ? intent.replacement : state.draft.replacement
       const nextAnchor = state.draft.anchor
-      validateSuggestionPrerequisites(state, nextAnchor, nextKind, nextReplacement)
+      validateAnchor(state, nextAnchor)
+      validateSuggestionPrerequisites(state, nextAnchor, nextKind, nextReplacement, false)
       const patch: { body?: string; severity?: "comment" | "blocking"; kind?: "note" | "suggestion"; replacement?: string } = {}
       if (intent.body !== undefined) patch.body = intent.body
       if (intent.severity !== undefined) patch.severity = intent.severity
@@ -268,6 +270,7 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
       if (draft.kind === "note" && draft.body.trim().length === 0) {
         throw new ReviewIntentValidationError("body-invalid", "note body must be non-empty")
       }
+      validateAnchor(state, draft.anchor)
       validateSuggestionPrerequisites(state, draft.anchor, draft.kind, draft.replacement)
       if (state.feedback.some((f) => f.id === intent.id)) {
         throw new ReviewIntentValidationError("id-invalid", `duplicate feedback id ${intent.id}`)
@@ -298,6 +301,7 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
         throw new ReviewIntentValidationError("body-invalid", "invalid severity")
       }
       if (existing.kind === "suggestion") {
+        validateAnchor(state, existing.anchor)
         validateSuggestionPrerequisites(state, existing.anchor, "suggestion", nextReplacement)
       }
       if (existing.kind === "note" && intent.body !== undefined && intent.body.trim().length === 0) {

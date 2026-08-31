@@ -40,16 +40,16 @@ export function validateFinishReview(
   if (state.draft !== null) {
     return { ok: false, reason: "draft-open" }
   }
+  if (state.projection.kind === "commit") {
+    return { ok: false, reason: "commit-projection-invalid" }
+  }
   if (state.projection.kind !== "aggregate") {
     return { ok: false, reason: "projection-invalid" }
   }
   if (state.feedback.some((f) => f.kind === "suggestion" && (
     f.anchor.kind !== "range" || f.anchor.side !== "new" || !f.replacement || f.replacement.trim().length === 0 ||
-    !state.document.files.some((file) => file.key === f.anchor.fileKey && file.contentId === f.anchor.contentId)
+    !state.document.files.some((file) => file.key === f.anchor.fileKey && file.contentId === f.anchor.contentId && file.source !== "binary" && file.source !== "too-large")
   ))) return { ok: false, reason: "suggestion-invalid" }
-  if (state.projection.kind === "commit") {
-    return { ok: false, reason: "commit-projection-invalid" }
-  }
   const hasStaleOrOrphaned = state.feedback.some((f) => f.resolution !== "active")
   if (hasStaleOrOrphaned) {
     return { ok: false, reason: "feedback-needs-reanchor" }

@@ -20,6 +20,7 @@ const REASON_MESSAGES: Record<string, string> = {
   "comment-has-blocking-feedback": "Finish blocked: Comment cannot have blocking feedback",
   "comment-requires-summary-or-feedback": "Finish blocked: Comment requires a summary or at least one comment",
   "summary-required": "Finish blocked: summary cannot be empty for this decision",
+  "suggestion-invalid": "Finish blocked: suggestion is invalid — it must target current new-side source with non-empty replacement",
 }
 
 function messageForReason(reason: string): string {

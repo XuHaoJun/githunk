@@ -473,6 +473,7 @@ export function serializeReviewDatabaseV2(database: ReviewDatabaseV2): string {
         k,
         {
           selection: v.selection,
+          lineSelection: v.lineSelection,
           filter: v.filter,
           projection: v.projection,
           viewed: v.viewed,

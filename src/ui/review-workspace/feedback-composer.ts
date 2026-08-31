@@ -77,7 +77,6 @@ export class FeedbackComposer {
     }
     if (kind === "suggestion") {
       if (anchor.kind !== "range" || anchor.side !== "new") return false
-      if (replacement !== undefined && replacement.trim().length === 0) return false
     }
     try {
       const action = planReviewIntent(state, {
@@ -86,7 +85,7 @@ export class FeedbackComposer {
         kind,
         severity,
         body,
-        ...(replacement !== undefined ? { replacement } : kind === "suggestion" ? { replacement: "placeholder" } : {}),
+        ...(replacement !== undefined ? { replacement } : {}),
       })
       this.controller.dispatch(action)
       this.focusIndex = 0

@@ -86,8 +86,8 @@ export async function finishReviewTransaction(input: {
     const existing = db.reviews[reviewId]
     const persistedReview = existing ?? {
       selection: reviewState.selection,
+      lineSelection: reviewState.lineSelection,
       filter: reviewState.filter,
-      projection: reviewState.projection,
       viewed: reviewState.viewed,
       feedback: [...reviewState.feedback],
       draft: reviewState.draft,
@@ -101,11 +101,9 @@ export async function finishReviewTransaction(input: {
       // keep current viewed/feedback from reviewState? For marker, we keep feedback intact as per spec
       viewed: reviewState.viewed,
       feedback: [...reviewState.feedback],
-      draft: reviewState.draft,
-      expandedGaps: [...reviewState.expandedGaps],
       selection: reviewState.selection,
+      lineSelection: reviewState.lineSelection,
       filter: reviewState.filter,
-      projection: reviewState.projection,
       lastSubmission: reviewState.lastSubmission,
       submissionInProgress: { artifactId: artifact.id, digest },
     }
