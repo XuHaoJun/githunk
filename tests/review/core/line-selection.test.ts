@@ -42,6 +42,20 @@ describe("semantic line selection", () => {
     expect(reconciled.lineSelection).toEqual(line)
     expect(reconciled.revision).toBe(selected.revision)
   })
+  test("reconciles a uniquely relocated line after content identity changes", () => {
+    const oldFile = file("old")
+    const newFile = {
+      ...file("new"),
+      hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 4, newStart: 1, newCount: 4, lines: [" x", " a", " b", " c"] })],
+    } as unknown as ReviewFile
+    const oldDoc = doc([oldFile])
+    const newDoc = doc([newFile])
+    const oldLine = createLineSelection(oldFile, { hunkIndex: 0, side: "new", line: 2 })
+    const selected = reduceReviewState(createInitialReviewState(oldDoc), { type: "selection/set-line", selection: oldLine })
+    const reconciled = reconcileReviewState(selected, newDoc)
+    expect(reconciled.lineSelection?.line).toBe(3)
+    expect(reconciled.lineSelection?.contentId).toBe("new")
+  })
   test("non-null line selection survives strict persistence round trip", () => {
     const d = doc(); const line = createLineSelection(file(), { hunkIndex: 0, side: "new", line: 2 })
     const state = reduceReviewState(createInitialReviewState(d), { type: "selection/set-line", selection: line })
