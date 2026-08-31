@@ -117,7 +117,7 @@ export class ReviewStateStore {
           }
           nextReviews = { ...current.reviews, [reviewId]: emptyPersisted }
         } else {
-          nextReviews = { ...current.reviews, [reviewId]: { ...existingReview, draft: pending ?? null } }
+          nextReviews = { ...current.reviews, [reviewId]: { ...existingReview, projection: { kind: "aggregate" }, draft: pending ?? null } }
         }
         const nextDb: ReviewDatabaseV2 = { ...current, reviews: nextReviews }
         const text = serializeReviewDatabaseV2(nextDb) + "\n"
@@ -133,59 +133,72 @@ export class ReviewStateStore {
   }
 
   async flush(): Promise<void> {
-    const pendingEntries = Array.from(this.draftPending.entries())
-    for (const [, timer] of this.draftTimers) {
-      clearTimeout(timer)
-    }
-    this.draftTimers.clear()
+    // A draft can change while a queued write is in flight.  Drain until the
+    // pending map is empty so orderly close/restart never loses the last edit.
+    while (this.draftPending.size > 0) {
+      const pendingEntries = Array.from(this.draftPending.entries())
+      for (const [, timer] of this.draftTimers) clearTimeout(timer)
+      this.draftTimers.clear()
 
-    const promises: Promise<void>[] = []
-    for (const [reviewId, draft] of pendingEntries) {
-      const p = this.enqueue(async () => {
-        const current = await this.readDatabase()
-        const existingReview = current.reviews[reviewId]
-        let nextReviews: Record<string, PersistedReviewState>
-        if (!existingReview) {
-          const emptyPersisted: PersistedReviewState = {
+      const promises: Promise<void>[] = []
+      for (const [reviewId, draft] of pendingEntries) {
+        const p = this.enqueue(async () => {
+          const current = await this.readDatabase()
+          const existingReview = current.reviews[reviewId]
+          const persisted: PersistedReviewState = existingReview ?? {
             selection: { fileKey: null, hunkIndex: 0 },
             lineSelection: null,
             filter: { query: "", scope: "all" },
             projection: { kind: "aggregate" },
             viewed: {},
             feedback: [],
-            draft: draft ?? null,
+            draft: null,
             expandedGaps: [],
             lastSubmission: null,
             submissionInProgress: null,
           }
-          nextReviews = { ...current.reviews, [reviewId]: emptyPersisted }
-        } else {
-          nextReviews = { ...current.reviews, [reviewId]: { ...existingReview, draft: draft ?? null } }
-        }
-        const nextDb: ReviewDatabaseV2 = { ...current, reviews: nextReviews }
-        const text = serializeReviewDatabaseV2(nextDb) + "\n"
-        await this.file.writeText(text)
-        if (this.draftPending.get(reviewId) === draft) {
-          this.draftPending.delete(reviewId)
-        }
-      })
-      promises.push(p)
+          const nextReviews = {
+            ...current.reviews,
+            [reviewId]: { ...persisted, projection: { kind: "aggregate" }, draft: draft ?? null },
+          }
+          await this.file.writeText(serializeReviewDatabaseV2({ ...current, reviews: nextReviews }) + "\n")
+          if (this.draftPending.get(reviewId) === draft) this.draftPending.delete(reviewId)
+        })
+        promises.push(p)
+      }
+      await Promise.all(promises)
+      await this.queue
     }
-    await Promise.all(promises)
     await this.queue
   }
 }
 
 export function persistedFromReviewState(state: ReviewState): PersistedReviewState {
+  // The active projection is deliberately aggregate-only.  Renderer plans,
+  // reveal/scroll tokens, and loaded source rows never belong in durable state.
+  const expandedGaps = state.expandedGaps.map((gap) => ({
+    fileKey: gap.fileKey,
+    gapId: gap.gapId,
+    expanded: gap.expanded,
+  }))
   return {
-    selection: state.selection,
-    lineSelection: state.lineSelection,
-    filter: state.filter,
-    projection: state.projection,
+    selection: { fileKey: state.selection.fileKey, hunkIndex: state.selection.hunkIndex },
+    lineSelection: state.lineSelection
+      ? {
+          fileKey: state.lineSelection.fileKey,
+          hunkIndex: state.lineSelection.hunkIndex,
+          side: state.lineSelection.side,
+          line: state.lineSelection.line,
+          contentId: state.lineSelection.contentId,
+          contextDigest: state.lineSelection.contextDigest,
+        }
+      : null,
+    filter: { query: state.filter.query, scope: state.filter.scope },
+    projection: { kind: "aggregate" },
     viewed: state.viewed,
     feedback: [...state.feedback],
     draft: state.draft,
-    expandedGaps: [...state.expandedGaps],
+    expandedGaps,
     lastSubmission: state.lastSubmission,
     submissionInProgress: null,
   }

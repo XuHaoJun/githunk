@@ -4,8 +4,9 @@ import { LocalStateFile } from "../../storage/local-state-file"
 import { parseReviewArtifactV1, serializeReviewArtifactV1 } from "./schemas"
 import type { PersistedReviewState } from "./schemas"
 import type { ReviewArtifactV1 } from "../core/artifact"
+import { validateFinishReview } from "../core/artifact"
 import type { ReviewState } from "../core/state"
-import { ReviewStateStore } from "./review-state-store"
+import { ReviewStateStore, persistedFromReviewState } from "./review-state-store"
 function artifactRelativePath(reviewId: string, artifactId: string): string {
   return `githunk/reviews/${reviewId}/${artifactId}.json`
 }
@@ -67,7 +68,6 @@ export class ReviewArtifactStore {
     return actual === expectedDigest
   }
 }
-
 export async function finishReviewTransaction(input: {
   stateStore: ReviewStateStore
   artifactStore: ReviewArtifactStore
@@ -79,97 +79,83 @@ export async function finishReviewTransaction(input: {
   if (reviewId !== artifact.review.id) {
     throw new Error(`review id mismatch: state ${reviewId} vs artifact ${artifact.review.id}`)
   }
+
+  // The caller normally builds the artifact (and therefore validates) before
+  // entering this function.  Validate here as well so this transaction can
+  // never write a marker for an invalid submission when called directly.
+  const validation = validateFinishReview(reviewState, {
+    decision: artifact.decision,
+    summary: artifact.summary,
+  })
+  if (!validation.ok) throw new Error(`cannot finish review: ${validation.reason}`)
+
   const text = artifactText(artifact)
   const digest = artifactDigest(text)
-  // Step 2: persist submissionInProgress, keep pending feedback intact
-  await stateStore.saveSemanticChange((db) => {
-    const existing = db.reviews[reviewId]
-    const persistedReview = existing ?? {
-      selection: reviewState.selection,
-      lineSelection: reviewState.lineSelection,
-      filter: reviewState.filter,
-      viewed: reviewState.viewed,
-      feedback: [...reviewState.feedback],
-      draft: reviewState.draft,
-      expandedGaps: [...reviewState.expandedGaps],
-      lastSubmission: reviewState.lastSubmission,
-      submissionInProgress: null,
-    }
-    // Ensure viewed etc reflect current state (in case existing stale)
-    const merged = {
-      ...persistedReview,
-      // keep current viewed/feedback from reviewState? For marker, we keep feedback intact as per spec
-      viewed: reviewState.viewed,
-      feedback: [...reviewState.feedback],
-      selection: reviewState.selection,
-      lineSelection: reviewState.lineSelection,
-      filter: reviewState.filter,
-      lastSubmission: reviewState.lastSubmission,
-      submissionInProgress: { artifactId: artifact.id, digest },
-    }
-    return {
-      ...db,
-      reviews: { ...db.reviews, [reviewId]: merged },
-    }
-  })
 
-  // Step 3: exclusive-create or digest-verify
-  let artifactCreated = false
+  // The artifact is immutable and is the transaction's durable source of
+  // truth.  It must exist (or match exactly) before state can advertise a
+  // pending submission.
   try {
-    const result = await artifactStore.createExclusive(artifact)
-    if (result.ok) {
-      artifactCreated = true
-    } else {
-      const raw = await artifactStore.readRaw(reviewId, artifact.id)
-      if (raw === undefined) {
-        throw new Error(`artifact ${artifact.id} reported already-exists but file missing`)
-      }
-      const existingDigest = artifactDigest(raw)
-      if (existingDigest !== digest) {
-        throw new Error(`artifact digest mismatch for ${artifact.id}: expected ${digest} got ${existingDigest}`)
-      }
-      artifactCreated = true
+    const created = await artifactStore.createExclusive(artifact)
+    if (!created.ok && !(await artifactStore.verifyDigest(reviewId, artifact.id, digest))) {
+      throw new Error(`artifact digest mismatch for ${artifact.id}`)
     }
   } catch (error) {
-    throw error
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`unable to persist immutable review artifact: ${detail}`)
   }
 
-  if (!artifactCreated) {
-    throw new Error(`artifact creation failed for ${artifact.id}`)
-  }
-
-  // Step 4: finalize – set lastSubmission, clear marker and submitted pending feedback, retain coverage
-  await stateStore.saveSemanticChange((db) => {
-    const existing = db.reviews[reviewId]
-    if (!existing) throw new Error(`review ${reviewId} not found for finalization`)
-    const pendingMarker = existing.submissionInProgress
-    if (!pendingMarker || pendingMarker.artifactId !== artifact.id || pendingMarker.digest !== digest) {
-      // If retry after step4 succeeded previously, marker may already be cleared; check lastSubmission matches
-      const last = existing.lastSubmission
-      if (last && last.artifactId === artifact.id) {
-        return db
+  // Record the current semantic state, not a stale snapshot from an earlier
+  // attempt.  Feedback and draft remain pending until finalization succeeds.
+  try {
+    await stateStore.saveSemanticChange((db) => {
+      const persisted = persistedFromReviewState(reviewState)
+      const existing = db.reviews[reviewId]
+      const pending: PersistedReviewState = {
+        ...(existing ?? persisted),
+        ...persisted,
+        submissionInProgress: { artifactId: artifact.id, digest },
       }
-      throw new Error(`submission marker missing or mismatched for ${artifact.id}`)
-    }
-    const finalized: PersistedReviewState = {
-      ...existing,
-      lastSubmission: {
-        artifactId: artifact.id,
-        generationId: artifact.generation.id,
-        headOid: artifact.generation.headOid,
-        submittedAt: artifact.submittedAt,
-      },
-      submissionInProgress: null,
-      feedback: [],
-      draft: null,
-    }
-    return {
-      ...db,
-      reviews: { ...db.reviews, [reviewId]: finalized },
-    }
-  })
+      return { ...db, reviews: { ...db.reviews, [reviewId]: pending } }
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`unable to persist submission marker: ${detail}`)
+  }
 
-  const newState: ReviewState = {
+  // Only after the marker write is durable may pending feedback/draft be
+  // cleared.  A failed final write leaves the marker and all pending work
+  // available for an idempotent retry.
+  try {
+    await stateStore.saveSemanticChange((db) => {
+      const existing = db.reviews[reviewId]
+      if (!existing) throw new Error(`review ${reviewId} not found for finalization`)
+      const marker = existing.submissionInProgress
+      if (!marker || marker.artifactId !== artifact.id || marker.digest !== digest) {
+        const last = existing.lastSubmission
+        if (last?.artifactId === artifact.id) return db
+        throw new Error(`submission marker missing or mismatched for ${artifact.id}`)
+      }
+      const finalized: PersistedReviewState = {
+        ...existing,
+        lastSubmission: {
+          artifactId: artifact.id,
+          generationId: artifact.generation.id,
+          headOid: artifact.generation.headOid,
+          submittedAt: artifact.submittedAt,
+        },
+        submissionInProgress: null,
+        feedback: [],
+        draft: null,
+      }
+      return { ...db, reviews: { ...db.reviews, [reviewId]: finalized } }
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`unable to finalize review submission: ${detail}`)
+  }
+
+  return {
     ...reviewState,
     feedback: [],
     draft: null,
@@ -181,7 +167,6 @@ export async function finishReviewTransaction(input: {
     },
     revision: reviewState.revision + 1,
   }
-  return newState
 }
 
 export async function recoverSubmission(input: {

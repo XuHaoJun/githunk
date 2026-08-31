@@ -172,7 +172,7 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
     expect(loaded?.id).toBe(artifact.id)
   })
 
-  test("failure after marker write – retry reuses same id and digest, never duplicate", async () => {
+  test("artifact failure occurs before marker write; retry creates once", async () => {
     repository = await createTempRepository()
     const runner = new GitRunner(repository.path)
     const stateStore = new ReviewStateStore(runner)
@@ -201,13 +201,14 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
     let callCount = 0
     artifactStore.createExclusive = async (a) => {
       callCount++
-      if (callCount === 1) throw new Error("injected failure after marker")
+      if (callCount === 1) throw new Error("injected artifact failure")
       return originalCreate(a)
     }
-    await expect(finishReviewTransaction({ stateStore, artifactStore, reviewState: state, artifact })).rejects.toThrow("injected failure after marker")
+    await expect(finishReviewTransaction({ stateStore, artifactStore, reviewState: state, artifact })).rejects.toThrow("injected artifact failure")
     const dbAfterFail = await stateStore.load()
-    expect(dbAfterFail.reviews[state.document.identity.id]?.submissionInProgress?.artifactId).toBe(artifact.id)
+    expect(dbAfterFail.reviews[state.document.identity.id]?.submissionInProgress).toBeNull()
     expect(dbAfterFail.reviews[state.document.identity.id]?.feedback).toHaveLength(1)
+    expect(await artifactStore.load(artifact.review.id, artifact.id)).toBeUndefined()
     artifactStore.createExclusive = originalCreate
     const result = await finishReviewTransaction({ stateStore, artifactStore, reviewState: state, artifact })
     expect(result.lastSubmission?.artifactId).toBe(artifact.id)

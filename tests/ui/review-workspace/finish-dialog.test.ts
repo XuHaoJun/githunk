@@ -206,15 +206,15 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       dialog.setDecision("comment")
       dialog.setSummary("summary")
       const origCreate = artifactStore.createExclusive.bind(artifactStore)
-      artifactStore.createExclusive = async () => { throw new Error("injected failure after marker") }
+      artifactStore.createExclusive = async () => { throw new Error("injected artifact failure") }
       const result = await dialog.submit()
       expect(result.ok).toBe(false)
       expect(result.reason).toBe("transaction-failed")
+      expect(result.message).toContain("injected artifact failure")
       expect(controller.state?.feedback.length).toBe(1)
       const db = await stateStore.load()
       const reviewId = doc.identity.id
-      expect(db.reviews[reviewId]?.feedback.length).toBe(1)
-      expect(db.reviews[reviewId]?.submissionInProgress?.artifactId).toBe("art-1")
+      expect(db.reviews[reviewId]?.submissionInProgress).toBeNull()
       artifactStore.createExclusive = origCreate
     } finally {
       try { await controller?.flushDrafts?.().catch(() => {}) } catch {}
@@ -265,8 +265,7 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       expect(res1.ok).toBe(false)
       const db1 = await stateStore.load()
       const reviewId = doc.identity.id
-      const markerId = db1.reviews[reviewId]?.submissionInProgress?.artifactId
-      expect(markerId).toBe("art-1")
+      expect(db1.reviews[reviewId]?.submissionInProgress).toBeNull()
       const aggregateArtifact = buildReviewArtifact(controller.state!, { id: "art-1", submittedAt: "2026-08-28T00:00:00.000Z", decision: "comment", summary: "summary" })
       await origCreate(aggregateArtifact)
       const rawAggregate = await artifactStore.readRaw(reviewId, "art-1")
@@ -289,7 +288,7 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
     }
   })
 
-  test("retry reuses aggregate marker artifact id", async () => {
+  test("artifact failure leaves no marker; retry creates a fresh artifact", async () => {
     let repo: TempRepository | undefined
     let controller: ReviewWorkspaceController | undefined
     let stateStore: ReviewStateStore | undefined
@@ -312,14 +311,14 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       let first = true
       artifactStore.createExclusive = async (artifact) => { if (first) { first = false; throw new Error("first failure") }; return original(artifact) }
       expect((await dialog.submit()).ok).toBe(false)
-      expect((await stateStore.load()).reviews[doc.identity.id]?.submissionInProgress?.artifactId).toBe("art-1")
+      expect((await stateStore.load()).reviews[doc.identity.id]?.submissionInProgress).toBeNull()
       artifactStore.createExclusive = original
       call = 99
       const retry = await dialog.submit()
       expect(retry.ok).toBe(true)
-      expect(retry.artifactId).toBe("art-1")
-      expect(await artifactStore.load(doc.identity.id, "art-100")).toBeUndefined()
-      expect((await artifactStore.load(doc.identity.id, "art-1"))?.id).toBe("art-1")
+      expect(retry.artifactId).toBe("art-100")
+      expect(await artifactStore.load(doc.identity.id, "art-100")).toBeDefined()
+      expect(await artifactStore.load(doc.identity.id, "art-1")).toBeUndefined()
     } finally {
       try { await controller?.flushDrafts?.().catch(() => {}) } catch {}
       try { await stateStore?.flush().catch(() => {}) } catch {}

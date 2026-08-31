@@ -164,8 +164,7 @@ export class AppScreenController {
     if (this.activeScreen.kind === "repository") return
     const current = this.activeScreen
     try { current.view.destroy() } catch {}
-    try { current.controller.destroy() } catch {}
-
+    try { await current.controller.destroy() } catch {}
     // React's createRoot unmount clears renderer.root's React-managed subtree;
     // imperative children added before React (githunk-root) are detached as a side effect.
     // Re-attach after the reconciler has flushed. Try immediately, then after microtask and macrotask.

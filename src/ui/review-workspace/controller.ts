@@ -16,7 +16,7 @@ import { ReviewArtifactStore, finishReviewTransaction } from "../../review/stora
 import { currentBranchRef, inferReviewBase, resolveRefOid, reviewBaseCandidates } from "../../git/base-inference"
 import { emptyReviewDatabaseV2 } from "../../review/storage/schemas"
 import type { ReviewDecision } from "../../review/core/artifact"
-import { buildReviewArtifact } from "../../review/core/artifact"
+import { buildReviewArtifact, validateFinishReview } from "../../review/core/artifact"
 import type { ReviewArtifactV1 } from "../../review/core/artifact"
 import {
   type ReviewWorkspaceError,
@@ -24,6 +24,15 @@ import {
   createCorruptStateError,
   createStorageError,
 } from "./error-state"
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`
+  }
+  return JSON.stringify(value)
+}
+
 function normalizeActiveProjection(
   projection: ReviewProjection,
 ): Extract<ReviewProjection, { kind: "aggregate" }> {
@@ -106,7 +115,6 @@ export class ReviewWorkspaceController {
   get refreshGeneration(): () => Promise<void> {
     return async () => {
       if (this.baseRef === undefined || this.destroyed) return
-      const startRevision = this._state?.revision ?? -1
       const token = ++this.requestId
       const capturedGeneration = this.activeGenerationId
       const capturedReviewId = this.activeReviewId
@@ -118,24 +126,24 @@ export class ReviewWorkspaceController {
         const doc = await this.loadDocumentImpl(capturedBase)
         // Qualification: discard stale responses
         if (this.destroyed || token !== this.requestId) return
-        if (qualified.reviewId !== undefined && doc.identity.id !== qualified.reviewId) return
-        // If same generation, no work
-        if (qualified.generationId !== undefined && doc.generation.id === qualified.generationId) return
+        // A successful retry for the already-active generation still clears
+        // the prior load error, but does not reconcile or repaint the state.
+        if (qualified.generationId !== undefined && doc.generation.id === qualified.generationId) {
+          if (this._error !== undefined) {
+            this._error = undefined
+            this.publish()
+          }
+          return
+        }
         this.sourceContextCache.clear()
         this.pendingGapRequests.clear()
-        // Reconcile off-screen (atomic)
-        let nextState: ReviewState
-        if (this._state === undefined) {
-          nextState = createInitialReviewState(doc)
-        } else {
-          // Preserve draft via reconciliation (reducer keeps draft); compute off-screen
-          nextState = reconcileReviewState(this._state, doc)
-        }
+        // Reconcile off-screen exactly once, then atomically publish the
+        // complete aggregate state for this generation.
+        const currentState = this._state
+        const nextState = currentState === undefined
+          ? createInitialReviewState(doc)
+          : reconcileReviewState(currentState, doc)
         if (this.destroyed || token !== this.requestId) return
-        const latestState = this._state
-        if (latestState && latestState.revision !== startRevision) {
-          nextState = reconcileReviewState(latestState, doc)
-        }
         // Atomic swap: publish once
         this._state = nextState
         this.activeReviewId = doc.identity.id
@@ -238,8 +246,13 @@ export class ReviewWorkspaceController {
     try {
       await this.persistState()
     } catch (err) {
-      // persistState already sets storage error
+      // Keep a quarantine warning visible even if replacing the malformed
+      // file itself also fails.
       void err
+      if (corruptError) {
+        this._error = corruptError
+        this.publish()
+      }
     }
     // If corruptError exists, it remains; otherwise success clears error
     return finalState
@@ -277,10 +290,13 @@ export class ReviewWorkspaceController {
     if (!this.stateStore) return
     await this.stateStore.flush()
   }
-
   async finishReview(input: { decision: ReviewDecision; summary: string }): Promise<ReviewState> {
     if (this._state === undefined) throw new Error("no review state")
     if (!this.stateStore || !this.artifactStore) throw new Error("stores required for finish")
+    // Validate before any transaction work.  In particular, invalid drafts or
+    // projections must not create an artifact or marker.
+    const validation = validateFinishReview(this._state, input)
+    if (!validation.ok) throw new Error(`cannot finish review: ${validation.reason}`)
     const reviewId = this._state.document.identity.id
     const generationId = this._state.document.generation.id
     let reuseArtifact: ReviewArtifactV1 | undefined
@@ -298,17 +314,15 @@ export class ReviewWorkspaceController {
             const res = parseReviewArtifactV1(parsed)
             if (res.ok) {
               const artifact = res.value
-              const matchesCurrentGeneration = artifact.review.id === reviewId && artifact.generation.id === generationId
-              const matchesInput = artifact.decision === input.decision && artifact.summary === input.summary
-              const currentFeedbackIds = new Set(this._state!.feedback.map((entry) => entry.id))
-              const artifactFeedbackIds = new Set(artifact.feedback.map((entry) => entry.id))
-              const feedbackMatches = currentFeedbackIds.size === artifactFeedbackIds.size && [...currentFeedbackIds].every((id) => artifactFeedbackIds.has(id))
-              const currentViewedActive = Object.values(this._state!.viewed).filter((record) => {
-                const file = this._state!.document.files.find((candidate) => candidate.key === record.fileKey)
-                return file !== undefined && record.path === file.path && record.contentId === file.contentId
-              }).length
-              const coverageMatches = artifact.coverage.viewed.length === currentViewedActive
-              if (matchesInput && matchesCurrentGeneration && feedbackMatches && coverageMatches && artifact.projection.kind === "aggregate") {
+              const expected = buildReviewArtifact(this._state!, {
+                id: artifact.id,
+                submittedAt: artifact.submittedAt,
+                decision: input.decision,
+                summary: input.summary,
+              })
+              // Reuse only when the marker's immutable artifact represents
+              // the complete current semantic state, not merely the same IDs.
+              if (stableJson(expected) === stableJson(artifact)) {
                 reuseArtifact = artifact
               } else {
                 artifactIdFromMarker = undefined
@@ -497,7 +511,7 @@ export class ReviewWorkspaceController {
     return Promise.resolve(undefined)
   }
 
-  destroy(): void {
+  async destroy(): Promise<void> {
     if (this.destroyed) return
     this.destroyed = true
     this.listeners.clear()
@@ -505,7 +519,7 @@ export class ReviewWorkspaceController {
     this.pendingGapRequests.clear()
     this.sourceContextCache.clear()
     if (this.activeReviewId && this.stateStore) {
-      void this.stateStore.flush().catch(() => undefined)
+      await this.stateStore.flush().catch(() => undefined)
     }
   }
 
