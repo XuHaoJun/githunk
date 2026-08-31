@@ -50,15 +50,14 @@ export async function startApp(): Promise<number> {
     repositoryRoot,
     runner,
     renderer,
-    onQuit: () => renderer.destroy(),
     background: backgroundOptionsFromEnv(),
   })
-  renderer.once("destroy", () => app.destroy())
+  renderer.once("destroy", () => { void app.destroy() })
 
   try {
     await app.refresh()
   } catch (error) {
-    app.destroy()
+    await app.destroy()
     renderer.destroy()
     throw error
   }

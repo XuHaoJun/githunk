@@ -8,8 +8,6 @@ import { createShellHarness } from "../helpers/shell-harness"
 import type { ShellHarness } from "../helpers/shell-harness"
 import { GitRunner } from "../../src/git/runner"
 import type { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
-import type { ReviewWorkspace } from "../../src/ui/review-workspace/review-workspace"
-import { createRangeAnchor, createFileAnchor } from "../../src/review/core/anchors"
 import { renderReviewArtifactMarkdown } from "../../src/review/core/artifact"
 import { ReviewArtifactStore } from "../../src/review/storage/review-artifact-store"
 import type { ReviewStateStore } from "../../src/review/storage/review-state-store"
@@ -75,48 +73,62 @@ describe("branch review workspace – feedback and artifact acceptance", () => {
       await harness.flush()
     }
     expect(screen.active.kind).toBe("branch-review")
-    const branchScreen = (screen.active as unknown as { controller: ReviewWorkspaceController }).controller
-    const workspace = (screen.active as unknown as { view: ReviewWorkspace }).view
+    const branchScreen = screen.active as unknown as {
+      kind: "branch-review"
+      controller: ReviewWorkspaceController
+      view: { root: { findDescendantById: (id: string) => unknown } }
+    }
+    const branchController = branchScreen.controller
+    const root = branchScreen.view.root
+    const clickNode = async (id: string): Promise<void> => {
+      const node = root.findDescendantById(id) as { screenX?: number; screenY?: number; width?: number; height?: number } | undefined
+      if (!node || node.screenX === undefined || node.screenY === undefined) throw new Error(`missing OpenTUI node ${id}`)
+      await harness!.mockMouse.click(node.screenX + Math.floor((node.width ?? 1) / 2), node.screenY + Math.floor((node.height ?? 1) / 2))
+      await harness!.flush()
+    }
 
     expect(harness.frame()).toContain("→")
     expect(harness.frame()).toContain("main")
     expect(harness.frame()).toContain("[Aggregate]")
-    const doc = branchScreen.state!.document
+    const doc = branchController.state!.document
     const appFile = doc.files.find((f) => f.path === "src/app.ts")!
     expect(appFile).toBeDefined()
 
-    const clicked = workspace.handleSidebarClick(appFile.key)
-    expect(clicked).toBe(true)
-    const hunk = appFile.hunks[0]!
-    const newStart = hunk.newStart
-    const newEnd = Math.min(newStart + 1, hunk.newStart + hunk.newCount - 1)
-    const rangeAnchor = createRangeAnchor(appFile, { side: "new", startLine: newStart, endLine: newEnd })
-    const composer = workspace.getFeedbackComposer()
-    workspace.handleKeyPress("c")
-    expect(composer.isOpen()).toBe(true)
-    composer.handleKey("escape")
-    const opened = composer.open(rangeAnchor, "suggestion", "blocking", "first line\nsecond line\nthird line", "replacement line1\nreplacement line2\n")
-    expect(opened).toBe(true)
-    composer.setBody("first line\nsecond line\nthird line")
-    composer.setReplacement("replacement line1\nreplacement line2\n")
-    const savedBlocking = composer.save()
-    expect(savedBlocking).toBe(true)
+    const sourceRowId = `${appFile.key}:split:0:change:0:0`
+    await clickNode(sourceRowId)
+    await clickNode(sourceRowId)
+    await harness.pressKey("c")
+    expect(harness.frame()).toContain("Feedback composer")
+    await clickNode("review-feedback-kind-suggestion")
+    await clickNode("review-feedback-severity-blocking")
+    await clickNode("review-feedback-body")
+    await harness.typeText("first line")
+    await harness.pressKey("ENTER")
+    await harness.typeText("second line")
+    await harness.pressKey("ENTER")
+    await harness.typeText("third line")
+    await clickNode("review-feedback-replacement")
+    await harness.typeText("replacement line1")
+    await harness.pressKey("ENTER")
+    await harness.typeText("replacement line2")
+    await clickNode("review-feedback-save")
 
-    const fileAnchor = createFileAnchor(appFile)
-    const openedComment = composer.open(fileAnchor, "note", "comment", "looks good, but consider naming")
-    expect(openedComment).toBe(true)
-    const savedComment = composer.save()
-    expect(savedComment).toBe(true)
+    await clickNode(sourceRowId)
+    await harness.pressKey("c")
+    await clickNode("review-feedback-body")
+    await harness.typeText("looks good, but consider naming")
+    await clickNode("review-feedback-save")
 
-    const afterFeedback = branchScreen.state!
+    const afterFeedback = branchController.state!
     expect(afterFeedback.feedback).toHaveLength(2)
     expect(afterFeedback.feedback.some((fb) => fb.severity === "blocking" && fb.kind === "suggestion")).toBe(true)
     expect(afterFeedback.feedback.some((fb) => fb.severity === "comment" && fb.kind === "note")).toBe(true)
 
-    const finishResult = await branchScreen.finishReview({ decision: "request-changes", summary: "needs revision" })
+    expect(harness.frame()).toContain("[Aggregate]")
+    const finishResult = await branchController.finishReview({ decision: "request-changes", summary: "needs revision" })
+    expect(finishResult.feedback).toHaveLength(0)
     expect(finishResult.lastSubmission).toBeDefined()
     const artifactId = finishResult.lastSubmission!.artifactId
-    expect(finishResult.feedback).toHaveLength(0)
 
     const artifactStore = new ReviewArtifactStore(new GitRunner(repository.path))
     const artifact = await artifactStore.load(doc.identity.id, artifactId)
@@ -169,14 +181,27 @@ describe("branch review workspace – feedback and artifact acceptance", () => {
 
     const restartedDoc = restartedState.document
     const restartedFile = restartedDoc.files.find((f) => f.path === "src/app.ts")!
-    const newHunk = restartedFile.hunks[0]!
-    const newRange = createRangeAnchor(restartedFile, { side: "new", startLine: newHunk.newStart, endLine: newHunk.newStart })
-    const restartedWorkspace = (restartedScreen.active as unknown as { view: ReviewWorkspace }).view
-    const restartedComposer = restartedWorkspace.getFeedbackComposer()
-    const openedAgain = restartedComposer.open(newRange, "suggestion", "blocking", "another blocking\nmultiline", "fix\n")
-    expect(openedAgain).toBe(true)
-    const savedAgain = restartedComposer.save()
-    expect(savedAgain).toBe(true)
+    const restartedActive = restartedScreen.active as unknown as {
+      view: { root: { findDescendantById: (id: string) => unknown } }
+    }
+    const restartedRoot = restartedActive.view.root
+    const clickRestartNode = async (id: string): Promise<void> => {
+      const node = restartedRoot.findDescendantById(id) as { screenX?: number; screenY?: number; width?: number; height?: number } | undefined
+      if (!node || node.screenX === undefined || node.screenY === undefined) throw new Error(`missing restarted OpenTUI node ${id}`)
+      await harness!.mockMouse.click(node.screenX + Math.floor((node.width ?? 1) / 2), node.screenY + Math.floor((node.height ?? 1) / 2))
+      await harness!.flush()
+    }
+    const restartedSourceRowId = `${restartedFile.key}:split:0:change:0:0`
+    await clickRestartNode(restartedSourceRowId)
+    await clickRestartNode(restartedSourceRowId)
+    await harness.pressKey("c")
+    await clickRestartNode("review-feedback-kind-suggestion")
+    await clickRestartNode("review-feedback-severity-blocking")
+    await clickRestartNode("review-feedback-body")
+    await harness.typeText("another blocking")
+    await clickRestartNode("review-feedback-replacement")
+    await harness.typeText("fix")
+    await clickRestartNode("review-feedback-save")
     expect(restartedController.state!.feedback).toHaveLength(1)
 
     const stateStore = (restartedController as unknown as { stateStore: ReviewStateStore }).stateStore

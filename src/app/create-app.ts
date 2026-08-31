@@ -68,7 +68,7 @@ export type App = {
   readonly screenController: AppScreenController
   refresh(): Promise<void>
   saveUiState(): Promise<void>
-  destroy(): void
+  destroy(): Promise<void>
 }
 
 /**
@@ -143,7 +143,7 @@ export function createApp(options: CreateAppOptions): App {
       screenController,
       refresh: () => controller.refresh(),
       saveUiState: async () => undefined,
-      destroy: () => { screenController.destroy() },
+      destroy: async () => { await screenController.destroy() },
     }
   }
 
@@ -536,13 +536,13 @@ export function createApp(options: CreateAppOptions): App {
       }
     },
     saveUiState,
-    destroy: () => {
+    destroy: async () => {
       destroyed = true
       indexWatcher?.stop()
       background?.stop()
-      screenController.destroy()
+      await screenController.destroy()
       // Geometry is a convenience: a failed final write must never mask a clean shutdown.
-      void saveUiState().catch(() => undefined)
+      await saveUiState().catch(() => undefined)
       view.destroy()
     },
   }

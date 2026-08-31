@@ -223,14 +223,14 @@ export class AppScreenController {
     this.opts.renderer?.requestRender?.()
   }
 
-  destroy(): void {
+  async destroy(): Promise<void> {
     if (this.destroyed) return
     this.destroyed = true
     this.openToken++
     this.pendingOpen = undefined
     if (this.activeScreen.kind === "branch-review") {
       try { this.activeScreen.view.destroy() } catch {}
-      try { this.activeScreen.controller.destroy() } catch {}
+      try { await this.activeScreen.controller.destroy() } catch {}
       this._reviewHandlerCount = 0
     }
     this._timerCount = 0

@@ -124,11 +124,18 @@ export class ReviewWorkspaceController {
       try {
         // Build new document off-screen (no publish yet)
         const doc = await this.loadDocumentImpl(capturedBase)
-        // Qualification: discard stale responses
-        if (this.destroyed || token !== this.requestId) return
-        // A successful retry for the already-active generation still clears
-        // the prior load error, but does not reconcile or repaint the state.
+        if (qualified.reviewId !== undefined && doc.identity.id !== qualified.reviewId) return
+        // A same-generation response is still useful after a failed load.
+        // Storage errors require retrying the pending semantic write before
+        // they may be cleared; load errors only need a successful response.
         if (qualified.generationId !== undefined && doc.generation.id === qualified.generationId) {
+          if (this._error?.kind === "storage") {
+            try {
+              await this.persistState()
+            } catch {
+              return
+            }
+          }
           if (this._error !== undefined) {
             this._error = undefined
             this.publish()
