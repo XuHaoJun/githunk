@@ -580,9 +580,10 @@ describe("React review workspace", () => {
       })
       await flush(setup)
       const frame = setup.captureCharFrame()
-      expect(frame).toContain("0  focus diff")
-      expect(frame).toContain("1  focus files")
-      expect(frame).toContain("l  cycle layout")
+      expect(frame).toContain("0 Diff")
+      expect(frame).toContain("1 Files")
+      expect(frame).toContain("Tab cycle panels")
+      expect(frame).toContain("l layout")
       expect(frame).not.toContain("0/1/2  auto / split / stack")
     } finally {
       await act(async () => setup.renderer.destroy())

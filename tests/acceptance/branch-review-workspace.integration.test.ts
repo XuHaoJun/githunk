@@ -8,8 +8,6 @@ import { createShellHarness } from "../helpers/shell-harness"
 import type { ShellHarness } from "../helpers/shell-harness"
 import type { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
 import { coverageForFile } from "../../src/review/core/selectors"
-import { loadSinceLastReviewProjection } from "../../src/review/git/load-review-projection"
-import { GitRunner } from "../../src/git/runner"
 async function createBranchFixture(repository: TempRepository): Promise<void> {
   await repository.write("README.md", "# base\n")
   await repository.git(["add", "README.md"])
@@ -55,7 +53,7 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     repository = undefined
   })
 
-  test("real repository: b opens workspace, viewed persists, one-file invalidation, since-last, no mutations", async () => {
+  test("real repository: b opens aggregate workspace, viewed persists, one-file invalidation, no mutations", async () => {
     repository = await createTempRepository()
     await createBranchFixture(repository)
     await seedBase(repository, "refs/heads/feature/payment", "refs/heads/main")
@@ -122,7 +120,6 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
 
     const finishResultBefore = await reopened.finishReview({ decision: "approve", summary: "initial approve for since-last" })
     expect(finishResultBefore.lastSubmission).toBeDefined()
-    const lastSubmissionHead = finishResultBefore.lastSubmission!.headOid
 
     await repository.write("src/payment.ts", "export const pay = 2 // changed\nline2\nline3\n")
     await repository.git(["add", "src/payment.ts"])
@@ -145,20 +142,19 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     expect(coverageForFile(newTypes, afterRefresh.viewed, null)).toBe("not-viewed")
     const hasUntracked = afterRefresh.document.files.some((f) => f.path.includes("untracked"))
     expect(hasUntracked).toBe(false)
-    reopened.dispatch({ type: "projection/set", projection: { kind: "since-last-review", fromHeadOid: lastSubmissionHead } })
-    const projectedState = reopened.state!
-    expect(projectedState.projection.kind).toBe("since-last-review")
-    const projectionResult = await loadSinceLastReviewProjection(new GitRunner(repository.path), projectedState.document, lastSubmissionHead)
-    const projectionDoc = projectionResult.kind === "ok" ? projectionResult.document : projectedState.document
-    const projFiles = projectionDoc.files.map((f) => f.path)
-    expect(projFiles).toEqual(expect.arrayContaining(["src/payment.ts", "src/types.ts"]))
-    expect(projFiles).not.toContain("src/validation.ts")
+    const activeController = reopened as unknown as { loadProjection?: unknown }
+    expect(activeController.loadProjection).toBeUndefined()
+    expect(reopened.state?.projection).toEqual({ kind: "aggregate" })
+    const activeFrame = harness.frame()
+    expect(activeFrame).toContain("[Aggregate]")
+    expect(activeFrame).not.toContain("Since Last")
+    expect(activeFrame).not.toContain("Commit")
+    expect(activeFrame).not.toContain("src/untracked.tmp")
 
     const logAfter = app.controller.state.commandLog
     const newLines = logAfter.slice(logBefore)
     const newText = newLines.map((l) => l.spans.map((s) => s.text).join("")).join("\n")
     expect(newText).not.toMatch(/git (add|commit|checkout|push|pull|fetch|branch|stash)/)
-    expect(projFiles).not.toContain("src/untracked.tmp")
   }, 30000)
   test("returning from branch review refreshes repository working-tree files", async () => {
     repository = await createTempRepository()

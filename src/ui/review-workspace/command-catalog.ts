@@ -107,15 +107,29 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     intent: "filter/set-query",
   },
   {
+    id: "review.focusDiff",
+    title: "Diff",
+    keys: ["0"],
+    focus: ["any"],
+    available: always,
+  },
+  {
+    id: "review.focusFiles",
+    title: "Files",
+    keys: ["1"],
+    focus: ["any"],
+    available: always,
+  },
+  {
     id: "review.toggleFocus",
-    title: "Switch focus",
+    title: "cycle panels",
     keys: ["tab"],
     focus: ["any"],
     available: always,
   },
   {
     id: "review.toggleRange",
-    title: "Begin/end range selection",
+    title: "Begin/end semantic line/range selection",
     keys: ["v"],
     focus: ["stream"],
     available: always,
@@ -138,24 +152,69 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     intent: "viewed/mark",
   },
   {
-    id: "review.layoutAuto",
-    title: "Auto layout",
-    keys: ["0"],
+    id: "review.layoutCycle",
+    title: "layout",
+    keys: ["l"],
     focus: ["any"],
     available: always,
   },
   {
-    id: "review.layoutSplit",
-    title: "Split layout",
-    keys: ["1"],
-    focus: ["any"],
+    id: "review.selectFile",
+    title: "Select file",
+    keys: [],
+    focus: ["sidebar", "stream"],
+    available: always,
+    intent: "selection/select-file",
+  },
+  {
+    id: "review.selectDiffLine",
+    title: "Select semantic diff line",
+    keys: [],
+    focus: ["stream"],
+    available: always,
+    intent: "selection/line",
+  },
+  {
+    id: "review.selectFeedback",
+    title: "Select feedback",
+    keys: [],
+    focus: ["stream"],
+    available: always,
+    intent: "feedback/select",
+  },
+  {
+    id: "review.editFeedback",
+    title: "Edit selected feedback",
+    keys: ["e"],
+    focus: ["stream", "sidebar"],
     available: always,
   },
   {
-    id: "review.layoutStack",
-    title: "Stack layout",
-    keys: ["2"],
-    focus: ["any"],
+    id: "review.deleteFeedback",
+    title: "Delete selected feedback",
+    keys: ["d"],
+    focus: ["stream", "sidebar"],
+    available: always,
+  },
+  {
+    id: "review.reanchorFeedback",
+    title: "Re-anchor selected feedback",
+    keys: ["a"],
+    focus: ["stream", "sidebar"],
+    available: always,
+  },
+  {
+    id: "review.expandGap",
+    title: "Expand context gap",
+    keys: ["z"],
+    focus: ["stream"],
+    available: always,
+  },
+  {
+    id: "review.cycleFilterScope",
+    title: "Cycle filter scope",
+    keys: ["f"],
+    focus: ["stream", "sidebar"],
     available: always,
   },
   {
@@ -238,6 +297,14 @@ export function reviewHints(focus: ReviewFocus, state: Pick<ReviewState, "projec
 export function reviewHelp(focus: ReviewFocus, state: Pick<ReviewState, "projection">): string {
   const available = REVIEW_COMMANDS.filter((c) => c.available(state))
     .filter((c) => c.focus.includes(focus) || c.focus.includes("any") || c.focus.includes("global"))
-  const lines = available.map((c) => `${c.keys.join("/")} — ${c.title}`)
+    .filter((c) => c.keys.length > 0)
+  const panelPriority: Record<string, number> = {
+    "review.focusDiff": 0,
+    "review.focusFiles": 1,
+    "review.toggleFocus": 2,
+    "review.layoutCycle": 3,
+  }
+  const ordered = [...available].sort((a, b) => (panelPriority[a.id] ?? 99) - (panelPriority[b.id] ?? 99))
+  const lines = ordered.map((c) => `${c.keys.map((key) => key === "tab" ? "Tab" : key).join("/")} ${c.title}`)
   return lines.join("\n")
 }

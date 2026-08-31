@@ -18,14 +18,17 @@ import { emptyReviewDatabaseV2 } from "../../review/storage/schemas"
 import type { ReviewDecision } from "../../review/core/artifact"
 import { buildReviewArtifact } from "../../review/core/artifact"
 import type { ReviewArtifactV1 } from "../../review/core/artifact"
-import { isAncestor } from "../../review/git/load-review-projection"
 import {
   type ReviewWorkspaceError,
   classifyLoadError,
   createCorruptStateError,
   createStorageError,
-  createHistoryRewrittenError,
 } from "./error-state"
+function normalizeActiveProjection(
+  projection: ReviewProjection,
+): Extract<ReviewProjection, { kind: "aggregate" }> {
+  return { kind: "aggregate" }
+}
 
 export type ReviewWorkspaceControllerOptions = {
   readonly runner: GitRunner
@@ -128,18 +131,6 @@ export class ReviewWorkspaceController {
           // Preserve draft via reconciliation (reducer keeps draft); compute off-screen
           nextState = reconcileReviewState(this._state, doc)
         }
-        // Check history rewritten for Since Last Review availability
-        let historyError: ReviewWorkspaceError | undefined
-        if (nextState.lastSubmission) {
-          try {
-            const ancestor = await isAncestor(this.runner, nextState.lastSubmission.headOid, doc.generation.headOid)
-            if (!ancestor) {
-              historyError = createHistoryRewrittenError(nextState.lastSubmission.headOid, doc.generation.headOid)
-            }
-          } catch {
-            // If ancestor check fails, do not block publish
-          }
-        }
         if (this.destroyed || token !== this.requestId) return
         const latestState = this._state
         if (latestState && latestState.revision !== startRevision) {
@@ -149,7 +140,7 @@ export class ReviewWorkspaceController {
         this._state = nextState
         this.activeReviewId = doc.identity.id
         this.activeGenerationId = doc.generation.id
-        this._error = historyError
+        this._error = undefined
         this.publish()
         await this.persistState()
         // If persist failed, error will be set inside persistState
@@ -218,7 +209,7 @@ export class ReviewWorkspaceController {
           draft: persisted.draft,
           expandedGaps: persisted.expandedGaps as readonly ExpandedGap[],
           lastSubmission: persisted.lastSubmission,
-          projection: persisted.projection as ReviewProjection,
+          projection: normalizeActiveProjection(persisted.projection as ReviewProjection),
           revision: 0,
         }
         persistedState = reconcileReviewState(reconstructed, doc)
@@ -279,17 +270,6 @@ export class ReviewWorkspaceController {
     } catch {
       return false
     }
-  }
-
-  async loadProjection(projection: ReviewProjection): Promise<void> {
-    const token = ++this.requestId
-    const capturedReviewId = this.activeReviewId
-    const capturedGeneration = this.activeGenerationId
-    this.dispatch({ type: "projection/set", projection })
-    await Promise.resolve()
-    if (token !== this.requestId) return
-    if (capturedReviewId !== this.activeReviewId) return
-    if (capturedGeneration !== this.activeGenerationId) return
   }
 
   async flushDrafts(): Promise<void> {
@@ -536,7 +516,10 @@ export class ReviewWorkspaceController {
 
   private async persistState(): Promise<void> {
     if (!this.stateStore || !this._state) return
-    const persisted = persistedFromReviewState(this._state)
+    const persisted = persistedFromReviewState({
+      ...this._state,
+      projection: normalizeActiveProjection(this._state.projection),
+    })
     const reviewId = this._state.document.identity.id
     const headKey = this._state.document.identity.headRef ?? `detached:${this._state.document.identity.detachedHeadOid ?? this._state.document.generation.headOid}`
     try {

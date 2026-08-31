@@ -12,7 +12,8 @@ export type FinishDecision = ReviewDecision
 
 const REASON_MESSAGES: Record<string, string> = {
   "draft-open": "Finish blocked: composer is open — save or cancel the draft first",
-  "commit-projection-invalid": "Finish blocked: commit projection cannot be submitted — switching to Aggregate",
+  "commit-projection-invalid": "Finish blocked: only the aggregate projection can be submitted",
+  "projection-invalid": "Finish blocked: only the aggregate projection can be submitted",
   "feedback-needs-reanchor": "Finish blocked: some feedback is stale or orphaned — re-anchor or delete it",
   "approve-has-blocking-feedback": "Finish blocked: Approve cannot have blocking feedback",
   "request-changes-requires-blocking": "Finish blocked: Request Changes requires at least one blocking item",
@@ -114,32 +115,6 @@ export class FinishDialog {
     return v.message ?? `Finish blocked: ${v.reason}`
   }
 
-  /** If in commit projection, automatically return to Aggregate or Since Last Review and ask to confirm */
-  handleProjectionIfNeeded(): { switched: boolean; from?: string; to?: string; message?: string } {
-    const state = this.controller.state
-    if (!state) return { switched: false }
-    if (state.projection.kind !== "commit") return { switched: false }
-    // Switch to Aggregate or Since Last Review
-    // Prefer Since Last Review if lastSubmission exists and its head is ancestor? But we don't have ancestor check here; just pick Aggregate for determinism
-    // If lastSubmission exists, we can try since-last-review projection
-    let target: { kind: "aggregate" } | { kind: "since-last-review"; fromHeadOid: string }
-    if (state.lastSubmission) {
-      target = { kind: "since-last-review", fromHeadOid: state.lastSubmission.headOid }
-    } else {
-      target = { kind: "aggregate" }
-    }
-    try {
-      this.controller.dispatch({ type: "projection/set", projection: target as unknown as ReviewState["projection"] })
-      return {
-        switched: true,
-        from: "commit",
-        to: target.kind,
-        message: `Switched from commit projection to ${target.kind} — confirm submission projection`,
-      }
-    } catch {
-      return { switched: false }
-    }
-  }
 
   /** Derive deterministic markdown from persisted artifact */
   async getPersistedMarkdown(artifactId: string): Promise<string | undefined> {
@@ -175,7 +150,6 @@ export class FinishDialog {
    * Submit finish review.
    * - Shows coverage/pending counts via getCoverage()
    * - Validates via validateFinishReview, returns exact reason on failure
-   * - Handles commit projection auto-switch
    * - On success calls finishReviewTransaction, then derives Markdown from persisted artifact and offers clipboard copy
    * - Never renders remote-submission success message
    * - Transaction failure preserves pending state; retry reuses artifact id
@@ -187,27 +161,16 @@ export class FinishDialog {
     markdown?: string
     copyResult?: CopyResult
     artifactId?: string
-    switchedProjection?: boolean
   }> {
     const state = this.controller.state
     if (!state) return { ok: false, reason: "no-state", message: "No review state" }
-
-    const projCheck = this.handleProjectionIfNeeded()
-    if (projCheck.switched) {
-      const msg = projCheck.message ?? "Switched from commit projection — confirm submission projection"
-      return {
-        ok: false,
-        reason: "projection-switched",
-        message: msg,
-        switchedProjection: true,
-      }
-    }
 
     const validation = validateFinishReview(state, { decision: this.decision, summary: this.summary })
     if (!validation.ok) {
       this.lastError = messageForReason(validation.reason)
       return { ok: false, reason: validation.reason, message: this.lastError }
     }
+
 
     try {
       const nextState = await this.controller.finishReview({ decision: this.decision, summary: this.summary })
@@ -257,7 +220,7 @@ export class FinishDialog {
 
       this.lastError = undefined
       this._open = false
-      const out: { ok: boolean; reason?: string; message?: string; markdown?: string; copyResult?: CopyResult; artifactId?: string; switchedProjection?: boolean } = {
+      const out: { ok: boolean; reason?: string; message?: string; markdown?: string; copyResult?: CopyResult; artifactId?: string } = {
         ok: true,
         message: `Review finished — ${this.decision}`,
       }

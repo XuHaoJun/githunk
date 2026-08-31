@@ -163,31 +163,21 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
     expect(v.reason).toBe("feedback-needs-reanchor")
   })
 
-  test("commit-projection return to Aggregate/Since Last and requires confirmation", async () => {
+  test("non-aggregate projection blocks Finish without switching", async () => {
     const h = makeHunk(0, [" a"])
     const file = makeFile({ key: "a", path: "src/a.ts", hunks: [h] as unknown as ReviewFile["hunks"] })
     const doc = makeDoc([file])
     const controller = new ReviewWorkspaceController({ runner: fakeRunner(), loadDocument: async () => doc })
     await controller.open("refs/heads/main")
-    // Set projection to commit
     controller.dispatch({ type: "projection/set", projection: { kind: "commit", oid: "abc" } })
-    expect(controller.state?.projection.kind).toBe("commit")
-    const clipboard = fakeClipboard()
-    const dialog = new FinishDialog({ controller, clipboard })
+    const dialog = new FinishDialog({ controller, clipboard: fakeClipboard() })
     dialog.open()
     dialog.setDecision("comment")
     dialog.setSummary("summary")
-    const proj = dialog.handleProjectionIfNeeded()
-    expect(proj.switched).toBe(true)
-    expect(controller.state?.projection.kind).not.toBe("commit")
-    // Submit should indicate switched and require confirm
     const result = await dialog.submit()
-    // Since handleProjection already switched, second submit after switch should attempt real submit; but first submit after open will have switched and return projection-switched
-    // For this test, after handleProjection, the next submit should not switch again
-    expect(result.reason === "projection-switched" || result.ok === true || result.ok === false).toBe(true)
-    // Ensure after switch, projection is aggregate or since-last-review
-    const kind = controller.state?.projection.kind
-    expect(["aggregate", "since-last-review"]).toContain(kind as string)
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe("commit-projection-invalid")
+    expect(controller.state?.projection.kind).toBe("commit")
   })
 
   test("transaction failure preserves pending state", async () => {

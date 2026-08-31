@@ -66,12 +66,21 @@ describe("command-catalog defaults — exact spec §5.4 keys", () => {
     expect(byId.get("review.toggleRange")?.keys).toEqual(["v"])
     expect(byId.get("review.createFeedback")?.keys).toEqual(["c"])
     expect(byId.get("review.markViewed")?.keys).toEqual(["r"])
-    expect(byId.get("review.layoutAuto")?.keys).toEqual(["0"])
-    expect(byId.get("review.layoutSplit")?.keys).toEqual(["1"])
-    expect(byId.get("review.layoutStack")?.keys).toEqual(["2"])
+    expect(byId.get("review.focusDiff")?.keys).toEqual(["0"])
+    expect(byId.get("review.focusFiles")?.keys).toEqual(["1"])
+    expect(byId.get("review.layoutCycle")?.keys).toEqual(["l"])
     expect(byId.get("review.finishReview")?.keys).toEqual(["R"])
     expect(byId.get("review.help")?.keys).toEqual(["?"])
     expect(byId.get("review.close")?.keys).toEqual(["escape"])
+  })
+  test("aggregate owns panel bindings and layout has no numeric aliases", () => {
+    const command = (id: string) => REVIEW_COMMANDS.find((entry) => entry.id === id)!
+    expect(command("review.focusDiff").keys).toEqual(["0"])
+    expect(command("review.focusFiles").keys).toEqual(["1"])
+    expect(command("review.toggleFocus").keys).toEqual(["tab"])
+    expect(command("review.layoutCycle").keys).toEqual(["l"])
+    expect(REVIEW_COMMANDS.flatMap((entry) => entry.keys)).not.toContain("2")
+    expect(REVIEW_COMMANDS.some((entry) => /projection|since last|commit projection/i.test(entry.title))).toBe(false)
   })
 
   test("uses only spec §5.4 keys — no old Branch Review compatibility aliases", () => {
@@ -140,7 +149,7 @@ describe("command-catalog — availability per projection", () => {
 
   test("layout and help always available", () => {
     const s = makeState({ kind: "commit", oid: "z".repeat(40) })
-    for (const id of ["review.layoutAuto", "review.layoutSplit", "review.layoutStack", "review.help", "review.close"]) {
+    for (const id of ["review.layoutCycle", "review.help", "review.close"]) {
       expect(REVIEW_COMMANDS.find((c) => c.id === id)!.available(s)).toBe(true)
     }
   })

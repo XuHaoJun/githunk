@@ -93,6 +93,13 @@ describe("schemas – round trips", () => {
     expect(parsed.ok).toBe(true)
   })
 })
+  test("retains deferred projection metadata for the active boundary to normalize", () => {
+    const db = makeValidDatabase()
+    db.reviews["abc123"].projection = { kind: "commit", oid: "c".repeat(40) }
+    const parsed = parseReviewDatabaseV2(db)
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) expect(parsed.value.reviews["abc123"]?.projection).toEqual({ kind: "commit", oid: "c".repeat(40) })
+  })
 
 describe("schemas – rejected unknown versions", () => {
   test("rejects version 3 database", () => {

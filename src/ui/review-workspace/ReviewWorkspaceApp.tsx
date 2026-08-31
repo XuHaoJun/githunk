@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { ReviewWorkspaceController } from "./controller"
 import type { ReviewState } from "../../review/core/state"
 import { reviewHeaderLines } from "./header"
+import { REVIEW_COMMANDS, resolveReviewCommand, reviewHelp } from "./command-catalog"
 import { buildReviewSidebarEntries, getFileStateIcon, REVIEW_SIDEBAR_THEME, sidebarEntryStats, sidebarEntryStatsWidth } from "./review-sidebar"
 import { toHunkReviewFiles } from "./hunk-review-model"
 import { ReviewDiffPane } from "./components/ReviewDiffPane"
@@ -86,7 +87,12 @@ function padText(text: string, width: number): string {
 
 function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "stream" | "sidebar" | "filter"): string {
   const selected = state.selection.fileKey ?? "none"
-  return `j/k:scroll | ]/[ :hunk | ./,:file | n/N:unreviewed | }:feedback | v:range | c:comment | e:edit d:delete a:reanchor | r:viewed | R:finish | 0:diff 1:files | l:layout(${layout}) | ${focus} | Esc:close — ${selected}`
+  const key = (id: string): string => {
+    const value = REVIEW_COMMANDS.find((candidate) => candidate.id === id)?.keys[0] ?? ""
+    return value === "tab" ? "Tab" : value
+  }
+  const title = (id: string): string => REVIEW_COMMANDS.find((candidate) => candidate.id === id)?.title ?? ""
+  return `${key("review.focusDiff")} ${title("review.focusDiff")} | ${key("review.focusFiles")} ${title("review.focusFiles")} | ${key("review.toggleFocus")} ${title("review.toggleFocus")} | ${key("review.layoutCycle")} ${title("review.layoutCycle")}(${layout}) | ${key("review.moveDown")}/${key("review.moveUp")}:scroll | ]/[ :hunk | ./,:file | n/N:unreviewed | }:feedback | v:range | c:comment | r:viewed | R:finish | ${focus} | Esc:close — ${selected}`
 }
 function feedbackDraftText(state: ReviewState): string {
   const draft = state.draft
@@ -497,12 +503,200 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       setPendingRangeAnchor(null)
     }
   }, [controller, rangeStart])
+  const executeCommand = useCallback((commandId: string, payload?: unknown): boolean => {
+    const current = controller.state
+    if (commandId === "review.focusDiff") {
+      setFocus("stream")
+      return true
+    }
+    if (commandId === "review.focusFiles") {
+      setFocus(sidebarWidth > 0 ? "sidebar" : "stream")
+      return true
+    }
+    if (commandId === "review.toggleFocus") {
+      setFocus((currentFocus) => sidebarWidth === 0
+        ? "stream"
+        : currentFocus === "stream" ? "sidebar" : currentFocus === "sidebar" ? "filter" : "stream")
+      return true
+    }
+    if (commandId === "review.focusFilter") {
+      if (sidebarWidth > 0) {
+        setFocus("filter")
+        filterInputRef.current?.focus()
+      } else {
+        setFocus("stream")
+      }
+      return true
+    }
+    if (commandId === "review.layoutCycle") {
+      setLayoutMode((currentMode) => {
+        const currentLayout = currentMode === "auto" ? (diffWidth >= 64 ? "split" : "stack") : currentMode
+        if (currentLayout === "split") return "stack"
+        return diffWidth >= 64 ? "auto" : "split"
+      })
+      return true
+    }
+    if (commandId === "review.help") {
+      setHelpOpen(true)
+      return true
+    }
+    if (commandId === "review.close") {
+      onClose()
+      return true
+    }
+    if (!current) return false
+    if (commandId === "review.moveDown" || commandId === "review.moveUp") {
+      const direction = commandId === "review.moveDown" ? "next" : "previous"
+      if (focus === "sidebar") {
+        try { controller.dispatch(planReviewIntent(current, { type: "selection/move", unit: "file", direction })) } catch {}
+      } else {
+        diffScrollRef.current?.scrollBy(direction === "next" ? 1 : -1)
+      }
+      return true
+    }
+    const navigation: Record<string, { unit: "file" | "hunk"; direction: "next" | "previous" }> = {
+      "review.nextFile": { unit: "file", direction: "next" },
+      "review.prevFile": { unit: "file", direction: "previous" },
+      "review.nextHunk": { unit: "hunk", direction: "next" },
+      "review.prevHunk": { unit: "hunk", direction: "previous" },
+    }
+    const movement = navigation[commandId]
+    if (movement) {
+      try {
+        const before = current.selection
+        controller.dispatch(planReviewIntent(current, { type: "selection/move", unit: movement.unit, direction: movement.direction }))
+        const after = controller.state
+        if (after?.selection.fileKey === before.fileKey && after.selection.hunkIndex === before.hunkIndex) {
+          const fallback = fallbackSelectionIntent(current, movement.unit, movement.direction)
+          if (fallback && controller.state) controller.dispatch(planReviewIntent(controller.state, fallback))
+        }
+      } catch {}
+      return true
+    }
+    if (commandId === "review.nextUnreviewed" || commandId === "review.prevUnreviewed") {
+      const target = nextUnreviewedFile(current, commandId === "review.nextUnreviewed" ? "next" : "previous")
+      if (target) {
+        try { controller.dispatch(planReviewIntent(current, { type: "selection/select-file", fileKey: target })) } catch {}
+      }
+      return true
+    }
+    if (commandId === "review.nextFeedback" || commandId === "review.prevFeedback") {
+      const target = feedbackTarget(current, commandId === "review.nextFeedback" ? "next" : "previous", selectedFeedbackId)
+      if (target) {
+        setSelectedFeedbackId(target.feedbackId)
+        try { controller.dispatch(planReviewIntent(current, { type: "selection/viewport-anchor", fileKey: target.fileKey, hunkIndex: target.hunkIndex, reveal: "hunk" })) } catch {}
+      }
+      return true
+    }
+    if (commandId === "review.markViewed") {
+      const fileKey = current.selection.fileKey
+      if (fileKey) {
+        try { controller.dispatch(planReviewIntent(current, { type: "viewed/mark", fileKey, viewedAt: new Date().toISOString() })) } catch {}
+      }
+      return true
+    }
+    if (commandId === "review.toggleRange") {
+      const fileKey = current.selection.fileKey
+      const file = fileKey ? current.document.files.find((candidate) => candidate.key === fileKey) : undefined
+      const range = file ? hunkRangeForSelection(file, current.selection.hunkIndex) : null
+      if (file && range) {
+        if (!rangeStart) {
+          setRangeStart({ fileKey: file.key, hunkIndex: current.selection.hunkIndex, side: range.side, startLine: range.startLine })
+          setPendingRangeAnchor(null)
+        } else if (rangeStart.fileKey === file.key && rangeStart.hunkIndex === current.selection.hunkIndex && rangeStart.side === range.side) {
+          try {
+            setPendingRangeAnchor(createRangeAnchor(file, {
+              side: range.side,
+              startLine: Math.min(rangeStart.startLine, range.endLine),
+              endLine: Math.max(rangeStart.startLine, range.endLine),
+            }))
+          } catch {
+            setPendingRangeAnchor(null)
+          }
+          setRangeStart(null)
+        } else {
+          setRangeStart({ fileKey: file.key, hunkIndex: current.selection.hunkIndex, side: range.side, startLine: range.startLine })
+          setPendingRangeAnchor(null)
+        }
+      }
+      return true
+    }
+    if (commandId === "review.createFeedback") {
+      if (focus !== "stream" || current.draft) return false
+      const file = current.document.files.find((candidate) => candidate.key === current.selection.fileKey)
+      if (file) {
+        const anchor = pendingRangeAnchor && pendingRangeAnchor.fileKey === file.key
+          ? pendingRangeAnchor
+          : { kind: "file" as const, fileKey: file.key, contentId: file.contentId }
+        try {
+          controller.dispatch(planReviewIntent(current, {
+            type: "feedback/start-draft",
+            anchor,
+            kind: "note",
+            severity: "comment",
+            body: "",
+          }))
+          setEditingFeedbackId(null)
+          pendingDeleteFeedbackRef.current = null
+          setPendingDeleteFeedbackId(null)
+          if (anchor.kind === "range") setPendingRangeAnchor(null)
+        } catch {}
+      }
+      return true
+    }
+    if (commandId === "review.editFeedback" && selectedFeedbackId) {
+      editFeedback(selectedFeedbackId)
+      return true
+    }
+    if (commandId === "review.deleteFeedback" && selectedFeedbackId) {
+      deleteFeedback(selectedFeedbackId)
+      return true
+    }
+    if (commandId === "review.reanchorFeedback" && selectedFeedbackId) {
+      reanchorFeedback(selectedFeedbackId)
+      return true
+    }
+    if (commandId === "review.expandGap") {
+      const fileKey = current.selection.fileKey
+      const file = fileKey ? current.document.files.find((candidate) => candidate.key === fileKey) : undefined
+      const hunkIndex = Math.max(1, current.selection.hunkIndex)
+      if (file?.hunks[hunkIndex]) void toggleGap(file.key, `before:${hunkIndex}`)
+      return true
+    }
+    if (commandId === "review.cycleFilterScope") {
+      const scopes = ["all", "unreviewed", "changed", "feedback"] as const
+      const index = scopes.indexOf(current.filter.scope)
+      const scope = scopes[(index + 1) % scopes.length] ?? "all"
+      try { controller.dispatch(planReviewIntent(current, { type: "filter/set-scope", scope })) } catch {}
+      return true
+    }
+    if (commandId === "review.finishReview") {
+      finishDialog.open()
+      session.invalidate()
+      return true
+    }
+    if (commandId === "review.selectFile" && typeof payload === "object" && payload !== null && "fileKey" in payload) {
+      const selection = payload as { fileKey: string; nextFocus?: "stream" | "sidebar" }
+      selectFile(selection.fileKey, selection.nextFocus ?? "stream")
+      return true
+    }
+    if (commandId === "review.selectDiffLine" && payload) {
+      selectDiffRow(payload as HunkDiffRow)
+      return true
+    }
+    if (commandId === "review.selectFeedback" && typeof payload === "string") {
+      selectFeedback(payload)
+      return true
+    }
+    return false
+  }, [controller, deleteFeedback, diffWidth, editFeedback, finishDialog, focus, onClose, pendingRangeAnchor, rangeStart, reanchorFeedback, selectedFeedbackId, selectFeedback, selectDiffRow, session, sidebarWidth, toggleGap])
 
   const handleKey = useCallback((event: KeyEvent) => {
     if (!active) return
     const name = keyName(event)
     const current = controller.state
 
+    // Modal input owns these keys; they must not fall through to workspace commands.
     if (name === "escape") {
       if (current?.draft) {
         try { controller.dispatch(planReviewIntent(current, { type: "feedback/cancel-draft" })) } catch {}
@@ -546,11 +740,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         consume(event)
         return
       }
-      onClose()
-      consume(event)
-      return
     }
-
     if (finishDialog.isOpen()) {
       if (event.ctrl && (name === "1" || name === "2" || name === "3")) {
         finishDialog.setDecision(name === "1" ? "comment" : name === "2" ? "approve" : "request-changes")
@@ -578,239 +768,18 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       }
       return
     }
-    if (focus === "filter") {
-      if (name === "tab") {
-        setFocus((currentFocus) => sidebarWidth === 0
-          ? "stream"
-          : currentFocus === "stream" ? "sidebar" : currentFocus === "sidebar" ? "filter" : "stream")
-        consume(event)
-        return
-      }
-      if (name === "enter") {
-        filterInputRef.current?.blur()
-        setFocus("stream")
-        consume(event)
-        return
-      }
-      return
-    }
-    if (name === "tab") {
-      setFocus((currentFocus) => sidebarWidth === 0
-        ? "stream"
-        : currentFocus === "stream" ? "sidebar" : currentFocus === "sidebar" ? "filter" : "stream")
-      consume(event)
-      return
-    }
-    if (name === "/") {
-      if (sidebarWidth > 0) {
-        setFocus("filter")
-        filterInputRef.current?.focus()
-      } else {
-        setFocus("stream")
-      }
-      consume(event)
-      return
-    }
-    if (name === "?") {
-      setHelpOpen(true)
-      consume(event)
-      return
-    }
-    if (name === "0" || name === "1") {
-      setFocus(name === "1" && sidebarWidth > 0 ? "sidebar" : "stream")
-      consume(event)
-      return
-    }
-    if (name.toLowerCase() === "l") {
-      setLayoutMode((currentMode) => {
-        const currentLayout = currentMode === "auto" ? (diffWidth >= 64 ? "split" : "stack") : currentMode
-        if (currentLayout === "split") return "stack"
-        return diffWidth >= 64 ? "auto" : "split"
-      })
-      consume(event)
-      return
-    }
-    if (name.toLowerCase() === "b") {
-      const filterActuallyFocused = (filterInputRef.current as unknown as { focused?: boolean } | null)?.focused === true
-      if (filterActuallyFocused || current?.draft || helpOpen || finishDialog.isOpen()) return
-      onClose()
-      consume(event)
-      return
-    }
-    if (!current) return
-    if (name === "e" && selectedFeedbackId) {
-      editFeedback(selectedFeedbackId)
-      consume(event)
-      return
-    }
-    if (name === "d" && selectedFeedbackId) {
-      deleteFeedback(selectedFeedbackId)
-      consume(event)
-      return
-    }
-    if (name === "a" && selectedFeedbackId) {
-      reanchorFeedback(selectedFeedbackId)
-      consume(event)
-      return
-    }
-    if (name === "R") {
-      finishDialog.open()
-      session.invalidate()
+    if (focus === "filter" && name === "enter") {
+      filterInputRef.current?.blur()
+      setFocus("stream")
       consume(event)
       return
     }
 
-    if (name === "v") {
-      const fileKey = current.selection.fileKey
-      const file = fileKey ? current.document.files.find((candidate) => candidate.key === fileKey) : undefined
-      const range = file ? hunkRangeForSelection(file, current.selection.hunkIndex) : null
-      if (file && range) {
-        if (!rangeStart) {
-          setRangeStart({ fileKey: file.key, hunkIndex: current.selection.hunkIndex, side: range.side, startLine: range.startLine })
-          setPendingRangeAnchor(null)
-        } else if (rangeStart.fileKey === file.key && rangeStart.hunkIndex === current.selection.hunkIndex && rangeStart.side === range.side) {
-          try {
-            setPendingRangeAnchor(createRangeAnchor(file, {
-              side: range.side,
-              startLine: Math.min(rangeStart.startLine, range.endLine),
-              endLine: Math.max(rangeStart.startLine, range.endLine),
-            }))
-          } catch {
-            setPendingRangeAnchor(null)
-          }
-          setRangeStart(null)
-        } else {
-          setRangeStart({ fileKey: file.key, hunkIndex: current.selection.hunkIndex, side: range.side, startLine: range.startLine })
-          setPendingRangeAnchor(null)
-        }
-      }
-      consume(event)
-      return
-    }
-
-    if (name === "c" && focus === "stream" && !current.draft) {
-      const file = current.document.files.find((candidate) => candidate.key === current.selection.fileKey)
-      if (file) {
-        const anchor = pendingRangeAnchor && pendingRangeAnchor.fileKey === file.key
-          ? pendingRangeAnchor
-          : { kind: "file" as const, fileKey: file.key, contentId: file.contentId }
-        try {
-          controller.dispatch(planReviewIntent(current, {
-            type: "feedback/start-draft",
-            anchor,
-            kind: "note",
-            severity: "comment",
-            body: "",
-          }))
-          setEditingFeedbackId(null)
-          pendingDeleteFeedbackRef.current = null
-          setPendingDeleteFeedbackId(null)
-          if (anchor.kind === "range") setPendingRangeAnchor(null)
-        } catch {}
-      }
-      consume(event)
-      return
-    }
-    if (name.toLowerCase() === "z") {
-      const fileKey = current.selection.fileKey
-      const file = fileKey ? current.document.files.find((candidate) => candidate.key === fileKey) : undefined
-      const hunkIndex = Math.max(1, current.selection.hunkIndex)
-      if (file?.hunks[hunkIndex]) toggleGap(file.key, `before:${hunkIndex}`)
-      consume(event)
-      return
-    }
-    if (name === "n" || name === "N") {
-      const target = nextUnreviewedFile(current, name === "n" ? "next" : "previous")
-      if (target) {
-        try { controller.dispatch(planReviewIntent(current, { type: "selection/select-file", fileKey: target })) } catch {}
-      }
-      consume(event)
-      return
-    }
-    if (name === "}" || name === "{") {
-      const target = feedbackTarget(current, name === "}" ? "next" : "previous", selectedFeedbackId)
-      if (target) {
-        setSelectedFeedbackId(target.feedbackId)
-        const targetFile = current.document.files.find((file) => file.key === target.fileKey)
-        if (targetFile) {
-          try {
-            controller.dispatch(planReviewIntent(current, { type: "selection/viewport-anchor", fileKey: target.fileKey, hunkIndex: target.hunkIndex, reveal: "hunk" }))
-          } catch {}
-        }
-      }
-      consume(event)
-      return
-    }
-    if (name === "f") {
-      const scopes = ["all", "unreviewed", "changed", "feedback"] as const
-      const index = scopes.indexOf(current.filter.scope)
-      const scope = scopes[(index + 1) % scopes.length] ?? "all"
-      try { controller.dispatch(planReviewIntent(current, { type: "filter/set-scope", scope })) } catch {}
-      consume(event)
-      return
-    }
-    if (name === "r") {
-      const fileKey = current.selection.fileKey
-      if (fileKey) {
-        try {
-          controller.dispatch(planReviewIntent(current, { type: "viewed/mark", fileKey, viewedAt: new Date().toISOString() }))
-        } catch {}
-      }
-      consume(event)
-      return
-    }
-
-    let intent: Parameters<typeof planReviewIntent>[1] | undefined
-    let navigationUnit: "file" | "hunk" | undefined
-    let navigationDirection: "next" | "previous" | undefined
-    if (name === "j" || name === "down" || name === "ArrowDown") {
-      if (focus === "sidebar") {
-        intent = { type: "selection/move", unit: "file", direction: "next" }
-        navigationUnit = "file"
-        navigationDirection = "next"
-      } else {
-        diffScrollRef.current?.scrollBy(1)
-        consume(event)
-      }
-    } else if (name === "k" || name === "up" || name === "ArrowUp") {
-      if (focus === "sidebar") {
-        intent = { type: "selection/move", unit: "file", direction: "previous" }
-        navigationUnit = "file"
-        navigationDirection = "previous"
-      } else {
-        diffScrollRef.current?.scrollBy(-1)
-        consume(event)
-      }
-    } else if (name === ".") {
-      intent = { type: "selection/move", unit: "file", direction: "next" }
-      navigationUnit = "file"
-      navigationDirection = "next"
-    } else if (name === ",") {
-      intent = { type: "selection/move", unit: "file", direction: "previous" }
-      navigationUnit = "file"
-      navigationDirection = "previous"
-    } else if (name === "]") {
-      intent = { type: "selection/move", unit: "hunk", direction: "next" }
-      navigationUnit = "hunk"
-      navigationDirection = "next"
-    } else if (name === "[") {
-      intent = { type: "selection/move", unit: "hunk", direction: "previous" }
-      navigationUnit = "hunk"
-      navigationDirection = "previous"
-    }
-    if (intent) {
-      try {
-        const before = current.selection
-        controller.dispatch(planReviewIntent(current, intent))
-        const after = controller.state
-        if (navigationUnit && navigationDirection && after?.selection.fileKey === before.fileKey && after.selection.hunkIndex === before.hunkIndex) {
-          const fallback = fallbackSelectionIntent(current, navigationUnit, navigationDirection)
-          if (fallback) controller.dispatch(planReviewIntent(current, fallback))
-        }
-      } catch {}
-      consume(event)
-    }
-  }, [active, controller, deleteFeedback, diffWidth, editFeedback, finishDialog, focus, helpOpen, onClose, pendingRangeAnchor, rangeStart, reanchorFeedback, saveDraft, selectedFeedbackId, session, submitFinish, toggleGap])
+    const normalized = name === "down" ? "ArrowDown" : name === "up" ? "ArrowUp" : name
+    const command = resolveReviewCommand(normalized, focus)
+    if (!command || (current && !command.available(current))) return
+    if (executeCommand(command.id)) consume(event)
+  }, [active, controller, executeCommand, finishDialog, focus, helpOpen, onClose, pendingDeleteFeedbackId, pendingRangeAnchor, rangeStart, saveDraft, session, submitFinish])
   useKeyboard(handleKey)
 
   if (!state) {
@@ -821,10 +790,12 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     )
   }
 
-  const selectFile = (fileKey: string, nextFocus: "stream" | "sidebar" = "stream") => {
+  function selectFile(fileKey: string, nextFocus: "stream" | "sidebar" = "stream"): void {
     if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+    const current = controller.state
+    if (!current) return
     try {
-      controller.dispatch(planReviewIntent(state, { type: "selection/select-file", fileKey }))
+      controller.dispatch(planReviewIntent(current, { type: "selection/select-file", fileKey }))
       setSelectedFeedbackId(null)
       pendingDeleteFeedbackRef.current = null
       setPendingDeleteFeedbackId(null)
@@ -919,7 +890,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
                       id={`review-file-row:${entry.id}`}
                       style={{ width: "100%", height: 1, backgroundColor: rowBackground, flexDirection: "row" }}
                       onMouseDown={() => setFocus("sidebar")}
-                      onMouseUp={() => selectFile(entry.id, "sidebar")}
+                      onMouseUp={() => { executeCommand("review.selectFile", { fileKey: entry.id, nextFocus: "sidebar" }) }}
                     >
                       <box style={{ width: 1, height: 1, backgroundColor: selected ? REVIEW_SIDEBAR_THEME.accent : rowBackground }} />
                       <box style={{ flexGrow: 1, height: 1, paddingLeft: 0, flexDirection: "row", backgroundColor: rowBackground }}>
@@ -1020,9 +991,9 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             onVisibleFileKeysChange={onVisibleFileKeysChange}
             expandedSourceByGap={expandedSourceByGap}
             onToggleGap={toggleGap}
-            onSelectFile={selectFile}
-            onSelectFeedback={selectFeedback}
-            onSelectDiffRow={selectDiffRow}
+            onSelectFile={(fileKey) => { executeCommand("review.selectFile", { fileKey }) }}
+            onSelectFeedback={(feedbackId) => { executeCommand("review.selectFeedback", feedbackId) }}
+            onSelectDiffRow={(row) => { executeCommand("review.selectDiffLine", row) }}
             selectedFeedbackId={selectedFeedbackId}
             onViewportChange={session.setViewportStart}
           />
@@ -1036,7 +1007,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           {orphanedFeedback.slice(0, 4).map((feedback) => (
               <box key={feedback.id} style={{ width: "100%", height: 1, flexDirection: "row" }} onMouseUp={() => {
                 if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
-                setSelectedFeedbackId(feedback.id)
+                executeCommand("review.selectFeedback", feedback.id)
               }}>
               <text content={`${feedback.resolution} feedback ${feedback.id} — `} wrapMode="none" truncate={true} />
               <box id={`review-delete-feedback:${feedback.id}`} onMouseUp={() => {
@@ -1045,16 +1016,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               }}>
                 <text content={pendingDeleteFeedbackId === feedback.id ? "[delete again]" : "[delete]"} wrapMode="none" truncate={true} />
               </box>
-            </box>
+              </box>
           ))}
-        </box>
-      ) : null}
-      {helpOpen ? (
-        <box
-          id="review-help-dialog"
-          style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: 14, zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
-        >
-          <text content={"Review commands\nj/k or arrows  scroll / move\n]/[  next / previous hunk\n./,  next / previous file\nn/N  next / previous unreviewed\n}/ {  next / previous feedback\nv  select current hunk range\nc  comment at selection\n e  edit   d  delete twice   a  reanchor\nr  mark viewed   R  finish\n0  focus diff   1  focus files   Tab  cycle focus   l  cycle layout\nEsc  close this help"} wrapMode="none" truncate={true} />
         </box>
       ) : null}
       {state.draft ? (
@@ -1160,6 +1123,14 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               }}
             />
           ) : null}
+        </box>
+      ) : null}
+      {helpOpen ? (
+        <box
+          id="review-help-dialog"
+          style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: 14, zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
+        >
+          <text content={`Review commands\n${reviewHelp(focus, state)}\nEsc close this help`} wrapMode="none" truncate={true} />
         </box>
       ) : null}
       {finishDialog.isOpen() ? (

@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { ReviewWorkspaceController } from "../../../src/ui/review-workspace/controller"
+import { ReviewStateStore, persistedFromReviewState } from "../../../src/review/storage/review-state-store"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewIdentity, createReviewGeneration } from "../../../src/review/core/identity"
+import { createInitialReviewState } from "../../../src/review/core/state"
 import type { ReviewFile } from "../../../src/review/core/types"
 import type { GitRunner } from "../../../src/git/runner"
 import { createApp } from "../../../src/app/create-app"
@@ -52,6 +54,24 @@ function makeDoc(files: ReviewFile[], headOid: string) {
 }
 
 describe("refresh integration — monotonic qualification, atomic swap, reconciliation", () => {
+  test("opening persisted deferred projection metadata normalizes the active state to aggregate", async () => {
+    const doc = makeDoc([makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] })], "a".repeat(40))
+    const initial = createInitialReviewState(doc)
+    const persisted = {
+      ...persistedFromReviewState(initial),
+      projection: { kind: "commit" as const, oid: "c".repeat(40) },
+    }
+    const db = { version: 2 as const, baseByHead: {}, reviews: { [doc.identity.id]: persisted } }
+    let written: typeof db | undefined
+    const stateStore = {
+      load: async () => db,
+      saveSemanticChange: async (updater: (value: typeof db) => typeof db) => { written = updater(db) },
+    } as unknown as ReviewStateStore
+    const controller = new ReviewWorkspaceController({ runner: fakeRunner(), stateStore, loadDocument: async () => doc })
+    const state = await controller.open("refs/heads/main")
+    expect(state.projection).toEqual({ kind: "aggregate" })
+    expect(written?.reviews[doc.identity.id]?.projection).toEqual({ kind: "aggregate" })
+  })
   test("slow generation A followed by fast generation B: old result discarded, fast wins", async () => {
     const fileA = makeFile({ key: "a", path: "src/a.ts", contentId: "content-A", patchDigest: "patch-A", hunks: [makeHunk(0, [" a"])] })
     const fileB = makeFile({ key: "a", path: "src/a.ts", contentId: "content-B", patchDigest: "patch-B", hunks: [makeHunk(0, [" b"])] })

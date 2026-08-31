@@ -77,12 +77,7 @@ export function reviewHeaderLines(state: ReviewState, width: number): readonly R
   const deletionsText = totalDeletions === null ? "—" : `−${totalDeletions}`
 
   // Line 1: head → base  •  commits · files · stats  •  projection
-  const projectionLabel =
-    state.projection.kind === "aggregate"
-      ? "Aggregate"
-      : state.projection.kind === "since-last-review"
-        ? "Since Last"
-        : "Commit"
+  const projectionLabel = "Aggregate"
 
   const line1Raw = `${headLabel} → ${baseLabel}  ·  ${commits} commits · ${files} files · ${additionsText} ${deletionsText}  [${projectionLabel}]`
   const line1 = truncateCell(line1Raw, w)
