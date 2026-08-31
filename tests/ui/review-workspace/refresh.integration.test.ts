@@ -368,6 +368,52 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     expect(controller.reviewId).toBe(docA.identity.id)
   })
 
+  test("default-base open preserves a corrupt-state warning across base resolution", async () => {
+    const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] })
+    const doc = makeDoc([file], "a".repeat(40))
+    let loadCalls = 0
+    const warning = "Review state was corrupt; moved to /tmp/review-state.corrupt"
+    const runner = fakeRunner()
+    const commandRunner = runner as unknown as { run: (args: readonly string[]) => Promise<{ stdout: string; stderr: string; exitCode: number }> }
+    commandRunner.run = async (args) => ({
+      stdout: args.includes("symbolic-ref") ? "refs/heads/feature\n" : "",
+      stderr: "",
+      exitCode: 0,
+    })
+    const stateStore = {
+      load: async () => {
+        loadCalls++
+        return { version: 2 as const, baseByHead: {}, reviews: {} }
+      },
+      get quarantineWarning() { return loadCalls === 1 ? warning : undefined },
+      saveSemanticChange: async () => undefined,
+      flush: async () => undefined,
+    } as unknown as ReviewStateStore
+    const controller = new ReviewWorkspaceController({ runner, stateStore, loadDocument: async () => doc })
+    await controller.open()
+    expect(loadCalls).toBe(2)
+    expect(controller.error?.kind).toBe("corrupt-state")
+    expect(controller.error?.detail).toContain("review-state.corrupt")
+  })
+
+  test("draft cancellation schedules null to prevent stale debounce resurrection", async () => {
+    const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] })
+    const doc = makeDoc([file], "a".repeat(40))
+    const drafts: unknown[] = []
+    const stateStore = {
+      load: async () => ({ version: 2 as const, baseByHead: {}, reviews: {} }),
+      saveSemanticChange: async () => undefined,
+      saveDraftDebounced: (_reviewId: string, draft: unknown) => { drafts.push(draft) },
+      flush: async () => undefined,
+    } as unknown as ReviewStateStore
+    const controller = new ReviewWorkspaceController({ runner: fakeRunner(), stateStore, loadDocument: async () => doc })
+    await controller.open("refs/heads/main")
+    const anchor = { kind: "file" as const, fileKey: "a", contentId: file.contentId }
+    controller.dispatch({ type: "feedback/start-draft", draft: { anchor, kind: "note", severity: "comment", body: "stale", replacement: undefined } } as never)
+    controller.dispatch({ type: "feedback/cancel-draft" })
+    expect(drafts.at(-1)).toBeNull()
+  })
+
   test("same-generation refresh retries a failed semantic persistence", async () => {
     const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] })
     const doc = makeDoc([file], "a".repeat(40))

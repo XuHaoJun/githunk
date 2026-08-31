@@ -122,8 +122,10 @@ export class ReviewWorkspaceController {
       // Capture for qualified validation
       const qualified = { requestId: token, reviewId: capturedReviewId, generationId: capturedGeneration }
       try {
-        // Build new document off-screen (no publish yet)
+        const ownsRequest = (): boolean => !this.destroyed && token === this.requestId
+        // Build new document off-screen (no publish yet).
         const doc = await this.loadDocumentImpl(capturedBase)
+        if (!ownsRequest()) return
         if (qualified.reviewId !== undefined && doc.identity.id !== qualified.reviewId) return
         // A same-generation response is still useful after a failed load.
         // Storage errors require retrying the pending semantic write before
@@ -131,11 +133,13 @@ export class ReviewWorkspaceController {
         if (qualified.generationId !== undefined && doc.generation.id === qualified.generationId) {
           if (this._error?.kind === "storage") {
             try {
-              await this.persistState()
+              await this.persistState(ownsRequest)
             } catch {
               return
             }
+            if (!ownsRequest()) return
           }
+          if (!ownsRequest()) return
           if (this._error !== undefined) {
             this._error = undefined
             this.publish()
@@ -150,15 +154,16 @@ export class ReviewWorkspaceController {
         const nextState = currentState === undefined
           ? createInitialReviewState(doc)
           : reconcileReviewState(currentState, doc)
-        if (this.destroyed || token !== this.requestId) return
-        // Atomic swap: publish once
+        if (!ownsRequest()) return
+        // Atomic swap: publish once.
         this._state = nextState
         this.activeReviewId = doc.identity.id
         this.activeGenerationId = doc.generation.id
         this._error = undefined
         this.publish()
-        await this.persistState()
-        // If persist failed, error will be set inside persistState
+        await this.persistState(ownsRequest)
+        if (!ownsRequest()) return
+        // If persist failed, error will be set inside persistState.
       } catch (err) {
         if (token !== this.requestId) return
         // Failure retains last complete document, updates error only
@@ -168,14 +173,22 @@ export class ReviewWorkspaceController {
       }
     }
   }
-
   async open(baseRef?: string): Promise<ReviewState> {
     if (this.destroyed) throw new Error("controller destroyed")
     const token = ++this.requestId
     let resolvedBase = baseRef
+    let corruptError: ReviewWorkspaceError | undefined
     if (resolvedBase === undefined) {
       try {
         resolvedBase = await this.resolveBase()
+        // resolveBase may have quarantined state while finding the base. Keep
+        // that warning when the normal open path loads the database below.
+        const warning = this.stateStore?.quarantineWarning
+        if (warning) {
+          const pathMatch = warning.match(/moved to (\S+)/)
+          const qPath = pathMatch?.[1] ?? warning
+          corruptError = createCorruptStateError(qPath, warning)
+        }
       } catch (err) {
         const typed = classifyLoadError(err)
         this._error = typed
@@ -199,9 +212,8 @@ export class ReviewWorkspaceController {
     this.sourceContextCache.clear()
     this.pendingGapRequests.clear()
 
-    // Load persisted state and detect corrupt quarantine
+    // Load persisted state and detect corrupt quarantine.
     let persistedState: ReviewState | undefined
-    let corruptError: ReviewWorkspaceError | undefined
     try {
       const db = this.stateStore ? await this.stateStore.load() : emptyReviewDatabaseV2()
       // Detect quarantine warning even when db is empty
@@ -273,10 +285,15 @@ export class ReviewWorkspaceController {
     this._state = next
     this.publish()
     void this.persistState().catch(() => undefined)
-    if (action.type === "feedback/update-draft" || action.type === "feedback/start-draft") {
+    if (
+      action.type === "feedback/start-draft" ||
+      action.type === "feedback/update-draft" ||
+      action.type === "feedback/cancel-draft" ||
+      action.type === "feedback/create" ||
+      action.type === "feedback/edit"
+    ) {
       if (this.activeReviewId && this.stateStore) {
-        const draft = this._state.draft
-        this.stateStore.saveDraftDebounced(this.activeReviewId, draft)
+        this.stateStore.saveDraftDebounced(this.activeReviewId, this._state.draft)
       }
     }
   }
@@ -535,16 +552,17 @@ export class ReviewWorkspaceController {
       try { l(this._state) } catch {}
     }
   }
-
-  private async persistState(): Promise<void> {
-    if (!this.stateStore || !this._state) return
+  private async persistState(isOwned?: () => boolean): Promise<void> {
+    const snapshot = this._state
+    if (!this.stateStore || !snapshot) return
     const persisted = persistedFromReviewState({
-      ...this._state,
-      projection: normalizeActiveProjection(this._state.projection),
+      ...snapshot,
+      projection: normalizeActiveProjection(snapshot.projection),
     })
-    const reviewId = this._state.document.identity.id
-    const headKey = this._state.document.identity.headRef ?? `detached:${this._state.document.identity.detachedHeadOid ?? this._state.document.generation.headOid}`
+    const reviewId = snapshot.document.identity.id
+    const headKey = snapshot.document.identity.headRef ?? `detached:${snapshot.document.identity.detachedHeadOid ?? snapshot.document.generation.headOid}`
     try {
+      if (isOwned && !isOwned()) return
       await this.stateStore.saveSemanticChange((db) => {
         // Submission markers are transaction metadata, not part of the
         // in-memory aggregate, and must survive open/restart until recovery
@@ -552,14 +570,16 @@ export class ReviewWorkspaceController {
         const submissionInProgress = db.reviews[reviewId]?.submissionInProgress ?? null
         return {
           ...db,
-          baseByHead: { ...db.baseByHead, [headKey]: { baseRef: this._state!.document.identity.baseRef } },
+          baseByHead: { ...db.baseByHead, [headKey]: { baseRef: snapshot.document.identity.baseRef } },
           reviews: { ...db.reviews, [reviewId]: { ...persisted, submissionInProgress } },
         }
       })
     } catch (err) {
-      const typed = createStorageError(err instanceof Error ? err.message : String(err))
-      this._error = typed
-      this.publish()
+      if (!isOwned || isOwned()) {
+        const typed = createStorageError(err instanceof Error ? err.message : String(err))
+        this._error = typed
+        this.publish()
+      }
       throw err
     }
   }

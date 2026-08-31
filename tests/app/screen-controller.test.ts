@@ -160,4 +160,28 @@ describe("AppScreenController lifecycle", () => {
       expect(controller.active.kind).toBe("branch-review")
     }
   })
+  test("destroy awaits an in-flight review open and cleans up its controller", async () => {
+    const repoView = stubRepoView()
+    let releaseOpen!: () => void
+    const openGate = new Promise<void>((resolve) => { releaseOpen = resolve })
+    const reviewController = stubReviewController({ openImpl: async () => openGate })
+    const controller = new AppScreenController({
+      repositoryController: stubRepositoryController(),
+      repositoryView: repoView,
+      createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
+      createReviewView: () => stubReviewView() as unknown as ReviewWorkspace,
+    })
+
+    const opening = controller.openBranchReview()
+    await Promise.resolve()
+    let destroyed = false
+    const destroying = controller.destroy().then(() => { destroyed = true })
+    await Promise.resolve()
+    expect(destroyed).toBe(false)
+    releaseOpen()
+    await Promise.allSettled([opening, destroying])
+    expect(destroyed).toBe(true)
+    const reviewLifecycle = reviewController as unknown as { destroyedFlag: boolean }
+    expect(reviewLifecycle.destroyedFlag).toBe(true)
+  })
 })

@@ -125,8 +125,18 @@ describe("branch review workspace – feedback and artifact acceptance", () => {
     expect(afterFeedback.feedback.some((fb) => fb.severity === "comment" && fb.kind === "note")).toBe(true)
 
     expect(harness.frame()).toContain("[Aggregate]")
-    const finishResult = await branchController.finishReview({ decision: "request-changes", summary: "needs revision" })
-    expect(finishResult.feedback).toHaveLength(0)
+    await harness.pressKey("R")
+    expect(harness.frame()).toContain("Finish review")
+    await clickNode("review-finish-request-changes")
+    await clickNode("review-finish-summary")
+    await harness.typeText("needs revision")
+    expect(harness.frame()).toContain("needs revision")
+    await clickNode("review-finish-submit")
+    for (let i = 0; i < 50 && branchController.state?.lastSubmission === undefined; i++) {
+      await harness.flush()
+      await new Promise<void>((resolve) => setTimeout(resolve, 20))
+    }
+    const finishResult = branchController.state!
     expect(finishResult.lastSubmission).toBeDefined()
     const artifactId = finishResult.lastSubmission!.artifactId
 

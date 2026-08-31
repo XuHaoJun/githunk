@@ -130,20 +130,20 @@ export class AppScreenController {
             try { (state as Record<string, unknown>)["banner"] = msg } catch {}
           }
         }
-        try { reviewController.destroy() } catch {}
+        try { await reviewController.destroy() } catch {}
         const renderer = this.opts.renderer as unknown as { requestRender?: () => void } | undefined
         renderer?.requestRender?.()
         throw err
       }
 
       if (myToken !== this.openToken) {
-        try { reviewController.destroy() } catch {}
+        try { await reviewController.destroy() } catch {}
         throw new Error("open superseded")
       }
       const reviewView = this.opts.createReviewView(reviewController, () => { void this.closeBranchReview() })
       if (myToken !== this.openToken) {
         try { reviewView.destroy() } catch {}
-        try { reviewController.destroy() } catch {}
+        try { await reviewController.destroy() } catch {}
         throw new Error("open superseded")
       }
 
@@ -227,11 +227,15 @@ export class AppScreenController {
     if (this.destroyed) return
     this.destroyed = true
     this.openToken++
+    const pendingOpen = this.pendingOpen
     this.pendingOpen = undefined
     if (this.activeScreen.kind === "branch-review") {
       try { this.activeScreen.view.destroy() } catch {}
       try { await this.activeScreen.controller.destroy() } catch {}
       this._reviewHandlerCount = 0
+    }
+    if (pendingOpen) {
+      try { await pendingOpen } catch {}
     }
     this._timerCount = 0
     if (this.opts.renderer) {

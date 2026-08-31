@@ -1451,6 +1451,12 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               <text content={finishDialog.getDecision() === "request-changes" ? "[Request Changes]" : " Request Changes "} />
             </box>
           </box>
+          <box id="review-finish-submit" onMouseUp={() => {
+            if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+            submitFinish()
+          }}>
+            <text content=" Submit " />
+          </box>
           <text content="Ctrl-1 comment · Ctrl-2 approve · Ctrl-3 request changes · Enter/Ctrl-S submit · Esc cancel" wrapMode="none" truncate={true} />
         </box>
       ) : null}
