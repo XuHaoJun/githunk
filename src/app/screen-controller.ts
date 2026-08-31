@@ -10,10 +10,6 @@ export type ReviewScreenRoot = Readonly<{
 export type ReviewScreenView = Readonly<{
   root: ReviewScreenRoot
   destroy: () => void
-  handleSidebarClick: (fileKey: string) => boolean
-  handleKeyPress: (key: string) => boolean
-  getFocus: () => string
-  getStreamPane: () => { getViewportStart: () => number }
 }>
 
 export type RepositoryScreen = {

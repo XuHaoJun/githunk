@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
-import { createInitialReviewState } from "../../../src/review/core/state"
 import { ReviewWorkspaceController } from "../../../src/ui/review-workspace/controller"
-import { planReviewRows, __clearRowPlannerCache } from "../../../src/ui/review-workspace/row-planner"
 import type { SourceContextRequest, SourceContextResult } from "../../../src/review/core/types"
 import type { SourceContextOutcome } from "../../../src/review/git/load-source-context"
 import type { GitRunner } from "../../../src/git/runner"
@@ -143,23 +141,4 @@ describe("context expansion — generation qualification and caching", () => {
     expect(callCount).toBe(2)
   })
 
-  test("row-planner uses cached source lines for expanded gaps", async () => {
-    __clearRowPlannerCache()
-    const identity = createReviewIdentity({ headRef:"refs/heads/feature", headOid:"c".repeat(40), baseRef:"refs/heads/main" })
-    const generation = createReviewGeneration({ baseOid:"b".repeat(40), mergeBaseOid:"c".repeat(40), headOid:"c".repeat(40) })
-    const h1 = makeHunk(0,1,1,[" a"," b"])
-    const h2 = makeHunk(1,8,8,[" x"])
-    const file = { key:"src/a.ts", path:"src/a.ts", kind:"modified" as const, oldBlobOid:"o1", newBlobOid:"n1", oldMode:"100644", newMode:"100644", contentId:"content-a", patchDigest:"patch-a", stats:{ additions:0, deletions:0 }, hunks:[h1,h2], source:"available" as const }
-    const doc = createReviewDocument({ identity, generation, commits:[{ oid:"c".repeat(40), parents:[], author:"A", timestamp:0, subject:"s", body:"" }], files:[file] })
-    const state0 = createInitialReviewState(doc)
-    let plan0 = planReviewRows(state0, { viewportStart:0, viewportHeight:100, width:80, effectiveMode:"stack" })
-    expect(plan0.rows.some(r=>r.kind==="gap")).toBe(true)
-    // Expanded with cached lines
-    const expandedMap = new Map<string, readonly string[]>([["src/a.ts:before:1", ["expanded line 3","expanded line 4","expanded line 5","expanded line 6","expanded line 7"]]])
-    const state1 = { ...state0, expandedGaps: [{ fileKey:"src/a.ts", gapId:"before:1", expanded:true }] }
-    const plan1 = planReviewRows(state1, { viewportStart:0, viewportHeight:100, width:80, effectiveMode:"stack", expandedSourceByGap: expandedMap })
-    expect(plan1.rows.some(r=>r.kind==="gap")).toBe(false)
-    expect(plan1.rows.filter(r=>r.kind==="diff" && r.fileKey==="src/a.ts" && r.oldLine===3).length).toBeGreaterThan(0)
-    expect(plan1.totalRows).toBeGreaterThan(plan0.totalRows)
-  })
 })

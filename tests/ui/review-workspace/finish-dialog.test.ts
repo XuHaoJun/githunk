@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto"
 import { ReviewWorkspaceController } from "../../../src/ui/review-workspace/controller"
 import { FinishDialog } from "../../../src/ui/review-workspace/finish-dialog"
-import { FeedbackComposer } from "../../../src/ui/review-workspace/feedback-composer"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewIdentity, createReviewGeneration } from "../../../src/review/core/identity"
 import { createRangeAnchor, createFileAnchor } from "../../../src/review/core/anchors"

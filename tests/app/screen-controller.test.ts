@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { AppScreenController, type ActiveScreen } from "../../src/app/screen-controller"
 import type { AppController } from "../../src/app/controller"
+import type { ReviewScreenView } from "../../src/app/screen-controller"
 import type { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
-import type { ReviewWorkspace } from "../../src/ui/review-workspace/review-workspace"
 import type { ReviewState } from "../../src/review/core/state"
 
 function stubRepoView() {
@@ -33,7 +33,7 @@ function stubReviewView() {
     get destroyedFlag() { return destroyed },
     destroy() { destroyed = true },
     __isReviewWorkspace: true,
-  } as unknown as ReviewWorkspace & { destroyedFlag: boolean }
+  } as unknown as ReviewScreenView & { destroyedFlag: boolean }
 }
 
 function stubReviewController(opts: { openImpl?: () => Promise<void>; destroyImpl?: () => Promise<void> } = {}) {
@@ -71,7 +71,7 @@ describe("AppScreenController lifecycle", () => {
       repositoryController: stubRepositoryController(),
       repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
-      createReviewView: () => reviewView as unknown as ReviewWorkspace,
+      createReviewView: () => reviewView as unknown as ReviewScreenView,
     })
 
     expect(controller.active.kind).toBe("repository")
@@ -93,7 +93,7 @@ describe("AppScreenController lifecycle", () => {
       repositoryController: stubRepositoryController(),
       repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
-      createReviewView: () => reviewView as unknown as ReviewWorkspace,
+      createReviewView: () => reviewView as unknown as ReviewScreenView,
     })
     await controller.openBranchReview()
     await controller.closeBranchReview()
@@ -114,7 +114,7 @@ describe("AppScreenController lifecycle", () => {
       repositoryController: repoController,
       repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
       createReviewController: () => failingController as unknown as ReviewWorkspaceController,
-      createReviewView: () => stubReviewView() as unknown as ReviewWorkspace,
+      createReviewView: () => stubReviewView() as unknown as ReviewScreenView,
     })
     await expect(controller.openBranchReview()).rejects.toThrow("base not found")
     expect(controller.active.kind).toBe("repository")
@@ -130,7 +130,7 @@ describe("AppScreenController lifecycle", () => {
       repositoryController: stubRepositoryController(),
       repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
       createReviewController: () => stubReviewController() as unknown as ReviewWorkspaceController,
-      createReviewView: () => stubReviewView() as unknown as ReviewWorkspace,
+      createReviewView: () => stubReviewView() as unknown as ReviewScreenView,
     })
     for (let i = 0; i < 5; i++) {
       await controller.openBranchReview()
@@ -180,7 +180,7 @@ describe("AppScreenController lifecycle", () => {
       repositoryController: { state: {} } as any,
       repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
-      createReviewView: () => reviewView as unknown as ReviewWorkspace,
+      createReviewView: () => reviewView as unknown as ReviewScreenView,
     })
     await controller.openBranchReview()
     // simulate background refresh trying to update repo view
@@ -202,7 +202,7 @@ describe("AppScreenController lifecycle", () => {
       repositoryController: stubRepositoryController(),
       repositoryView: repoView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
-      createReviewView: () => stubReviewView() as unknown as ReviewWorkspace,
+      createReviewView: () => stubReviewView() as unknown as ReviewScreenView,
     })
 
     const opening = controller.openBranchReview()

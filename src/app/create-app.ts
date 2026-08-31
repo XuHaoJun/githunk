@@ -131,10 +131,6 @@ export function createApp(options: CreateAppOptions): App {
       createReviewView: (): ReviewScreenView => ({
         root: { findDescendantById: () => undefined },
         destroy: () => undefined,
-        handleSidebarClick: () => false,
-        handleKeyPress: () => false,
-        getFocus: () => "stream",
-        getStreamPane: () => ({ getViewportStart: () => 0 }),
       }),
     })
     return {

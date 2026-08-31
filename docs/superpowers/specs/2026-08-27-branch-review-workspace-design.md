@@ -221,59 +221,49 @@ Commit navigation must not mutate the authoritative review document, review iden
 
 ```text
 src/review/
-  core/
-    document.ts
-    identity.ts
-    state.ts
-    actions.ts
-    intents.ts
-    reducer.ts
-    selectors.ts
-    navigation.ts
-    anchors.ts
-    reconcile.ts
-    artifact.ts
-  git/
-    load-review-document.ts
-    load-review-projection.ts
-    load-source-context.ts
-  storage/
-    review-state-store.ts
-    review-artifact-store.ts
+  core/                         renderer-free domain
+    document.ts identity.ts state.ts actions.ts intents.ts
+    reducer.ts selectors.ts navigation.ts anchors.ts reconcile.ts artifact.ts
+  git/                          validated Git/document adapters
+    load-review-document.ts load-review-projection.ts load-source-context.ts
+    patch-adapter.ts pierre-diff-adapter.ts
+  storage/                      local persistence and immutable artifacts
+    review-state-store.ts review-artifact-store.ts
 
 src/ui/review-workspace/
-  review-workspace.ts
-  controller.ts
-  command-catalog.ts
-  layout.ts
-  header.ts
-  files-pane.ts
-  stream-pane.ts
-  row-planner.ts
-  feedback-composer.ts
-  feedback-pane.ts
-  finish-dialog.ts
+  ReviewWorkspaceApp.tsx        active React/OpenTUI workspace and command path
+  react-review-host.tsx         lifecycle-only React mount adapter
+  react-review-session.ts       lifecycle/session state
+  controller.ts                 effects, persistence, and core dispatch
+  command-catalog.ts            one semantic command catalog
+  header.ts review-sidebar.ts   shell presentation
+  hunk-review-model.ts          renderer-owned normalized diff model
+  hunk-diff-row-model.ts        core row construction
+  hunk-code-columns.ts          terminal geometry
+  components/ hooks/            OpenTUI rows and highlighting
 ```
 
 Exact file splitting may combine very small adjacent modules, but these ownership boundaries are mandatory:
 
-- `core` imports no OpenTUI, filesystem, Git runner, process, clipboard, or renderer types.
-- `git` produces validated core documents and projections; it does not own review state.
-- `storage` serializes core persistence/artifacts through the existing secure local-state primitive.
-- `review-workspace` renders selectors and dispatches intents; it does not derive identity, reconciliation, or anchor rules.
-- the application shell owns screen lifetime only.
+- `core` imports no React, OpenTUI, filesystem, Git runner, process, clipboard, or renderer types.
+- `git` produces validated core documents and projections. `pierre-diff-adapter.ts` is the sole review-rendering importer of Pierre metadata and exports only normalized renderer-owned fields; Pierre types do not cross into UI modules.
+- `storage` serializes core persistence and immutable artifacts through the existing secure local-state primitive.
+- `ReviewWorkspaceApp` is the active React renderer and owns keyboard/mouse routing through the single command catalog and controller. The host only mounts, invalidates, and unmounts that tree.
+- The application shell owns screen lifetime only. Its `ReviewScreenView` contract is limited to the root and destruction lifecycle.
+- Projection selection remains a controller/core concern; it does not create a second workspace. Hunk rendering remains a UI model/row concern over normalized adapter data and does not own Git parsing.
 
 ### 7.2 Data flow
 
 ```text
 GitRunner + canonical refs
-  → ReviewDocumentLoader
+  → Git/document adapters
   → validated ReviewDocument
   → reconcile(previous state, new document)
   → ReviewStore
   → selectors
-  → viewport row planner
-  → OpenTUI renderables
+  → normalized Pierre adapter metadata
+  → hunk row model / bounded viewport
+  → ReviewWorkspaceApp (React/OpenTUI)
 
 keyboard/mouse/menu
   → command id
@@ -282,21 +272,21 @@ keyboard/mouse/menu
   → ReviewAction
   → reducer
   → persistence effect
-  → render
+  → React render
 ```
 
-Planning an invalid intent fails before state publication. A reducer action is synchronous and deterministic. Filesystem writes and source-context loads occur as effects and return generation-qualified results.
+Planning an invalid intent fails before state publication. A reducer action is synchronous and deterministic. Filesystem writes and source-context loads occur as effects and return generation-qualified results. Deferred projection work may add projection-specific loading later, but projections remain views over the authoritative aggregate identity. Deferred Hunk work may add richer hunk-level editing/annotation boundaries later, but Hunk UI receives normalized metadata and never imports Pierre parser types.
 
 ### 7.3 Packages
 
-The clean cutover adds:
+The clean cutover uses:
 
-- `@pierre/diffs` for unified patch parsing and canonical file/hunk/language metadata;
+- `@pierre/diffs` behind Git/document and Git/highlight adapters for unified patch parsing and syntax highlighting;
 - `zod` for runtime validation of v2 persisted state, immutable artifacts, and future external payloads.
 
-The lockfile records exact resolved versions. Production code owns adapters around both packages so package types do not leak through the entire review domain.
+The lockfile records exact resolved versions. Production code owns adapters around both packages so package types do not leak through the review domain or UI.
 
-The redesign does not add React or `@opentui/react`. It continues using `@opentui/core`. It does not import hunk components or session packages.
+React and `@opentui/react` are intentionally retained as the active terminal renderer. There is exactly one active React workspace and one command path; the retired imperative workspace is not a fallback or compatibility layer.
 
 Git diff commands must force stable, parser-compatible output independently of user Git configuration:
 

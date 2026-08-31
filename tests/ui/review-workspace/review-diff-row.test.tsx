@@ -5,7 +5,7 @@ import { ReviewDiffRow } from "../../../src/ui/review-workspace/components/Revie
 import { hunkDiffAddresses, type HunkDiffRow } from "../../../src/ui/review-workspace/hunk-diff-row-model"
 
 type CapturedColor = Readonly<{ toInts: () => readonly number[] }>
-type CapturedSpan = Readonly<{ text: string; bg?: CapturedColor }>
+type CapturedSpan = Readonly<{ text: string; bg?: CapturedColor; fg?: CapturedColor }>
 type CapturedSetup = Readonly<{
   captureSpans: () => Readonly<{ lines: readonly Readonly<{ spans: readonly CapturedSpan[] }>[] }>
 }>
@@ -161,6 +161,27 @@ describe("Review diff row parity", () => {
     try {
       expect(rgb(textSpan(setup, "old")?.bg)).toEqual([38, 79, 120])
       expect(rgb(textSpan(setup, "new")?.bg)).toEqual([38, 79, 120])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("cleans trailing newline without changing cell width or highlight color", async () => {
+    const row: Extract<HunkDiffRow, { type: "split-line" }> = {
+      ...emptyAdditionSplitRow,
+      key: "parity:highlighted-newline",
+      left: { kind: "context", sign: " ", lineNumber: 1, spans: [{ text: "before\r\n", fg: "#ff0000" }] },
+      right: { kind: "addition", sign: "+", lineNumber: 1, spans: [{ text: "after\r\n", fg: "#00ff00" }] },
+    }
+    const setup = await renderRow(row, false, true)
+    try {
+      const root = setup.renderer.root as unknown as LayoutNode
+      const panes = root._childrenInLayoutOrder?.[0]?._childrenInLayoutOrder ?? []
+      expect(panes.map((pane) => ({ x: pane.x, width: pane.width }))).toEqual([
+        { x: 0, width: 20 },
+        { x: 20, width: 20 },
+      ])
+      expect(rgb(textSpan(setup, "before")?.fg)).toEqual([255, 0, 0])
+      expect(rgb(textSpan(setup, "after")?.fg)).toEqual([0, 255, 0])
     } finally {
       await act(async () => setup.renderer.destroy())
     }

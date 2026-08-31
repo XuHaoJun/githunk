@@ -1,5 +1,5 @@
-import { cleanLastNewline } from "@pierre/diffs"
 import { StyledText, parseColor, type TextChunk } from "@opentui/core"
+import { normalizeReviewDiffLine } from "../../../review/git/pierre-diff-adapter"
 import type { HunkDiffRow, HunkRenderSpan, HunkSplitCell, HunkStackCell } from "../hunk-diff-row-model"
 import { resolveHunkSplitPaneWidths, resolveHunkSplitCellGeometry, resolveHunkStackCellGeometry, expandHunkDiffTabs } from "../hunk-code-columns"
 import { cellWidth } from "../../cell-width"
@@ -54,7 +54,7 @@ function fitSpans(spans: readonly HunkRenderSpan[], width: number, fallbackFg: s
   const result: HunkRenderSpan[] = []
   let used = 0
   for (const span of spans) {
-    const expanded = expandHunkDiffTabs(cleanLastNewline(span.text))
+    const expanded = expandHunkDiffTabs(normalizeReviewDiffLine(span.text))
     let text = ""
     let spanWidth = 0
     for (const character of expanded) {
@@ -168,10 +168,10 @@ export function ReviewDiffRow({ row, width, digits, showLineNumbers, selected = 
     const { leftWidth, rightWidth } = resolveHunkSplitPaneWidths(width)
     return (
       <box id={row.key} style={{ width: "100%", height: 1, flexDirection: "row" }}>
-        <box style={{ width: leftWidth, height: 1 }} onMouseUp={onClick ? () => onClick("old") : undefined}>
+        <box style={{ width: leftWidth, height: 1 }} {...(onClick ? { onMouseUp: () => onClick("old") } : {})}>
           <text content={cellChunks(row.left, "left", leftWidth, digits, showLineNumbers, selected)} wrapMode="none" truncate={true} />
         </box>
-        <box style={{ width: rightWidth, height: 1 }} onMouseUp={onClick ? () => onClick("new") : undefined}>
+        <box style={{ width: rightWidth, height: 1 }} {...(onClick ? { onMouseUp: () => onClick("new") } : {})}>
           <text content={cellChunks(row.right, "right", rightWidth, digits, showLineNumbers, selected)} wrapMode="none" truncate={true} />
         </box>
       </box>
