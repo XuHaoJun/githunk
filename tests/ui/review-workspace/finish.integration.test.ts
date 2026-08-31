@@ -98,4 +98,63 @@ describe("finish integration — active React workspace", () => {
       await repo?.cleanup()
     }
   })
+  test("serializes generation refresh behind Finish without losing the refreshed document", async () => {
+    let repo: TempRepository | undefined
+    let stateStore: ReviewStateStore | undefined
+    let controller: ReviewWorkspaceController | undefined
+    try {
+      repo = await createTempRepository()
+      const runner = new RealRunner(repo.path)
+      stateStore = new ReviewStateStore(runner)
+      const artifactStore = new ReviewArtifactStore(runner)
+      const fileA = makeFile({ key: "a", path: "src/a.ts", contentId: "content-a", patchDigest: "patch-a" })
+      const fileB = makeFile({ key: "a", path: "src/a.ts", contentId: "content-b", patchDigest: "patch-b", hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+newer"] })] })
+      const docA = makeDoc([fileA], "a".repeat(40))
+      const docB = makeDoc([fileB], "b".repeat(40))
+      let currentDocument = docA
+      let loadCount = 0
+      controller = new ReviewWorkspaceController({
+        runner,
+        stateStore,
+        artifactStore,
+        loadDocument: async () => {
+          loadCount += 1
+          return currentDocument
+        },
+        now: () => "2026-08-31T00:00:00.000Z",
+        randomId: () => "race-artifact",
+      })
+      await controller.open("refs/heads/main")
+      controller.dispatch(planReviewIntent(controller.state!, { type: "feedback/start-draft", anchor: createFileAnchor(fileA), kind: "note", severity: "comment", body: "pending" }))
+      controller.dispatch(planReviewIntent(controller.state!, { type: "feedback/create", id: "race-feedback", createdAt: "2026-08-31T00:00:00.000Z" }))
+
+      let releaseArtifact!: () => void
+      const artifactGate = new Promise<void>((resolve) => { releaseArtifact = resolve })
+      let artifactStarted!: () => void
+      const artifactStartedSignal = new Promise<void>((resolve) => { artifactStarted = resolve })
+      const originalCreateExclusive = artifactStore.createExclusive.bind(artifactStore)
+      artifactStore.createExclusive = async (artifact) => {
+        artifactStarted()
+        await artifactGate
+        return originalCreateExclusive(artifact)
+      }
+
+      const finishing = controller.finishReview({ decision: "comment", summary: "submitted" })
+      await artifactStartedSignal
+      currentDocument = docB
+      const refreshing = controller.refreshGeneration()
+      await Promise.resolve()
+      expect(loadCount).toBe(1)
+
+      releaseArtifact()
+      await finishing
+      await refreshing
+      expect(controller.state?.document).toBe(docB)
+      expect(controller.state?.document.files[0]?.contentId).toBe("content-b")
+    } finally {
+      await controller?.destroy()
+      try { await stateStore?.flush() } catch {}
+      await repo?.cleanup()
+    }
+  })
 })

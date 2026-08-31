@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { AppScreenController, type ActiveScreen } from "../../src/app/screen-controller"
+import type { RootView } from "../../src/ui/root-view"
 import type { AppController } from "../../src/app/controller"
 import type { ReviewScreenView } from "../../src/app/screen-controller"
 import type { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
@@ -10,7 +11,9 @@ function stubRepoView() {
   let hidden = false
   let focusId: string | undefined = "files"
   let selectionId: string | undefined = "a.txt"
+  const root = { visible: true }
   return {
+    root,
     get destroyedFlag() { return destroyed },
     get hiddenFlag() { return hidden },
     get focusId() { return focusId },
@@ -143,6 +146,27 @@ describe("AppScreenController lifecycle", () => {
     const timers = (controller as unknown as { timerCount?: number; activeTimers?: number }).timerCount ?? (controller as unknown as { timerCount?: number; activeTimers?: number }).activeTimers ?? 0
     expect(timers).toBe(0)
   })
+  test("view construction failure restores repository visibility and error state", async () => {
+    const repoView = stubRepoView() as unknown as RootView & { root: { visible: boolean }; hiddenFlag: boolean }
+    const repoController = { state: { banner: undefined as string | undefined } }
+    const repositoryController = repoController as unknown as AppController
+    const reviewController = stubReviewController()
+    const controller = new AppScreenController({
+      repositoryController,
+      repositoryView: repoView,
+      createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
+      createReviewView: () => { throw new Error("view construction failed") },
+    })
+
+    await expect(controller.openBranchReview()).rejects.toThrow("view construction failed")
+    expect(controller.active.kind).toBe("repository")
+    expect(repoView.root.visible).toBe(true)
+    expect(repoView.hiddenFlag).toBe(false)
+    expect(repoController.state.banner).toBe("view construction failed")
+    expect(controller.lastError).toBe("view construction failed")
+    expect((reviewController as unknown as { destroyedFlag: boolean }).destroyedFlag).toBe(true)
+  })
+
   test("view construction failure awaits review controller cleanup", async () => {
     const repoView = stubRepoView()
     let releaseDestroy!: () => void

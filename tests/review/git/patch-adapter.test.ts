@@ -127,6 +127,24 @@ index abc..def 100644
     const files2 = parseReviewPatch(crlfPatch)
     expect(files2[0]!.patchDigest).toBe(files[0]!.patchDigest)
   })
+  test("preserves trailing whitespace in a final hunk line and its digest identity", () => {
+    const patch = `diff --git a/whitespace.txt b/whitespace.txt
+index abc..def 100644
+--- a/whitespace.txt
++++ b/whitespace.txt
+@@ -1,2 +1,2 @@
+ context
+-value
++value \t`
+    const withoutTrailingWhitespace = patch.replace("value \t", "value")
+    const withWhitespace = parseReviewPatch(patch)[0]!
+    const withoutWhitespace = parseReviewPatch(withoutTrailingWhitespace)[0]!
+
+    expect(withWhitespace.hunks[0]!.lines).toEqual([" context", "-value", "+value \t"])
+    expect(withWhitespace.hunks[0]!.lines[0]).toBe(" context")
+    expect(withWhitespace.hunks[0]!.digest).not.toBe(withoutWhitespace.hunks[0]!.digest)
+    expect(withWhitespace.patchDigest).not.toBe(withoutWhitespace.patchDigest)
+  })
 
   test("never leaks Pierre objects — only core hunks with digest", () => {
     const files = parseReviewPatch(fixture("modified.patch"))

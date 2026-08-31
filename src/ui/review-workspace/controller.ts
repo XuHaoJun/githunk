@@ -15,6 +15,7 @@ import { ReviewStateStore, persistedFromReviewState } from "../../review/storage
 import { ReviewArtifactStore, finishReviewTransaction } from "../../review/storage/review-artifact-store"
 import { currentBranchRef, inferReviewBase, resolveRefOid, reviewBaseCandidates } from "../../git/base-inference"
 import { emptyReviewDatabaseV2 } from "../../review/storage/schemas"
+import { MutationQueue } from "../../app/mutation-queue"
 import type { ReviewDecision } from "../../review/core/artifact"
 import { buildReviewArtifact, validateFinishReview } from "../../review/core/artifact"
 import type { ReviewArtifactV1 } from "../../review/core/artifact"
@@ -62,6 +63,7 @@ export class ReviewWorkspaceController {
   private _state: ReviewState | undefined
   private _error: ReviewWorkspaceError | undefined
   private listeners = new Set<Listener>()
+  private readonly reviewOperationQueue = new MutationQueue()
   private requestId = 0
   private destroyed = false
   private activeReviewId: string | undefined
@@ -119,58 +121,73 @@ export class ReviewWorkspaceController {
       const capturedGeneration = this.activeGenerationId
       const capturedReviewId = this.activeReviewId
       const capturedBase = this.baseRef
-      // Capture for qualified validation
-      const qualified = { requestId: token, reviewId: capturedReviewId, generationId: capturedGeneration }
-      try {
-        const ownsRequest = (): boolean => !this.destroyed && token === this.requestId
-        // Build new document off-screen (no publish yet).
-        const doc = await this.loadDocumentImpl(capturedBase)
-        if (!ownsRequest()) return
-        if (qualified.reviewId !== undefined && doc.identity.id !== qualified.reviewId) return
-        // A same-generation response is still useful after a failed load.
-        // Storage errors require retrying the pending semantic write before
-        // they may be cleared; load errors only need a successful response.
-        if (qualified.generationId !== undefined && doc.generation.id === qualified.generationId) {
-          if (this._error?.kind === "storage") {
-            try {
-              await this.persistState(ownsRequest)
-            } catch {
-              return
-            }
-            if (!ownsRequest()) return
+      // Serialize accepted refreshes with Finish so a newer generation cannot
+      // interleave between Finish's validation and its durable state writes.
+      return this.reviewOperationQueue.run(() => this.refreshGenerationForToken({
+        token,
+        reviewId: capturedReviewId,
+        generationId: capturedGeneration,
+        baseRef: capturedBase,
+      }))
+    }
+  }
+
+  private async refreshGenerationForToken(qualified: {
+    readonly token: number
+    readonly reviewId: string | undefined
+    readonly generationId: string | undefined
+    readonly baseRef: string
+  }): Promise<void> {
+    const { token, reviewId: capturedReviewId, generationId: capturedGeneration, baseRef: capturedBase } = qualified
+    const ownsRequest = (): boolean => !this.destroyed && token === this.requestId
+    try {
+      // Build new document off-screen (no publish yet).
+      const doc = await this.loadDocumentImpl(capturedBase)
+      if (!ownsRequest()) return
+      if (capturedReviewId !== undefined && doc.identity.id !== capturedReviewId) return
+      // A same-generation response is still useful after a failed load.
+      // Storage errors require retrying the pending semantic write before
+      // they may be cleared; load errors only need a successful response.
+      if (capturedGeneration !== undefined && doc.generation.id === capturedGeneration) {
+        if (this._error?.kind === "storage") {
+          try {
+            await this.persistState(ownsRequest)
+          } catch {
+            return
           }
           if (!ownsRequest()) return
-          if (this._error !== undefined) {
-            this._error = undefined
-            this.publish()
-          }
-          return
         }
-        this.sourceContextCache.clear()
-        this.pendingGapRequests.clear()
-        // Reconcile off-screen exactly once, then atomically publish the
-        // complete aggregate state for this generation.
-        const currentState = this._state
-        const nextState = currentState === undefined
-          ? createInitialReviewState(doc)
-          : reconcileReviewState(currentState, doc)
         if (!ownsRequest()) return
-        // Atomic swap: publish once.
-        this._state = nextState
-        this.activeReviewId = doc.identity.id
-        this.activeGenerationId = doc.generation.id
-        this._error = undefined
-        this.publish()
-        await this.persistState(ownsRequest)
-        if (!ownsRequest()) return
-        // If persist failed, error will be set inside persistState.
-      } catch (err) {
-        if (token !== this.requestId) return
-        // Failure retains last complete document, updates error only
-        const typed = classifyLoadError(err)
-        this._error = typed
-        this.publish()
+        if (this._error !== undefined) {
+          this._error = undefined
+          this.publish()
+        }
+        return
       }
+      this.sourceContextCache.clear()
+      this.pendingGapRequests.clear()
+      // Reconcile off-screen exactly once, then atomically publish the
+      // complete aggregate state for this generation.
+      const currentState = this._state
+      const nextState = currentState === undefined
+        ? createInitialReviewState(doc)
+        : reconcileReviewState(currentState, doc)
+      if (!ownsRequest()) return
+      // Atomic swap: publish once.
+      this._state = nextState
+      this.activeReviewId = doc.identity.id
+      this.activeGenerationId = doc.generation.id
+      this._error = undefined
+      this.publish()
+      await this.persistState(ownsRequest)
+      if (!ownsRequest()) return
+      // If persist failed, error will be set inside persistState.
+    } catch (err) {
+      if (token !== this.requestId) return
+      // Failure retains last complete document, updates error only
+      const typed = classifyLoadError(err)
+      this._error = typed
+      this.publish()
     }
   }
   async open(baseRef?: string): Promise<ReviewState> {
@@ -240,7 +257,7 @@ export class ReviewWorkspaceController {
           projection: normalizeActiveProjection(persisted.projection as ReviewProjection),
           revision: 0,
         }
-        persistedState = reconcileReviewState(reconstructed, doc)
+        persistedState = reconcileReviewState(reconstructed, doc, { forceSemantic: true })
       }
     } catch (err) {
       // Persisted load failure -> storage error but still allow open with fresh state
@@ -315,14 +332,27 @@ export class ReviewWorkspaceController {
     await this.stateStore.flush()
   }
   async finishReview(input: { decision: ReviewDecision; summary: string }): Promise<ReviewState> {
-    if (this._state === undefined) throw new Error("no review state")
+    return this.reviewOperationQueue.run(() => this.finishReviewSerialized(input))
+  }
+
+  private async finishReviewSerialized(input: { decision: ReviewDecision; summary: string }): Promise<ReviewState> {
+    const reviewState = this._state
+    if (reviewState === undefined) throw new Error("no review state")
     if (!this.stateStore || !this.artifactStore) throw new Error("stores required for finish")
-    // Validate before any transaction work.  In particular, invalid drafts or
+    // Validate before any transaction work. In particular, invalid drafts or
     // projections must not create an artifact or marker.
-    const validation = validateFinishReview(this._state, input)
+    const validation = validateFinishReview(reviewState, input)
     if (!validation.ok) throw new Error(`cannot finish review: ${validation.reason}`)
-    const reviewId = this._state.document.identity.id
-    const generationId = this._state.document.generation.id
+    const reviewId = reviewState.document.identity.id
+    const generationId = reviewState.document.generation.id
+    const revision = reviewState.revision
+    const isCurrent = (): boolean => {
+      const current = this._state
+      return current === reviewState
+        && current.revision === revision
+        && current.document.identity.id === reviewId
+        && current.document.generation.id === generationId
+    }
     let reuseArtifact: ReviewArtifactV1 | undefined
     let artifactIdFromMarker: string | undefined
     try {
@@ -338,7 +368,7 @@ export class ReviewWorkspaceController {
             const res = parseReviewArtifactV1(parsed)
             if (res.ok) {
               const artifact = res.value
-              const expected = buildReviewArtifact(this._state!, {
+              const expected = buildReviewArtifact(reviewState, {
                 id: artifact.id,
                 submittedAt: artifact.submittedAt,
                 decision: input.decision,
@@ -351,34 +381,28 @@ export class ReviewWorkspaceController {
               } else {
                 artifactIdFromMarker = undefined
               }
+            }
           }
         }
       }
-      }
     } catch {}
-    if (!this._state || this._state.document.identity.id !== reviewId || this._state.document.generation.id !== generationId) {
-      throw new Error("review changed while finishing")
-    }
-    if (reuseArtifact) {
-      const next = await finishReviewTransaction({
-        stateStore: this.stateStore,
-        artifactStore: this.artifactStore,
-        reviewState: this._state,
-        artifact: reuseArtifact,
+    if (!isCurrent()) throw new Error("review changed while finishing")
+    const artifact = reuseArtifact
+      ? reuseArtifact
+      : buildReviewArtifact(reviewState, {
+        id: artifactIdFromMarker ?? this.randomIdImpl(),
+        submittedAt: this.nowImpl(),
+        decision: input.decision,
+        summary: input.summary,
       })
-      this._state = next
-      this.publish()
-      return next
-    }
-    const artifactId = artifactIdFromMarker ?? this.randomIdImpl()
-    const submittedAt = this.nowImpl()
-    const artifact = buildReviewArtifact(this._state, { id: artifactId, submittedAt, decision: input.decision, summary: input.summary })
     const next = await finishReviewTransaction({
       stateStore: this.stateStore,
       artifactStore: this.artifactStore,
-      reviewState: this._state,
+      reviewState,
       artifact,
+      isCurrent,
     })
+    if (!isCurrent()) throw new Error("review changed while finishing")
     this._state = next
     this.publish()
     return next

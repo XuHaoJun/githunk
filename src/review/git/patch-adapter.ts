@@ -505,7 +505,10 @@ export function splitPatchIntoFileChunks(rawPatch: string): string[] {
   const hasGitHeaders = lines.some((l) => l.startsWith("diff --git "))
   const flush = () => {
     if (current.length > 0) {
-      chunks.push(`${current.join("\n").trimEnd()}\n`)
+      // Split framing contributes empty strings after terminal newlines. Strip
+      // those separators only; hunk line payloads may intentionally end in
+      // spaces or tabs and must remain byte-for-byte intact.
+      chunks.push(`${current.join("\n").replace(/\n+$/, "")}\n`)
       current = []
     }
   }

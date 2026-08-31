@@ -73,8 +73,9 @@ export async function finishReviewTransaction(input: {
   artifactStore: ReviewArtifactStore
   reviewState: ReviewState
   artifact: ReviewArtifactV1
+  readonly isCurrent?: () => boolean
 }): Promise<ReviewState> {
-  const { stateStore, artifactStore, reviewState, artifact } = input
+  const { stateStore, artifactStore, reviewState, artifact, isCurrent } = input
   const reviewId = reviewState.document.identity.id
   if (reviewId !== artifact.review.id) {
     throw new Error(`review id mismatch: state ${reviewId} vs artifact ${artifact.review.id}`)
@@ -104,11 +105,15 @@ export async function finishReviewTransaction(input: {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`unable to persist immutable review artifact: ${detail}`)
   }
+  if (isCurrent && !isCurrent()) {
+    throw new Error("review changed while finishing")
+  }
 
   // Record the current semantic state, not a stale snapshot from an earlier
   // attempt.  Feedback and draft remain pending until finalization succeeds.
   try {
     await stateStore.saveSemanticChange((db) => {
+      if (isCurrent && !isCurrent()) throw new Error("review changed while finishing")
       const persisted = persistedFromReviewState(reviewState)
       const existing = db.reviews[reviewId]
       const pending: PersistedReviewState = {
@@ -122,12 +127,16 @@ export async function finishReviewTransaction(input: {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`unable to persist submission marker: ${detail}`)
   }
+  if (isCurrent && !isCurrent()) {
+    throw new Error("review changed while finishing")
+  }
 
   // Only after the marker write is durable may pending feedback/draft be
   // cleared.  A failed final write leaves the marker and all pending work
   // available for an idempotent retry.
   try {
     await stateStore.saveSemanticChange((db) => {
+      if (isCurrent && !isCurrent()) throw new Error("review changed while finishing")
       const existing = db.reviews[reviewId]
       if (!existing) throw new Error(`review ${reviewId} not found for finalization`)
       const marker = existing.submissionInProgress

@@ -5,7 +5,8 @@ import { ReviewStateStore, persistedFromReviewState } from "../../../src/review/
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewIdentity, createReviewGeneration } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
-import { createLineSelection } from "../../../src/review/core/anchors"
+import { createLineSelection, createRangeAnchor } from "../../../src/review/core/anchors"
+import { validateFinishReview } from "../../../src/review/core/artifact"
 import type { ReviewFile } from "../../../src/review/core/types"
 import type { GitRunner } from "../../../src/git/runner"
 import { createApp } from "../../../src/app/create-app"
@@ -331,6 +332,79 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     expect(restored.feedback).toHaveLength(1)
     expect(restored.expandedGaps).toEqual(state.expandedGaps)
     controller.destroy()
+  })
+  test("reopen revalidates persisted anchors against the current document while preserving review context", async () => {
+    const oldFile = makeFile({
+      key: "a",
+      path: "src/a.ts",
+      contentId: "content-a-old",
+      patchDigest: "patch-a-old",
+      hunks: [makeHunk(0, ["-old", "+old result"])],
+    })
+    const currentFile = makeFile({
+      key: "a",
+      path: "src/a.ts",
+      contentId: "content-a-current",
+      patchDigest: "patch-a-current",
+      hunks: [makeHunk(0, ["-old", "+current result"])],
+    })
+    const oldDoc = makeDoc([oldFile], "a".repeat(40))
+    const currentDoc = makeDoc([currentFile], "b".repeat(40))
+    const oldState = createInitialReviewState(oldDoc)
+    const oldLineSelection = createLineSelection(oldFile, { hunkIndex: 0, side: "new", line: 1 })
+    const viewed = {
+      a: {
+        fileKey: "a",
+        path: "src/a.ts",
+        contentId: oldFile.contentId,
+        generationId: oldDoc.generation.id,
+        viewedAt: "2026-08-31T00:00:00.000Z",
+      },
+    }
+    const persistedState = {
+      ...oldState,
+      lineSelection: oldLineSelection,
+      selection: { fileKey: "a", hunkIndex: 0 },
+      filter: { query: "current", scope: "feedback" as const },
+      viewed,
+      feedback: [{
+        id: "stale-on-reopen",
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "needs re-anchor",
+        anchor: createRangeAnchor(oldFile, { side: "new", startLine: 1, endLine: 1 }),
+        resolution: "active" as const,
+        createdAt: "2026-08-31T00:00:00.000Z",
+        updatedAt: "2026-08-31T00:00:00.000Z",
+      }],
+      draft: {
+        anchor: { kind: "file" as const, fileKey: "a", contentId: oldFile.contentId },
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "keep editing",
+      },
+      expandedGaps: [{ fileKey: "a", gapId: "before:1", expanded: true }],
+    }
+    const db = { version: 2 as const, baseByHead: {}, reviews: { [currentDoc.identity.id]: persistedFromReviewState(persistedState) } }
+    const stateStore = {
+      load: async () => db,
+      saveSemanticChange: async () => undefined,
+      flush: async () => undefined,
+    } as unknown as ReviewStateStore
+    const controller = new ReviewWorkspaceController({
+      runner: fakeRunner(),
+      stateStore,
+      loadDocument: async () => currentDoc,
+    })
+
+    const restored = await controller.open("refs/heads/main")
+    expect(restored.feedback[0]?.resolution).toBe("stale")
+    expect(restored.lineSelection).toBeNull()
+    expect(restored.filter).toEqual(persistedState.filter)
+    expect(restored.viewed).toEqual(viewed)
+    expect(restored.draft).toEqual(persistedState.draft)
+    expect(restored.expandedGaps).toEqual(persistedState.expandedGaps)
+    expect(validateFinishReview({ ...restored, draft: null }, { decision: "comment", summary: "" })).toEqual({ ok: false, reason: "feedback-needs-reanchor" })
   })
   test("open preserves a recoverable submission marker", async () => {
     const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] })

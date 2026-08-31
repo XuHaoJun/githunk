@@ -70,6 +70,27 @@ export class AppScreenController {
     return this.activeScreen.kind === "repository"
   }
 
+  private restoreRepositoryAfterReviewOpenFailure(error: unknown): void {
+    const msg = error instanceof Error ? error.message : String(error)
+    this._lastError = msg
+    const viewObj = this.opts.repositoryView as unknown as { root?: { visible?: boolean } } | undefined
+    if (viewObj?.root) {
+      try { (viewObj.root as { visible: boolean }).visible = true } catch {}
+    }
+    const showable = this.opts.repositoryView as unknown as { show?: () => void } | undefined
+    if (showable?.show) {
+      try { showable.show() } catch {}
+    }
+    const repoCtrl = this.opts.repositoryController as unknown as Record<string, unknown>
+    if (repoCtrl && typeof repoCtrl === "object" && "state" in repoCtrl) {
+      const state = repoCtrl["state"] as Record<string, unknown> | undefined
+      if (state && typeof state === "object") {
+        try { state["banner"] = msg } catch {}
+      }
+    }
+    this.opts.renderer?.requestRender?.()
+  }
+
   async openBranchReview(baseRef?: string): Promise<void> {
     if (this.destroyed) throw new Error("screen controller destroyed")
     if (this.activeScreen.kind === "branch-review") return
@@ -110,25 +131,8 @@ export class AppScreenController {
       try {
         await reviewController.open(baseRef)
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        this._lastError = msg
-        if (viewObj?.root) {
-          try { (viewObj.root as { visible: boolean }).visible = true } catch {}
-        }
-        const showable = this.opts.repositoryView as unknown as { show?: () => void } | undefined
-        if (showable?.show) {
-          try { showable.show() } catch {}
-        }
-        const repoCtrl = this.opts.repositoryController as unknown as Record<string, unknown>
-        if (repoCtrl && typeof repoCtrl === "object" && "state" in repoCtrl) {
-          const state = repoCtrl["state"] as Record<string, unknown> | undefined
-          if (state && typeof state === "object") {
-            try { (state as Record<string, unknown>)["banner"] = msg } catch {}
-          }
-        }
+        this.restoreRepositoryAfterReviewOpenFailure(err)
         try { await reviewController.destroy() } catch {}
-        const renderer = this.opts.renderer as unknown as { requestRender?: () => void } | undefined
-        renderer?.requestRender?.()
         throw err
       }
 
@@ -140,6 +144,7 @@ export class AppScreenController {
       try {
         reviewView = this.opts.createReviewView(reviewController, () => { void this.closeBranchReview() })
       } catch (err) {
+        this.restoreRepositoryAfterReviewOpenFailure(err)
         try { await reviewController.destroy() } catch {}
         throw err
       }

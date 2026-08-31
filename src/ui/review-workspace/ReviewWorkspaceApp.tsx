@@ -144,8 +144,18 @@ function draftId(): string {
 function keyName(key: KeyEvent): string {
   const parsed = key as unknown as { name?: string; key?: string; shift?: boolean }
   const raw = parsed.name ?? parsed.key ?? ""
-  const normalized = raw === "return" ? "enter" : raw
+  const lowerRaw = raw.toLowerCase()
+  const normalized = lowerRaw === "return" || lowerRaw === "enter" ? "enter" : lowerRaw === "escape" ? "escape" : raw
   return parsed.shift === true && normalized.length === 1 ? normalized.toUpperCase() : normalized
+}
+function isPrintableFilterKey(name: string): boolean {
+  // Focus shortcuts remain intentional controls even while the input is
+  // focused; all other printable characters belong to filter editing.
+  if (name === "0" || name === "1") return false
+  const value = name === "space" ? " " : name
+  if ([...value].length !== 1) return false
+  const codePoint = value.codePointAt(0) ?? 0
+  return codePoint >= 0x20 && codePoint !== 0x7f
 }
 
 function consume(event: KeyEvent): void {
@@ -687,9 +697,10 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           try {
             controller.dispatch(planReviewIntent(current, { type: "selection/move-line", direction }))
           } catch {}
+          // Semantic j/k moves stay within the active side/hunk. Keep the
+          // first endpoint so a subsequent v can complete the range.
+          setPendingRangeAnchor(null)
         }
-        setRangeStart(null)
-        setPendingRangeAnchor(null)
         diffScrollRef.current?.scrollBy(direction === "next" ? 1 : -1)
       }
       return true
@@ -975,6 +986,17 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       consume(event)
       return
     }
+
+    // The focused input owns printable text. Leave these events untouched so
+    // OpenTUI can deliver them to the input instead of consuming a workspace
+    // command such as layout (l) or Finish (R).
+    if (
+      focus === "filter"
+      && !event.ctrl
+      && !event.meta
+      && !event.option
+      && isPrintableFilterKey(name)
+    ) return
 
     const normalized = name === "down" ? "ArrowDown" : name === "up" ? "ArrowUp" : name
     const command = resolveReviewCommand(normalized, focus)

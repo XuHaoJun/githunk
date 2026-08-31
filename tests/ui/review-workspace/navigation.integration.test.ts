@@ -78,4 +78,113 @@ describe("React review navigation", () => {
       expect(active.controller.state?.selection.fileKey).toBe("src/b.ts")
     } finally { await act(async () => setup.renderer.destroy()) }
   })
+  test("semantic j/k keeps the range start for an exact multiline feedback range", async () => {
+    const file = {
+      ...makeFile("src/range.ts"),
+      hunks: [createReviewHunk({
+        index: 0,
+        oldStart: 1,
+        oldCount: 2,
+        newStart: 1,
+        newCount: 2,
+        lines: ["-old one", "-old two", "+new one", "+new two"],
+      })],
+    }
+    const active = makeSession([file])
+    const setup = await testRender(createElement(ReviewWorkspaceApp, { session: active.session }), {
+      width: 120,
+      height: 30,
+      useMouse: true,
+    })
+    try {
+      await flush(setup)
+      const firstRow = setup.renderer.root.findDescendantById("src/range.ts:split:0:change:0:0") as unknown as { x: number; y: number; width: number }
+      await act(async () => {
+        await setup.mockMouse.click(firstRow.x + Math.floor(firstRow.width * 0.75), firstRow.y)
+      })
+      await flush(setup)
+      await flush(setup)
+      await act(async () => setup.mockInput.typeText("j"))
+      await flush(setup)
+      await act(async () => setup.mockInput.typeText("v"))
+      await flush(setup)
+      await act(async () => setup.mockInput.typeText("c"))
+      await flush(setup)
+      expect(active.controller.state?.draft?.anchor).toMatchObject({
+        kind: "range",
+        fileKey: file.key,
+        side: "new",
+        startLine: 1,
+        endLine: 2,
+      })
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("starting a new v range clears a completed pending range", async () => {
+    const file = {
+      ...makeFile("src/stale-range.ts"),
+      hunks: [createReviewHunk({
+        index: 0,
+        oldStart: 1,
+        oldCount: 2,
+        newStart: 1,
+        newCount: 2,
+        lines: ["-old one", "-old two", "+new one", "+new two"],
+      })],
+    }
+    const active = makeSession([file])
+    const setup = await testRender(createElement(ReviewWorkspaceApp, { session: active.session }), {
+      width: 120,
+      height: 30,
+      useMouse: true,
+    })
+    try {
+      await flush(setup)
+      const firstRow = setup.renderer.root.findDescendantById("src/stale-range.ts:split:0:change:0:0") as unknown as { x: number; y: number; width: number }
+      await act(async () => {
+        await setup.mockMouse.click(firstRow.x + Math.floor(firstRow.width * 0.75), firstRow.y)
+      })
+      await flush(setup)
+      await act(async () => setup.mockInput.typeText("j"))
+      await flush(setup)
+      await act(async () => setup.mockInput.typeText("v"))
+      await flush(setup)
+      await act(async () => setup.mockInput.typeText("v"))
+      await flush(setup)
+      await act(async () => setup.mockInput.typeText("c"))
+      await flush(setup)
+      expect(active.controller.state?.draft?.anchor).toMatchObject({
+        kind: "range",
+        fileKey: file.key,
+        side: "new",
+        startLine: 2,
+        endLine: 2,
+      })
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("filter input owns printable command characters while Enter remains an intentional control", async () => {
+    const active = makeSession([makeFile("src/a.ts")])
+    const setup = await testRender(createElement(ReviewWorkspaceApp, { session: active.session }), { width: 100, height: 24 })
+    try {
+      await flush(setup)
+      await act(async () => setup.mockInput.pressKey("/"))
+      await flush(setup)
+      await act(async () => setup.mockInput.typeText("lR/src/path"))
+      await flush(setup)
+      const filter = setup.renderer.root.findDescendantById("review-file-filter-input") as unknown as { value: string; focused: boolean }
+      expect(filter.focused).toBe(true)
+      expect(filter.value).toContain("lR/src/path")
+      expect(setup.renderer.root.findDescendantById("review-finish-dialog")).toBeUndefined()
+      await act(async () => setup.mockInput.pressEnter())
+      await flush(setup)
+      const unfocusedFilter = setup.renderer.root.findDescendantById("review-file-filter-input") as unknown as { focused: boolean }
+      expect(unfocusedFilter.focused).toBe(false)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
 })

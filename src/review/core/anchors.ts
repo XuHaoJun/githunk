@@ -190,9 +190,10 @@ export function reconcileAnchor(anchor: ReviewAnchor, document: ReviewDocument):
         }
       }
     }
-    // Content same but hunk changed? Return stale to force re-anchor? But spec says unchanged content keeps active.
-    // If we cannot verify, keep active with original anchor
-    return { resolution: "active", anchor }
+    // A same-content anchor that cannot be verified has a stale location. Do
+    // not keep an invalid persisted anchor active: Finish validation relies on
+    // this semantic check to require an explicit re-anchor.
+    return { resolution: "stale", anchor }
   }
 
   // Content changed: attempt unique context relocation

@@ -298,8 +298,8 @@ export function reconcileExpandedGaps(
 // Deferred: rewritten-history detection via ancestor check (lastSubmission head not ancestor of HEAD)
 // and since-last-review projection eligibility are handled in projection loader (Task 6); aggregate
 // reconciliation here preserves coverage via identity regardless of history rewrite (see design §9.2).
-export function reconcileReviewState(previous: ReviewState, document: ReviewDocument): ReviewState {
-  if (previous.document === document) return previous
+export function reconcileReviewState(previous: ReviewState, document: ReviewDocument, options?: { readonly forceSemantic?: boolean }): ReviewState {
+  if (previous.document === document && options?.forceSemantic !== true) return previous
   const matches = matchReviewFiles(previous.document.files, document.files)
   const viewed = reconcileViewed(previous.viewed, matches)
   const feedback = (() => {
