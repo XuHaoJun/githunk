@@ -276,6 +276,11 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       await stateStore.saveSemanticChange((db) => ({ ...db, reviews: { ...db.reviews, [reviewId]: { ...db.reviews[reviewId]!, submissionInProgress: { artifactId: "art-1", digest: sinceLastDigest } } } }))
       const rebuilt = await dialog.submit()
       expect(rebuilt.ok).toBe(true)
+      expect(rebuilt.artifactId).toBe("art-2")
+      const rebuiltArtifact = await artifactStore.load(reviewId, "art-2")
+      expect(rebuiltArtifact?.projection).toEqual({ kind: "aggregate" })
+      expect(await artifactStore.load(reviewId, "art-100")).toBeUndefined()
+      expect((await artifactStore.load(reviewId, "art-1"))?.id).toBe("art-1")
       artifactStore.createExclusive = origCreate
     } finally {
       try { await controller?.flushDrafts?.().catch(() => {}) } catch {}
