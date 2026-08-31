@@ -329,19 +329,21 @@ export function reconcileReviewState(previous: ReviewState, document: ReviewDocu
     } catch {}
   }
   const expandedGaps = reconcileExpandedGaps(previous.expandedGaps, matches)
-  // Idempotent when generation and patch digest unchanged and all derived slices equal – avoids spurious revision bump for no-op reconciliation (I3)
-  if (
-    viewed === previous.viewed &&
-    feedback === previous.feedback &&
-    expandedGaps === previous.expandedGaps &&
-    selection === previous.selection &&
+  const lineSelectionEqual = lineSelection === null && previous.lineSelection === null ||
     lineSelection !== null && previous.lineSelection !== null &&
     lineSelection.fileKey === previous.lineSelection.fileKey &&
     lineSelection.hunkIndex === previous.lineSelection.hunkIndex &&
     lineSelection.side === previous.lineSelection.side &&
     lineSelection.line === previous.lineSelection.line &&
     lineSelection.contentId === previous.lineSelection.contentId &&
-    lineSelection.contextDigest === previous.lineSelection.contextDigest &&
+    lineSelection.contextDigest === previous.lineSelection.contextDigest
+  // Idempotent when generation and patch digest unchanged and all derived slices equal – avoids spurious revision bump for no-op reconciliation (I3)
+  if (
+    viewed === previous.viewed &&
+    feedback === previous.feedback &&
+    expandedGaps === previous.expandedGaps &&
+    selection === previous.selection &&
+    lineSelectionEqual &&
     document.generation.id === previous.document.generation.id &&
     document.aggregatePatchDigest === previous.document.aggregatePatchDigest
   ) {

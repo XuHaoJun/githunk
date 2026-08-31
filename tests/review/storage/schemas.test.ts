@@ -19,6 +19,7 @@ function makeValidDatabase(): ReturnType<typeof emptyReviewDatabaseV2> & { baseB
     reviews: {
       [reviewId]: {
         selection: { fileKey: null, hunkIndex: 0 },
+        lineSelection: null,
         filter: { query: "", scope: "all" },
         projection: { kind: "aggregate" },
         viewed: {

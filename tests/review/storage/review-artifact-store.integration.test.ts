@@ -24,6 +24,7 @@ function makeReviewState(): ReviewState {
     revision: 0,
     projection: { kind: "aggregate" },
     selection: { fileKey: null, hunkIndex: 0 },
+    lineSelection: null,
     reveal: { fileTopToken: 0, fileTopRequestToken: 0, hunkToken: 0, scrollToFeedback: false },
     filter: { query: "", scope: "all" },
     viewed: {

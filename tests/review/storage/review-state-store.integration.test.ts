@@ -63,6 +63,7 @@ describe("ReviewStateStore integration", () => {
         ...db.reviews,
         [reviewId]: {
           selection: { fileKey: null, hunkIndex: 0 },
+          lineSelection: null,
           filter: { query: "", scope: "all" },
           projection: { kind: "aggregate" },
           viewed: {},
@@ -101,6 +102,7 @@ describe("ReviewStateStore integration", () => {
         ...db.reviews,
         [reviewId]: {
           selection: { fileKey: null, hunkIndex: 0 },
+          lineSelection: null,
           filter: { query: "", scope: "all" },
           projection: { kind: "aggregate" },
           viewed: {},
@@ -161,6 +163,7 @@ describe("ReviewStateStore integration", () => {
       reviews: {
         r1: {
           selection: { fileKey: null, hunkIndex: 0 },
+          lineSelection: null,
           filter: { query: "", scope: "all" },
           projection: { kind: "aggregate" },
           viewed: {},
