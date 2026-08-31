@@ -435,8 +435,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     const changedDocument = previous !== null
       && (identity === null
         || previous.generationId !== identity.generationId
-        || previous.fileKey !== identity.fileKey
-        || previous.contentId !== identity.contentId)
+        || (previous.fileKey === identity.fileKey && previous.contentId !== identity.contentId))
     if (changedDocument || !identity || (start !== null && !lineMatchesStart) || (start === null && (!line || line.fileKey !== pending?.fileKey))) {
       localRangeIdentityRef.current = null
       setRangeStart(null)

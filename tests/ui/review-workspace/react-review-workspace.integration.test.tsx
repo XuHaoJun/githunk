@@ -953,6 +953,36 @@ describe("React review workspace", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("preserves a new range endpoint after switching files", async () => {
+    const fileA = makeFile("src/range-a.ts", ["-old", "+new"])
+    const fileB = makeFile("src/range-b.ts", ["-old one", "-old two", "+new one", "+new two"])
+    const { session, getState } = makeInteractiveSession([fileA, fileB], [])
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={session} />,
+      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const rowA = setup.renderer.root.findDescendantById("src/range-a.ts:split:0:change:0:0") as unknown as { x: number; y: number; width: number }
+      const rowB1 = setup.renderer.root.findDescendantById("src/range-b.ts:split:0:change:0:0") as unknown as { x: number; y: number; width: number }
+      const rowB2 = setup.renderer.root.findDescendantById("src/range-b.ts:split:0:change:1:1") as unknown as { x: number; y: number; width: number }
+      const clickNewSide = async (row: { x: number; y: number; width: number }) => {
+        await setup.mockMouse.click(row.x + Math.max(1, Math.floor(row.width * 3 / 4)), row.y)
+      }
+      await act(async () => {
+        await clickNewSide(rowA)
+        await clickNewSide(rowB1)
+        await clickNewSide(rowB2)
+        setup.mockInput.typeText("c")
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+      expect(getState().draft?.anchor).toMatchObject({ kind: "range", fileKey: fileB.key, side: "new", startLine: 1, endLine: 2 })
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
   test("keeps suggestion drafts empty until edited and cycles replacement focus", async () => {
     const file = makeFile("src/suggestion.ts", ["-old", "+new"])
     const session = makeSession([file])
