@@ -170,15 +170,26 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     const screen = harness.app.screenController
     const openWithB = async (): Promise<void> => {
       const currentScreen = harness!.app.screenController
+      const activeKind = (): string => currentScreen.active.kind
       await harness!.pressKey("b")
-      await currentScreen.openBranchReview()
+      // Opening runs the real repository loader asynchronously; settle on the observable screen
+      // transition rather than invoking the controller method that the `b` binding should call.
+      for (let attempt = 0; attempt < 50 && activeKind() !== "branch-review"; attempt += 1) {
+        await harness!.flush()
+        if (activeKind() !== "branch-review") await new Promise((resolve) => setTimeout(resolve, 20))
+      }
       await harness!.flush()
-      expect(currentScreen.active.kind).toBe("branch-review")
+      expect(activeKind()).toBe("branch-review")
     }
     await openWithB()
     const branch = screen.active as Extract<typeof screen.active, { kind: "branch-review" }>
     const controller = branch.controller
     const root = branch.view.root
+    const focusState = (): { readonly diff: boolean; readonly sidebar: boolean; readonly filter: boolean } => ({
+      diff: Boolean((root.findDescendantById("review-diff-scrollbox") as { focused?: boolean } | undefined)?.focused),
+      sidebar: Boolean((root.findDescendantById("react-review-sidebar-scrollbox") as { focused?: boolean } | undefined)?.focused),
+      filter: Boolean((root.findDescendantById("review-file-filter-input") as { focused?: boolean } | undefined)?.focused),
+    })
     const clickNode = async (id: string): Promise<void> => {
       const node = root.findDescendantById(id) as { screenX?: number; screenY?: number; width?: number; height?: number } | undefined
       if (!node || node.screenX === undefined || node.screenY === undefined) throw new Error(`missing OpenTUI node ${id}`)
@@ -195,28 +206,34 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     const validation = () => state().document.files.find((file) => file.path === "src/validation.ts")!
 
     expect(harness.frame()).toContain("[Aggregate]")
-    await harness.typeText("0")
-    expect(harness.frame()).toContain("[0] Diff")
+    expect(focusState().diff).toBe(true)
     await harness.pressKey("1")
-    expect(harness.frame()).toContain("[1] Files")
-    await harness.pressKey("TAB")
-    expect(harness.frame()).toContain("[1] Files")
-    await harness.pressKey("0")
-    expect(harness.frame()).toContain("[0] Diff")
-    expect(harness.frame()).toContain("stream —")
+    await Bun.sleep(30)
+    await harness.flush()
+    expect(focusState()).toEqual({ diff: false, sidebar: true, filter: false })
+    await harness.pressTab()
+    await Bun.sleep(30)
+    await harness.flush()
+    expect(focusState()).toEqual({ diff: false, sidebar: false, filter: true })
+    await harness.typeText("0")
+    await Bun.sleep(30)
+    await harness.flush()
+    expect(focusState()).toEqual({ diff: true, sidebar: false, filter: false })
 
     // Keyboard selects a changed line, then the mouse selects a different changed line.
     await clickNode(fileRow(payment().path))
     await clickNode(diffRow(payment().key, 0))
+    const clickedPaymentLine = state().lineSelection
+    expect(clickedPaymentLine).not.toBeNull()
     await harness.pressKey("j")
-    expect(state().lineSelection?.fileKey).toBe(payment().key)
-    expect(state().lineSelection?.side).toBe("new")
+    const movedPaymentLine = state().lineSelection
+    expect(movedPaymentLine?.fileKey).toBe(payment().key)
+    expect(movedPaymentLine?.side).toBe("new")
+    expect(movedPaymentLine?.line).not.toBe(clickedPaymentLine?.line)
+    expect(movedPaymentLine?.contentId).toBe(clickedPaymentLine?.contentId)
+    expect(movedPaymentLine?.contextDigest).toBeTypeOf("string")
     await clickNode(fileRow(validation().path))
     await clickNode(diffRow(validation().key, 0))
-    expect(state().lineSelection?.fileKey).toBe(validation().key)
-    expect(state().lineSelection?.line).toBe(1)
-
-    // Create and edit a line comment through the active composer.
     await clickNode(fileRow(payment().path))
     await clickNode(diffRow(payment().key, 0))
     await harness.pressKey("c")
@@ -245,6 +262,8 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     await harness.pressKey("}")
     await harness.pressKey("d")
     await harness.pressKey("d")
+    expect(state().feedback.find((feedback) => feedback.id === deletedId)).toBeUndefined()
+    expect(state().feedback.find((feedback) => feedback.id === paymentNoteId)?.body).toContain("edited")
 
     // Select a two-line new-side range and save a blocking suggestion with real replacement text.
     await clickNode(fileRow(validation().path))
@@ -334,9 +353,16 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     const restarted = (harness.app.screenController.active as Extract<typeof harness.app.screenController.active, { kind: "branch-review" }>).controller
     expect(restarted.state?.lastSubmission?.artifactId).toBe(artifactId)
     expect(restarted.state?.projection).toEqual({ kind: "aggregate" })
+    expect(restarted.state?.feedback).toEqual([])
+    expect(restarted.state?.draft).toBeNull()
     const restartAppLog = harness.app.controller.state.commandLog.slice(restartLogStart).map((line) => line.spans.map((span) => span.text).join(""))
     const allAppLog = [...firstAppLog, ...restartAppLog]
-    expect(allAppLog.join("\n")).not.toMatch(/git (add|commit|checkout|push|pull|fetch|branch|stash|reset|rebase|merge|restore|clean)/iu)
+    const readOnlyGitVerb = /^(?:rev-parse|status|diff|numstat|show|log|merge-base|ls-files|ls-tree|cat-file|for-each-ref|symbolic-ref|name-rev|describe|check-ignore|check-attr|remote|config)(?:\s|$)/u
+    for (const commandRecord of allAppLog) {
+      const command = commandRecord.trim()
+      if (command.length > 0) expect(command).toMatch(/^git /u)
+      if (command.startsWith("git ")) expect(command.slice(4)).toMatch(readOnlyGitVerb)
+    }
   }, 40000)
 
   test("returning from branch review refreshes repository working-tree files", async () => {

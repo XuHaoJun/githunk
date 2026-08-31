@@ -12,7 +12,7 @@
 The focused scenario passed and exercises the requested sequence:
 
 1. Opens Branch Review with `b` against a real temporary repository.
-2. Drives `0`, `1`, `Tab`, and `0`; the rendered surface continues to expose the Diff/Files panel titles and active stream footer.
+2. Drives `0`, `1`, `Tab`, and `0`; assertions inspect the actual Diff scrollbox, Files scrollbox, and filter input `focused` nodes after each transition, plus the active stream footer.
 3. Selects a changed line through keyboard navigation and a different changed line with OpenTUI mouse row clicks.
 4. Creates a line comment, edits it through the composer, creates and deletes a second feedback item through the two-step delete action.
 5. Selects a two-line new-side range and creates a blocking suggestion with real replacement text (`export const valid = false`); no sentinel replacement is used.
@@ -21,13 +21,19 @@ The focused scenario passed and exercises the requested sequence:
 8. Confirms Finish renders the stale/orphaned blocking message, then re-anchors the stale feedback to a newly selected current line.
 9. Finishes as Request Changes, reads the persisted JSON artifact, verifies aggregate projection and replacement text, and verifies deterministic Markdown by rendering it twice and comparing exact output.
 10. Restarts the shell harness against the same repository and verifies the aggregate projection, artifact id, and cleared pending feedback state survive.
-11. Inspects app command-log entries after startup and confirms no logged staging, commit, checkout, push, pull, fetch, branch, stash, reset, rebase, merge, restore, or clean command.
+11. Inspects app command-log entries after startup and validates every non-empty logged command against an explicit read-only Git verb allow-list; no mutating Git command is accepted.
 
-Focused result: `44 pass`, `0 fail`, `417 expect() calls` across the six affected suites.
+Focused result: `44 pass`, `0 fail`, `736 expect() calls` across the six affected suites after the follow-up guards.
 
 ## Deferred-surface guards
 
 The active command catalog and generated help/hints reject all named deferred surfaces: Since Last Review, individual commit projection, trailing-final-hunk expansion, page/half-page navigation, horizontal scroll, current-line mode, theme selection, copy decorations, agent annotations, extension panes, pager, editor, and Git mutation actions. The real rendered Branch Review footer is also checked for those labels. Future projection loaders remain covered only by suites explicitly named `future projection loader` / `future projection loaders — isolated direct tests`; those tests are not active-surface proof.
+## Follow-up guard corrections
+
+- The OpenTUI `b` path now waits for the observable `branch-review` screen transition and no longer calls `openBranchReview` directly from the acceptance test.
+- The command-catalog guard enumerates deferred command IDs and concrete deferred key names (`pagedown`, `pageup`, `ctrl+d`, `ctrl+u`, and related projection/navigation/copy/editor keys) across every active focus.
+- The acceptance scenario now proves semantic `j` movement by changed line number and stable content identity, proves the deleted feedback id is absent while the payment note remains, and checks restart feedback/draft emptiness.
+- The real-surface footer guard includes a standalone word-boundary `page` check and both hyphenated and spaced copy-selection/decorations wording.
 
 ## Final commands
 

@@ -88,6 +88,7 @@ export type ShellHarness = {
   /** Whether RootView's `onQuit` callback (the "quit" action) has fired. */
   readonly quitCalled: boolean
   pressKey(key: KeyInput, modifiers?: { shift?: boolean; ctrl?: boolean }): Promise<void>
+  pressTab(): Promise<void>
   typeText(text: string): Promise<void>
   drag(startX: number, startY: number, endX: number, endY: number): Promise<void>
   resize(width: number, height: number): Promise<void>
@@ -193,6 +194,10 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
         // keypresses, silently corrupting whatever the next pressKey call was meant to simulate.
         await new Promise((resolve) => setTimeout(resolve, 30))
       }
+      await setup.flush()
+    },
+    async pressTab() {
+      setup.mockInput.pressTab()
       await setup.flush()
     },
     async typeText(text) {

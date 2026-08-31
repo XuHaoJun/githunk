@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { REVIEW_COMMANDS, resolveReviewCommand, reviewHelp, reviewHints } from "../../../src/ui/review-workspace/command-catalog"
+import type { ReviewFocus } from "../../../src/ui/review-workspace/command-catalog"
 import type { ReviewState } from "../../../src/review/core/state"
 import { createReviewDocument } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
@@ -108,6 +109,32 @@ describe("command-catalog defaults — exact spec §5.4 keys", () => {
       expect(help).not.toMatch(pattern)
       expect(hints).not.toMatch(pattern)
       expect(resolveReviewCommand(label, "stream")).toBeUndefined()
+    }
+
+    const deferredCommands: ReadonlyArray<{ readonly id: string; readonly keys: readonly string[] }> = [
+      { id: "review.projectionCommit", keys: ["commit"] },
+      { id: "review.expandTrailingFinalHunk", keys: ["trailing-final-hunk"] },
+      { id: "main-scroll-down", keys: ["pagedown", "page-down", "ctrl+d"] },
+      { id: "main-scroll-up", keys: ["pageup", "page-up", "ctrl+u"] },
+      { id: "main-half-page-down", keys: ["ctrl+d"] },
+      { id: "main-half-page-up", keys: ["ctrl+u"] },
+      { id: "main-scroll-right", keys: ["ArrowRight"] },
+      { id: "review.currentLine", keys: ["g", "G", "home", "end"] },
+      { id: "review.theme", keys: ["t", "T"] },
+      { id: "review.copySelection", keys: ["y", "Y"] },
+      { id: "review.copyDecorations", keys: ["copy-selection", "copy-decorations"] },
+      { id: "review.agentAnnotations", keys: ["@"] },
+      { id: "review.extensionPanes", keys: ["x", "X"] },
+      { id: "review.pager", keys: ["p", "P"] },
+      { id: "review.editor", keys: ["i", "I"] },
+      { id: "git.mutation", keys: ["o", "O", "m", "M", "w", "W", "u", "U"] },
+    ]
+    const focuses: readonly ReviewFocus[] = ["stream", "sidebar", "filter", "composer", "any", "global"]
+    for (const command of deferredCommands) {
+      for (const focus of focuses) {
+        expect(resolveReviewCommand(command.id, focus)).toBeUndefined()
+        for (const key of command.keys) expect(resolveReviewCommand(key, focus)).toBeUndefined()
+      }
     }
   })
 
