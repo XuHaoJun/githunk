@@ -1,4 +1,4 @@
-import type { InputRenderable, KeyEvent, ScrollBoxRenderable, TextChunk, TextareaRenderable } from "@opentui/core"
+import type { InputRenderable, KeyEvent, MouseEvent, ScrollBoxRenderable, TextChunk, TextareaRenderable } from "@opentui/core"
 import { StyledText, parseColor } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
@@ -17,9 +17,18 @@ import type { ReviewAnchor } from "../../review/core/types"
 import type { ReactReviewSession } from "./react-review-session"
 import { cellWidth } from "../cell-width"
 import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
+import { splitterGlyphs } from "../splitter"
 export type ReviewWorkspaceAppProps = Readonly<{
   session: ReactReviewSession
 }>
+
+const REVIEW_SIDEBAR_DEFAULT_WIDTH = 30
+const REVIEW_SIDEBAR_MIN_WIDTH = 20
+const REVIEW_DIFF_MIN_CONTENT_WIDTH = 40
+const REVIEW_DIFF_BORDER_WIDTH = 2
+const REVIEW_RESIZE_BAR_WIDTH = 1
+const REVIEW_SIDEBAR_VISIBILITY_WIDTH = 80
+
 
 const COLORS = {
   plain: "#c5c8c6",
@@ -202,6 +211,9 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const [publishedState, setPublishedState] = useState<ReviewState | undefined>(() => controller.state)
   const state = controller.state ?? publishedState
   const [layoutMode, setLayoutMode] = useState<"auto" | "split" | "stack">("auto")
+  const [sidebarWidthPreference, setSidebarWidthPreference] = useState(REVIEW_SIDEBAR_DEFAULT_WIDTH)
+  const [resizeBarHovered, setResizeBarHovered] = useState(false)
+  const [resizingSidebar, setResizingSidebar] = useState(false)
   const [visibleFileKeys, setVisibleFileKeys] = useState<readonly string[]>([])
   const [focus, setFocus] = useState<"stream" | "sidebar" | "filter">("stream")
   const [rangeStart, setRangeStart] = useState<RangeStart | null>(null)
@@ -211,6 +223,10 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const [pendingDeleteFeedbackId, setPendingDeleteFeedbackId] = useState<string | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null)
+  const resizingSidebarRef = useRef(false)
+  const resizeDraggedRef = useRef(false)
+  const resizeReleaseSuppressionRef = useRef(false)
+  const resizeReleaseCleanupTokenRef = useRef(0)
   const filterInputRef = useRef<InputRenderable | null>(null)
   const pendingDeleteFeedbackRef = useRef<string | null>(null)
   const composerBodyRef = useRef<TextareaRenderable | null>(null)
@@ -219,11 +235,21 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const finishSubmitRef = useRef(false)
   const expandedSourceRef = useRef<ReadonlyMap<string, readonly string[]>>(new Map())
   const dimensions = { width: Math.max(1, terminal.width), height: Math.max(1, terminal.height) }
-  const sidebarWidth = dimensions.width >= 80 ? 30 : 0
-  const diffWidth = Math.max(1, dimensions.width - sidebarWidth - 2)
+  const maxSidebarWidth = Math.max(
+    REVIEW_SIDEBAR_MIN_WIDTH,
+    dimensions.width - REVIEW_RESIZE_BAR_WIDTH - REVIEW_DIFF_BORDER_WIDTH - REVIEW_DIFF_MIN_CONTENT_WIDTH,
+  )
+  const sidebarWidth = dimensions.width >= REVIEW_SIDEBAR_VISIBILITY_WIDTH
+    ? Math.min(Math.max(sidebarWidthPreference, REVIEW_SIDEBAR_MIN_WIDTH), maxSidebarWidth)
+    : 0
+  const diffWidth = Math.max(
+    1,
+    dimensions.width - sidebarWidth - (sidebarWidth > 0 ? REVIEW_RESIZE_BAR_WIDTH : 0) - REVIEW_DIFF_BORDER_WIDTH,
+  )
   const layout: "split" | "stack" = layoutMode === "auto" ? (diffWidth >= 64 ? "split" : "stack") : layoutMode
   const composerHeight = state?.draft ? (canShowReplacementDraft(state) ? 9 : 6) : 0
   const diffHeight = Math.max(1, dimensions.height - 4 - composerHeight - 2)
+  const resizeBarHeight = Math.max(1, dimensions.height - 4 - composerHeight)
   const sidebarFocused = focus === "sidebar" || focus === "filter"
   const diffFocused = focus === "stream"
   const files = useMemo(() => state ? toHunkReviewFiles(visibleReviewFiles(state)) : [], [state?.document, state?.feedback, state?.filter, state?.viewed])
@@ -255,7 +281,58 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const onVisibleFileKeysChange = useCallback((keys: readonly string[]) => {
     setVisibleFileKeys((current) => current.length === keys.length && current.every((key, index) => key === keys[index]) ? current : [...keys])
   }, [])
-
+  const updateSidebarWidth = useCallback((event: MouseEvent) => {
+    const nextWidth = Math.min(Math.max(Math.floor(event.x), REVIEW_SIDEBAR_MIN_WIDTH), maxSidebarWidth)
+    setSidebarWidthPreference((current) => current === nextWidth ? current : nextWidth)
+  }, [maxSidebarWidth])
+  const beginSidebarResize = useCallback(() => {
+    resizeReleaseCleanupTokenRef.current += 1
+    resizeReleaseSuppressionRef.current = false
+    resizeDraggedRef.current = false
+    resizingSidebarRef.current = true
+    setResizingSidebar(true)
+  }, [])
+  const endSidebarResize = useCallback(() => {
+    const dragged = resizeDraggedRef.current
+    resizeDraggedRef.current = false
+    resizingSidebarRef.current = false
+    setResizingSidebar(false)
+    if (!dragged) {
+      resizeReleaseSuppressionRef.current = false
+      return
+    }
+    resizeReleaseSuppressionRef.current = true
+    const cleanupToken = resizeReleaseCleanupTokenRef.current + 1
+    resizeReleaseCleanupTokenRef.current = cleanupToken
+    queueMicrotask(() => {
+      if (resizeReleaseCleanupTokenRef.current === cleanupToken) resizeReleaseSuppressionRef.current = false
+    })
+  }, [])
+  const handleSidebarResizeMouse = useCallback((event: MouseEvent) => {
+    if (resizeReleaseSuppressionRef.current) {
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
+    if (!resizingSidebarRef.current) return
+    if (event.type === "drag" || event.type === "drag-end") {
+      resizeDraggedRef.current = true
+      updateSidebarWidth(event)
+    } else if (event.type === "up") {
+      updateSidebarWidth(event)
+      endSidebarResize()
+    }
+    event.preventDefault()
+    event.stopPropagation()
+  }, [endSidebarResize, updateSidebarWidth])
+  const resetSidebarResize = useCallback(() => {
+    resizingSidebarRef.current = false
+    resizeDraggedRef.current = false
+    resizeReleaseSuppressionRef.current = false
+    resizeReleaseCleanupTokenRef.current += 1
+    setResizingSidebar(false)
+    setResizeBarHovered(false)
+  }, [])
   useLayoutEffect(() => {
     if (active) return
     setRangeStart(null)
@@ -266,12 +343,18 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     pendingDeleteFeedbackRef.current = null
     setHelpOpen(false)
     setFocus("stream")
+    resetSidebarResize()
+  }, [active, resetSidebarResize])
+  useLayoutEffect(() => {
+    if (sidebarWidth > 0) return
+    resetSidebarResize()
+  }, [resetSidebarResize, sidebarWidth])
 
-  }, [active])
   useEffect(() => {
     if (sidebarWidth === 0 && focus !== "stream") setFocus("stream")
   }, [focus, sidebarWidth])
   const toggleGap = useCallback((fileKey: string, gapId: string) => {
+    if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
     if (typeof controller.expandGap !== "function") return
     void controller.expandGap(fileKey, gapId).catch(() => {})
   }, [controller])
@@ -315,6 +398,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   }, [controller, editingFeedbackId, session])
 
   const deleteFeedback = useCallback((feedbackId: string) => {
+    if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
     const current = controller.state
     if (!current?.feedback.some((feedback) => feedback.id === feedbackId)) return
     if (pendingDeleteFeedbackRef.current !== feedbackId) {
@@ -371,6 +455,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     } catch {}
   }, [controller, session])
   const selectFeedback = useCallback((feedbackId: string) => {
+    if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
     const current = controller.state
     const feedback = current?.feedback.find((entry) => entry.id === feedbackId)
     if (!current || !feedback) return
@@ -390,6 +475,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     } catch {}
   }, [controller, session])
   const selectDiffRow = useCallback((row: HunkDiffRow) => {
+    if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
     const address = rowLineAddress(row)
     const current = controller.state
     if (!address || !current) return
@@ -736,6 +822,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   }
 
   const selectFile = (fileKey: string, nextFocus: "stream" | "sidebar" = "stream") => {
+    if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
     try {
       controller.dispatch(planReviewIntent(state, { type: "selection/select-file", fileKey }))
       setSelectedFeedbackId(null)
@@ -753,12 +840,12 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const orphanedFeedback = state.feedback.filter((feedback) => !state.document.files.some((file) => file.key === feedback.anchor.fileKey))
 
   return (
-    <box id="react-review-workspace" visible={active} style={{ position: "relative", width: "100%", height: "100%", flexDirection: "column", overflow: "hidden" }}>
+    <box id="react-review-workspace" visible={active} onMouse={handleSidebarResizeMouse} style={{ position: "relative", width: "100%", height: "100%", flexDirection: "column", overflow: "hidden" }}>
       <box id="react-review-header" style={{ width: "100%", height: 3, flexShrink: 0 }}>
         <text content={headerText(state, dimensions.width, controller.error)} wrapMode="none" truncate={true} />
       </box>
       <box id="react-review-body" style={{ width: "100%", flexGrow: 1, flexDirection: "row", overflow: "hidden" }}>
-        {sidebarWidth > 0 ? (
+        {sidebarWidth > 0 ? (<>
           <box
             id="react-review-sidebar"
             borderColor={sidebarFocused ? ANSI_GREEN : DEFAULT_FOREGROUND}
@@ -776,7 +863,10 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
                 value={state.filter.query}
                 placeholder="filter files"
                 focused={focus === "filter"}
-                onMouseUp={() => setFocus("filter")}
+                onMouseUp={() => {
+                  if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+                  setFocus("filter")
+                }}
                 onInput={(query) => {
                   try { controller.dispatch(planReviewIntent(state, { type: "filter/set-query", query })) } catch {}
                 }}
@@ -862,7 +952,50 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               </box>
             </scrollbox>
           </box>
-        ) : null}
+          <box
+            id="review-pane-resize-bar"
+            style={{ width: REVIEW_RESIZE_BAR_WIDTH, height: "100%", flexShrink: 0 }}
+            onMouseOver={() => setResizeBarHovered(true)}
+            onMouseOut={() => setResizeBarHovered(false)}
+            onMouseDown={(event) => {
+              beginSidebarResize()
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+            onMouseDrag={(event) => {
+              if (!resizingSidebarRef.current) return
+              resizeDraggedRef.current = true
+              updateSidebarWidth(event)
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+            onMouseDragEnd={(event) => {
+              if (resizingSidebarRef.current) {
+                resizeDraggedRef.current = true
+                updateSidebarWidth(event)
+              }
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+            onMouseUp={(event) => {
+              if (resizingSidebarRef.current) updateSidebarWidth(event)
+              endSidebarResize()
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+          >
+            <text
+              id="review-pane-resize-bar-glyphs"
+              selectable={false}
+              content={splitterGlyphs("vertical", REVIEW_RESIZE_BAR_WIDTH, resizeBarHeight, resizeBarHovered || resizingSidebar)}
+              fg={resizeBarHovered || resizingSidebar ? ANSI_GREEN : DEFAULT_FOREGROUND}
+              width={REVIEW_RESIZE_BAR_WIDTH}
+              height="100%"
+              wrapMode="none"
+              truncate={true}
+            />
+          </box>
+        </>) : null}
         <box
           id="react-review-diff"
           borderColor={diffFocused ? ANSI_GREEN : DEFAULT_FOREGROUND}
@@ -901,9 +1034,15 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           style={{ position: "absolute", left: 1, bottom: 1, width: Math.max(20, dimensions.width - 2), height: Math.min(4, orphanedFeedback.length), zIndex: 50, border: true, flexDirection: "column", backgroundColor: "#202020" }}
         >
           {orphanedFeedback.slice(0, 4).map((feedback) => (
-            <box key={feedback.id} style={{ width: "100%", height: 1, flexDirection: "row" }} onMouseUp={() => setSelectedFeedbackId(feedback.id)}>
+              <box key={feedback.id} style={{ width: "100%", height: 1, flexDirection: "row" }} onMouseUp={() => {
+                if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+                setSelectedFeedbackId(feedback.id)
+              }}>
               <text content={`${feedback.resolution} feedback ${feedback.id} — `} wrapMode="none" truncate={true} />
-              <box id={`review-delete-feedback:${feedback.id}`} onMouseUp={() => deleteFeedback(feedback.id)}>
+              <box id={`review-delete-feedback:${feedback.id}`} onMouseUp={() => {
+                if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+                deleteFeedback(feedback.id)
+              }}>
                 <text content={pendingDeleteFeedbackId === feedback.id ? "[delete again]" : "[delete]"} wrapMode="none" truncate={true} />
               </box>
             </box>
@@ -923,6 +1062,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           <text content={feedbackDraftText(state)} wrapMode="none" truncate={true} />
           <box id="review-feedback-controls" style={{ width: "100%", height: 1, flexDirection: "row" }}>
             <box id="review-feedback-kind-note" onMouseUp={() => {
+              if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
               const latest = controller.state
               if (!latest?.draft) return
               try {
@@ -933,6 +1073,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               <text content={state.draft.kind === "note" ? "[Note]" : " Note "} />
             </box>
             <box id="review-feedback-kind-suggestion" onMouseUp={() => {
+              if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
               const latest = controller.state
               if (!latest?.draft || !suggestionAllowed) return
               try {
@@ -943,6 +1084,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               <text content={state.draft.kind === "suggestion" ? "[Suggestion]" : " Suggestion "} />
             </box>
             <box id="review-feedback-severity-comment" onMouseUp={() => {
+              if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
               const latest = controller.state
               if (!latest?.draft) return
               try {
@@ -953,6 +1095,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               <text content={state.draft.severity === "comment" ? "[Comment]" : " Comment "} />
             </box>
             <box id="review-feedback-severity-blocking" onMouseUp={() => {
+              if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
               const latest = controller.state
               if (!latest?.draft) return
               try {
@@ -1054,13 +1197,25 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           />
           <text content={finishDialog.getValidationMessage()} wrapMode="none" truncate={true} />
           <box style={{ flexDirection: "row", height: 1 }}>
-            <box id="review-finish-comment" onMouseUp={() => { finishDialog.setDecision("comment"); session.invalidate() }}>
+            <box id="review-finish-comment" onMouseUp={() => {
+              if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+              finishDialog.setDecision("comment")
+              session.invalidate()
+            }}>
               <text content={finishDialog.getDecision() === "comment" ? "[Comment]" : " Comment "} />
             </box>
-            <box id="review-finish-approve" onMouseUp={() => { finishDialog.setDecision("approve"); session.invalidate() }}>
+            <box id="review-finish-approve" onMouseUp={() => {
+              if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+              finishDialog.setDecision("approve")
+              session.invalidate()
+            }}>
               <text content={finishDialog.getDecision() === "approve" ? "[Approve]" : " Approve "} />
             </box>
-            <box id="review-finish-request-changes" onMouseUp={() => { finishDialog.setDecision("request-changes"); session.invalidate() }}>
+            <box id="review-finish-request-changes" onMouseUp={() => {
+              if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
+              finishDialog.setDecision("request-changes")
+              session.invalidate()
+            }}>
               <text content={finishDialog.getDecision() === "request-changes" ? "[Request Changes]" : " Request Changes "} />
             </box>
           </box>

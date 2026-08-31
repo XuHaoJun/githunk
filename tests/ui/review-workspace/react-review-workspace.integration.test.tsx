@@ -312,6 +312,260 @@ describe("React review workspace", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("resizes the sidebar by dragging the center bar", async () => {
+    const files = [
+      makeFile("src/first.ts", ["-old", "+new"]),
+      makeFile("src/second.ts", ["-before", "+after"]),
+    ]
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession(files)} />,
+      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const sidebar = setup.renderer.root.findDescendantById("react-review-sidebar") as unknown as {
+        x: number
+        width: number
+      }
+      const resizeBar = setup.renderer.root.findDescendantById("review-pane-resize-bar") as unknown as {
+        x: number
+        y: number
+        width: number
+        height: number
+      } | undefined
+      const resizeGlyphs = setup.renderer.root.findDescendantById("review-pane-resize-bar-glyphs") as unknown as {
+        content: { chunks: readonly { text: string }[] }
+        fg: { intent: string; slot?: number }
+        selectable: boolean
+      }
+      const diff = setup.renderer.root.findDescendantById("react-review-diff") as unknown as {
+        x: number
+        width: number
+      }
+
+      expect(resizeBar).toBeDefined()
+      if (!resizeBar) return
+      expect(resizeBar.width).toBe(1)
+      expect(resizeBar.height).toBeGreaterThan(1)
+      expect(sidebar.width).toBe(30)
+      const initialDiffWidth = diff.width
+      expect(resizeGlyphs.selectable).toBe(false)
+      expect(resizeGlyphs.content.chunks.map((chunk) => chunk.text).join("")).toContain("│")
+      await act(async () => {
+        await setup.mockMouse.moveTo(resizeBar.x, resizeBar.y + 2)
+      })
+      await flush(setup)
+      expect(resizeGlyphs.content.chunks.map((chunk) => chunk.text).join("")).toContain("⇔")
+      expect(resizeGlyphs.fg.intent).toBe("indexed")
+      expect(resizeGlyphs.fg.slot).toBe(2)
+
+      await act(async () => {
+        await setup.mockMouse.drag(resizeBar.x, resizeBar.y + 2, resizeBar.x + 12, resizeBar.y + 2)
+      })
+      await flush(setup)
+      expect(sidebar.width).toBe(42)
+      expect(resizeBar.x).toBe(42)
+      expect(diff.width).toBeLessThan(initialDiffWidth)
+
+      await act(async () => {
+        await setup.mockMouse.drag(resizeBar.x, resizeBar.y + 2, 22, resizeBar.y + 2)
+      })
+      await flush(setup)
+      expect(sidebar.width).toBe(22)
+      expect(resizeBar.x).toBe(22)
+      expect(diff.width).toBeGreaterThan(initialDiffWidth)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("uses the final release coordinate when resizing", async () => {
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession([makeFile("src/release.ts", ["-old", "+new"])])} />,
+      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const sidebar = setup.renderer.root.findDescendantById("react-review-sidebar") as unknown as {
+        width: number
+      }
+      const resizeBar = setup.renderer.root.findDescendantById("review-pane-resize-bar") as unknown as {
+        x: number
+        y: number
+      }
+
+      await act(async () => {
+        await setup.mockMouse.pressDown(resizeBar.x, resizeBar.y + 2)
+        await setup.mockMouse.emitMouseEvent("drag", resizeBar.x + 8, resizeBar.y + 2)
+        await setup.mockMouse.release(resizeBar.x + 18, resizeBar.y + 2)
+      })
+      await flush(setup)
+      expect(sidebar.width).toBe(48)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("does not select diff content when a resize ends over it", async () => {
+    const files = [
+      makeFile("src/first.ts", ["-old", "+new"]),
+      makeFile("src/second.ts", ["-before", "+after"]),
+    ]
+    const { session, getState } = makeInteractiveSession(files, [])
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={session} />,
+      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const resizeBar = setup.renderer.root.findDescendantById("review-pane-resize-bar") as unknown as {
+        x: number
+        y: number
+      }
+      const secondSection = setup.renderer.root.findDescendantById("review-section:src/second.ts") as unknown as {
+        y: number
+      }
+      const initialFileKey = getState().selection.fileKey
+      const releaseY = secondSection.y + 1
+
+      await act(async () => {
+        await setup.mockMouse.pressDown(resizeBar.x, releaseY)
+        await setup.mockMouse.emitMouseEvent("drag", resizeBar.x + 8, releaseY)
+        await setup.mockMouse.release(resizeBar.x + 18, releaseY)
+      })
+      await flush(setup)
+      expect(getState().selection.fileKey).toBe(initialFileKey)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("clamps the center bar to usable pane widths", async () => {
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession([makeFile("src/bounds.ts", ["-old", "+new"])])} />,
+      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const sidebar = setup.renderer.root.findDescendantById("react-review-sidebar") as unknown as {
+        x: number
+        width: number
+      }
+      const resizeBar = setup.renderer.root.findDescendantById("review-pane-resize-bar") as unknown as {
+        x: number
+        y: number
+      }
+      const diff = setup.renderer.root.findDescendantById("react-review-diff") as unknown as {
+        width: number
+      }
+
+      await act(async () => {
+        await setup.mockMouse.drag(resizeBar.x, resizeBar.y + 2, 0, resizeBar.y + 2)
+      })
+      await flush(setup)
+      expect(sidebar.width).toBe(20)
+      expect(resizeBar.x).toBe(20)
+      expect(diff.width).toBeGreaterThanOrEqual(42)
+      expect(setup.captureCharFrame()).toContain("layout(split)")
+
+      await act(async () => {
+        await setup.mockMouse.drag(resizeBar.x, resizeBar.y + 2, 119, resizeBar.y + 2)
+      })
+      await flush(setup)
+      expect(sidebar.width).toBe(77)
+      expect(resizeBar.x).toBe(77)
+      expect(diff.width).toBeGreaterThanOrEqual(42)
+      expect(setup.captureCharFrame()).toContain("layout(stack)")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("retains the dragged width across terminal resizing", async () => {
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession([makeFile("src/resize.ts", ["-old", "+new"])])} />,
+      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const sidebar = setup.renderer.root.findDescendantById("react-review-sidebar") as unknown as {
+        x: number
+        width: number
+      }
+      const resizeBar = setup.renderer.root.findDescendantById("review-pane-resize-bar") as unknown as {
+        x: number
+        y: number
+      }
+
+      await act(async () => {
+        await setup.mockMouse.drag(resizeBar.x, resizeBar.y + 2, 50, resizeBar.y + 2)
+      })
+      await flush(setup)
+      expect(sidebar.width).toBe(50)
+
+      await act(async () => {
+        setup.resize(80, 30)
+        await Bun.sleep(0)
+      })
+      await flush(setup)
+      expect(sidebar.width).toBe(37)
+      expect(resizeBar.x).toBe(37)
+
+      await act(async () => {
+        setup.resize(120, 30)
+        await Bun.sleep(0)
+      })
+      await flush(setup)
+      expect(sidebar.width).toBe(50)
+      expect(resizeBar.x).toBe(50)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("clears the resize gesture when the sidebar becomes hidden", async () => {
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession([makeFile("src/hide-resize.ts", ["-old", "+new"])])} />,
+      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const resizeBar = setup.renderer.root.findDescendantById("review-pane-resize-bar") as unknown as {
+        x: number
+        y: number
+      }
+
+      await act(async () => {
+        await setup.mockMouse.pressDown(resizeBar.x, resizeBar.y + 2)
+        await setup.mockMouse.emitMouseEvent("drag", resizeBar.x + 10, resizeBar.y + 2)
+        setup.resize(70, 30)
+        await Bun.sleep(0)
+      })
+      await flush(setup)
+      expect(setup.renderer.root.findDescendantById("review-pane-resize-bar")).toBeUndefined()
+
+      await act(async () => {
+        setup.resize(120, 30)
+        await Bun.sleep(0)
+      })
+      await flush(setup)
+      await act(async () => {
+        await setup.mockMouse.moveTo(119, resizeBar.y + 2)
+      })
+      await flush(setup)
+      const resizeGlyphs = setup.renderer.root.findDescendantById("review-pane-resize-bar-glyphs") as unknown as {
+        content: { chunks: readonly { text: string }[] }
+      }
+      expect(resizeGlyphs.content.chunks.map((chunk) => chunk.text).join("")).not.toContain("⇔")
+
+      await act(async () => {
+        await setup.mockMouse.release(30, resizeBar.y + 2)
+      })
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
   test("documents numeric panel focus in the help dialog", async () => {
     const setup = await testRender(
       <ReviewWorkspaceApp session={makeSession([makeFile("src/help.ts", ["-old", "+new"])])} />,
@@ -343,6 +597,7 @@ describe("React review workspace", () => {
     try {
       await flush(setup)
       expect(setup.renderer.root.findDescendantById("react-review-sidebar")).toBeUndefined()
+      expect(setup.renderer.root.findDescendantById("review-pane-resize-bar")).toBeUndefined()
       const diffScroll = setup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
         focused: boolean
       }
