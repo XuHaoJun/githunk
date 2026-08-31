@@ -148,6 +148,7 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
         ...db.reviews,
         [state.document.identity.id]: {
           selection: state.selection,
+          lineSelection: null,
           filter: state.filter,
           projection: state.projection,
           viewed: state.viewed,
@@ -184,6 +185,7 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
         ...db.reviews,
         [state.document.identity.id]: {
           selection: state.selection,
+          lineSelection: null,
           filter: state.filter,
           projection: state.projection,
           viewed: state.viewed,
@@ -229,6 +231,7 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
         ...db.reviews,
         [state.document.identity.id]: {
           selection: state.selection,
+          lineSelection: null,
           filter: state.filter,
           projection: state.projection,
           viewed: state.viewed,
@@ -274,6 +277,7 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
         ...db.reviews,
         [state.document.identity.id]: {
           selection: state.selection,
+          lineSelection: null,
           filter: state.filter,
           projection: state.projection,
           viewed: state.viewed,
@@ -320,6 +324,7 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
         ...db.reviews,
         [state.document.identity.id]: {
           selection: state.selection,
+          lineSelection: null,
           filter: state.filter,
           projection: state.projection,
           viewed: state.viewed,
@@ -369,6 +374,7 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
         ...db.reviews,
         [state.document.identity.id]: {
           selection: state.selection,
+          lineSelection: null,
           filter: state.filter,
           projection: state.projection,
           viewed: state.viewed,

@@ -208,6 +208,7 @@ export class ReviewWorkspaceController {
           viewed: persisted.viewed as Record<string, ViewedRecord>,
           feedback: persisted.feedback,
           draft: persisted.draft,
+          expandedGaps: persisted.expandedGaps as readonly ExpandedGap[],
           lastSubmission: persisted.lastSubmission,
           projection: normalizeActiveProjection(persisted.projection as ReviewProjection),
           revision: 0,

@@ -5,14 +5,18 @@ import { createInitialReviewState } from "../../../src/review/core/state"
 import { createLineSelection } from "../../../src/review/core/anchors"
 import { moveReviewLineSelection } from "../../../src/review/core/navigation"
 import { reduceReviewState } from "../../../src/review/core/reducer"
+import { reconcileReviewState } from "../../../src/review/core/reconcile"
+import { serializeReviewDatabaseV2, parseReviewDatabaseV2 } from "../../../src/review/storage/schemas"
+import { persistedFromReviewState } from "../../../src/review/storage/review-state-store"
+import { validateFinishReview, buildReviewArtifact } from "../../../src/review/core/artifact"
 import type { ReviewFile } from "../../../src/review/core/types"
 
-function file(): ReviewFile {
+function file(contentId = "cid"): ReviewFile {
   const hunk = createReviewHunk({ index: 0, oldStart: 1, oldCount: 3, newStart: 1, newCount: 3, lines: [" a", " b", " c"] })
-  return { kind: "modified", contentId: "cid", patchDigest: "p", stats: { additions: 0, deletions: 0 }, hunks: [hunk], source: "available", key: "a", path: "a.ts" } as unknown as ReviewFile
+  return { kind: "modified", contentId, patchDigest: "p", stats: { additions: 0, deletions: 0 }, hunks: [hunk], source: "available", key: "a", path: "a.ts" } as unknown as ReviewFile
 }
-function doc() {
-  return createReviewDocument({ identity: createReviewIdentity({ headRef: "refs/heads/main", headOid: "h", baseRef: "main" }), generation: createReviewGeneration({ mergeBaseOid: "m", baseOid: "b", headOid: "h" }), commits: [], files: [file()] })
+function doc(files: readonly ReviewFile[] = [file()]) {
+  return createReviewDocument({ identity: createReviewIdentity({ headRef: "refs/heads/main", headOid: "h", baseRef: "main" }), generation: createReviewGeneration({ mergeBaseOid: "m", baseOid: "b", headOid: "h" }), commits: [], files })
 }
 
 describe("semantic line selection", () => {
@@ -27,5 +31,30 @@ describe("semantic line selection", () => {
     const d = doc(); const s = createInitialReviewState(d); const line = createLineSelection(file(), { hunkIndex: 0, side: "new", line: 1 })
     const withLine = reduceReviewState(s, { type: "selection/set-line", selection: line })
     expect(reduceReviewState(withLine, { type: "selection/viewport-anchor", fileKey: "a", hunkIndex: 0, reveal: "hunk" }).lineSelection).toBeNull()
+  })
+  test("reconciliation preserves identity and null/null is a no-op", () => {
+    const d = doc(); const initial = createInitialReviewState(d)
+    expect(reconcileReviewState(initial, doc())).toBe(initial)
+    const line = createLineSelection(file(), { hunkIndex: 0, side: "new", line: 2 })
+    const selected = reduceReviewState(initial, { type: "selection/set-line", selection: line })
+    const reconciled = reconcileReviewState(selected, doc())
+    expect(reconciled.lineSelection).toEqual(line)
+    expect(reconciled.revision).toBe(selected.revision)
+  })
+  test("non-null line selection survives strict persistence round trip", () => {
+    const d = doc(); const line = createLineSelection(file(), { hunkIndex: 0, side: "new", line: 2 })
+    const state = reduceReviewState(createInitialReviewState(d), { type: "selection/set-line", selection: line })
+    const db = { version: 2 as const, baseByHead: {}, reviews: { [d.identity.id]: persistedFromReviewState(state) } }
+    const parsed = parseReviewDatabaseV2(JSON.parse(serializeReviewDatabaseV2(db)))
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) expect(parsed.value.reviews[d.identity.id]!.lineSelection).toEqual(line)
+  })
+  test("Finish rejects invalid suggestions while aggregate artifact builds", () => {
+    const state = createInitialReviewState(doc())
+    const invalid = { id: "s", kind: "suggestion" as const, severity: "comment" as const, body: "b", replacement: " ", anchor: { kind: "file" as const, fileKey: "a", contentId: "cid" }, resolution: "active" as const, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+    const withInvalid = { ...state, feedback: [invalid] }
+    expect(validateFinishReview(withInvalid, { decision: "comment", summary: "s" })).toEqual({ ok: false, reason: "suggestion-invalid" })
+    expect(() => buildReviewArtifact(withInvalid, { id: "x", submittedAt: new Date().toISOString(), decision: "comment", summary: "s" })).toThrow("suggestion-invalid")
+    expect(buildReviewArtifact(state, { id: "x", submittedAt: new Date().toISOString(), decision: "comment", summary: "s" }).projection).toEqual({ kind: "aggregate" })
   })
 })
