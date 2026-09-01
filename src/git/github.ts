@@ -7,12 +7,14 @@ import type { PullRequest, PullRequestChecksState, PullRequestState } from "../d
  * environment (pkg/commands/git_commands/github.go, refresh_helper.go:1694-1726). githunk shells
  * out to `gh` instead, which is the same shape as everything else it does and inherits `gh`'s own
  * authentication, host configuration and enterprise support rather than re-deriving them. The
- * consequence is that a repo without `gh` on PATH, or without `gh auth login`, simply shows no
- * dots — which is also what lazygit does when it finds no token.
+ * consequence is that a repo without `gh` on PATH, or without `gh auth login`, has no initial dots;
+ * after a successful query, a later unavailable query leaves the last successful dots in place.
  */
 
 /** How many pull requests one call fetches, newest first. */
 export const PULL_REQUEST_LIMIT = 100
+/** Maximum time a single `gh pr list` subprocess may hold a refresh open. */
+export const DEFAULT_GH_TIMEOUT_MS = 10_000
 
 const JSON_FIELDS = "number,title,state,isDraft,url,headRefName,headRepositoryOwner,statusCheckRollup"
 
@@ -35,6 +37,10 @@ export type ProcessResult = {
 }
 
 export type GhRunner = (args: readonly string[]) => Promise<ProcessResult>
+export type GhRunnerOptions = {
+  readonly executable?: string
+  readonly timeoutMs?: number
+}
 
 type RawCheck = { readonly state?: unknown; readonly conclusion?: unknown; readonly status?: unknown }
 
@@ -121,32 +127,56 @@ export async function loadPullRequests(runner: GhRunner): Promise<readonly PullR
 }
 
 /**
- * A `gh` runner. `gh pr list` is a background query — only the background refresh drives it — and
- * lazygit keeps queries out of the command log entirely (76 `DontLog()` call sites, e.g.
- * pkg/commands/git_commands/status.go:98). So this deliberately does not log, and the log stays
- * what lazygit's is: the user's own actions.
+ * A `gh` runner. `gh pr list` is auxiliary refresh data: it runs alongside local refreshes and
+ * never logs to the command panel, matching lazygit's `DontLog()` behavior (76 call sites, e.g.
+ * pkg/commands/git_commands/status.go:98). A bounded subprocess prevents an unavailable GitHub
+ * connection from holding the app's refresh machinery indefinitely.
  */
-export function createGhRunner(cwd: string): GhRunner {
+export function createGhRunner(cwd: string, options: GhRunnerOptions = {}): GhRunner {
+  const executable = options.executable ?? "gh"
+  const timeoutMs = options.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS
   return async (args: readonly string[]): Promise<ProcessResult> => {
-    let stdout = ""
-    let stderr = ""
-    let exitCode = -1
+    const abortController = new AbortController()
+    let timeout: Timer | undefined
     try {
-      const proc = Bun.spawn(["gh", ...args], {
+      const proc = Bun.spawn([executable, ...args], {
         cwd,
         env: { ...process.env, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" },
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
+        signal: abortController.signal,
       })
-      ;[stdout, stderr, exitCode] = await Promise.all([
+      // Resolve process output even after a timeout. A descendant can inherit stdout/stderr, so
+      // waiting for every stream after killing the shell would otherwise defeat the deadline.
+      const processResult = Promise.all([
         Bun.readableStreamToText(proc.stdout),
         Bun.readableStreamToText(proc.stderr),
         proc.exited,
-      ])
+      ]).then(
+        ([stdout, stderr, exitCode]) => ({ exitCode, stdout, stderr }),
+        (error): ProcessResult => ({
+          exitCode: -1,
+          stdout: "",
+          stderr: error instanceof Error ? error.message : String(error),
+        }),
+      )
+      const timeoutResult = new Promise<ProcessResult>((resolve) => {
+        timeout = setTimeout(() => {
+          abortController.abort()
+          try { proc.kill() } catch { /* process may have exited between the abort and kill */ }
+          resolve({ exitCode: -1, stdout: "", stderr: `gh timed out after ${timeoutMs}ms` })
+        }, timeoutMs)
+      })
+      return await Promise.race([processResult, timeoutResult])
     } catch (error) {
-      stderr = error instanceof Error ? error.message : String(error)
+      return {
+        exitCode: -1,
+        stdout: "",
+        stderr: error instanceof Error ? error.message : String(error),
+      }
+    } finally {
+      clearTimeout(timeout)
     }
-    return { exitCode, stdout, stderr }
   }
 }

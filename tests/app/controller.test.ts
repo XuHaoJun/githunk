@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { AppController } from "../../src/app/controller"
 import { GitCommandError, GitRunner } from "../../src/git/runner"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
+import type { PullRequest } from "../../src/domain/pull-request"
 import type { GitMutations } from "../../src/git/mutations"
 function snapshot(scope: "all" | "staged" | "unstaged", marker: string): WorkingTreeSnapshot {
   return {
@@ -216,6 +217,119 @@ describe("AppController", () => {
     })
     await controller.refresh()
     expect(controller.state.tags).toEqual(tags)
+  })
+
+  test("refresh starts pull-request loading without blocking local state", async () => {
+    let pullRequestStarted = false
+    let resolvePullRequest: ((value: readonly PullRequest[]) => void) | undefined
+    let publications = 0
+    let resolvePublication: (() => void) | undefined
+    const publication = new Promise<void>((resolve) => { resolvePublication = resolve })
+    const branch = {
+      name: "feature",
+      upstream: "origin/feature",
+      upstreamRemote: "origin",
+      upstreamBranch: "feature",
+      isCurrent: true,
+      committedAt: "1",
+      subject: "feature",
+    } as const
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async (target) => snapshot(target.scope, "local"),
+      loadBranches: async () => ({
+        detached: false,
+        localBranches: [branch],
+        remotes: [{ name: "origin", fetchUrl: "git@github.com:acme/repo.git" }],
+      }),
+      loadPullRequests: async () => {
+        pullRequestStarted = true
+        return new Promise<readonly PullRequest[]>((resolve) => { resolvePullRequest = resolve })
+      },
+      onPullRequestsChanged: () => { publications += 1; resolvePublication?.() },
+    })
+
+    const refresh = controller.refresh()
+    await refresh
+
+    expect(pullRequestStarted).toBe(true)
+    expect(controller.state.patches[0]?.text).toBe("local")
+    expect(publications).toBe(0)
+
+    resolvePullRequest?.([{
+      number: 1,
+      title: "merged",
+      state: "MERGED",
+      checksState: "",
+      url: "",
+      headRefName: "feature",
+      headRepositoryOwner: "acme",
+    }])
+    await publication
+
+    expect(publications).toBe(1)
+    expect(controller.state.pullRequests?.feature?.state).toBe("MERGED")
+  })
+
+  test("does not let an older pull-request refresh overwrite a newer result", async () => {
+    let initialRefreshDone = false
+    let oldRequestStarted = false
+    let resolveOldRequest: ((value: readonly PullRequest[]) => void) | undefined
+    const oldRequest = new Promise<readonly PullRequest[]>((resolve) => { resolveOldRequest = resolve })
+    const branch = {
+      name: "feature",
+      upstream: "origin/feature",
+      upstreamRemote: "origin",
+      upstreamBranch: "feature",
+      isCurrent: true,
+      committedAt: "1",
+      subject: "feature",
+    } as const
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async (target) => snapshot(target.scope, "local"),
+      loadBranches: async () => ({
+        detached: false,
+        localBranches: [branch],
+        remotes: [{ name: "origin", fetchUrl: "git@github.com:acme/repo.git" }],
+      }),
+      loadPullRequests: async () => {
+        if (!initialRefreshDone) return []
+        if (!oldRequestStarted) {
+          oldRequestStarted = true
+          return await oldRequest
+        }
+        return [{
+          number: 2,
+          title: "merged",
+          state: "MERGED",
+          checksState: "",
+          url: "",
+          headRefName: "feature",
+          headRepositoryOwner: "acme",
+        }]
+      },
+    })
+
+    await controller.refresh()
+    initialRefreshDone = true
+    const first = controller.refreshPullRequests()
+    const second = controller.refreshPullRequests()
+    await second
+    expect(controller.state.pullRequests?.feature?.state).toBe("MERGED")
+
+    resolveOldRequest?.([{
+      number: 1,
+      title: "open",
+      state: "OPEN",
+      checksState: "",
+      url: "",
+      headRefName: "feature",
+      headRepositoryOwner: "acme",
+    }])
+    await first
+
+    expect(controller.state.pullRequests?.feature?.state).toBe("MERGED")
   })
 })
 

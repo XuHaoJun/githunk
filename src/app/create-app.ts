@@ -1,7 +1,8 @@
 import type { CliRenderer } from "@opentui/core"
-import { AppController } from "./controller"
+import { AppController, type PullRequestListLoader } from "./controller"
 import type { GitRunner } from "../git/runner"
 import type { CommitSummary } from "../domain/commit"
+import type { AppModel } from "../domain/repository"
 import { createGhRunner, loadPullRequests } from "../git/github"
 import { UiStateStore, type UiState as PersistedUiState } from "../ui/ui-state-store"
 import { RootView } from "../ui/root-view"
@@ -33,6 +34,8 @@ export type CreateAppOptions = {
   readonly onEditFile?: (path: string, line?: number) => Promise<void>
   /** Optional read-only branch history seam for embedded callers and tests. */
   readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
+  /** Optional pull-request loader; the default `gh` loader is enabled with background refresh. */
+  readonly loadPullRequests?: PullRequestListLoader
   /** Optional merge-state probe seam for UI race tests and embedded callers. */
   readonly onCheckBranchMerged?: (branch: string, upstream?: string) => Promise<boolean>
   /**
@@ -98,18 +101,22 @@ export function backgroundOptionsFromEnv(env: Record<string, string | undefined>
 }
 
 export function createApp(options: CreateAppOptions): App {
-  // `gh` is a network call, so it is wired only where a background routine will drive it: an app
-  // built without background routines (tests, one-shot embeddings) never spawns it.
+  // `gh` is a network call, so the default loader is wired only for background-enabled apps.
+  // Tests and embedded callers can inject the same seam without starting background timers.
   const ghRunner = options.background?.enabled === true ? createGhRunner(options.repositoryRoot) : undefined
+  const pullRequestLoader = options.loadPullRequests
+    ?? (ghRunner === undefined ? undefined : () => loadPullRequests(ghRunner))
   // `printCommandLogHeader` runs at startup (pkg/gui/command_log_panel.go:70-85), before the gui's
   // first render; seeding here — before the controller's first `commandLogSnapshot()` — means the
   // controller's very first `AppModel` already carries it, in the headless path (no `renderer`)
   // as much as the full one, since the header is data rather than a timer or a subprocess.
   seedCommandLog(options.runner.log)
+  let renderPullRequests: ((state: AppModel) => void) | undefined
   const controller = new AppController({
     repositoryRoot: options.repositoryRoot,
     runner: options.runner,
-    ...(ghRunner === undefined ? {} : { loadPullRequests: () => loadPullRequests(ghRunner) }),
+    ...(pullRequestLoader === undefined ? {} : { loadPullRequests: pullRequestLoader }),
+    onPullRequestsChanged: (state) => { renderPullRequests?.(state) },
   })
   const makeReviewController = (): ReviewWorkspaceController => {
     const stateStore = options.reviewLoaders?.stateStore ?? new ReviewStateStore(options.runner)
@@ -455,13 +462,15 @@ export function createApp(options: CreateAppOptions): App {
     createReviewController: makeReviewController,
     createReviewView: (rc, onClose) => new ReactReviewHost(renderer, rc, onClose),
   })
+  renderPullRequests = (state) => {
+    if (destroyed || !screenController.shouldRenderRepository()) return
+    view.update(state)
+  }
 
   /**
-   * lazygit's background routines. The fetch is followed by a branch refresh, because that is
-   * what changes when remote-tracking refs move — `PostFetchRefresh`
-   * (pkg/gui/controllers/helpers/branches_helper.go, called from background.go:255-259) — and by a
-   * pull-request refresh, which lazygit likewise re-runs from its remotes refresh
-   * (refresh_helper.go:1552-1556).
+   * lazygit's background routines. A fetch uses AppController.refresh()'s full-refresh path, so
+   * local refs and pull requests begin together and the local model paints before the auxiliary
+   * GitHub query completes.
    */
   const background = backgroundOptions?.enabled === true
     ? new BackgroundRefresher({
@@ -469,12 +478,6 @@ export function createApp(options: CreateAppOptions): App {
           // lazygit's background fetch is DontLog() while its foreground one is not
           // (pkg/commands/git_commands/sync.go:65-84).
           await controller.fetch(undefined, { background: true })
-          await controller.refreshBranches()
-          // Painted before the pull requests are asked for: `gh` is a network call, and lazygit
-          // likewise lands its pull requests in their own pass whenever they happen to arrive
-          // (refresh_helper.go:1845-1855) rather than holding the branch counts behind them.
-          if (screenController.shouldRenderRepository()) view.update(controller.state)
-          await controller.refreshPullRequests()
           if (screenController.shouldRenderRepository()) view.update(controller.state)
           await refsWatcher.resync()
         },
@@ -526,9 +529,6 @@ export function createApp(options: CreateAppOptions): App {
       if (destroyed) return
       if (background !== undefined) {
         background.start()
-        // lazygit fetches once immediately, because `goEvery` starts by waiting out the interval
-        // (pkg/gui/background.go:135-137). Not awaited: the app is already usable.
-        void controller.refreshPullRequests().then(() => { if (screenController.shouldRenderRepository()) view.update(controller.state) }).catch(() => undefined)
       }
     },
     saveUiState,

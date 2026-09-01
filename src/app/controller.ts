@@ -75,9 +75,10 @@ export type AppControllerOptions = {
   // alias for symmetry with tagsLoader; prefer loadSubmodules
   readonly submodulesLoader?: SubmoduleListLoader
   /**
-   * Pull requests for the branches panel's dots. Absent — or failing, which is what an unavailable
-   * `gh` looks like — leaves the panel exactly as it renders without them.
+   * Repaints the branches panel after an asynchronous pull-request result arrives. If the query
+   * fails, the last successful result remains visible rather than disappearing transiently.
    */
+  readonly onPullRequestsChanged?: (state: AppModel) => void
   readonly loadPullRequests?: PullRequestListLoader
   readonly mutations?: GitMutations
   readonly commitMutations?: CommitMutations
@@ -146,10 +147,12 @@ export class AppController {
   private readonly loadWorktreesListing: WorktreeListLoader
   private readonly loadSubmodulesListing: SubmoduleListLoader
   private readonly loadPullRequestList: PullRequestListLoader | undefined
+  private readonly onPullRequestsChanged: ((state: AppModel) => void) | undefined
   private readonly loadCommitList: CommitListLoader
   private readonly loadCommitDetails: CommitLoader
   private readonly loadCommitFile: CommitFilePatchLoader
   private generation = 0
+  private pullRequestRefreshGeneration = 0
   private currentState: AppModel
   private reviewDatabase: ReviewDatabase = emptyWorkingTreeReviewDatabase()
   private workingTreeCursor: { readonly selectionId?: string; readonly focusId?: string } = {}
@@ -209,6 +212,7 @@ export class AppController {
         options.worktreesLoader ??
         (runner !== undefined ? () => listWorktrees(runner) : async () => [] as readonly Worktree[])
     this.loadPullRequestList = options instanceof GitRunner ? undefined : options.loadPullRequests
+    this.onPullRequestsChanged = options instanceof GitRunner ? undefined : options.onPullRequestsChanged
     this.loadSubmodulesListing = options instanceof GitRunner
       ? () => listSubmodules(options)
       : options.loadSubmodules ??
@@ -263,27 +267,41 @@ export class AppController {
 
   /**
    * Asks `gh` for this repo's pull requests and re-keys them by branch. A failure is swallowed:
-   * `gh` missing or unauthenticated is the common case, and lazygit likewise only logs when it
-   * cannot reach GitHub (refresh_helper.go:1840-1843).
+   * `gh` missing or unauthenticated must not erase the last successful dots, and lazygit likewise
+   * treats GitHub refresh failure as auxiliary (refresh_helper.go:1840-1843).
    */
   async refreshPullRequests(): Promise<void> {
     if (this.loadPullRequestList === undefined) return
+    const requestGeneration = ++this.pullRequestRefreshGeneration
+    let pullRequests: readonly PullRequest[]
     try {
-      this.pullRequestList = await this.loadPullRequestList()
+      pullRequests = await this.loadPullRequestList()
     } catch {
-      this.pullRequestList = []
+      // Keep the last successful result, exactly as lazygit does when its auxiliary GitHub query
+      // fails. A transient network failure must not erase a useful dot or prevent the next refresh
+      // from re-keying it against a changed branch list.
+      if (requestGeneration !== this.pullRequestRefreshGeneration) return
       this.currentState = { ...this.currentState, ...this.commandLogSnapshot() }
       return
     }
+    // A slower request may have started first but returned after a newer refresh. Its result is no
+    // longer authoritative and must not turn a freshly merged purple dot back into an open one.
+    if (requestGeneration !== this.pullRequestRefreshGeneration) return
+    this.pullRequestList = pullRequests
     const listing = this.currentState.branches
     this.currentState = {
       ...this.currentState,
       pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? []),
       ...this.commandLogSnapshot(),
     }
+    this.onPullRequestsChanged?.(this.currentState)
   }
 
   async refresh(): Promise<void> {
+    // Pull requests are auxiliary network data. Start them with the local refresh, but let the
+    // caller paint the local model without waiting for GitHub; the completion callback repaints the
+    // branch pane when the result arrives.
+    void this.refreshPullRequests()
     const generation = ++this.generation
     const branchesPromise = this.loadBranchesListing().then(
       (value) => ({ status: "fulfilled" as const, value }),

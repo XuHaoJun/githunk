@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { PULL_REQUEST_LIST_ARGS, PullRequestsUnavailableError, loadPullRequests, parsePullRequests } from "../../src/git/github"
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { DEFAULT_GH_TIMEOUT_MS, PULL_REQUEST_LIST_ARGS, PullRequestsUnavailableError, createGhRunner, loadPullRequests, parsePullRequests } from "../../src/git/github"
 import { MAIN_BRANCHES, pullRequestsByBranch, remoteOwner, shouldShowPullRequest, type PullRequest } from "../../src/domain/pull-request"
 import type { LocalBranch, Remote } from "../../src/domain/branch"
 
@@ -79,7 +82,26 @@ describe("loadPullRequests", () => {
     })
     expect(seen).toEqual(PULL_REQUEST_LIST_ARGS)
   })
+  test("aborts a hung gh process at the configured timeout", async () => {
+    // This is an OS-process timeout integration check; fake timers cannot drive Bun.spawn.
+    const directory = await mkdtemp(join(tmpdir(), "githunk-gh-"))
+    const executable = join(directory, "gh")
+    await writeFile(executable, "#!/bin/sh\nsleep 1\n")
+    await chmod(executable, 0o755)
+    try {
+      const runner = createGhRunner("/tmp", { executable, timeoutMs: 20 })
+      const startedAt = Date.now()
+      const result = await runner([])
+      expect(Date.now() - startedAt).toBeLessThan(500)
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain("timed out")
+      expect(DEFAULT_GH_TIMEOUT_MS).toBe(10_000)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
 })
+
 
 describe("remoteOwner", () => {
   test("reads the owner out of both URL shapes", () => {
