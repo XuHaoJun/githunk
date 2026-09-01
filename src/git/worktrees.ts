@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises"
+import { readFile, stat } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { Worktree } from "../domain/worktree"
 import { shortHash } from "../domain/reflog"
@@ -185,7 +185,7 @@ async function resolveGitDir(runner: CommandRunner, path: string): Promise<strin
 
 async function readTrimmedFile(path: string): Promise<string | undefined> {
   try {
-    const text = await Bun.file(path).text()
+    const text = await readFile(path, "utf8")
     return text.trim()
   } catch {
     return undefined

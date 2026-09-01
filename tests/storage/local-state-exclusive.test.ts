@@ -5,7 +5,7 @@ import { createTempRepository, type TempRepository } from "../helpers/temp-repos
 import { GitRunner } from "../../src/git/runner"
 import { LocalStateFile } from "../../src/storage/local-state-file"
 
-describe("LocalStateFile.createTextExclusive", () => {
+describe("LocalStateFile", () => {
   let repository: TempRepository | undefined
   afterEach(async () => {
     await repository?.cleanup()
@@ -77,5 +77,13 @@ describe("LocalStateFile.createTextExclusive", () => {
     const dup = await file.createTextExclusive("b")
     expect(dup.ok).toBe(false)
     expect(await file.readText()).toBe("a")
+  })
+  test("propagates non-missing state read errors", async () => {
+    repository = await createTempRepository()
+    const runner = new GitRunner(repository.path)
+    const path = join(repository.path, ".git", "githunk", "directory-state.json")
+    await mkdir(path, { recursive: true })
+    const file = new LocalStateFile({ runner, relativePath: "githunk/directory-state.json", pathKind: "review-state" })
+    await expect(file.readText()).rejects.toMatchObject({ code: "EISDIR" })
   })
 })

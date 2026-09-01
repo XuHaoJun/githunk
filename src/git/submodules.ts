@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { submoduleFullPath, type SubmoduleConfig } from "../domain/submodule"
 import { GitRunner } from "./runner"
@@ -49,7 +50,7 @@ export function parseGitModules(raw: string): readonly GitModulesEntry[] {
 
 async function readGitModules(directory: string): Promise<string | undefined> {
   try {
-    return await Bun.file(join(directory, ".gitmodules")).text()
+    return await readFile(join(directory, ".gitmodules"), "utf8")
   } catch (error) {
     if (error instanceof Error && "code" in error) {
       const code = (error as NodeJS.ErrnoException).code

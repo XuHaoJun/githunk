@@ -1,4 +1,5 @@
 import type { PullRequest, PullRequestChecksState, PullRequestState } from "../domain/pull-request"
+import { runProcess } from "../runtime/process"
 
 /**
  * Pull requests via the `gh` CLI.
@@ -137,38 +138,28 @@ export function createGhRunner(cwd: string, options: GhRunnerOptions = {}): GhRu
   const timeoutMs = options.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS
   return async (args: readonly string[]): Promise<ProcessResult> => {
     const abortController = new AbortController()
-    let timeout: Timer | undefined
+    let timeout: NodeJS.Timeout | undefined
+    let timedOut = false
     try {
-      const proc = Bun.spawn([executable, ...args], {
+      const processResult = runProcess(executable, args, {
         cwd,
         env: { ...process.env, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" },
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
         signal: abortController.signal,
       })
-      // Resolve process output even after a timeout. A descendant can inherit stdout/stderr, so
-      // waiting for every stream after killing the shell would otherwise defeat the deadline.
-      const processResult = Promise.all([
-        Bun.readableStreamToText(proc.stdout),
-        Bun.readableStreamToText(proc.stderr),
-        proc.exited,
-      ]).then(
-        ([stdout, stderr, exitCode]) => ({ exitCode, stdout, stderr }),
-        (error): ProcessResult => ({
-          exitCode: -1,
-          stdout: "",
-          stderr: error instanceof Error ? error.message : String(error),
-        }),
-      )
-      const timeoutResult = new Promise<ProcessResult>((resolve) => {
+      const timeoutResult: ProcessResult = {
+        exitCode: -1,
+        stdout: "",
+        stderr: `gh timed out after ${timeoutMs}ms`,
+      }
+      const timeoutPromise = new Promise<ProcessResult>((resolve) => {
         timeout = setTimeout(() => {
+          timedOut = true
           abortController.abort()
-          try { proc.kill() } catch { /* process may have exited between the abort and kill */ }
-          resolve({ exitCode: -1, stdout: "", stderr: `gh timed out after ${timeoutMs}ms` })
+          resolve(timeoutResult)
         }, timeoutMs)
       })
-      return await Promise.race([processResult, timeoutResult])
+      const result = await Promise.race([processResult, timeoutPromise])
+      return timedOut ? timeoutResult : result
     } catch (error) {
       return {
         exitCode: -1,

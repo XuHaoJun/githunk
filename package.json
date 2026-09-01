@@ -1,10 +1,23 @@
 {
-  "name": "githunk",
-  "private": true,
+  "name": "@xuhaojun/githunk",
+  "version": "0.1.0",
+  "description": "Review-first Git TUI for inspecting and managing changes.",
   "type": "module",
+  "bin": {
+    "githunk": "bin/githunk.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "start": "bun run src/main.ts",
     "dev": "bun --watch src/main.ts",
+    "build": "bun build src/cli.ts --target=node --format=esm --packages=external --outfile=dist/githunk.js --banner '#!/usr/bin/env node'",
+    "prepack": "bun run build",
+    "pack:check": "npm pack --dry-run",
     "spike:selection": "bun run spikes/selection/src/main.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
@@ -12,6 +25,28 @@
     "bench:review-load": "bun run benchmarks/review-document-load.ts",
     "bench:review-rows": "bun run benchmarks/review-row-plan.ts",
     "bench:review-reconcile": "bun run benchmarks/review-reconcile.ts"
+  },
+  "keywords": [
+    "git",
+    "tui",
+    "code-review",
+    "cli"
+  ],
+  "homepage": "https://github.com/XuHaoJun/githunk#readme",
+  "bugs": {
+    "url": "https://github.com/XuHaoJun/githunk/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/XuHaoJun/githunk.git"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=26.1.0"
+  },
+  "packageManager": "bun@1.4.0",
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@opentui/core": "0.5.6",

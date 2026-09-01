@@ -1,4 +1,4 @@
-import { mkdir, open, rename, stat, unlink, lstat, link } from "node:fs/promises"
+import { mkdir, open, rename, stat, unlink, lstat, link, readFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { randomUUID } from "node:crypto"
 import type { GitRunner } from "../git/runner"
@@ -56,7 +56,7 @@ export class LocalStateFile {
     const path = await this.resolvePath()
     await assertNoSymlinkInPath(path, this.pathKind)
     try {
-      return await Bun.file(path).text()
+      return await readFile(path, "utf8")
     } catch (error) {
       if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") return undefined
       throw error

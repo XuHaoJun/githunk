@@ -1,5 +1,6 @@
 import { formatCommandLine, type CommandRecord } from "../domain/command"
 import { CommandLog } from "../app/command-log"
+import { runProcess } from "../runtime/process"
 
 export type GitRunOptions = {
   readonly stdin?: string
@@ -115,38 +116,15 @@ export class GitRunner {
         env.GIT_OPTIONAL_LOCKS = "0"
       }
 
-      const spawnOptions: {
-        cwd: string
-        env: Record<string, string>
-        stdin: "pipe"
-        stdout: "pipe"
-        stderr: "pipe"
-        signal?: AbortSignal
-      } = {
+      const processResult = await runProcess("git", ["--no-pager", ...commandArgs], {
         cwd: this.cwd,
         env,
-        stdin: "pipe",
-        stdout: "pipe",
-        stderr: "pipe",
-      }
-      if (options.signal !== undefined) {
-        spawnOptions.signal = options.signal
-      }
-
-      const proc = Bun.spawn(["git", "--no-pager", ...commandArgs], spawnOptions)
-      if (proc.stdin === undefined || proc.stdout === undefined || proc.stderr === undefined) {
-        throw new Error("git process did not expose piped standard streams")
-      }
-
-      if (options.stdin !== undefined) {
-        proc.stdin.write(options.stdin)
-      }
-      proc.stdin.end()
-      ;[stdout, stderr, exitCode] = await Promise.all([
-        Bun.readableStreamToText(proc.stdout),
-        Bun.readableStreamToText(proc.stderr),
-        proc.exited,
-      ])
+        ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      })
+      stdout = processResult.stdout
+      stderr = processResult.stderr
+      exitCode = processResult.exitCode
     } catch (error) {
       stderr = error instanceof Error ? error.message : String(error)
     }

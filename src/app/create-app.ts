@@ -11,6 +11,7 @@ import { RefsWatcher } from "./refs-watcher"
 import { loadRefsSnapshot } from "../git/refs-snapshot"
 import { absolutePath, resolveEditCommand } from "../git/editor"
 import { isAbsolute, resolve } from "node:path"
+import { runInteractiveProcess } from "../runtime/process"
 import { IndexWatcher } from "./index-watcher"
 import { LOG_ACTIONS } from "./log-actions"
 import { seedCommandLog } from "./command-log-tips"
@@ -210,16 +211,12 @@ export function createApp(options: CreateAppOptions): App {
       } catch {}
     }
     try {
-      const proc = Bun.spawn(["sh", "-c", cmd], {
+      const exitCode = await runInteractiveProcess("sh", ["-c", cmd], {
         cwd: options.repositoryRoot,
-        stdin: "inherit",
-        stdout: "inherit",
-        stderr: "inherit",
-        env: process.env as Record<string, string>,
+        env: process.env,
       })
-      await proc.exited
-      if (proc.exitCode !== 0 && proc.exitCode !== null) {
-        throw new Error(`editor exited with code ${proc.exitCode}`)
+      if (exitCode !== 0) {
+        throw new Error(`editor exited with code ${exitCode}`)
       }
     } finally {
       if (shouldSuspend) {
