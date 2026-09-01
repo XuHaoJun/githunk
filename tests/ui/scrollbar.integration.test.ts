@@ -8,6 +8,115 @@ describe("scrollbar and gesture capture", () => {
     await harness?.cleanup()
     harness = undefined
   })
+  test("scrollbar spans the complete text viewport", async () => {
+    const subjects = Array.from({ length: 20 }, (_, i) => `boundary ${i}`)
+    harness = await createShellHarness({ commits: subjects, width: 150, height: 40 })
+    const view = harness.app.view!
+    await harness.pressKey("4")
+    await harness.flush()
+    const geometry = harness.paneTextGeometry("commits")!
+    const bar = paneScrollbar(view.commitsPane.text)!
+    expect(bar.visible).toBe(true)
+    expect({ screenY: bar.screenY, height: bar.height }).toEqual({
+      screenY: geometry.screenY,
+      height: geometry.height,
+    })
+  })
+
+  test("keeps trailing commit times clear of the scrollbar", async () => {
+    const now = Date.now()
+    harness = await createShellHarness({
+      width: 150,
+      height: 40,
+      setup: async (repository) => {
+        for (const index of Array.from({ length: 10 }, (_, i) => i)) {
+          await repository.write("a.txt", `old ${index}\n`)
+          await repository.git(["add", "a.txt"])
+          await repository.git([
+            "commit",
+            "-m",
+            "A subject that fills the available panel width",
+            `--date=${new Date(now - (24 + index) * 3_600_000).toISOString()}`,
+          ])
+        }
+        await repository.write("a.txt", "twelve\n")
+        await repository.git(["add", "a.txt"])
+        await repository.git([
+          "commit",
+          "-m",
+          "A subject that fills the available panel width",
+          `--date=${new Date(now - 12 * 3_600_000).toISOString()}`,
+        ])
+        await repository.write("a.txt", "two\n")
+        await repository.git(["add", "a.txt"])
+        await repository.git([
+          "commit",
+          "-m",
+          "A subject that fills the available panel width",
+          `--date=${new Date(now - 2 * 3_600_000).toISOString()}`,
+        ])
+      },
+    })
+    const view = harness.app.view!
+    await harness.pressKey("4")
+    await harness.flush()
+    const geometry = harness.paneTextGeometry("commits")!
+    const lines = harness.frame().split("\n").slice(geometry.screenY, geometry.screenY + geometry.height)
+    expect(lines.some((line) => /\b2h\b/.test(line))).toBe(true)
+    expect(lines.some((line) => /\b12h\b/.test(line))).toBe(true)
+  })
+  test("refreshes scrollbar after focus changes pane height", async () => {
+    harness = await createShellHarness({
+      commits: Array.from({ length: 8 }, (_, i) => `threshold ${i}`),
+      width: 150,
+      height: 40,
+    })
+    const view = harness.app.view!
+    await harness.pressKey("5")
+    await harness.flush()
+    const geometry = harness.paneTextGeometry("commits")!
+    const bar = paneScrollbar(view.commitsPane.text)!
+    expect(bar.visible).toBe(true)
+    expect({ screenY: bar.screenY, height: bar.height }).toEqual({
+      screenY: geometry.screenY,
+      height: geometry.height,
+    })
+  })
+
+  test("refreshes scrollbar after pane height resize", async () => {
+    harness = await createShellHarness({
+      commits: Array.from({ length: 8 }, (_, i) => `threshold ${i}`),
+      width: 150,
+      height: 40,
+    })
+    const view = harness.app.view!
+    const before = paneScrollbar(view.commitsPane.text)!
+    expect(before.visible).toBe(false)
+    await harness.resize(150, 36)
+    const geometry = harness.paneTextGeometry("commits")!
+    const bar = paneScrollbar(view.commitsPane.text)!
+    expect(bar.visible).toBe(true)
+    expect({ screenY: bar.screenY, height: bar.height }).toEqual({
+      screenY: geometry.screenY,
+      height: geometry.height,
+    })
+  })
+  test("reserves the scrollbar gutter in a narrow full-height pane", async () => {
+    harness = await createShellHarness({
+      commits: Array.from({ length: 8 }, (_, i) => `threshold ${i}`),
+      width: 10,
+      height: 10,
+    })
+    const view = harness.app.view!
+    await harness.pressKey("+")
+    await harness.pressKey("+")
+    await harness.pressKey("4")
+    const geometry = harness.paneTextGeometry("commits")!
+    const rows = view.commitsPane.text.content.chunks.map((chunk) => chunk.text).join("").split("\n")
+    const bar = paneScrollbar(view.commitsPane.text)!
+    expect(bar.visible).toBe(true)
+    expect(rows.every((row) => [...row].length <= geometry.width - 1)).toBe(true)
+  })
 
   test("scrollbar track click scrolls without focusing pane and thumb drag reaches max", async () => {
     const subjects = Array.from({ length: 50 }, (_, i) => `sb ${i}`)

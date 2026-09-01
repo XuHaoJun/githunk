@@ -63,7 +63,7 @@ import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget
 import { commitFileRows } from "./panes/commit-files-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
-import { paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
+import { PANE_SCROLLBAR_GUTTER, paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
 import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
@@ -109,6 +109,25 @@ const FILES_TAB_ORDER = ["files", "worktrees", "submodules"] as const
 const BRANCHES_TAB_ORDER = ["branches", "remotes", "tags"] as const
 /** Panel 4's tab keys, in the same order as `COMMITS_TABS`' labels. */
 const COMMITS_TAB_ORDER = ["commits", "reflog"] as const
+
+type PaneWindowDimensions = { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
+
+/**
+ * The scrollbar is painted above the list's rightmost text cell. Reserve that cell only when
+ * this list has more rows than its bordered pane can display; ScrollBarRenderable auto-hides when
+ * the content fits, so short lists keep their full width.
+ */
+function sidePaneListWidth(win: PaneWindowDimensions | undefined, state: ListState): number {
+  if (win === undefined) return 80
+  const contentWidth = Math.max(0, widthOf(win) - 2)
+  const viewportHeight = sidePaneViewportHeight(win) ?? 1
+  const scrollbarGutter = state.displayRows.length > viewportHeight ? PANE_SCROLLBAR_GUTTER : 0
+  return Math.max(0, contentWidth - scrollbarGutter)
+}
+function sidePaneViewportHeight(win: PaneWindowDimensions | undefined): number | undefined {
+  return win === undefined ? undefined : Math.max(1, heightOf(win) - 2)
+}
+
 type BranchesPanelChild =
   | { readonly kind: "remote-branches"; readonly remote: string }
   | { readonly kind: "local-commits"; readonly branch: string }
@@ -841,7 +860,7 @@ export class RootView {
     if (!state || state.rows.length === 0) return false
     const winName = pane === "files" ? "files" : pane === "stash" ? "stash" : pane === "commits" ? "commits" : "branches"
     const win = (this.geometry.windows as Record<string, { x0: number; y0: number; x1: number; y1: number } | undefined>)[winName]
-    const width = win !== undefined ? Math.max(10, widthOf(win) - 2) : 80
+    const width = sidePaneListWidth(win, state)
     const content = renderListRows(state, true, width)
     const chunks = (content as unknown as { chunks: readonly unknown[] }).chunks
     return chunks.some((chunk) => {
@@ -1084,10 +1103,10 @@ export class RootView {
       return
     }
     const win = this.geometry.windows.branches
-    const width = win !== undefined ? Math.max(10, widthOf(win) - 2) : 80
+    const width = sidePaneListWidth(win, state)
     const content = renderListRows(state, focused, width)
     pane.update(content)
-    pane.syncScrollbar()
+    pane.syncScrollbar(sidePaneViewportHeight(win))
   }
 
   /** Panel 2's title strip; see src/ui/pane-tabs.ts for the lazygit format it reproduces. */
@@ -1154,9 +1173,9 @@ export class RootView {
       return
     }
     const win = this.geometry.windows.files
-    const width = win !== undefined ? Math.max(10, widthOf(win) - 2) : 80
+    const width = sidePaneListWidth(win, state)
     pane.update(renderListRows(state, tabsInput.focused, width))
-    pane.syncScrollbar()
+    pane.syncScrollbar(sidePaneViewportHeight(win))
   }
 
   private refreshStashState(model: AppModel): void {
@@ -1171,12 +1190,17 @@ export class RootView {
     const pane = this.panes.stash
     const focused = this.focusManager.active === "stash"
     const win = this.geometry.windows.stash
-    const width = win !== undefined ? Math.max(10, widthOf(win) - 2) : 80
+    const width = sidePaneListWidth(win, this.stashState)
     const content = renderListRows(this.stashState, focused, width)
     pane.update(content)
-    pane.syncScrollbar()
+    pane.syncScrollbar(sidePaneViewportHeight(win))
   }
-
+  private renderSidePanes(): void {
+    this.renderBranchesPane()
+    this.renderCommitsPane()
+    this.renderFilesPane()
+    this.renderStashPane()
+  }
 
   private handleAction(action: Action, key: KeyEvent): void {
     switch (action) {
@@ -3345,11 +3369,11 @@ export class RootView {
       pane.update("")
       return
     }
-    const width = this.geometry.windows.commits !== undefined ? Math.max(10, widthOf(this.geometry.windows.commits) - 2) : 80
+    const width = sidePaneListWidth(this.geometry.windows.commits, state)
     const focused = this.focusManager.active === "commits"
     const content = renderListRows(state, focused, width)
     pane.update(content)
-    pane.syncScrollbar()
+    pane.syncScrollbar(sidePaneViewportHeight(this.geometry.windows.commits))
   }
 
   private installInitialMainContent(model: AppModel): void {
@@ -3706,9 +3730,11 @@ export class RootView {
     const barHeight = (bar as unknown as { height: number }).height as number
     const trackStart = Number.isFinite(barScreenY) ? barScreenY : win.y0 + 1
     const trackSize = Number.isFinite(barHeight) && barHeight > 0 ? barHeight : Math.max(1, win.y1 - win.y0 - 1)
+    // Mouse coordinates land on integer cells, so the last track cell is the inclusive endpoint.
+    const trackSpan = Math.max(1, trackSize - 1)
     const relative = eventY - trackStart
-    const clamped = Math.max(0, Math.min(trackSize, relative))
-    const ratio = trackSize === 0 ? 0 : clamped / trackSize
+    const clamped = Math.max(0, Math.min(trackSpan, relative))
+    const ratio = trackSize <= 1 ? 0 : clamped / trackSpan
     const range = Math.max(0, bar.scrollSize - bar.viewportSize)
     const newPos = Math.round(ratio * range)
     barPane.scrollTo(newPos)
@@ -4319,6 +4345,7 @@ export class RootView {
   }
 
   private recomputeLayout(): void {
+    const previous = this.geometry
     this.geometry = computeLayout(
       { width: this.renderer.terminalWidth, height: this.renderer.terminalHeight },
       this.layoutOptions(),
@@ -4335,6 +4362,12 @@ export class RootView {
       }
     }
     this.applyLayout()
+    const sideGeometryChanged = SIDE_WINDOWS.some((name) => {
+      const before = previous.windows[name]
+      const after = this.geometry.windows[name]
+      return before?.x0 !== after?.x0 || before?.y0 !== after?.y0 || before?.x1 !== after?.x1 || before?.y1 !== after?.y1
+    })
+    if (sideGeometryChanged) this.renderSidePanes()
   }
 
   private layoutOptions(): LayoutRequest {

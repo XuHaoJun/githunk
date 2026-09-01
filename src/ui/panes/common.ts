@@ -2,6 +2,9 @@ import { BoxRenderable, ScrollBarRenderable, TextRenderable, type CliRenderer, t
 import type { FocusId } from "../focus"
 import { PaneTabsBoxRenderable, buildPaneTabsStrip, paneTabsPlainTitle } from "../pane-tabs"
 import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
+/** One text cell reserved beside every side-pane list when its scrollbar is visible. */
+export const PANE_SCROLLBAR_GUTTER = 1
+
 /** Static half of a tabbed pane: the panel's jump label and its tab labels. */
 export type PaneTabsConfig = {
   readonly jumpKey: string
@@ -46,7 +49,7 @@ export type PaneHandle = {
    * paths that mutate `text.scrollY` without a content update (reveal and page scrolls);
    * OpenTUI 0.5.6 emits no scroll-change event, so every mutation must sync explicitly.
    */
-  syncScrollbar(): void
+  syncScrollbar(viewportHeight?: number): void
   scrollBy(delta: number): void
   scrollTo(position: number): void
   maxScrollY(): number
@@ -79,6 +82,8 @@ export function scrollYToReveal(
 
 /** Bars by their pane's text renderable; `paneScrollbar` is the test/debug read side. */
 const scrollbars = new WeakMap<TextRenderable, ScrollBarRenderable>()
+/** Geometry-owned viewport sizes survive OpenTUI's pre-child resize callback. */
+const scrollbarViewportOverrides = new WeakMap<ScrollBarRenderable, number>()
 
 /** The vertical scrollbar attached to a pane's text, if any. Test and debug accessor. */
 export function paneScrollbar(text: TextRenderable): ScrollBarRenderable | undefined {
@@ -97,8 +102,8 @@ export function attachVerticalScrollbar(box: BoxRenderable, text: TextRenderable
     orientation: "vertical",
     showArrows: false,
     position: "absolute",
-    top: 1,
-    bottom: 1,
+    top: 0,
+    bottom: 0,
     right: 0,
     width: 1,
     onChange: (position) => {
@@ -133,10 +138,13 @@ export function attachVerticalScrollbar(box: BoxRenderable, text: TextRenderable
   return bar
 }
 
-/** Mirrors the text viewport's content/window/offset triple into the scrollbar. */
-export function syncVerticalScrollbar(bar: ScrollBarRenderable, text: TextRenderable): void {
+/** Mirrors the text viewport into the scrollbar, using an explicit height when layout is settling. */
+export function syncVerticalScrollbar(bar: ScrollBarRenderable, text: TextRenderable, viewportHeight?: number): void {
+  if (viewportHeight !== undefined) {
+    scrollbarViewportOverrides.set(bar, Math.max(0, Math.floor(viewportHeight)))
+  }
   bar.scrollSize = text.scrollHeight
-  bar.viewportSize = Math.max(0, Math.floor(text.height))
+  bar.viewportSize = scrollbarViewportOverrides.get(bar) ?? Math.max(0, Math.floor(text.height))
   bar.scrollPosition = text.scrollY
 }
 
@@ -227,8 +235,8 @@ export function createPane(
         box.requestRender()
       },
     }),
-    syncScrollbar() {
-      syncVerticalScrollbar(bar, text)
+    syncScrollbar(viewportHeight?: number) {
+      syncVerticalScrollbar(bar, text, viewportHeight)
     },
     scrollBy(delta: number) {
       text.scrollY = Math.max(0, Math.min(text.maxScrollY, text.scrollY + delta))
