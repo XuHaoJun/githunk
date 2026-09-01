@@ -1,0 +1,80 @@
+{
+  "id": "rename",
+  "description": "Renamed file carries previousPath and transfers anchors",
+  "raw": [
+    {
+      "status": "R100",
+      "path": "new-name.txt",
+      "previousPath": "old-name.txt",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldBlobOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "newBlobOid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "numstat": [
+    {
+      "path": "new-name.txt",
+      "previousPath": "old-name.txt",
+      "additions": 1,
+      "deletions": 1
+    }
+  ],
+  "expected": {
+    "files": [
+      {
+        "key": "new-name.txt",
+        "path": "new-name.txt",
+        "previousPath": "old-name.txt",
+        "kind": "renamed",
+        "stats": {
+          "additions": 1,
+          "deletions": 1
+        },
+        "source": "available",
+        "hunks": [
+          {
+            "index": 0,
+            "oldStart": 1,
+            "oldCount": 2,
+            "newStart": 1,
+            "newCount": 2,
+            "lines": [
+              " line1",
+              "-old",
+              "+new"
+            ]
+          }
+        ]
+      }
+    ],
+    "gaps": [
+      {
+        "fileKey": "new-name.txt",
+        "gapId": "before:0"
+      },
+      {
+        "fileKey": "new-name.txt",
+        "gapId": "trailing:0"
+      }
+    ],
+    "rowAddresses": [
+      {
+        "fileKey": "new-name.txt",
+        "hunkIndex": 0,
+        "oldLine": 1,
+        "newLine": 1,
+        "marker": "context"
+      },
+      {
+        "fileKey": "new-name.txt",
+        "hunkIndex": 0,
+        "oldLine": 2,
+        "newLine": null,
+        "marker": "deletion"
+      }
+    ],
+    "contentIdDistinctPairs": [],
+    "contentIdSamePairs": []
+  }
+}

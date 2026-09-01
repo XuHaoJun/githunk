@@ -24,7 +24,9 @@ bun run spike:selection             # the disposable PRD §16 selection spike
 `*.integration.test.ts` and `tests/acceptance/*` spawn real `git` against temp repositories
 (`tests/helpers/temp-repository.ts`, `tests/helpers/shell-harness.ts` — the latter also drives a
 real `createTestRenderer` with mock keys/mouse and captures frames). They are slower and need `git`
-on PATH; plain `*.test.ts` files are pure unit tests over injected loaders.
+on PATH; plain `*.test.ts` files are pure unit tests over injected loaders. Branch Review acceptance is
+`tests/acceptance/branch-review-workspace.integration.test.ts` (coverage/reconciliation) and
+`tests/acceptance/branch-review-artifact.integration.test.ts` (feedback/artifact/transaction recovery).
 
 ## Architecture
 
@@ -96,9 +98,7 @@ refresh (10s), external-ref detection (2s, via `RefsWatcher` + `git/refs-snapsho
 `GITHUNK_FETCH_INTERVAL`, `GITHUNK_REFRESH_INTERVAL`, `GITHUNK_EXTERNAL_CHANGE_INTERVAL`.
 
 **Persistence lives under `.git/`, never the worktree** — `.git/githunk/ui-state-v1.json` (pane
-geometry) and `.git/githunk/review-state-v1.json` (review progress), both written atomically at mode
-`0600` by `storage/local-state-file.ts`, which refuses symlinked paths. `git status` must stay clean.
-
+geometry) and, for review progress, `.git/githunk/review-state-v2.json` (Branch Review, `version: 2`) plus immutable artifacts at `.git/githunk/reviews/<review-id>/<artifact-id>.json`, and `.git/githunk/working-tree-review-state-v1.json` (Working Tree/Stash, restricted and starting empty — no migration from the old combined `review-state-v1.json`). All are written atomically at mode `0600` by `storage/local-state-file.ts`, which refuses symlinked paths. `git status` must stay clean.
 ## Working conventions
 
 **lazygit is the specification.** It is vendored as a submodule at `learn-projects/lazygit`

@@ -3,6 +3,7 @@
 **Status:** Approved
 **Date:** 2026-08-24
 **Supersedes:** nothing. Extends `docs/githunk-prd-v0.1.md` (§5 Information Architecture, §7 Resizable Layout, §15 Lazygit Compatibility).
+**Note (2026-08-27):** Branch Review portions of this shell design are **superseded** for the dedicated Review Workspace by `docs/superpowers/specs/2026-08-27-branch-review-workspace-design.md`. The shell's proportional layout, hints bar, screen modes, and draggable dividers remain, but the Branch Review UI contract (files pane markers, base...HEAD rendering, read-only guards) is now owned by the dedicated workspace. The `Branch Review is read-only` guard and old Branch Review mode rendering in Status/Files/Main/Commits panes are deleted.
 **Reference implementation studied:** `learn-projects/lazygit` (submodule)
 
 ---

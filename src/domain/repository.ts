@@ -44,8 +44,6 @@ export type AppModel = {
   readonly upstreamChoice?: UpstreamRequired
   readonly stashes?: readonly StashEntry[]
   readonly reviewTarget: ReviewTarget
-  /** Aggregate Branch Review identity survives individual commit drill-down. */
-  readonly branchReviewTarget?: Extract<ReviewTarget, { readonly kind: "branch" }>
   readonly files: readonly ChangedFile[]
   readonly patches: readonly PatchSection[]
   readonly rawPatchSections: readonly PatchSection[]
@@ -62,10 +60,6 @@ export type AppModel = {
   readonly selectionId?: string
   readonly focusId?: string
   readonly loading: boolean
-  readonly basePicker?: {
-    readonly candidates: readonly string[]
-    readonly reason: string
-  }
   readonly banner?: string
   readonly commandLog: readonly CommandLogLine[]
   /**

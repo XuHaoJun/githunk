@@ -7,36 +7,14 @@ import type { GitMutations } from "../../src/git/mutations"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
 import type { ChangedFile } from "../../src/domain/review-target"
 import type { DiffDocument } from "../../src/domain/diff/document"
-import type { BranchReviewSnapshot } from "../../src/git/branch-review"
 import type { StashCreateOptions } from "../../src/domain/stash"
 
 function snapshot(files: readonly ChangedFile[] = []): WorkingTreeSnapshot {
-  return {
-    repositoryRoot: "/tmp/repo",
-    branch: "main",
-    upstream: "origin/main",
-    reviewTarget: { kind: "working-tree", scope: "all" },
-    files,
-    patches: [{ label: "UNSTAGED", text: "" }],
-  }
+  return { repositoryRoot: "/tmp/repo", branch: "main", reviewTarget: { kind: "working-tree", scope: "all" }, files, patches: [] }
 }
 
 const emptyDiffDocument: DiffDocument = { text: "", lines: [], files: [] }
 
-function branchSnapshot(baseRef: string): BranchReviewSnapshot {
-  return {
-    repositoryRoot: "/tmp/repo",
-    branch: "main",
-    baseRef,
-    baseOid: "base-oid",
-    headOid: "head-oid",
-    mergeBaseOid: "base-oid",
-    commitCount: 0,
-    reviewTarget: { kind: "branch", baseRef, baseOid: "base-oid", headOid: "head-oid" },
-    files: [],
-    patches: [{ label: "BRANCH", text: "" }],
-  }
-}
 
 /** No git runs: every method under test is stubbed, so only the label reaches the log. */
 function stubMutations(): GitMutations {
@@ -56,10 +34,6 @@ function harness(files: readonly ChangedFile[] = []): { readonly controller: App
     repositoryRoot: "/tmp/repo",
     runner: new GitRunner({ cwd: "/tmp/repo", log }),
     load: async () => snapshot(files),
-    // Reaching a Branch Review target must not spawn real git (tests/app/controller-branch.test.ts
-    // uses the same stub loaders to get there without a real repository).
-    loadBranch: async (baseRef) => branchSnapshot(baseRef),
-    inferBase: async () => ({ kind: "confident" as const, ref: "origin/main", oid: "base-oid", reason: "test" }),
     mutations: stubMutations(),
     commitMutations: { commit: async () => {}, amend: async () => {}, currentMessage: async () => "" } as never,
   })
@@ -72,12 +46,6 @@ function actions(log: CommandLog): readonly string[] {
     .map((line) => line.spans.map((span) => span.text).join(""))
 }
 
-/**
- * lazygit calls LogAction from its UI controllers, the layer where one user intent becomes N git
- * commands (pkg/gui/controllers/files_controller.go:544,559; stash_controller.go:127,141,169;
- * sync_controller.go:167,197). githunk's equivalent layer is AppController — its mutation methods
- * map one-to-one onto user intents, and unlike root-view they run without a renderer.
- */
 describe("action labels", () => {
   test("stageFile logs Stage file", async () => {
     const { controller, log } = harness()
@@ -145,8 +113,9 @@ describe("action labels", () => {
   test("a blocked mutation logs nothing", async () => {
     const { controller, log } = harness()
     await controller.refresh()
-    await controller.switchMode("branch")
-    expect(controller.state.reviewTarget.kind).toBe("branch")
+    const mutable = controller as unknown as { currentState: typeof controller.state }
+    mutable.currentState = { ...controller.state, reviewTarget: { kind: "stash", ref: "stash@{0}" } }
+    expect(controller.state.reviewTarget.kind).toBe("stash")
     await controller.stageFile("a.ts")
     expect(actions(log)).toEqual([])
   })
@@ -251,7 +220,7 @@ describe("action labels", () => {
 
   /**
    * githunk-only actions that run no git command get no label
-   * (markFileReviewed, setBranchBase, switchMode into working-tree).
+   * (markFileReviewed, setWorkingTreeScope).
    */
   test("githunk-only review actions log nothing", async () => {
     const { controller, log } = harness()
@@ -333,8 +302,7 @@ describe("action labels", () => {
         await gate
         return snapshot([])
       },
-      loadBranch: async (baseRef) => branchSnapshot(baseRef),
-      inferBase: async () => ({ kind: "confident" as const, ref: "origin/main", oid: "base-oid", reason: "test" }),
+
       mutations: stubMutations(),
       commitMutations: { commit: async () => {}, amend: async () => {}, currentMessage: async () => "" } as never,
     })

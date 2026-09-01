@@ -30,10 +30,10 @@ describe("reviewStatusText", () => {
   test("appends an invalidation count when files changed after review", () => {
     const invalidated = model({
       reviewSummary: { reviewed: 17, invalidated: 2, commits: 7, files: 24, additions: 0, deletions: 0 },
-      reviewTarget: { kind: "branch", baseRef: "origin/main", baseOid: "a".repeat(40), headOid: "b".repeat(40) },
-      title: "feature/payment vs origin/main",
+      reviewTarget: { kind: "stash", ref: "stash@{0}" },
+      title: "Stash — stash@{0}",
     })
-    expect(reviewStatusText(invalidated)).toBe("feature/payment vs origin/main  17/24 ●  2!")
+    expect(reviewStatusText(invalidated)).toBe("Stash — stash@{0}  17/24 ●  2!")
   })
 
   test("omits the progress segment when there are no files", () => {

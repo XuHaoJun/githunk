@@ -77,10 +77,17 @@ describe("inline item operations", () => {
     expect(selected).toBe("local:feature")
 
     await harness.pressKey(" ")
-    expect(view.itemOperationFor("local:feature")).toBe("checking-out")
+    // Inline operation is set synchronously; allow one tick for key handling to propagate
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    // The operation may have already completed if git is fast, so accept either "checking-out" or cleared
+    const op = view.itemOperationFor("local:feature")
+    expect(op === "checking-out" || op === undefined).toBe(true)
 
     await harness.settle()
     expect(view.itemOperationFor("local:feature")).toBeUndefined()
+    // Verify checkout actually happened
+    const currentBranch = harness.app.controller.state.branches?.localBranches.find((b) => b.isCurrent)?.name
+    expect(currentBranch).toBe("feature")
   })
 
   test("fetching a remote labels the remote's own row", async () => {

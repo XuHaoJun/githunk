@@ -1,0 +1,59 @@
+{
+  "generatedAt": "2026-08-27T20:06:52.434Z",
+  "workstation": "linux 7.2.0-1-cachyos x64 AMD Ryzen 7 255",
+  "benchmarks": {
+    "load": {
+      "benchmark": "review-document-load",
+      "fixtureSize": 3797,
+      "fixtureCount": 13,
+      "elapsedMs": 7.48,
+      "heapDeltaBytes": 3297280,
+      "heapDeltaMiB": 3.14,
+      "outputCount": {
+        "files": 13,
+        "hunks": 11,
+        "largeFiles": 500
+      }
+    },
+    "rows": {
+      "benchmark": "review-row-plan",
+      "fixtureSize": 3797,
+      "fixtureCount": 13,
+      "elapsedMs": 8.14,
+      "heapDeltaBytes": 4376576,
+      "heapDeltaMiB": 4.17,
+      "outputCount": {
+        "totalRowsPlanned": 66,
+        "maxRowsInViewport": 12,
+        "largeTotalRows": 3000,
+        "largeViewportRows": 50
+      },
+      "assertion": "rows bounded by viewport (40) + overscan (10) *2 = 60; large windowed 50 < 3000"
+    },
+    "reconcile": {
+      "benchmark": "review-reconcile",
+      "fixtureSize": 200,
+      "elapsedMs": 3.33,
+      "heapDeltaBytes": 1117184,
+      "heapDeltaMiB": 1.07,
+      "outputCount": {
+        "beforeFiles": 100,
+        "afterFiles": 100,
+        "totalHunks": 100
+      },
+      "reconciliation": {
+        "exact": 89,
+        "rename": 1,
+        "matched": 90,
+        "changed": 20,
+        "orphaned": 10,
+        "newFiles": 10,
+        "copied": 0,
+        "ambiguous": 0,
+        "feedbackResolution": "active"
+      },
+      "assertion": "reconcile preserves Viewed only when path+contentId match; orphaned feedback retained"
+    }
+  },
+  "notes": "Initial Task 14 workstation baseline; do not invent thresholds before this run."
+}

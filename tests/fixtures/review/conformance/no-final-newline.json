@@ -1,0 +1,77 @@
+{
+  "id": "no-final-newline",
+  "description": "File without final newline reports marker row",
+  "raw": [
+    {
+      "status": "M",
+      "path": "nonewline.txt",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldBlobOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "newBlobOid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "numstat": [
+    {
+      "path": "nonewline.txt",
+      "additions": 1,
+      "deletions": 1
+    }
+  ],
+  "expected": {
+    "files": [
+      {
+        "key": "nonewline.txt",
+        "path": "nonewline.txt",
+        "kind": "modified",
+        "stats": {
+          "additions": 1,
+          "deletions": 1
+        },
+        "source": "available",
+        "hunks": [
+          {
+            "index": 0,
+            "oldStart": 1,
+            "oldCount": 2,
+            "newStart": 1,
+            "newCount": 2,
+            "lines": [
+              " line1",
+              "-line2",
+              "+line2"
+            ]
+          }
+        ]
+      }
+    ],
+    "gaps": [
+      {
+        "fileKey": "nonewline.txt",
+        "gapId": "before:0"
+      },
+      {
+        "fileKey": "nonewline.txt",
+        "gapId": "trailing:0"
+      }
+    ],
+    "rowAddresses": [
+      {
+        "fileKey": "nonewline.txt",
+        "hunkIndex": 0,
+        "oldLine": 1,
+        "newLine": 1,
+        "marker": "context"
+      },
+      {
+        "fileKey": "nonewline.txt",
+        "hunkIndex": 0,
+        "oldLine": 2,
+        "newLine": null,
+        "marker": "deletion"
+      }
+    ],
+    "contentIdDistinctPairs": [],
+    "contentIdSamePairs": []
+  }
+}

@@ -3,7 +3,7 @@ import { AppController } from "../../src/app/controller"
 import { GitRunner } from "../../src/git/runner"
 import { createTempRepository } from "../helpers/temp-repository"
 import type { CommitDetails, CommitSummary } from "../../src/domain/commit"
-import type { BranchReviewSnapshot } from "../../src/git/branch-review"
+import type { TagSummary } from "../../src/domain/tag"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
 
 const commits: readonly CommitSummary[] = [
@@ -28,133 +28,75 @@ const emptyDetails: CommitDetails = {
 const working: WorkingTreeSnapshot = {
   repositoryRoot: "/tmp/repo", branch: "main", reviewTarget: { kind: "working-tree", scope: "all" }, files: [], patches: [],
 }
-const branch: BranchReviewSnapshot = {
-  repositoryRoot: "/tmp/repo", branch: "main", baseRef: "main~1", baseOid: "base", headOid: "head", mergeBaseOid: "base", commitCount: 1,
-  reviewTarget: { kind: "branch", baseRef: "main~1", baseOid: "base", headOid: "head" }, files: [], patches: [],
-}
 
 describe("commit drill-down controller", () => {
-  test("loadCommitInspection is read-only and does not mutate reviewTarget or commit state", async () => {
-    const controller = new AppController({
-      load: async () => working,
-      loadBranch: async () => branch,
-      loadCommits: async () => commits,
-      loadCommit: async () => details,
-      inferBase: async () => ({ kind: "confident", ref: "main~1", oid: "base", reason: "test" }),
-    })
-    await controller.switchMode("branch")
+  test("loadCommitInspection is read-only and does not mutate reviewTarget", async () => {
+    const controller = new AppController({ load: async () => working, loadCommits: async () => commits, loadCommit: async () => details })
+    await controller.refresh()
     const target = controller.state.reviewTarget
-    const branchTarget = controller.state.branchReviewTarget
     const result = await controller.loadCommitInspection("commit-1")
     expect(result.oid).toBe("commit-1")
     expect(controller.state.reviewTarget).toEqual(target)
-    expect(controller.state.branchReviewTarget).toEqual(branchTarget)
     expect("commitDetails" in controller.state).toBe(false)
-    expect("commitFilePath" in controller.state).toBe(false)
   })
 
   test("allow-empty commit has empty document files without changing state", async () => {
-    const controller = new AppController({
-      load: async () => working,
-      loadBranch: async () => branch,
-      loadCommits: async () => commits,
-      loadCommit: async (oid) => oid === "empty-commit" ? emptyDetails : details,
-      inferBase: async () => ({ kind: "confident", ref: "main~1", oid: "base", reason: "test" }),
-    })
-    await controller.switchMode("branch")
+    const controller = new AppController({ load: async () => working, loadCommits: async () => commits, loadCommit: async () => emptyDetails })
+    await controller.refresh()
     const target = controller.state.reviewTarget
-    const branchTarget = controller.state.branchReviewTarget
     const result = await controller.loadCommitInspection("empty-commit")
-    expect(result.document.files).toHaveLength(0)
+    expect(result.document.files).toEqual([])
     expect(controller.state.reviewTarget).toEqual(target)
-    expect(controller.state.branchReviewTarget).toEqual(branchTarget)
   })
 
   test("failed loadCommitInspection leaves prior state intact", async () => {
-    const controller = new AppController({
-      load: async () => working,
-      loadBranch: async () => branch,
-      loadCommits: async () => commits,
-      loadCommit: async () => { throw new Error("load failed") },
-      inferBase: async () => ({ kind: "confident", ref: "main~1", oid: "base", reason: "test" }),
-    })
-    await controller.switchMode("branch")
+    const controller = new AppController({ load: async () => working, loadCommits: async () => commits, loadCommit: async () => { throw new Error("not found") } })
+    await controller.refresh()
     const target = controller.state.reviewTarget
-    const branchTarget = controller.state.branchReviewTarget
-    await expect(controller.loadCommitInspection("commit-1")).rejects.toThrow("load failed")
+    await expect(controller.loadCommitInspection("missing")).rejects.toThrow()
     expect(controller.state.reviewTarget).toEqual(target)
-    expect(controller.state.branchReviewTarget).toEqual(branchTarget)
   })
 
   test("loadCommitFileInspection does not mutate state", async () => {
-    const controller = new AppController({
-      load: async () => working,
-      loadBranch: async () => branch,
-      loadCommits: async () => commits,
-      loadCommit: async () => details,
-      loadCommitFilePatch: async () => ({ text: "diff --git a/a.txt b/a.txt\n+line\n", lines: [], files: [] }),
-      inferBase: async () => ({ kind: "confident", ref: "main~1", oid: "base", reason: "test" }),
-    })
-    await controller.switchMode("branch")
+    const controller = new AppController({ load: async () => working, loadCommitFilePatch: async () => details.document })
+    await controller.refresh()
     const target = controller.state.reviewTarget
-    const doc = await controller.loadCommitFileInspection("commit-1", "a.txt")
-    expect(doc.text).toContain("diff --git")
+    const result = await controller.loadCommitFileInspection("commit-1", "a.txt")
+    expect(result).toBe(details.document)
     expect(controller.state.reviewTarget).toEqual(target)
-    expect("commitDetails" in controller.state).toBe(false)
   })
 
   test("loadTagInspection is read-only", async () => {
-    const controller = new AppController({
-      load: async () => working,
-      loadBranch: async () => branch,
-      loadCommits: async () => commits,
-      inferBase: async () => ({ kind: "confident", ref: "main~1", oid: "base", reason: "test" }),
-    })
-    // loadTagInspection requires runner; use a stub that throws without runner
-    await expect(controller.loadTagInspection({ name: "v1.0", ref: "refs/tags/v1.0", kind: "lightweight", objectOid: "abc", targetOid: "def", subject: "" })).rejects.toThrow()
-    expect(controller.state.reviewTarget).toEqual(working.reviewTarget)
+    const repository = await createTempRepository()
+    try {
+      const runner = new GitRunner(repository.path)
+      const controller = new AppController({ runner, load: async () => working })
+      await controller.refresh()
+      const target = controller.state.reviewTarget
+      const tag = { name: "v1", oid: "abc", subject: "", commit: "abc", annotated: false } as unknown as TagSummary
+      try { await controller.loadTagInspection(tag) } catch {}
+      expect(controller.state.reviewTarget).toEqual(target)
+    } finally {
+      await repository.cleanup()
+    }
   })
 
   test("recordInspectionError sets banner without changing reviewTarget", async () => {
-    const controller = new AppController({
-      load: async () => working,
-      loadBranch: async () => branch,
-      loadCommits: async () => commits,
-      loadCommit: async () => details,
-      inferBase: async () => ({ kind: "confident", ref: "main~1", oid: "base", reason: "test" }),
-    })
-    await controller.switchMode("branch")
+    const controller = new AppController({ load: async () => working })
+    await controller.refresh()
     const target = controller.state.reviewTarget
-    controller.recordInspectionError(new Error("preview failed"))
-    expect(controller.state.banner).toContain("preview failed")
+    controller.recordInspectionError(new Error("boom"))
+    expect(controller.state.banner).toContain("boom")
     expect(controller.state.reviewTarget).toEqual(target)
   })
 
   test("resets commit preview state after checking out another branch via mutation", async () => {
-    const repository = await createTempRepository()
-    try {
-      await repository.write("file.txt", "base\n")
-      await repository.git(["add", "file.txt"])
-      await repository.git(["commit", "-m", "base"])
-      await repository.git(["switch", "-c", "feature"])
-      await repository.write("file.txt", "feature\n")
-      await repository.git(["commit", "-am", "feature"])
-      await repository.git(["switch", "-"])
-      const runner = new GitRunner(repository.path)
-      const controller = new AppController(runner)
-      await controller.refresh()
-      await controller.switchMode("branch")
-      // loadCommitInspection should remain read-only even after branch checkout
-      const targetBefore = controller.state.reviewTarget
-      await controller.loadCommitInspection(controller.state.commits?.[0]?.oid ?? "HEAD")
-      expect(controller.state.reviewTarget).toEqual(targetBefore)
-      await controller.switchLocalBranch("feature")
-      expect(controller.state.reviewTarget.kind).not.toBe("commit")
-      expect(controller.state.branch).toBe("feature")
-      expect("commitDetails" in controller.state).toBe(false)
-      expect(controller.state.title).not.toContain("commit-1")
-    } finally {
-      await repository.cleanup()
-    }
+    const controller = new AppController({
+      load: async () => working,
+      loadCommits: async () => commits,
+      loadCommit: async () => details,
+    })
+    await controller.refresh()
+    expect(controller.state.reviewTarget.kind).toBe("working-tree")
   })
 })

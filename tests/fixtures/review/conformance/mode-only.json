@@ -1,0 +1,48 @@
+{
+  "id": "mode-only",
+  "description": "Mode change without content hunk",
+  "raw": [
+    {
+      "status": "M",
+      "path": "script.sh",
+      "oldMode": "100644",
+      "newMode": "100755",
+      "oldBlobOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "newBlobOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "numstat": [
+    {
+      "path": "script.sh",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "expected": {
+    "files": [
+      {
+        "key": "script.sh",
+        "path": "script.sh",
+        "kind": "modified",
+        "stats": {
+          "additions": 0,
+          "deletions": 0
+        },
+        "source": "available",
+        "hunks": []
+      }
+    ],
+    "gaps": [],
+    "rowAddresses": [
+      {
+        "fileKey": "script.sh",
+        "hunkIndex": null,
+        "oldLine": null,
+        "newLine": null,
+        "marker": "mode"
+      }
+    ],
+    "contentIdDistinctPairs": [],
+    "contentIdSamePairs": []
+  }
+}

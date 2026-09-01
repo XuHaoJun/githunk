@@ -44,8 +44,22 @@ hints bar, screen modes, draggable dividers). Automated coverage lives in
 - [ ] With `.git/githunk/ui-state-v1.json` present, `git status` stays clean (the state file lives under `.git/`, never in the worktree).
 - [ ] On a branch with commits, the Commits pane (`4`) lists them instead of showing an empty pane.
 
-## Command log parity (2026-08 lazygit command log parity plan)
+## Branch Review workspace – behavioral smoke (spec §16.5)
 
+Automated coverage: `tests/acceptance/branch-review-workspace.integration.test.ts` (coverage/reconciliation) and `tests/acceptance/branch-review-artifact.integration.test.ts` (feedback/artifact/transaction). The following is the recorded TUI smoke that must be observed by launching the real program:
+
+1. open `base...HEAD` Branch Review (`b` shows dedicated header `feature → main  ·  N commits · M files · +A −D  [Aggregate]`; repository dashboard not visible);
+2. review and mark files Viewed (`r` advances `Reviewed X/Y` and persists to `.git/githunk/review-state-v2.json`);
+3. add a multiline blocking suggestion and comment (`v` range → `c` → `blocking` + replacement, plus `file` note; pending count increments);
+4. finish Request Changes and inspect JSON/Markdown output (`R` → summary → artifact at `.git/githunk/reviews/<review-id>/<artifact-id>.json` version 1, decision `request-changes`, coverage viewed/notViewed, feedback blocking before comment; Markdown deterministic copy contains decision/summary and ordered feedback);
+5. add a new commit changing one reviewed and one unreviewed file;
+6. reopen/reconcile and observe only the changed reviewed file invalidated (`!` vs `●`);
+7. use Since Last Review (projection `Since Last` shows delta only);
+8. restart githunk and confirm state and `lastSubmission` restoration (reopening shows same Viewed, pending cleared, last artifact still loadable).
+
+Smoke must also confirm: working-tree changes never enter the Branch Review document; no mutation Git command is logged while in the Review Workspace; corrupt `review-state-v2.json` is quarantined and reported without blocking a new review.
+
+## Command log parity (2026-08 lazygit command log parity plan)
 Closes out the 13-task plan that rebuilt the lower-right command log to match lazygit's `extras`
 view (`pkg/gui/command_log_panel.go`). `tests/acceptance/command-log.integration.test.ts` is the
 end-to-end acceptance test; it drives a real `git` process through a headless `createApp`, the same
@@ -66,9 +80,11 @@ pattern `review-workflow.integration.test.ts` uses.
 ## Release gates
 
 - [x] `bun test tests/acceptance/review-workflow.integration.test.ts` — 1 pass, 75 assertions.
+- [x] `bun test tests/acceptance/branch-review-workspace.integration.test.ts tests/acceptance/branch-review-artifact.integration.test.ts` — 2 pass (coverage/reconciliation and feedback/artifact with transaction recovery).
 - [x] `bun run typecheck` — pass.
-- [x] `bun install --frozen-lockfile && bun run check` — pass: 137 tests, 0 failures, 801 expectations; typecheck passed.
-- [x] Real non-destructive `bun run start` smoke — process exited 0 after navigation, diff inspection, splitter drag input, and quit. (Predates this branch's `@` change from a toggle to a modal menu; the menu itself is `Not tested`, see line 62.)
+- [x] `bun test tests/ src/ --path-ignore-patterns "learn-projects"` — pass (project tests, no hunk submodule noise; 0 failures – see Task 15 report for full output).
+- [x] Real TUI smoke — `bun run src/main.ts` launched in a fixture repository with committed `base...HEAD` changes and exercised all eight Branch Review steps from spec §16.5 (header, Viewed, multiline blocking suggestion + comment, Request Changes JSON/Markdown, one-file invalidation, Since Last, restart restoration, working-tree isolation) with evidence logs in `.superpowers/sdd/2026-08-27-branch-review-workspace/task-15-report.md`.
+- [x] `bun install --frozen-lockfile && bun run check` — pass: typecheck + project tests.
 - [ ] SSH+zellij 120×40 clipboard/paste run — Not tested; see compatibility record.
 - [ ] tmux clipboard/paste run — Not tested.
 - [ ] Local client clipboard paste result — Not tested.

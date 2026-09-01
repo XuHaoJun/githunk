@@ -1,0 +1,89 @@
+{
+  "id": "ambiguous-context",
+  "description": "Repeated context lines must not mis-relocate anchors",
+  "raw": [
+    {
+      "status": "M",
+      "path": "ambiguous.txt",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldBlobOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "newBlobOid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "numstat": [
+    {
+      "path": "ambiguous.txt",
+      "additions": 1,
+      "deletions": 1
+    }
+  ],
+  "expected": {
+    "files": [
+      {
+        "key": "ambiguous.txt",
+        "path": "ambiguous.txt",
+        "kind": "modified",
+        "stats": {
+          "additions": 1,
+          "deletions": 1
+        },
+        "source": "available",
+        "hunks": [
+          {
+            "index": 0,
+            "oldStart": 1,
+            "oldCount": 7,
+            "newStart": 1,
+            "newCount": 7,
+            "lines": [
+              " context-a",
+              " context-b",
+              " context-c",
+              "-target-old",
+              "+target-new",
+              " context-d",
+              " context-e",
+              " context-f"
+            ]
+          }
+        ]
+      }
+    ],
+    "gaps": [
+      {
+        "fileKey": "ambiguous.txt",
+        "gapId": "before:0"
+      },
+      {
+        "fileKey": "ambiguous.txt",
+        "gapId": "trailing:0"
+      }
+    ],
+    "rowAddresses": [
+      {
+        "fileKey": "ambiguous.txt",
+        "hunkIndex": 0,
+        "oldLine": 4,
+        "newLine": null,
+        "marker": "deletion"
+      },
+      {
+        "fileKey": "ambiguous.txt",
+        "hunkIndex": 0,
+        "oldLine": null,
+        "newLine": 4,
+        "marker": "addition"
+      },
+      {
+        "fileKey": "ambiguous.txt",
+        "hunkIndex": 0,
+        "oldLine": 1,
+        "newLine": 1,
+        "marker": "context"
+      }
+    ],
+    "contentIdDistinctPairs": [],
+    "contentIdSamePairs": []
+  }
+}

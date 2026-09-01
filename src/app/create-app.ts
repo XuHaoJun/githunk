@@ -13,6 +13,17 @@ import { isAbsolute, resolve } from "node:path"
 import { IndexWatcher } from "./index-watcher"
 import { LOG_ACTIONS } from "./log-actions"
 import { seedCommandLog } from "./command-log-tips"
+import { AppScreenController, type ReviewScreenView } from "./screen-controller"
+import { ReviewWorkspaceController } from "../ui/review-workspace/controller"
+import { ReactReviewHost } from "../ui/review-workspace/react-review-host"
+import { ReviewStateStore } from "../review/storage/review-state-store"
+import { ReviewArtifactStore } from "../review/storage/review-artifact-store"
+
+export type ReviewLoaders = {
+  readonly loadDocument?: (baseRef: string) => Promise<import("../review/core/types").ReviewDocument>
+  readonly stateStore?: ReviewStateStore
+  readonly artifactStore?: ReviewArtifactStore
+}
 
 export type CreateAppOptions = {
   readonly repositoryRoot: string
@@ -37,6 +48,8 @@ export type CreateAppOptions = {
    * build an app must not start timers; `src/main.ts` turns it on.
    */
   readonly background?: BackgroundOptions
+  /** Injected review workspace seams for tests and embedded callers. */
+  readonly reviewLoaders?: ReviewLoaders
 }
 
 export type BackgroundOptions = {
@@ -52,9 +65,10 @@ export type BackgroundOptions = {
 export type App = {
   readonly controller: AppController
   readonly view: RootView | undefined
+  readonly screenController: AppScreenController
   refresh(): Promise<void>
   saveUiState(): Promise<void>
-  destroy(): void
+  destroy(): Promise<void>
 }
 
 /**
@@ -97,14 +111,35 @@ export function createApp(options: CreateAppOptions): App {
     runner: options.runner,
     ...(ghRunner === undefined ? {} : { loadPullRequests: () => loadPullRequests(ghRunner) }),
   })
+  const makeReviewController = (): ReviewWorkspaceController => {
+    const stateStore = options.reviewLoaders?.stateStore ?? new ReviewStateStore(options.runner)
+    const artifactStore = options.reviewLoaders?.artifactStore ?? new ReviewArtifactStore(options.runner)
+    return new ReviewWorkspaceController({
+      runner: options.runner,
+      stateStore,
+      artifactStore,
+      ...(options.reviewLoaders?.loadDocument ? { loadDocument: options.reviewLoaders.loadDocument } : {}),
+    })
+  }
   const renderer = options.renderer
   if (renderer === undefined) {
+    const screenController = new AppScreenController({
+      repositoryController: controller,
+      repositoryView: undefined,
+      renderer: undefined,
+      createReviewController: makeReviewController,
+      createReviewView: (): ReviewScreenView => ({
+        root: { findDescendantById: () => undefined },
+        destroy: () => undefined,
+      }),
+    })
     return {
       controller,
       view: undefined,
+      screenController,
       refresh: () => controller.refresh(),
       saveUiState: async () => undefined,
-      destroy: () => undefined,
+      destroy: async () => { await screenController.destroy() },
     }
   }
 
@@ -115,6 +150,7 @@ export function createApp(options: CreateAppOptions): App {
     if (latestGeometry !== undefined) await uiStateStore.save(latestGeometry)
   }
   let view!: RootView
+  let screenController!: AppScreenController
   let refsWatcher!: RefsWatcher
   let indexWatcher: IndexWatcher | undefined
   let indexWatcherStart: Promise<void> | undefined
@@ -139,7 +175,7 @@ export function createApp(options: CreateAppOptions): App {
           onExternalChange: async () => {
             if (destroyed) return
             await controller.refreshFiles()
-            if (!destroyed) view.update(controller.state)
+            if (!destroyed && (screenController?.shouldRenderRepository() ?? true)) view.update(controller.state)
           },
           isBusy: () => refreshInFlight || view.isMutating,
         })
@@ -190,9 +226,37 @@ export function createApp(options: CreateAppOptions): App {
       }
     }
     await controller.refresh()
-    view.update(controller.state)
+    if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
     await refsWatcher.resync()
   })
+  // Coalesced review generation refresh: at most one in-flight, one queued.
+  let pendingReviewRefresh: Promise<void> | undefined
+  let reviewRefreshQueued = false
+  const scheduleCoalescedReviewRefresh = async (): Promise<void> => {
+    if (!screenController || screenController.shouldRenderRepository()) return
+    if (pendingReviewRefresh) {
+      reviewRefreshQueued = true
+      return
+    }
+    pendingReviewRefresh = (async () => {
+      do {
+        reviewRefreshQueued = false
+        const cur = screenController.active
+        if (cur.kind === "branch-review") {
+          try {
+            await cur.controller.refreshGeneration()
+          } catch {}
+        }
+      } while (reviewRefreshQueued)
+    })()
+    try {
+      await pendingReviewRefresh
+    } finally {
+      pendingReviewRefresh = undefined
+    }
+  }
+
+
   /**
    * Notices refs moving underneath the app. Declared ahead of the view because the view's
    * `onMutationSettled` re-seeds it; created unconditionally (it is inert until polled) so that
@@ -201,46 +265,59 @@ export function createApp(options: CreateAppOptions): App {
   refsWatcher = new RefsWatcher({
     snapshot: () => loadRefsSnapshot(options.runner),
     onExternalChange: async () => {
+      const isReviewActive = !(screenController?.shouldRenderRepository() ?? true)
+      if (isReviewActive) {
+        // Hidden repository refresh without repainting the review screen
+        void controller.refresh().catch(() => undefined)
+        await scheduleCoalescedReviewRefresh()
+        return
+      }
       await controller.refresh()
-      view.update(controller.state)
+      if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
     },
-    isBusy: () => refreshInFlight || view.isMutating,
+    isBusy: () => {
+      const isReviewActive = !(screenController?.shouldRenderRepository() ?? true)
+      if (isReviewActive) return false
+      const isMutating = (view as unknown as { isMutating?: boolean } | undefined)?.isMutating === true
+      return refreshInFlight || isMutating
+    },
   })
-
   view = new RootView(renderer, controller.state, {
     onStageFile: async (path) => {
-      try { await controller.stageFile(path) } finally { view.update(controller.state) }
+      try { await controller.stageFile(path) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onUnstageFile: async (path) => {
-      try { await controller.unstageFile(path) } finally { view.update(controller.state) }
+      try { await controller.unstageFile(path) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onDiscardFile: async (path, mode) => {
-      try { await controller.discardFile(path, mode) } finally { view.update(controller.state) }
+      try { await controller.discardFile(path, mode) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onToggleAllFiles: async () => {
-      try { await controller.toggleAllFiles() } finally { view.update(controller.state) }
-    },
-    onModeChange: async (mode) => {
-      try { await controller.switchMode(mode) } finally { view.update(controller.state) }
+      try { await controller.toggleAllFiles() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onScopeChange: async (scope) => {
-      try { await controller.setWorkingTreeScope(scope) } finally { view.update(controller.state) }
+      try { await controller.setWorkingTreeScope(scope) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
-    onChooseBase: async (baseRef) => {
-      try { await controller.chooseBase(baseRef) } finally { view.update(controller.state) }
+    onOpenBranchReview: async () => {
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await screenController.openBranchReview() } catch (error) {
+        if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
+        throw error
+      }
     },
-    onCancelBase: async () => {
-      try { await controller.cancelBasePicker() } finally { view.update(controller.state) }
-    },
+    isBranchReviewActive: () => screenController?.active.kind === "branch-review",
     onApplySelection: async (document, indexes, reverse) => {
-      try { await controller.applySelection(document, indexes, { reverse, wholeFile: false }) } finally { view.update(controller.state) }
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await controller.applySelection(document, indexes, { reverse, wholeFile: false }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onDiscardSelection: async (document, indexes) => {
-      try { await controller.discardSelection(document, indexes, { wholeFile: false }) } finally { view.update(controller.state) }
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await controller.discardSelection(document, indexes, { wholeFile: false }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onSelectFile: (path) => {
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
       controller.selectFile(path)
-      view.update(controller.state)
+      if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
     },
     loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
     loadBranchCommits: options.loadBranchCommits ?? ((branch) => controller.loadBranchCommits(branch)),
@@ -249,32 +326,39 @@ export function createApp(options: CreateAppOptions): App {
     loadRefLogInspection: (target) => controller.loadRefLogInspection(target),
     onPreviewError: (error) => controller.recordInspectionError(error),
     onCommitMessage: async (message) => {
-      try { await controller.commit(message) } finally { view.update(controller.state) }
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await controller.commit(message) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onAmendMessage: async (message) => {
-      try { await controller.amend(message) } finally { view.update(controller.state) }
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await controller.amend(message) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onCurrentCommitMessage: async () => {
-      try { return await controller.currentCommitMessage() } finally { view.update(controller.state) }
+      try { return await controller.currentCommitMessage() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onMarkFocusedFileReviewed: async (path) => {
-      try { await controller.markFocusedFileReviewed(path) } finally { view.update(controller.state) }
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await controller.markFocusedFileReviewed(path) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onRefresh: async () => {
-      try { await controller.refresh() } finally { view.update(controller.state) }
+      try { await controller.refresh() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onSwitchLocalBranch: async (branch) => {
-      try { await controller.switchLocalBranch(branch) } finally { view.update(controller.state) }
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await controller.switchLocalBranch(branch) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onCreateBranch: async (startPoint, branchName, options) => {
       if (branchName === undefined) return
-      try { await controller.createBranch(branchName, startPoint, options) } finally { view.update(controller.state) }
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await controller.createBranch(branchName, startPoint, options) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onCreateBranchWithAutostash: async (startPoint, branchName, options) => {
       if (branchName === undefined) return
-      try { await controller.createBranchWithAutostash(branchName, startPoint, options) } finally { view.update(controller.state) }
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await controller.createBranchWithAutostash(branchName, startPoint, options) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onDeleteBranch: async (request) => {
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
       try {
         if (request.mode === "local") {
           await controller.deleteBranch(request.branch, { force: request.force, confirmed: request.force })
@@ -285,62 +369,64 @@ export function createApp(options: CreateAppOptions): App {
           if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("local and remote deletion requires an upstream")
           await controller.deleteLocalAndRemoteBranch(request.branch, request.remote, request.remoteBranch, { force: request.force, confirmed: request.force })
         }
-      } finally { view.update(controller.state) }
+      } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onCheckBranchMerged: options.onCheckBranchMerged ?? ((branch, upstream) => controller.branchIsMerged(branch, upstream)),
     onDeleteBranchFromWorktree: async (path, action, request, forceWorktree) => {
-      try { await controller.deleteBranchFromWorktree(path, action, request, forceWorktree) } finally { view.update(controller.state) }
+      try { await controller.deleteBranchFromWorktree(path, action, request, forceWorktree) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onRenameBranch: async (branch, newName) => {
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
       if (newName === undefined) return
-      try { await controller.renameBranch(branch, newName) } finally { view.update(controller.state) }
+      try { await controller.renameBranch(branch, newName) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onFetchRemote: async (remote) => {
-      try { await controller.fetchRemote(remote) } finally { view.update(controller.state) }
+      try { await controller.fetchRemote(remote) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onFetch: async () => {
-      try { await controller.fetch() } finally { view.update(controller.state) }
+      try { await controller.fetch() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onPull: async () => {
-      try { await controller.pull() } finally { view.update(controller.state) }
+      try { await controller.pull() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onPush: async () => {
-      try { await controller.push() } finally { view.update(controller.state) }
+      try { await controller.push() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onCreateStash: async (message, includeUntracked) => {
-      try { await controller.createStash(message, { includeUntracked }) } finally { view.update(controller.state) }
+      try { await controller.createStash(message, { includeUntracked }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onApplyStash: async (ref) => {
-      try { await controller.applyStash(ref) } finally { view.update(controller.state) }
+      try { await controller.applyStash(ref) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onPopStash: async (ref) => {
-      try { await controller.popStash(ref) } finally { view.update(controller.state) }
+      try { await controller.popStash(ref) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onDropStash: async (ref) => {
-      try { await controller.dropStash(ref, { confirmed: true }) } finally { view.update(controller.state) }
+      try { await controller.dropStash(ref, { confirmed: true }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onInspectStash: async (ref) => {
-      try { await controller.inspectStash(ref) } finally { view.update(controller.state) }
+      try { await controller.inspectStash(ref) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onChooseUpstream: async (remote, branch) => {
-      try { await controller.chooseUpstream(remote, branch) } finally { view.update(controller.state) }
+      try { await controller.chooseUpstream(remote, branch) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onCancelUpstream: async () => {
-      try { await controller.cancelUpstreamChoice() } finally { view.update(controller.state) }
+      try { await controller.cancelUpstreamChoice() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onBrowseRemote: async (remote) => {
-      try { await controller.browseRemote(remote) } finally { view.update(controller.state) }
+      try { await controller.browseRemote(remote) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onInspectBranch: async (branchRef) => {
-      try { await controller.inspectBranch(branchRef) } finally { view.update(controller.state) }
+      try { await controller.inspectBranch(branchRef) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onCheckoutRemoteTracking: async (selection, confirmedMismatch) => {
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
       try {
         const result = await controller.checkoutRemoteTracking(selection, confirmedMismatch === true ? { confirmedMismatch: true } : undefined)
-        view.update(controller.state, { preserveRemoteCheckout: result?.kind === "mismatch" })
+        if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state, { preserveRemoteCheckout: result?.kind === "mismatch" })
         return result
       } catch (error) {
-        view.update(controller.state)
+        if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
         throw error
       }
     },
@@ -362,6 +448,14 @@ export function createApp(options: CreateAppOptions): App {
     onMutationSettled: () => { void refsWatcher.resync() },
   })
 
+  screenController = new AppScreenController({
+    repositoryController: controller,
+    repositoryView: view,
+    renderer,
+    createReviewController: makeReviewController,
+    createReviewView: (rc, onClose) => new ReactReviewHost(renderer, rc, onClose),
+  })
+
   /**
    * lazygit's background routines. The fetch is followed by a branch refresh, because that is
    * what changes when remote-tracking refs move — `PostFetchRefresh`
@@ -379,14 +473,14 @@ export function createApp(options: CreateAppOptions): App {
           // Painted before the pull requests are asked for: `gh` is a network call, and lazygit
           // likewise lands its pull requests in their own pass whenever they happen to arrive
           // (refresh_helper.go:1845-1855) rather than holding the branch counts behind them.
-          view.update(controller.state)
+          if (screenController.shouldRenderRepository()) view.update(controller.state)
           await controller.refreshPullRequests()
-          view.update(controller.state)
+          if (screenController.shouldRenderRepository()) view.update(controller.state)
           await refsWatcher.resync()
         },
         refresh: async () => {
           await controller.refreshFiles()
-          view.update(controller.state)
+          if (screenController.shouldRenderRepository()) view.update(controller.state)
         },
         detectExternalChanges: () => refsWatcher.check().then(() => undefined),
         ...(backgroundOptions.autoFetch === undefined ? {} : { autoFetch: backgroundOptions.autoFetch }),
@@ -397,7 +491,13 @@ export function createApp(options: CreateAppOptions): App {
         ...(backgroundOptions.externalChangeIntervalMs === undefined ? {} : { externalChangeIntervalMs: backgroundOptions.externalChangeIntervalMs }),
         // Everything the UI drives goes through `runUiMutation`, so this is lazygit's
         // `backgroundRefreshesPaused()` for githunk: no background git while the user's own runs.
-        isBusy: () => refreshInFlight || view.isMutating,
+        // Branch Review reconciliation must not be paused by busy/composer – it preserves draft.
+        isBusy: () => {
+          const isReviewActive = !(screenController?.shouldRenderRepository() ?? true)
+          if (isReviewActive) return false
+          const isMutating = (view as unknown as { isMutating?: boolean } | undefined)?.isMutating === true
+          return refreshInFlight || isMutating
+        },
         // A background fetch fails whenever the network does. The command log already carries the
         // failure; a banner would fight with whatever the user is reading.
         onError: () => undefined,
@@ -407,6 +507,7 @@ export function createApp(options: CreateAppOptions): App {
   return {
     controller,
     view,
+    screenController,
     refresh: async () => {
       if (!persistedGeometryApplied) {
         persistedGeometryApplied = true
@@ -417,7 +518,7 @@ export function createApp(options: CreateAppOptions): App {
       try {
         await ensureIndexWatcher()
         await controller.refresh()
-        view.update(controller.state)
+        if (screenController.shouldRenderRepository()) view.update(controller.state)
         await refsWatcher.resync()
       } finally {
         refreshInFlight = false
@@ -427,16 +528,17 @@ export function createApp(options: CreateAppOptions): App {
         background.start()
         // lazygit fetches once immediately, because `goEvery` starts by waiting out the interval
         // (pkg/gui/background.go:135-137). Not awaited: the app is already usable.
-        void controller.refreshPullRequests().then(() => view.update(controller.state)).catch(() => undefined)
+        void controller.refreshPullRequests().then(() => { if (screenController.shouldRenderRepository()) view.update(controller.state) }).catch(() => undefined)
       }
     },
     saveUiState,
-    destroy: () => {
+    destroy: async () => {
       destroyed = true
       indexWatcher?.stop()
       background?.stop()
+      await screenController.destroy()
       // Geometry is a convenience: a failed final write must never mask a clean shutdown.
-      void saveUiState().catch(() => undefined)
+      await saveUiState().catch(() => undefined)
       view.destroy()
     },
   }

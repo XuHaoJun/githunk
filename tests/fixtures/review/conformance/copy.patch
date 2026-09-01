@@ -1,0 +1,10 @@
+diff --git a/original.txt b/copy.txt
+similarity index 100%
+copy from original.txt
+copy to copy.txt
+index abc123..def456 100644
+--- a/original.txt
++++ b/copy.txt
+@@ -1,1 +1,1 @@
+-hello
++hello copy

@@ -11,6 +11,7 @@ import { COLLAPSED_ARROW, EXPANDED_ARROW } from "../../src/ui/file-tree"
 import { FILES_TABS } from "../../src/ui/panes/files-pane"
 import { MAIN_WORKTREE_LABEL, NO_WORKTREES_THIS_REPO } from "../../src/ui/panes/worktrees-pane"
 import { NO_SUBMODULES } from "../../src/ui/panes/submodules-pane"
+import { paneScrollbar } from "../../src/ui/panes/common"
 
 /** The spans covering `[startX, endX]` on `row`, in paint order. */
 function spansAt(harness: ShellHarness, row: number, startX: number, endX: number) {
@@ -186,6 +187,18 @@ describe("panel 2 tabs", () => {
       "○   ?? two.txt",
       "○ ?? top.txt",
     ])
+  })
+
+  test("refresh paints an unfocused Files pane and hides its scrollbar when rows fit", async () => {
+    harness = await createShellHarness({ height: 20 })
+    const view = harness.app.view!
+
+    expect(view.focusManager.active).toBe("main")
+    expect(view.renderedListText("files")).toBe("○ ?? b.txt")
+    const frame = harness.frame()
+    expect(frame).toContain("○ ?? b.txt")
+    expect(frame).not.toContain("No changed files")
+    expect(paneScrollbar(view.filesPane.text)?.visible).toBe(false)
   })
 
   test("the selected file row's status characters are brightened and bolded with ANSI intent", async () => {

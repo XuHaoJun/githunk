@@ -4,6 +4,7 @@
 **Date:** 2026-08-24
 **Primary use case:** Reviewing coding-agent output
 **Product category:** Review-first Git TUI
+> **Branch Review cutover (2026-08-27):** The Branch Review portions of this document (§8.2, §9 for Branch Review, §13 as it applied to Branch Review, and the `branch` review target) are **superseded** by the approved spec `docs/superpowers/specs/2026-08-27-branch-review-workspace-design.md`. That spec defines the dedicated full-screen Review Workspace entered with `b`, its coverage/invalidation, projections, feedback lifecycle, immutable artifacts, and persistence. This PRD remains the source for Working Tree review, daily-driver Git core, and v0.1 success criteria; do not duplicate the new spec here.
 
 ---
 
@@ -482,12 +483,22 @@ Unstaged
 The exact active target must always be visible.
 
 ---
+## 8.2 Branch Review — superseded
 
-## 8.2 Branch Review
+> **Superseded by `docs/superpowers/specs/2026-08-27-branch-review-workspace-design.md` (§5–§13, §15).**
+> The old in-pane Branch Review mode and its `BranchReviewSnapshot`/`branchReviewTarget`/`review-state-v1.json` contract are removed. The dedicated full-screen Review Workspace entered from the repository screen with `b` (and closed with `Escape`) replaces it.
+>
+> **Cutover notes (do not duplicate the spec):**
+> - **Storage isolation:** Working Tree and Stash review progress now live in `working-tree-review-state-v1.json`; Branch Review uses only the v2 store at `.git/githunk/review-state-v2.json` (`version: 2`, `baseByHead`, `reviews`). No record from the combined `review-state-v1.json` is migrated; that file is intentionally ignored.
+> - **Immutable artifacts:** each finished review writes one JSON file at `.git/githunk/reviews/<review-id>/<artifact-id>.json` (`ReviewArtifactV1`) and offers deterministic Markdown derived from that artifact for clipboard/export. Artifacts are exclusive-create and digest-verified; retries reuse the same artifact id.
+> - **Dedicated keys (§5.4):** `j`/`k`/`arrows` row scroll, `]`/`[` next/prev hunk, `.`/`,` next/prev file, `n`/`N` next/prev unreviewed/invalidated, `}`/`{` next/prev pending feedback, `/` filter, `tab` focus cycle, `v` range, `c` create feedback, `r` Viewed, `0`/`1`/`2` layout auto/split/stack, `R` finish, `?` help, `Escape` close.
+> - **Read-only invariant:** Branch Review never invokes repository mutation Git commands; working-tree changes never appear in the `base...HEAD` document.
+
+Original 8.2 description (branch `base...HEAD` aggregate) is retained here only as historical context; product behavior is defined by the superseding spec.
+
+Default (historical):
 
 Designed primarily for formal coding-agent work where agents commit their changes.
-
-Default:
 
 ```text
 base...HEAD
@@ -500,7 +511,6 @@ The user reviews the aggregate result rather than being forced through commits s
 ---
 
 # 9. Automatic Base Selection
-
 v0.1 should automatically infer a likely review base.
 
 The chosen base must always be shown prominently.
@@ -515,8 +525,9 @@ vs origin/main
 Base inference should prefer reliable repository information such as the primary remote's default branch.
 
 If githunk cannot determine a base with sufficient confidence, it should prompt the user instead of silently selecting a questionable base.
+The selected value may be remembered locally (Branch Review now persists the chosen `baseRef` per head in `.git/githunk/review-state-v2.json` under `baseByHead`; key is the canonical head ref or `detached:<oid>`).
 
-The selected value may be remembered locally.
+> **Branch Review note:** inference rules above still describe Branch Review base selection (§5.1 of the superseding spec), but the old `review-state-v1.json` storage and `BranchReviewSnapshot` loader are removed. The dedicated workspace loads the remembered base from the v2 store or infers/prompts per the same rules, then builds a `ReviewDocument` for `base...HEAD`.
 
 The complete **Compare Against Arbitrary Base** interface is deferred to v0.2.
 
@@ -650,6 +661,8 @@ The user can explicitly mark a file reviewed.
 
 Review progress should persist across githunk restarts.
 
+> **Branch Review cutover:** For Branch Review, persistence is now `.git/githunk/review-state-v2.json` and immutable artifacts at `.git/githunk/reviews/<review-id>/<artifact-id>.json`. The old combined `review-state-v1.json` is not read or migrated for Branch Review; Working Tree and Stash progress continue in `working-tree-review-state-v1.json` (starts empty, restricted to those targets). See superseding spec §12–§13.
+
 Persistence must:
 
 * remain local to the repository/user;
@@ -659,7 +672,6 @@ Persistence must:
 ---
 
 ## 13.1 Change invalidation
-
 When a reviewed file changes after being marked reviewed:
 
 ```text

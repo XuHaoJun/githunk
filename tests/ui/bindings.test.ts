@@ -203,8 +203,8 @@ describe("BindingRegistry hints", () => {
   })
 
   test("drops bindings that are unavailable rather than showing them", () => {
-    const branchReview = model({ reviewTarget: { kind: "branch", baseRef: "origin/main", baseOid: "abc123", headOid: "def456" } })
-    const hints = registry.hintsFor("files", branchReview, ui(), 200)
+    const commitReview = model({ reviewTarget: { kind: "commit", oid: "abc123" } })
+    const hints = registry.hintsFor("files", commitReview, ui(), 200)
     expect(hints).toContain("stage: space")
     expect(hints).not.toContain("discard: d")
   })
@@ -237,7 +237,7 @@ describe("BindingRegistry menu", () => {
   })
 
   test("lists unavailable bindings as disabled rather than omitting them", () => {
-    const entries = registry.menuFor("files", model({ reviewTarget: { kind: "branch", baseRef: "origin/main", baseOid: "abc123", headOid: "def456" } }), ui())
+    const entries = registry.menuFor("files", model({ reviewTarget: { kind: "commit", oid: "abc123" } }), ui())
     expect(entries.find((entry) => entry.keys === "d")).toEqual({ group: "context", keys: "d", description: "discard", enabled: false })
   })
 })
@@ -268,8 +268,6 @@ describe("GITHUNK_BINDINGS", () => {
   test("keeps the pane numbers, mode switches and Git verbs from v0.1", () => {
     expect(registry.dispatch({ name: "0" })).toBe("focus-main")
     expect(registry.dispatch({ name: "5" })).toBe("focus-stash")
-    expect(registry.dispatch({ name: "b" })).toBe("mode-branch")
-    expect(registry.dispatch({ name: "w" })).toBe("mode-working-tree")
     expect(registry.dispatch({ name: "P" })).toBe("push")
     expect(registry.dispatch({ name: "p" })).toBe("pull")
     expect(registry.dispatch({ name: "R" })).toBe("refresh")
@@ -366,13 +364,12 @@ describe("GITHUNK_BINDINGS", () => {
   })
 
   test("hides staging hints when the review target is read-only", () => {
-    const branchReview = model({ reviewTarget: { kind: "branch", baseRef: "origin/main", baseOid: "abc123", headOid: "def456" } })
-    const hints = registry.hintsFor("files", branchReview, ui(), 300)
+    const commitReview = model({ reviewTarget: { kind: "commit", oid: "abc123" } })
+    const hints = registry.hintsFor("files", commitReview, ui(), 300)
     expect(hints).not.toContain("stage: space")
     expect(hints).not.toContain("discard: d")
     expect(hints).toContain("reviewed: r")
   })
-
   test("hides line actions in the All scope but advertises the scope ring", () => {
     const all = model({ reviewTarget: { kind: "working-tree", scope: "all" } })
     const hints = registry.hintsFor("main", all, ui({ focus: "main", mainScope: "all" }), 300)
@@ -384,7 +381,7 @@ describe("GITHUNK_BINDINGS", () => {
   describe("stash pane gating", () => {
     const workingTree = model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } })
     const stashTarget = model({ reviewTarget: { kind: "stash", ref: "stash@{0}" } })
-    const branchReview = model({ reviewTarget: { kind: "branch", baseRef: "origin/main", baseOid: "abc123", headOid: "def456" } })
+    const commitReview = model({ reviewTarget: { kind: "commit", oid: "abc123" } })
 
     test("offers apply, pop and drop with a stash selected and a working-tree target", () => {
       const hints = registry.hintsFor("stash", workingTree, ui({ hasSelectedStash: true }), 300)
@@ -400,15 +397,15 @@ describe("GITHUNK_BINDINGS", () => {
       expect(hints).toContain("drop: d")
     })
 
-    test("withholds apply, pop and drop with a stash selected but a branch review target", () => {
-      const hints = registry.hintsFor("stash", branchReview, ui({ hasSelectedStash: true }), 300)
+    test("withholds apply, pop and drop with a stash selected but a commit review target", () => {
+      const hints = registry.hintsFor("stash", commitReview, ui({ hasSelectedStash: true }), 300)
       expect(hints).not.toContain("apply: space")
       expect(hints).not.toContain("pop: g")
       expect(hints).not.toContain("drop: d")
     })
 
     test("withholds apply, pop and drop when no stash is selected, regardless of review target", () => {
-      for (const target of [workingTree, stashTarget, branchReview]) {
+      for (const target of [workingTree, stashTarget, commitReview]) {
         const hints = registry.hintsFor("stash", target, ui({ hasSelectedStash: false }), 300)
         expect(hints).not.toContain("apply: space")
         expect(hints).not.toContain("pop: g")
@@ -421,12 +418,11 @@ describe("GITHUNK_BINDINGS", () => {
       const unselected = ui({ hasSelectedStash: false })
       expect(registry.hintsFor("stash", workingTree, selected, 300)).toContain("inspect: enter")
       expect(registry.hintsFor("stash", stashTarget, selected, 300)).toContain("inspect: enter")
-      expect(registry.hintsFor("stash", branchReview, selected, 300)).not.toContain("inspect: enter")
+      expect(registry.hintsFor("stash", commitReview, selected, 300)).not.toContain("inspect: enter")
       expect(registry.hintsFor("stash", workingTree, unselected, 300)).not.toContain("inspect: enter")
     })
   })
 })
-
 
 describe("branches pane: f agrees between hints, menu and dispatch", () => {
   const registry = createRegistry()
@@ -476,7 +472,6 @@ describe("hints/dispatch agreement invariant", () => {
 
   const targets: readonly { readonly label: string; readonly model: AppModel }[] = [
     { label: "working-tree", model: model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } }) },
-    { label: "branch", model: model({ reviewTarget: { kind: "branch", baseRef: "origin/main", baseOid: "abc123", headOid: "def456" } }) },
     { label: "commit", model: model({ reviewTarget: { kind: "commit", oid: "abc123" } }) },
     { label: "stash", model: model({ reviewTarget: { kind: "stash", ref: "stash@{0}" } }) },
   ]
