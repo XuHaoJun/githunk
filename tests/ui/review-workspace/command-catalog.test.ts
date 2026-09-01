@@ -73,7 +73,7 @@ describe("command-catalog defaults — exact spec §5.4 keys", () => {
     expect(byId.get("review.layoutCycle")?.keys).toEqual(["l"])
     expect(byId.get("review.finishReview")?.keys).toEqual(["R"])
     expect(byId.get("review.help")?.keys).toEqual(["?"])
-    expect(byId.get("review.close")?.keys).toEqual(["escape"])
+    expect(byId.get("review.close")?.keys).toEqual(expect.arrayContaining(["escape", "b"]))
   })
   test("aggregate owns panel bindings and layout has no numeric aliases", () => {
     const command = (id: string) => REVIEW_COMMANDS.find((entry) => entry.id === id)!
@@ -114,7 +114,7 @@ describe("command-catalog defaults — exact spec §5.4 keys", () => {
     const deferredCommands: ReadonlyArray<{ readonly id: string; readonly keys: readonly string[] }> = [
       { id: "review.projectionCommit", keys: ["commit"] },
       { id: "review.expandTrailingFinalHunk", keys: ["trailing-final-hunk"] },
-      { id: "main-scroll-down", keys: ["pagedown", "page-down", "ctrl+d", "space", "b"] },
+      { id: "main-scroll-down", keys: ["pagedown", "page-down", "ctrl+d", "space"] },
       { id: "main-scroll-up", keys: ["pageup", "page-up", "ctrl+u"] },
       { id: "main-half-page-down", keys: ["ctrl+d"] },
       { id: "main-half-page-up", keys: ["ctrl+u"] },
@@ -140,10 +140,11 @@ describe("command-catalog defaults — exact spec §5.4 keys", () => {
   })
 
 
-  test("uses only spec §5.4 keys — no old Branch Review compatibility aliases", () => {
+  test("keeps quit unbound while allowing Branch Review to toggle closed", () => {
     const allKeys = REVIEW_COMMANDS.flatMap((c) => c.keys)
-    expect(allKeys).not.toContain("b")
+    expect(allKeys).toContain("b")
     expect(allKeys).not.toContain("q")
+    expect(REVIEW_COMMANDS.find((command) => command.id === "review.close")?.keys).toEqual(expect.arrayContaining(["b"]))
     for (const k of allKeys) {
       expect(k).not.toMatch(/^ctrl\+/i)
     }

@@ -246,7 +246,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
   {
     id: "review.close",
     title: "Close overlay or workspace",
-    keys: ["escape"],
+    keys: ["escape", "b"],
     focus: ["any"],
     available: always,
     hint: "close",

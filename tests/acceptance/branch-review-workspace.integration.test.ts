@@ -406,5 +406,18 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
 
     await harness.pressKey("2")
     expect(repositoryView.focusManager.active).toBe(focusBefore)
+
+    await harness.pressKey("q")
+    expect(harness.app.screenController.active.kind).toBe("branch-review")
+
+    await harness.pressKey("b")
+    // Closing the React host performs an intentional next-tick unmount and repository refresh; this
+    // end-to-end key-path check therefore waits on the observable screen transition.
+    for (let i = 0; i < 50 && harness.app.screenController.active.kind !== "repository"; i++) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 20))
+      await harness.flush()
+    }
+    expect(harness.app.screenController.active.kind).toBe("repository")
+    expect(harness.frame()).not.toContain("Branch Review")
   }, 30000)
 })

@@ -389,6 +389,14 @@ describe("root view dispatch", () => {
     expect(harness.quitCalled).toBe(true)
   })
 
+  test("q quits from the repository interface", async () => {
+    harness = await createShellHarness()
+
+    await harness.pressKey("q")
+
+    expect(harness.quitCalled).toBe(true)
+  })
+
   test("the commits pane does not echo the selected commit's subject beneath the list", async () => {
     harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
 
