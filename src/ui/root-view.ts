@@ -223,7 +223,7 @@ export class RootView {
   private lastSplitterPress: { readonly axis: "vertical" | "horizontal"; readonly x: number; readonly y: number; readonly at: number } | undefined
   private activeSplitterDrag: SplitterAxis | undefined
   gestureOwner: GestureOwner | undefined
-  private pendingClick: { readonly viewId: string; readonly stableId: string; readonly x: number; readonly y: number; readonly at: number } | undefined
+  private pendingClick: { readonly viewId: string; readonly stableId: string; readonly x: number; readonly y: number; readonly at: number; readonly arrowToggled?: boolean } | undefined
   private model: AppModel
   private readonly panes: Record<Exclude<FocusId, "command-log">, PaneHandle>
   private readonly commandLog: CommandLogPaneHandle
@@ -740,6 +740,15 @@ export class RootView {
     return fileTreeRows(this.filesTree).find((row) => row.id === id)
   }
 
+  /** The lazygit Files arrow hit area, including the review marker and separator columns. */
+  private filesTreeArrowRowAt(stableId: string, eventX: number, screenX: number): FileTreeRow<ChangedFile> | undefined {
+    if (this.filesPanel.activeTab !== "files") return undefined
+    const row = fileTreeRows(this.filesTree).find((candidate) => candidate.id === stableId)
+    if (row?.kind !== "directory") return undefined
+    const arrowStartX = screenX + 2 + row.visualDepth * 2
+    return eventX >= arrowStartX && eventX <= arrowStartX + 1 ? row : undefined
+  }
+
   /** The reflog entry the Reflog tab has selected, resolved through the model by row id. */
   private selectedReflogEntry(): ReflogEntry | undefined {
     const id = this.commitsPanel.views.reflog?.selectedId
@@ -1108,9 +1117,9 @@ export class RootView {
     this.filesTree = setFileTreeItems(this.filesTree, model.files)
     let filesView = this.filesTabView(model)
     if (model.focusId !== undefined) {
-      // The controller tracks the focused *path*; the tree identifies a file row by `file:<path>`.
-      const focusRowId = `file:${model.focusId}`
-      if (filesView.rows.some((row) => row.id === focusRowId)) {
+      // The controller tracks a logical path; tree rows may carry the root item's `./` prefix.
+      const focusRowId = fileTreeRows(this.filesTree).find((row) => row.kind === "file" && row.path === model.focusId)?.id
+      if (focusRowId !== undefined && filesView.rows.some((row) => row.id === focusRowId)) {
         const withFocus = selectListRow(filesView, focusRowId)
         if (withFocus.selectedId === focusRowId) filesView = withFocus
       }
@@ -4167,6 +4176,7 @@ export class RootView {
             const stableId = row.id
             const now = Date.now()
             const pending = this.pendingClick
+            const arrowRow = paneId === "files" ? this.filesTreeArrowRowAt(stableId, event.x, geometry.screenX) : undefined
             const isDouble = pending !== undefined && pending.viewId === viewIdForDouble && pending.stableId === stableId && now - pending.at <= DOUBLE_CLICK_MS && Math.abs(pending.x - event.x) <= 1 && Math.abs(pending.y - event.y) <= 1
             if (isDouble) {
               this.pendingClick = undefined
@@ -4175,13 +4185,17 @@ export class RootView {
               this.selectRowForPane(paneId, stableId)
               event.preventDefault()
               event.stopPropagation()
-              this.handleDoubleClick(paneId)
+              if (pending.arrowToggled !== true) this.handleDoubleClick(paneId)
               return
             }
-            this.pendingClick = { viewId: viewIdForDouble, stableId, x: event.x, y: event.y, at: now }
+            this.pendingClick = { viewId: viewIdForDouble, stableId, x: event.x, y: event.y, at: now, ...(arrowRow === undefined ? {} : { arrowToggled: true }) }
             this.lastSplitterPress = undefined
             if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
             this.selectRowForPane(paneId, stableId)
+            if (arrowRow !== undefined) {
+              // files_controller.go:232-242 toggles only the arrow and its trailing space.
+              this.applyFilesTree(toggleFileTreeCollapsedPath(this.filesTree, arrowRow.internalPath))
+            }
             event.preventDefault()
             event.stopPropagation()
             return

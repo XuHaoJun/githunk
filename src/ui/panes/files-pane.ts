@@ -63,7 +63,8 @@ const FILE_TREE_ACCESSORS: FileTreeAccessors<ChangedFile> = {
 }
 
 export function createFilesTreeState(model: AppModel, mode: FileTreeMode = "tree"): FileTreeState<ChangedFile> {
-  return createFileTreeState(model.files, FILE_TREE_ACCESSORS, mode)
+  // Match lazygit's Gui.ShowRootItemInFileTree default.
+  return createFileTreeState(model.files, { ...FILE_TREE_ACCESSORS, showRootItem: true }, mode)
 }
 
 /**

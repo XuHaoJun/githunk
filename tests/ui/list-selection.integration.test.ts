@@ -79,19 +79,19 @@ describe("full-row list selection", () => {
     } as unknown as AppModel
     const rowsFor = (m: AppModel) => filesTreeRows(createFilesTreeState(m), m)
     const rows = rowsFor(base)
-    expect(rows.map((r) => r.id)).toEqual(["file:a.txt", "file:b.txt", "file:c.txt"])
+    expect(rows.map((r) => r.id)).toEqual(["dir:.", "file:./a.txt", "file:./b.txt", "file:./c.txt"])
     let state = createListState(rows)
-    state = selectListRow(state, "file:b.txt")
-    expect(state.selectedIndex).toBe(1)
+    state = selectListRow(state, "file:./b.txt")
+    expect(state.selectedIndex).toBe(2)
     const nextModel = { ...base, files: [base.files[0]!, base.files[2]!] } as AppModel
     const nextRows = rowsFor(nextModel)
     state = setListRows(state, nextRows, nextRows.length === 0 ? [{ kind: "message", text: "No changed files" }] : undefined)
-    expect(state.selectedId).toBe("file:c.txt")
-    expect(state.selectedIndex).toBe(1)
+    expect(state.selectedId).toBe("file:./c.txt")
+    expect(state.selectedIndex).toBe(2)
     const finalModel = { ...base, files: [base.files[0]!] } as AppModel
     const finalRows = rowsFor(finalModel)
     state = setListRows(state, finalRows, finalRows.length === 0 ? [{ kind: "message", text: "No changed files" }] : undefined)
-    expect(state.selectedId).toBe("file:a.txt")
+    expect(state.selectedId).toBe("file:./a.txt")
     expect(state.selectedIndex).toBe(0)
   })
 

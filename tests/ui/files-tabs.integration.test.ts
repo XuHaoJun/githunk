@@ -46,6 +46,16 @@ const nestedTree = async (repository: TempRepository): Promise<void> => {
   await repository.write("top.txt", "top\n")
 }
 
+/** A tree with one top-level directory, so root compression stays identical with or without `/`. */
+const singleTopLevelTree = async (repository: TempRepository): Promise<void> => {
+  await repository.write("src/ui/panes/one.txt", "one\n")
+  await repository.git(["add", "."])
+  await repository.git(["commit", "-m", "base commit"])
+  await repository.write("src/ui/panes/one.txt", "one changed\n")
+  await repository.write("src/ui/panes/two.txt", "two\n")
+}
+
+
 /**
  * Panel 2's side-panel group is lazygit's `{"files", "worktrees", "submodules"}`
  * (pkg/config/user_config.go:872), and its Files tab renders `pkg/gui/filetree` through
@@ -172,23 +182,67 @@ describe("panel 2 tabs", () => {
     expect(view.activeFilesTab).toBe("files")
   })
 
-  test("the Files tab renders a real nested tree with a compressed chain, indentation and arrows", async () => {
+  test("the Files tab renders lazygit's root item, nested tree and compressed chain", async () => {
     harness = await createShellHarness({ setup: nestedTree })
     const view = harness.app.view!
     await harness.pressKey("2")
     await harness.flush()
     const lines = view.renderedListText("files").split("\n")
-    // src/ui/panes is a single-child chain, so it is compressed onto one row (build_tree.go).
-    // Every line is the review marker, a space, then lazygit's own
-    // indentation + arrow-or-status + " " + name.
+    // ShowRootItemInFileTree is true by default in lazygit; src/ui/panes remains compressed.
     expect(lines).toEqual([
-      `  ${EXPANDED_ARROW} src/ui/panes`,
-      "○    M one.txt",
-      "○   ?? two.txt",
-      "○ ?? top.txt",
+      `  ${EXPANDED_ARROW} /`,
+      `    ${EXPANDED_ARROW} src/ui/panes`,
+      "○      M one.txt",
+      "○     ?? two.txt",
+      "○   ?? top.txt",
     ])
   })
 
+
+  test("single-clicking a Files directory arrow collapses its subtree", async () => {
+    harness = await createShellHarness({ setup: singleTopLevelTree })
+    const view = harness.app.view!
+    await harness.pressKey("2")
+    await harness.flush()
+    const geometry = harness.paneTextGeometry("files")
+    expect(geometry).toBeDefined()
+    expect(view.renderedListText("files").split("\n")).toEqual([
+      `  ${EXPANDED_ARROW} src/ui/panes`,
+      "○    M one.txt",
+      "○   ?? two.txt",
+    ])
+
+    await harness.mockMouse.click(geometry!.screenX + 2, geometry!.screenY)
+    await harness.flush()
+
+    expect(view.renderedListText("files").split("\n")).toEqual([`  ${COLLAPSED_ARROW} src/ui/panes`])
+  })
+
+  test("refresh restores a controller-focused file under the visible root", async () => {
+    harness = await createShellHarness({ setup: nestedTree })
+    const view = harness.app.view!
+    await harness.pressKey("2")
+    await harness.flush()
+    view.update({ ...harness.app.controller.state, focusId: "src/ui/panes/one.txt" })
+    await harness.flush()
+
+    expect(view.selectedListId("files")).toBe("src/ui/panes/one.txt")
+  })
+
+  test("double-clicking a Files directory arrow preserves the first toggle", async () => {
+    harness = await createShellHarness({ setup: singleTopLevelTree })
+    const view = harness.app.view!
+    await harness.pressKey("2")
+    await harness.flush()
+    const geometry = harness.paneTextGeometry("files")
+    expect(geometry).toBeDefined()
+
+    await harness.mockMouse.click(geometry!.screenX + 2, geometry!.screenY)
+    await harness.mockMouse.click(geometry!.screenX + 2, geometry!.screenY)
+    await harness.flush()
+
+    expect(view.renderedListText("files").split("\n")).toEqual([`  ${COLLAPSED_ARROW} src/ui/panes`])
+  })
   test("refresh paints an unfocused Files pane and hides its scrollbar when rows fit", async () => {
     harness = await createShellHarness({ height: 20 })
     const view = harness.app.view!
@@ -208,23 +262,28 @@ describe("panel 2 tabs", () => {
     harness = shell
     const view = shell.app.view!
     await shell.pressKey("2")
+    await shell.pressKey("j")
     await shell.flush()
-    expect(view.renderedListText("files").split("\n")).toEqual(["○ M  tracked.txt", "○ ?? untracked.txt"])
+    expect(view.renderedListText("files").split("\n")).toEqual([
+      `  ${EXPANDED_ARROW} /`,
+      "◐   M  tracked.txt",
+      "○   ?? untracked.txt",
+    ])
 
     const geometry = shell.paneTextGeometry("files")!
     const rowSpans = (offset: number) =>
       spansAt(shell, geometry.screenY + offset, geometry.screenX, geometry.screenX + geometry.width - 1)
 
-    // Row 0 is selected: staged status is ANSI green promoted to bright ANSI green.
-    const staged = rowSpans(0).find((s) => s.text.includes("M"))
+    // Row 1 is selected: staged status is ANSI green promoted to bright ANSI green.
+    const staged = rowSpans(1).find((s) => s.text.includes("M"))
     expect(staged).toBeDefined()
     expect(isIndexed(staged!.bg, 4)).toBe(true)
     expect(isIndexed(staged!.fg, 10)).toBe(true)
     expect(staged!.fg).not.toEqual(staged!.bg)
     expect(staged!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
 
-    // Row 1 is not selected, so it keeps lazygit's plain ANSI red.
-    const unselected = rowSpans(1).find((s) => s.text.includes("??"))
+    // Row 2 is not selected, so it keeps lazygit's plain ANSI red.
+    const unselected = rowSpans(2).find((s) => s.text.includes("??"))
     expect(unselected).toBeDefined()
     expect(isIndexed(unselected!.fg, 1)).toBe(true)
     expect(isIndexed(unselected!.bg, 4)).toBe(false)
@@ -232,7 +291,7 @@ describe("panel 2 tabs", () => {
     await shell.pressKey("j")
     await shell.settle()
     expect(view.selectedListId("files")).toBe("untracked.txt")
-    const nowSelected = rowSpans(1).find((s) => s.text.includes("??"))
+    const nowSelected = rowSpans(2).find((s) => s.text.includes("??"))
     expect(nowSelected).toBeDefined()
     expect(isIndexed(nowSelected!.bg, 4)).toBe(true)
     expect(isIndexed(nowSelected!.fg, 9)).toBe(true)
@@ -243,6 +302,7 @@ describe("panel 2 tabs", () => {
   test("d opens lazygit's all-versus-unstaged discard menu", async () => {
     harness = await createShellHarness({ setup: stagedAndUnstaged })
     await harness.pressKey("2")
+    await harness.pressKey("j")
 
     await harness.pressKey("d")
     const frame = harness.frame()
@@ -259,6 +319,7 @@ describe("panel 2 tabs", () => {
   test("discard menu explains when unstaged-only is unavailable", async () => {
     harness = await createShellHarness({ setup: stagedAndUntracked })
     await harness.pressKey("2")
+    await harness.pressKey("j")
 
     await harness.pressKey("d")
     expect(harness.frame()).toContain("Discard unstaged changes (unavailable:")
@@ -277,6 +338,7 @@ describe("panel 2 tabs", () => {
     harness = await createShellHarness({ setup: nestedTree })
     const view = harness.app.view!
     await harness.pressKey("2")
+    await harness.pressKey("j")
     await harness.flush()
     expect(view.renderedListText("files")).toContain(`${EXPANDED_ARROW} src/ui/panes`)
 
@@ -293,9 +355,11 @@ describe("panel 2 tabs", () => {
 
     await harness.pressKey("-")
     await harness.flush()
-    expect(view.renderedListText("files")).toContain(`${COLLAPSED_ARROW} src/ui/panes`)
+    expect(view.renderedListText("files")).toContain(`${COLLAPSED_ARROW} /`)
+    expect(view.renderedListText("files")).not.toContain("src/ui/panes")
     await harness.pressKey("=")
     await harness.flush()
+    expect(view.renderedListText("files")).toContain(`${EXPANDED_ARROW} /`)
     expect(view.renderedListText("files")).toContain(`${EXPANDED_ARROW} src/ui/panes`)
 
     await harness.pressKey("`")
@@ -314,6 +378,7 @@ describe("panel 2 tabs", () => {
     const view = harness.app.view!
     await harness.pressKey("2")
     await harness.flush()
+    await harness.pressKey("j")
     expect(view.selectedListId("files")).toBe("src/ui/panes")
 
     await harness.pressKey(" ")
@@ -332,6 +397,7 @@ describe("panel 2 tabs", () => {
     const view = harness.app.view!
     await harness.pressKey("2")
     await harness.flush()
+    await harness.pressKey("j")
     expect(view.selectedListId("files")).toBe("src/ui/panes")
 
     await harness.pressKey("d")
@@ -352,6 +418,7 @@ describe("panel 2 tabs", () => {
     const view = harness.app.view!
     await harness.pressKey("2")
     await harness.flush()
+    await harness.pressKey("j")
     expect(view.selectedListId("files")).toBe("src/ui/panes")
 
     await harness.pressKey("r")
@@ -375,6 +442,7 @@ describe("panel 2 tabs", () => {
     const view = harness.app.view!
     await harness.pressKey("2")
     await harness.flush()
+    await harness.pressKey("j")
     expect(view.mainContent?.source).toBe("files")
     expect(view.mainContent?.label).toBe("src/ui/panes")
     expect(Object.prototype.hasOwnProperty.call(harness.app.controller.state.reviewStatuses ?? {}, "src/ui/panes")).toBe(false)

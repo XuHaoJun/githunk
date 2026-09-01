@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { AppModel } from "../../src/app/model"
 import type { ChangedFile } from "../../src/domain/review-target"
-import { COLLAPSED_ARROW, EXPANDED_ARROW, collapseAllFileTree, expandAllFileTree, toggleFileTreeCollapsedPath, toggleFileTreeMode } from "../../src/ui/file-tree"
+import { COLLAPSED_ARROW, EXPANDED_ARROW, collapseAllFileTree, expandAllFileTree, fileTreeRows, toggleFileTreeCollapsedPath, toggleFileTreeMode } from "../../src/ui/file-tree"
 import {
   FILES_JUMP_KEY,
   FILES_TABS,
@@ -79,22 +79,23 @@ describe("panel 2 tab labels", () => {
  * (directories) or the two-character status plus a space (files), then the depth-truncated name.
  */
 describe("files tab tree rows", () => {
-  test("renders a compressed directory chain with lazygit's arrows and indentation", () => {
+  test("renders lazygit's root item and compressed directory chain", () => {
     const state = createFilesTreeState(model([staged, unstaged, untracked]))
     const rows = filesTreeRows(state, model([staged, unstaged, untracked]))
-    expect(rows.map((row) => row.id)).toEqual(["file:README.md", "dir:src/ui", "file:src/ui/a.ts", "file:src/ui/b.ts"])
+    expect(rows.map((row) => row.id)).toEqual(["dir:.", "file:./README.md", "dir:./src/ui", "file:./src/ui/a.ts", "file:./src/ui/b.ts"])
     expect(treeLines(rows)).toEqual([
-      "?? README.md",
-      `${EXPANDED_ARROW} src/ui`,
-      "  M  a.ts",
-      "   M b.ts",
+      `${EXPANDED_ARROW} /`,
+      "  ?? README.md",
+      `  ${EXPANDED_ARROW} src/ui`,
+      "    M  a.ts",
+      "     M b.ts",
     ])
   })
 
   test("keeps githunk's review-status marker in its own leading column", () => {
     const m = model([staged, unstaged, untracked], { "src/ui/a.ts": "reviewed", "src/ui/b.ts": "reviewing", "README.md": "changed-after-review" })
     const rows = filesTreeRows(createFilesTreeState(m), m)
-    expect(rows.map((row) => row.columns[0]!.text)).toEqual(["!", " ", "●", "◐"])
+    expect(rows.map((row) => row.columns[0]!.text)).toEqual([" ", "!", " ", "●", "◐"])
     const plain = model([file("top.txt")])
     expect(filesTreeRows(createFilesTreeState(plain), plain)[0]!.columns[0]!.text).toBe("○")
   })
@@ -102,23 +103,27 @@ describe("files tab tree rows", () => {
   test("colours the two status characters independently of the row's name colour", () => {
     const m = model([staged, unstaged, untracked])
     const rows = filesTreeRows(createFilesTreeState(m), m)
+    const readme = rows.find((row) => row.id === "file:./README.md")!
+    const stagedRow = rows.find((row) => row.id === "file:./src/ui/a.ts")!
+    const unstagedRow = rows.find((row) => row.id === "file:./src/ui/b.ts")!
     // files.go:184-199 formatFileStatus: staged char green, unstaged char red, "?" red, " " the
     // row's own colour. files.go:135/137: staged-only names are green, mixed ones yellow.
-    expect(rows[0]!.columns[1]!.segments).toEqual([
+    expect(readme.columns[1]!.segments).toEqual([
+      { text: "  " },
       { text: "?", color: UNSTAGED_CHANGES_FG },
       { text: "?", color: UNSTAGED_CHANGES_FG },
       { text: " " },
       { text: "README.md" },
     ])
-    expect(rows[2]!.columns[1]!.segments).toEqual([
-      { text: "  " },
+    expect(stagedRow.columns[1]!.segments).toEqual([
+      { text: "    " },
       { text: "M", color: FILE_STAGED_FG },
       { text: " ", color: FILE_STAGED_FG },
       { text: " ", color: FILE_STAGED_FG },
       { text: "a.ts", color: FILE_STAGED_FG },
     ])
-    expect(rows[3]!.columns[1]!.segments).toEqual([
-      { text: "  " },
+    expect(unstagedRow.columns[1]!.segments).toEqual([
+      { text: "    " },
       { text: " " },
       { text: "M", color: UNSTAGED_CHANGES_FG },
       { text: " " },
@@ -146,13 +151,15 @@ describe("files tab tree rows", () => {
 
   test("collapsing a directory swaps its arrow and hides its children", () => {
     const m = model([staged, unstaged, untracked])
-    const collapsed = toggleFileTreeCollapsedPath(createFilesTreeState(m), "src/ui")
-    expect(treeLines(filesTreeRows(collapsed, m))).toEqual(["?? README.md", `${COLLAPSED_ARROW} src/ui`])
-    expect(treeLines(filesTreeRows(collapseAllFileTree(createFilesTreeState(m)), m))).toEqual([
-      "?? README.md",
-      `${COLLAPSED_ARROW} src/ui`,
+    const directory = fileTreeRows(createFilesTreeState(m)).find((row) => row.path === "src/ui")!
+    const collapsed = toggleFileTreeCollapsedPath(createFilesTreeState(m), directory.internalPath)
+    expect(treeLines(filesTreeRows(collapsed, m))).toEqual([
+      `${EXPANDED_ARROW} /`,
+      "  ?? README.md",
+      `  ${COLLAPSED_ARROW} src/ui`,
     ])
-    expect(treeLines(filesTreeRows(expandAllFileTree(collapsed), m))).toHaveLength(4)
+    expect(treeLines(filesTreeRows(collapseAllFileTree(createFilesTreeState(m)), m))).toEqual([`${COLLAPSED_ARROW} /`])
+    expect(treeLines(filesTreeRows(expandAllFileTree(collapsed), m))).toHaveLength(5)
   })
 
   test("flat mode drops the directory rows and shows whole paths", () => {
