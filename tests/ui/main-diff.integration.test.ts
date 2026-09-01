@@ -104,6 +104,13 @@ describe("main pane diff rendering", () => {
     expect(header.attributes).toBe(0)
     const stat = mainSpanWith(harness, top + 8, "a.txt |")
     expect(stat.attributes).toBe(0)
+    const statSpans = mainSpans(harness, top + 8)
+    const statAdditions = statSpans.find((span) => span.text.includes("+"))
+    expect(statAdditions).toBeDefined()
+    expectIndexed(statAdditions!.fg, 2)
+    const statDeletions = statSpans.find((span) => span.text.includes("-"))
+    expect(statDeletions).toBeDefined()
+    expectIndexed(statDeletions!.fg, 1)
     // The patch's own rows are styled from `diff --git` on: 11 rows of preamble in this fixture.
     expect(mainSpanWith(harness, top + 12, "index ").attributes & TextAttributes.DIM).toBe(TextAttributes.DIM)
     expectIndexed(mainSpanWith(harness, top + 15, "@@ -1,2 +1,3 @@").fg, 6)

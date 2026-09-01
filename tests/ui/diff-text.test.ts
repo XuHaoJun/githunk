@@ -138,6 +138,52 @@ describe("diff text installation", () => {
       pane.destroy()
     }
   })
+  test("colours stat graphs and binary sizes without matching commit text", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 20 })
+    try {
+      const text = new TextRenderable(setup.renderer, { id: "main-text", content: "", width: 118, height: 18, selectable: true })
+      setup.renderer.root.add(text)
+      text.wrapMode = "char"
+      const preamble = [
+        "commit abc",
+        "",
+        "    release | 1 +-",
+        "",
+        "---",
+        " src/中.txt | 2 +-",
+        " data.bin | Bin 9 -> 16 bytes",
+        " mode.bin | Bin",
+        " 3 files changed, 1 insertion(+), 1 deletion(-)",
+        "",
+      ].join("\n")
+      const rendered = renderDiff(parseDiff(patchText(1)))
+      installDiffText(text, { preamble, body: rendered.displayText, displayLines: rendered.displayLines })
+      await setup.flush()
+
+      const frame = setup.captureSpans()
+      const spanWith = (row: number, needle: string) => frame.lines[row]!.spans.find((span) => span.text.includes(needle))
+      expect(frame.lines[2]!.spans.some((span) => span.fg.intent === "indexed")).toBe(false)
+      const statAddition = spanWith(5, "+")
+      expect(statAddition).toBeDefined()
+      expect(statAddition!.fg.intent).toBe("indexed")
+      expect(statAddition!.fg.slot).toBe(2)
+      const statDeletion = spanWith(5, "-")
+      expect(statDeletion).toBeDefined()
+      expect(statDeletion!.fg.intent).toBe("indexed")
+      expect(statDeletion!.fg.slot).toBe(1)
+      const binaryOld = spanWith(6, "9")
+      expect(binaryOld).toBeDefined()
+      expect(binaryOld!.fg.intent).toBe("indexed")
+      expect(binaryOld!.fg.slot).toBe(1)
+      const binaryNew = spanWith(6, "16")
+      expect(binaryNew).toBeDefined()
+      expect(binaryNew!.fg.intent).toBe("indexed")
+      expect(binaryNew!.fg.slot).toBe(2)
+      expect(frame.lines[7]!.spans.some((span) => span.fg.intent === "indexed")).toBe(false)
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
 })
 
 /**
