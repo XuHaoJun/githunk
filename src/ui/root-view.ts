@@ -2616,6 +2616,13 @@ export class RootView {
       )
     }).catch((error: unknown) => {
       this.mutationInFlight = false
+      const current = this.activeListView("branches")
+      const expectedSelectedId = targets[0] === undefined ? undefined : `local:${targets[0].branch.name}`
+      if (requestGeneration !== this.branchActionGeneration || this.focusManager.active !== "branches" || current?.state.selectedId !== expectedSelectedId) {
+        this.panes.main.box.bottomTitle = undefined
+        this.root.requestRender()
+        return
+      }
       this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
       this.root.requestRender()
     })

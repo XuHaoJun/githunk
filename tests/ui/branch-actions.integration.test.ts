@@ -424,6 +424,29 @@ describe("branch action parity", () => {
     expect((await harness.repository.git(["branch", "--list", "throwaway"])).stdout).toContain("throwaway")
     expect(harness.app.view!.mainPane.box.bottomTitle).toBeUndefined()
   })
+  test("moving selection while a branch range merge check rejects clears the abandoned error", async () => {
+    let rejectCheck: (error: unknown) => void = () => undefined
+    const checkFinished = new Promise<boolean>((_, reject) => { rejectCheck = reject })
+    harness = await createShellHarness({
+      onCheckBranchMerged: async () => checkFinished,
+    })
+    await harness.repository.git(["branch", "feature-a"])
+    await harness.repository.git(["branch", "feature-b"])
+    await harness.app.refresh()
+
+    await harness.pressKey("3")
+    await harness.pressKey("j")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey("d")
+    await harness.pressKey("c")
+    await harness.pressKey("k")
+    rejectCheck(new Error("abandoned merge check"))
+    await harness.settle()
+
+    expect(harness.frame()).not.toContain("abandoned merge check")
+    expect(harness.app.view!.mainPane.box.bottomTitle).toBeUndefined()
+  })
 
   test("cycling branch tabs while merge check is pending cancels deletion", async () => {
     let releaseCheck: (merged: boolean) => void = () => undefined
