@@ -652,62 +652,86 @@ export class AppController {
 
   async deleteBranches(requests: readonly BranchDeleteRequest[]): Promise<void> {
     const affectedRemotes = new Set<string>()
-    await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
-      for (const request of requests) {
-        if (request.mode === "local") continue
-        if (request.remote === undefined || request.remoteBranch === undefined) {
-          throw new Error(request.mode === "remote"
-            ? "remote branch deletion requires an upstream"
-            : "local and remote deletion requires an upstream")
-        }
-      }
-      for (let index = 0; index < requests.length; index += 1) {
-        const request = requests[index]
-        if (request === undefined || request.mode !== "local-and-remote") continue
-        const merged = await isGitBranchMerged(runner, request.branch)
-        if (!merged && request.force !== true) {
-          throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
-        }
-      }
-      let localActionLogged = false
-      const remoteActionsLogged = new Set<string>()
-      for (let index = 0; index < requests.length; index += 1) {
-        const request = requests[index]
-        if (request === undefined) continue
-        if (request.mode === "local") {
-          if (!localActionLogged) {
-            this.logAction(LOG_ACTIONS.deleteLocalBranch)
-            localActionLogged = true
+    let mutationFailed = false
+    let mutationError: unknown
+    try {
+      await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
+        for (const request of requests) {
+          if (request.mode === "local") continue
+          if (request.remote === undefined || request.remoteBranch === undefined) {
+            throw new Error(request.mode === "remote"
+              ? "remote branch deletion requires an upstream"
+              : "local and remote deletion requires an upstream")
           }
-          await deleteBranch(runner, request.branch, request.force ? { force: true, confirmed: true } : {})
-          continue
         }
-        if (request.mode === "remote") {
-          if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
+        for (let index = 0; index < requests.length; index += 1) {
+          const request = requests[index]
+          if (request === undefined || request.mode !== "local-and-remote") continue
+          const merged = await isGitBranchMerged(runner, request.branch)
+          if (!merged && request.force !== true) {
+            throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
+          }
+        }
+        let localActionLogged = false
+        const remoteActionsLogged = new Set<string>()
+        for (let index = 0; index < requests.length; index += 1) {
+          const request = requests[index]
+          if (request === undefined) continue
+          if (request.mode === "local") {
+            if (!localActionLogged) {
+              this.logAction(LOG_ACTIONS.deleteLocalBranch)
+              localActionLogged = true
+            }
+            await deleteBranch(runner, request.branch, request.force ? { force: true, confirmed: true } : {})
+            continue
+          }
+          if (request.mode === "remote") {
+            if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
+            affectedRemotes.add(request.remote)
+            if (!remoteActionsLogged.has(request.remote)) {
+              this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+              remoteActionsLogged.add(request.remote)
+            }
+            await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
+            continue
+          }
+          if (request.remote === undefined || request.remoteBranch === undefined) {
+            throw new Error("local and remote deletion requires an upstream")
+          }
           affectedRemotes.add(request.remote)
           if (!remoteActionsLogged.has(request.remote)) {
             this.logAction(LOG_ACTIONS.deleteRemoteBranch)
             remoteActionsLogged.add(request.remote)
           }
           await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
-          continue
+          if (!localActionLogged) {
+            this.logAction(LOG_ACTIONS.deleteLocalBranch)
+            localActionLogged = true
+          }
+          await deleteBranch(runner, request.branch, { force: true, confirmed: true })
         }
-        if (request.remote === undefined || request.remoteBranch === undefined) {
-          throw new Error("local and remote deletion requires an upstream")
+      }), { refreshOnFailure: true })
+    } catch (error) {
+      mutationFailed = true
+      mutationError = error
+    }
+    if (mutationFailed) {
+      for (const remote of affectedRemotes) {
+        try {
+          await this.browseRemote(remote)
+        } catch {
+          const banner = mutationError instanceof GitCommandError
+            ? (mutationError.record.stderr || mutationError.message)
+            : mutationError instanceof Error ? mutationError.message : String(mutationError)
+          this.currentState = {
+            ...this.currentState,
+            banner,
+            ...this.commandLogSnapshot(),
+          }
         }
-        affectedRemotes.add(request.remote)
-        if (!remoteActionsLogged.has(request.remote)) {
-          this.logAction(LOG_ACTIONS.deleteRemoteBranch)
-          remoteActionsLogged.add(request.remote)
-        }
-        await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
-        if (!localActionLogged) {
-          this.logAction(LOG_ACTIONS.deleteLocalBranch)
-          localActionLogged = true
-        }
-        await deleteBranch(runner, request.branch, { force: true, confirmed: true })
       }
-    }), { refreshOnFailure: true })
+      throw mutationError
+    }
     for (const remote of affectedRemotes) await this.browseRemote(remote)
   }
 

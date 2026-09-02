@@ -635,6 +635,112 @@ describe("AppController", () => {
     }
   })
 
+  test("rebuilds affected remote children after a later batch failure", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["push", "--quiet", "origin", "master:remote-only"])
+      await repository.git(["fetch", "--quiet", "origin"])
+
+      const runner = new GitRunner({ cwd: repository.path })
+      let loads = 0
+      let browseCalls = 0
+      const run = runner.run.bind(runner)
+      runner.run = async (args, options = {}) => {
+        if (args[0] === "for-each-ref" && args[2] === "refs/remotes/origin") browseCalls += 1
+        return run(args, options)
+      }
+      const staleRemoteBranch = { name: "remote-only", ref: "origin/remote-only" } as const
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner,
+        load: async (target) => {
+          loads += 1
+          return snapshot(target.scope, "working")
+        },
+        loadBranches: async () => ({
+          detached: false,
+          current: "master",
+          localBranches: [],
+          remotes: [{ name: "origin", branches: [staleRemoteBranch] }],
+        }),
+      })
+
+      await controller.refresh()
+      await expect(controller.deleteBranches([
+        { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
+        { mode: "local", branch: "missing", force: false },
+      ])).rejects.toThrow()
+
+      expect(controller.state.branches?.remotes[0]?.branches).toEqual([])
+      expect(controller.state.banner).toContain("missing")
+      expect(loads).toBe(2)
+      expect(browseCalls).toBe(1)
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+
+  test("preserves a failed branch mutation when remote reconciliation fails", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["push", "--quiet", "origin", "master:remote-only"])
+
+      const runner = new GitRunner({ cwd: repository.path })
+      let remoteDeletionFinished = false
+      let browseCalls = 0
+      const run = runner.run.bind(runner)
+      runner.run = async (args, options = {}) => {
+        if (args[0] === "push" && args[1] === "origin" && args[2] === "--delete") {
+          const result = await run(args, options)
+          remoteDeletionFinished = true
+          return result
+        }
+        if (remoteDeletionFinished && args[0] === "for-each-ref" && args[2] === "refs/remotes/origin") {
+          browseCalls += 1
+          throw new Error("remote browse failed")
+        }
+        return run(args, options)
+      }
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner,
+        load: async (target) => snapshot(target.scope, "working"),
+        loadBranches: async () => ({
+          detached: false,
+          current: "master",
+          localBranches: [],
+          remotes: [{ name: "origin", branches: [] }],
+        }),
+      })
+
+      await controller.refresh()
+      await expect(controller.deleteBranches([
+        { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
+        { mode: "local", branch: "missing", force: false },
+      ])).rejects.toThrow()
+
+      expect(controller.state.banner).toContain("missing")
+      expect(controller.state.banner).not.toContain("remote browse failed")
+      expect(browseCalls).toBe(1)
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+
   test("rejects a malformed remote batch before any deletion", async () => {
     const repository = await createTempRepository()
     const remote = await createTempRepository()
