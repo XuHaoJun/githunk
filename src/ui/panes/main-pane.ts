@@ -74,6 +74,7 @@ function ensureMainTextSelectionSurface(pane: PaneHandle): void {
   }
   if (surface.resetSelection === undefined && surface.textBufferView !== undefined) {
     surface.resetSelection = () => {
+      surface._ctx?.clearSelection?.()
       surface.textBufferView!.resetSelection()
       surface.requestRender?.()
     }
@@ -109,6 +110,11 @@ export function getMainDiffLineRangeState(pane: PaneHandle): DiffLineRangeState 
 function normalizedPreamble(preamble: string): string {
   return preamble.length === 0 || preamble.endsWith("\n") ? preamble : `${preamble}\n`
 }
+function renderedLineStarts(text: string): readonly number[] {
+  const starts: number[] = [0]
+  for (let index = text.indexOf("\n"); index >= 0; index = text.indexOf("\n", index + 1)) starts.push(index + 1)
+  return starts
+}
 
 function mainDiffLineOffsets(document: DiffDocument, startIndex: number, endIndex: number, preamble: string): {
   readonly startUtf16: number
@@ -120,21 +126,44 @@ function mainDiffLineOffsets(document: DiffDocument, startIndex: number, endInde
   const last = document.lines[endIndex]
   if (first === undefined || last === undefined) return undefined
   const rendered = renderDiff(document)
-  const firstSegment = rendered.segments.find((segment) => segment.lineIndex === startIndex)
-  const lastSegment = rendered.segments.find((segment) => segment.lineIndex === endIndex)
-  if (firstSegment === undefined || lastSegment === undefined) return undefined
-  const firstDisplay = rendered.displayLines[startIndex]
-  const lastDisplay = rendered.displayLines[endIndex]
-  if (firstDisplay === undefined || lastDisplay === undefined) return undefined
+  const lines = rendered.displayText.split("\n")
+  const starts = renderedLineStarts(rendered.displayText)
+  const firstText = lines[startIndex]
+  const lastText = lines[endIndex]
+  const firstStart = starts[startIndex]
+  const lastStart = starts[endIndex]
+  if (firstText === undefined || lastText === undefined || firstStart === undefined || lastStart === undefined) return undefined
   const preambleLength = normalizedPreamble(preamble).length
   return {
     startUtf16: first.startUtf16,
     endUtf16: last.endUtf16,
-    // Include the rendered line-number gutter in the visual selection. OpenTUI's range is
-    // UTF-16, just like renderDiff's display offsets and DiffLine raw offsets.
-    displayStartUtf16: preambleLength + firstSegment.displayStartUtf16 - firstDisplay.gutterCols,
-    displayEndUtf16: preambleLength + lastSegment.displayEndUtf16,
+    displayStartUtf16: preambleLength + firstStart,
+    displayEndUtf16: preambleLength + lastStart + lastText.length,
   }
+}
+
+export function mainDiffVisualRowRange(
+  pane: PaneHandle,
+  startIndex: number,
+  endIndex: number,
+): { readonly startRow: number; readonly endRow: number } | undefined {
+  const document = documents.get(pane)
+  if (document === undefined) return undefined
+  const content = installedContents.get(pane)
+  const preambleRows = (normalizedPreamble(content?.preamble ?? "").match(/\n/g) ?? []).length
+  const firstSource = preambleRows + Math.max(0, startIndex)
+  const lastSource = preambleRows + Math.max(startIndex, endIndex)
+  const lineInfo = (pane.text as unknown as { readonly lineInfo?: { readonly lineSources?: readonly number[] } }).lineInfo
+  const sources = lineInfo?.lineSources
+  if (sources !== undefined && sources.length > 0) {
+    const startRow = sources.findIndex((source) => source === firstSource)
+    let endRow = -1
+    for (let row = 0; row < sources.length; row += 1) {
+      if (sources[row]! >= firstSource && sources[row]! <= lastSource) endRow = row
+    }
+    if (startRow >= 0 && endRow >= startRow) return { startRow, endRow }
+  }
+  return { startRow: firstSource, endRow: lastSource }
 }
 
 export function getMainDiffLineSelection(pane: PaneHandle): MainDiffLineSelection | undefined {
@@ -152,7 +181,7 @@ export function getMainDiffLineSelection(pane: PaneHandle): MainDiffLineSelectio
   }
 }
 
-function applyMainDiffLineVisualSelection(pane: PaneHandle): void {
+function applyMainDiffLineVisualSelection(pane: PaneHandle, resetWhenInactive = true): void {
   const text = pane.text as unknown as {
     setSelection?: (start: number, end: number) => void
     resetSelection?: () => void
@@ -160,7 +189,7 @@ function applyMainDiffLineVisualSelection(pane: PaneHandle): void {
   const selection = getMainDiffLineSelection(pane)
   if (selection !== undefined) {
     text.setSelection?.(selection.displayStartUtf16, selection.displayEndUtf16)
-  } else {
+  } else if (resetWhenInactive) {
     text.resetSelection?.()
   }
 }
@@ -176,7 +205,6 @@ export function getMainDocument(pane: PaneHandle): DiffDocument | undefined {
 export function getMainCursorTarget(pane: PaneHandle): MainCursorTarget | undefined {
   return cursorTargets.get(pane)
 }
-
 function hunkKey(hunk: DiffFile["hunks"][number]): string {
   return `${hunk.header.raw}\u0000${hunk.oldStart}:${hunk.oldCount}:${hunk.newStart}:${hunk.newCount}`
 }
@@ -357,9 +385,9 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
           const key = previousTarget.hunkKey ?? (oldFile?.hunks[previousTarget.hunkIndex] === undefined ? undefined : hunkKey(oldFile.hunks[previousTarget.hunkIndex]!))
           const newHunkIndex = key === undefined ? -1 : newFile.hunks.findIndex((hunk) => hunkKey(hunk) === key)
           if (newHunkIndex >= 0) preservedTarget = { fileIndex: newFileIndex, hunkIndex: newHunkIndex, ...(filePath === undefined ? {} : { filePath }), ...(key === undefined ? {} : { hunkKey: key }) }
-        }
       }
     }
+      }
     // If not preserved, pick first hunk
     const initialTarget = preservedTarget ?? (!sameIdentity || !identicalText ? moveMainCursor(doc, undefined, "next") : previousTarget ?? moveMainCursor(doc, undefined, "next"))
     const shouldKeepTarget = sameIdentity && identicalText
@@ -373,23 +401,21 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     } else {
       cursorTargets.delete(pane)
     }
-    pane.text.wrapMode = "char"
-    releaseAnsiText(pane.text)
-    const rendered = renderDiff(doc)
-    installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })
+    if (!sameIdentity || !identicalText) {
+      const rendered = renderDiff(doc)
+      installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })
+    }
     // clamp again after content size known
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
     pane.syncScrollbar()
-    applyMainDiffLineVisualSelection(pane)
+    if (sameIdentity && identicalText && previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
     return
   }
 
   if (content.ansi !== undefined) {
     documents.delete(pane)
-    clearSelection()
-    // A log graph is pre-wrapped by git around the terminal it thinks it has; letting OpenTUI
-    // wrap it too would fold the graph lanes into the message text. lazygit's main view does not
+    if (!sameIdentity || !identicalText) clearSelection()
     // wrap either (pkg/gui/views.go: the Normal view leaves `Wrap` false for command output).
     pane.text.wrapMode = "none"
     releaseDiffText(pane.text)
@@ -399,15 +425,12 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     pane.syncScrollbar()
     return
   }
-
-  // plainText or preamble-only
-  documents.delete(pane)
-  clearSelection()
-  updatePlain(pane, buildPlainContent(content))
+  if (!sameIdentity || !identicalText) clearSelection()
+  if (!sameIdentity || !identicalText) updatePlain(pane, buildPlainContent(content))
   pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
   pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
   pane.syncScrollbar()
-  }
+}
 
 export function setMainLoading(pane: PaneHandle, loading: boolean, tooSmall: boolean): void {
   if (tooSmall) return

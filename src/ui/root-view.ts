@@ -58,7 +58,7 @@ import {
   type FileTreeState,
 } from "./file-tree"
 import { submoduleFullName } from "../domain/submodule"
-import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainDiffVisualRowRange, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { PANE_SCROLLBAR_GUTTER, paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
@@ -1546,8 +1546,7 @@ export class RootView {
       const next = toggleDiffLineRange(state)
       if (next === state) return
       setMainDiffLineRangeState(this.panes.main, next)
-      this.revealMainDiffRange()
-      this.root.requestRender()
+      this.revealMainDiffRange(next.selectedIndex)
       return
     }
     const paneId = this.focusManager.active
@@ -1570,8 +1569,7 @@ export class RootView {
       const next = expandDiffLineRange(state, direction)
       if (next === state) return
       setMainDiffLineRangeState(this.panes.main, next)
-      this.revealMainDiffRange()
-      this.root.requestRender()
+      this.revealMainDiffRange(next.selectedIndex)
       return
     }
     const paneId = this.focusManager.active
@@ -1681,11 +1679,16 @@ export class RootView {
         // separate from the hunk cursor used by `h`/`l`; ordinary movement still scrolls exactly
         // one row, while non-sticky keyboard ranges cancel before the scroll.
         const state = getMainDiffLineRangeState(this.panes.main)
+        let movedSticky = false
+        let endpoint: number | undefined
         if (state !== undefined) {
           const next = moveDiffLineSelection(state, direction)
+          movedSticky = state.rangeMode === "sticky" && next !== state
+          endpoint = next.selectedIndex
           if (next !== state) setMainDiffLineRangeState(this.panes.main, next)
         }
         this.scrollMainBy(direction === "next" ? 1 : -1)
+        if (movedSticky && endpoint !== undefined) this.revealMainDiffRange(endpoint)
         return
       }
       case "command-log":
@@ -1724,12 +1727,16 @@ export class RootView {
   get mainPageDelta(): number {
     return Math.max(1, heightOf(this.geometry.windows.main) - 3)
   }
-  private revealMainDiffRange(): void {
+  private revealMainDiffRange(endpointIndex?: number): void {
     const state = getMainDiffLineRangeState(this.panes.main)
     if (state === undefined) return
     const range = diffLineSelectionRange(state)
+    const endpoint = endpointIndex === undefined ? range.endIndex : endpointIndex
+    const rows = mainDiffVisualRowRange(this.panes.main, endpoint, endpoint)
+      ?? mainDiffVisualRowRange(this.panes.main, range.startIndex, range.endIndex)
+    if (rows === undefined) return
     const visibleLines = Math.max(1, heightOf(this.geometry.windows.main) - 2)
-    this.panes.main.text.scrollY = scrollYToReveal(range.startIndex, range.endIndex, visibleLines, this.panes.main.text.scrollY)
+    this.panes.main.text.scrollY = scrollYToReveal(rows.startRow, rows.endRow, visibleLines, this.panes.main.text.scrollY)
     this.panes.main.syncScrollbar()
   }
 
@@ -2981,8 +2988,8 @@ export class RootView {
         }
       }
       if (nextLine !== -1) {
+        this.clearNonStickyMainRange()
         const targetY = Math.max(0, nextLine - 2)
-        this.panes.main.text.scrollY = targetY
         this.panes.main.box.bottomTitle = `Search: ${query} (${nextLine + 1}/${lines.length})`
         this.root.requestRender()
       }
@@ -3045,6 +3052,7 @@ export class RootView {
         }
       }
       if (prevLine !== -1) {
+        this.clearNonStickyMainRange()
         const targetY = Math.max(0, prevLine - 2)
         this.panes.main.text.scrollY = targetY
         this.panes.main.box.bottomTitle = `Search: ${query} (${prevLine + 1}/${lines.length})`
@@ -3083,16 +3091,16 @@ export class RootView {
   }
 
   private mainActionTarget(document: DiffDocument): MainCursorTarget | undefined {
-    const cursorTarget = getMainCursorTarget(this.panes.main)
-    if (cursorTarget !== undefined) return cursorTarget
     const selected = getMainDiffLineSelection(this.panes.main)
     const firstIndex = selected?.indexes[0]
     const line = firstIndex === undefined ? undefined : document.lines[firstIndex]
-    if (line === undefined) return undefined
-    return {
-      fileIndex: line.fileIndex,
-      ...(line.hunkIndex === undefined ? {} : { hunkIndex: line.hunkIndex }),
+    if (line !== undefined) {
+      return {
+        fileIndex: line.fileIndex,
+        ...(line.hunkIndex === undefined ? {} : { hunkIndex: line.hunkIndex }),
+      }
     }
+    return getMainCursorTarget(this.panes.main)
   }
 
   private mainChangeSelection(): { readonly document: DiffDocument; readonly indexes: readonly number[] } | undefined {
@@ -3844,7 +3852,7 @@ export class RootView {
         endUtf16: keyboardSelection.endUtf16,
         active: true as const,
       }
-    if (selection === undefined && nativeRange) selection = selectionFromRenderable(document, nativeRange, pane.text.getSelectedText())
+    if (selection === undefined && keyboardSelection === undefined && nativeRange) selection = selectionFromRenderable(document, nativeRange, pane.text.getSelectedText())
     if (!selection && (mode === "hunk" || mode === "file")) {
       const target = getMainCursorTarget(pane)
       if (target) {
@@ -3932,6 +3940,7 @@ export class RootView {
     const ratio = trackSize <= 1 ? 0 : clamped / trackSpan
     const range = Math.max(0, bar.scrollSize - bar.viewportSize)
     const newPos = Math.round(ratio * range)
+    if (paneId === "main") this.clearNonStickyMainRange()
     barPane.scrollTo(newPos)
     if (paneId === "command-log") this.commandLog.applyScrollInput("scrollbar")
   }
@@ -4245,6 +4254,7 @@ export class RootView {
               // (pkg/gui/keybindings.go:248-258), the same handlers `,`/`.` use, and both assign
               // `Autoscroll = false` (pkg/gui/extras_panel.go:49,57) before scrolling. This is the
               // only wheel dispatcher in the app, so the transition has to be applied here.
+              if (hit.id === "main") this.clearNonStickyMainRange()
               if (hit.id === "command-log") this.commandLog.applyScrollInput(signed < 0 ? "scroll-up" : "scroll-down")
               pane.scrollBy(signed * 2 * delta)
             }
@@ -4446,6 +4456,10 @@ export class RootView {
           event.preventDefault()
           event.stopPropagation()
           return
+        }
+        if (paneId === "main") {
+          const rangeState = getMainDiffLineRangeState(this.panes.main)
+          if (rangeState !== undefined && rangeState.rangeMode !== "none") setMainDiffLineRangeState(this.panes.main, clearDiffLineRange(rangeState))
         }
         if (paneId === "main") {
           this.pendingClick = undefined
