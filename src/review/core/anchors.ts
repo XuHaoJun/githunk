@@ -148,6 +148,7 @@ export function createLineSelection(
   const lines = sideLinesForHunk(hunk, input.side)
   if (!lines.some((entry) => entry.lineNumber === input.line)) throw new Error("line not found")
   const anchor = createRangeAnchor(file, { side: input.side, startLine: input.line, endLine: input.line })
+  if (anchor.kind !== "range") throw new Error("expected range anchor")
   return { fileKey: file.key, hunkIndex: input.hunkIndex, side: input.side, line: input.line, contentId: anchor.contentId, contextDigest: anchor.contextDigest }
 }
 

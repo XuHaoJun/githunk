@@ -159,7 +159,7 @@ export class ReviewStateStore {
           }
           const nextReviews = {
             ...current.reviews,
-            [reviewId]: { ...persisted, projection: { kind: "aggregate" }, draft: draft ?? null },
+            [reviewId]: { ...persisted, projection: { kind: "aggregate" as const }, draft: draft ?? null },
           }
           await this.file.writeText(serializeReviewDatabaseV2({ ...current, reviews: nextReviews }) + "\n")
           if (this.draftPending.get(reviewId) === draft) this.draftPending.delete(reviewId)

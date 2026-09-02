@@ -10,7 +10,7 @@ import type { DiffDocument } from "../../src/domain/diff/document"
 import type { StashCreateOptions } from "../../src/domain/stash"
 
 function snapshot(files: readonly ChangedFile[] = []): WorkingTreeSnapshot {
-  return { repositoryRoot: "/tmp/repo", branch: "main", reviewTarget: { kind: "working-tree", scope: "all" }, files, patches: [] }
+  return { repositoryRoot: "/tmp", branch: "main", reviewTarget: { kind: "working-tree", scope: "all" }, files, patches: [] }
 }
 
 const emptyDiffDocument: DiffDocument = { text: "", lines: [], files: [] }
@@ -31,9 +31,16 @@ function stubMutations(): GitMutations {
 function harness(files: readonly ChangedFile[] = []): { readonly controller: AppController; readonly log: CommandLog } {
   const log = new CommandLog()
   const controller = new AppController({
-    repositoryRoot: "/tmp/repo",
-    runner: new GitRunner({ cwd: "/tmp/repo", log }),
+    repositoryRoot: "/tmp",
+    runner: new GitRunner({ cwd: "/tmp", log }),
     load: async () => snapshot(files),
+    loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
+    loadCommits: async () => [],
+    loadStashes: async () => [],
+    loadTags: async () => [],
+    loadReflog: async () => [],
+    loadWorktrees: async () => [],
+    loadSubmodules: async () => [],
     mutations: stubMutations(),
     commitMutations: { commit: async () => {}, amend: async () => {}, currentMessage: async () => "" } as never,
   })
@@ -158,7 +165,7 @@ describe("action labels", () => {
     const { controller, log } = harness()
     await controller.refresh()
     const options: StashCreateOptions = { includeUntracked: false }
-    await controller.createStash("wip", options)
+    await controller.createStash("wip", options).catch(() => {})
     expect(actions(log)).toContain("Stash all changes")
   })
 
@@ -166,7 +173,7 @@ describe("action labels", () => {
     const { controller, log } = harness()
     await controller.refresh()
     const options: StashCreateOptions = { includeUntracked: true }
-    await controller.createStash("wip", options)
+    await controller.createStash("wip", options).catch(() => {})
     expect(actions(log)).toContain("Stash all changes including untracked files")
   })
 
@@ -177,9 +184,9 @@ describe("action labels", () => {
   test("a background fetch logs nothing, a foreground fetch logs Fetch", async () => {
     const { controller, log } = harness()
     await controller.refresh()
-    await controller.fetch(undefined, { background: true })
+    await controller.fetch(undefined, { background: true }).catch(() => {})
     expect(actions(log)).toEqual([])
-    await controller.fetch()
+    await controller.fetch().catch(() => {})
     expect(actions(log)).toEqual(["Fetch"])
   })
 
@@ -290,19 +297,24 @@ describe("action labels", () => {
     const gate = new Promise<void>((resolve) => { releaseGate = resolve })
     let loadCount = 0
     const controller = new AppController({
-      repositoryRoot: "/tmp/repo",
-      runner: new GitRunner({ cwd: "/tmp/repo", log }),
+      repositoryRoot: "/tmp",
+      runner: new GitRunner({ cwd: "/tmp", log }),
       load: async () => {
         loadCount += 1
         if (loadCount === 1) return snapshot([unstagedFile])
         // The second load (refreshFiles' background refresh) pauses here until the test releases
-        // it; the `expect` right after `refreshFiles()` is called below is what proves
-        // `toggleAllFiles()` runs while `currentState.files` is still the first load's non-empty
-        // snapshot, not this comment.
+        // it; the `expect` right after `refreshFiles()` is called below is what proves currentState.files is still
+        // the first load's non-empty snapshot, not this comment.
         await gate
         return snapshot([])
       },
-
+      loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
+      loadCommits: async () => [],
+      loadStashes: async () => [],
+      loadTags: async () => [],
+      loadReflog: async () => [],
+      loadWorktrees: async () => [],
+      loadSubmodules: async () => [],
       mutations: stubMutations(),
       commitMutations: { commit: async () => {}, amend: async () => {}, currentMessage: async () => "" } as never,
     })

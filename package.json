@@ -19,9 +19,9 @@
     "prepack": "bun run build",
     "pack:check": "npm pack --dry-run",
     "spike:selection": "bun run spikes/selection/src/main.ts",
-    "test": "bun test",
+    "test": "bun test --path-ignore-patterns='learn-projects/**'",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun test",
+    "check": "bun run typecheck && bun run test",
     "bench:review-load": "bun run benchmarks/review-document-load.ts",
     "bench:review-rows": "bun run benchmarks/review-row-plan.ts",
     "bench:review-reconcile": "bun run benchmarks/review-reconcile.ts"

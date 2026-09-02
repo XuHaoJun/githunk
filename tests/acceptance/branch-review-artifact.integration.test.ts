@@ -132,7 +132,7 @@ describe("branch review workspace – feedback and artifact acceptance", () => {
     await harness.typeText("needs revision")
     expect(harness.frame()).toContain("needs revision")
     await clickNode("review-finish-submit")
-    for (let i = 0; i < 50 && branchController.state?.lastSubmission === undefined; i++) {
+    for (let i = 0; i < 50 && branchController.state?.lastSubmission === null; i++) {
       await harness.flush()
       await new Promise<void>((resolve) => setTimeout(resolve, 20))
     }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { ReviewWorkspaceController } from "../../../src/ui/review-workspace/controller"
 import { ReactReviewHost } from "../../../src/ui/review-workspace/react-review-host"
-import { ReviewStateStore, persistedFromReviewState } from "../../../src/review/storage/review-state-store"
+import { ReviewStateStore, persistedFromReviewState, type ReviewDatabaseV2 } from "../../../src/review/storage/review-state-store"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewIdentity, createReviewGeneration } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
@@ -64,8 +64,8 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
       ...persistedFromReviewState(initial),
       projection: { kind: "commit" as const, oid: "c".repeat(40) },
     }
-    const db = { version: 2 as const, baseByHead: {}, reviews: { [doc.identity.id]: persisted } }
-    let written: typeof db | undefined
+    const db: ReviewDatabaseV2 = { version: 2, baseByHead: {}, reviews: { [doc.identity.id]: persisted } }
+    let written: ReviewDatabaseV2 | undefined
     const stateStore = {
       load: async () => db,
       saveSemanticChange: async (updater: (value: typeof db) => typeof db) => { written = updater(db) },
@@ -491,7 +491,7 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
   test("same-generation refresh retries a failed semantic persistence", async () => {
     const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] })
     const doc = makeDoc([file], "a".repeat(40))
-    let db = { version: 2 as const, baseByHead: {}, reviews: {} }
+    let db: ReviewDatabaseV2 = { version: 2, baseByHead: {}, reviews: {} }
     let writes = 0
     const stateStore = {
       load: async () => db,

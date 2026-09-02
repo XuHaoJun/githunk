@@ -712,36 +712,35 @@ describe("React review workspace", () => {
 
   test("keeps the diff stream aligned with unreviewed filtering after viewed changes", async () => {
     const files = [makeFile("src/unreviewed-a.ts", ["-old", "+new"]), makeFile("src/unreviewed-b.ts", ["-old", "+new"])]
-    const session = makeSession(files)
-    const controller = session.controller as unknown as { state: NonNullable<ReviewWorkspaceController["state"]> }
-    controller.state = { ...controller.state, filter: { query: "", scope: "unreviewed" } }
+    const interactive = makeInteractiveSession(files, [])
+    const { session, getState, setState } = interactive
+    setState({ ...getState(), filter: { query: "", scope: "unreviewed" } })
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
 
     try {
       await flush(setup)
       expect(setup.renderer.root.findDescendantById("review-file-row:src/unreviewed-a.ts")).toBeDefined()
+      await act(async () => { await setup.mockInput.pressKey("/") })
+      await flush(setup)
+      await act(async () => { await setup.mockInput.typeText("b") })
+      await flush(setup)
       const filter = setup.renderer.root.findDescendantById("review-file-filter-input") as unknown as { value: string }
-      await act(async () => {
-        setup.mockInput.pressKey("/")
-        await Bun.sleep(30)
-        await setup.renderOnce()
-        await setup.mockInput.typeText("b")
-        await Bun.sleep(30)
-      })
       expect(filter.value).toContain("b")
-      controller.state = {
-        ...controller.state,
-        viewed: {
-          [files[0]!.key]: {
-            fileKey: files[0]!.key,
-            path: files[0]!.path,
-            contentId: files[0]!.contentId,
-            generationId: controller.state.document.generation.id,
-            viewedAt: "2026-08-28T00:00:00.000Z",
+      await act(async () => {
+        setState({
+          ...getState(),
+          viewed: {
+            [files[0]!.key]: {
+              fileKey: files[0]!.key,
+              path: files[0]!.path,
+              contentId: files[0]!.contentId,
+              generationId: getState().document.generation.id,
+              viewedAt: "2026-08-28T00:00:00.000Z",
+            },
           },
-        },
-      }
-      await act(async () => session.invalidate())
+        })
+        session.invalidate()
+      })
       await flush(setup)
       expect(setup.renderer.root.findDescendantById("review-file-row:src/unreviewed-a.ts")).toBeUndefined()
       expect(setup.renderer.root.findDescendantById("review-section:src/unreviewed-a.ts")).toBeUndefined()
