@@ -288,6 +288,14 @@ describe("Main pane lifecycle", () => {
     setup.renderer.root.add(pane.box)
     const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
     installMainContent(pane, { source: "commit", stableId: "same-entry", label: "Plain", plainText: document.text }, false)
+    const textView = pane.text as unknown as {
+      setSelection?: (start: number, end: number) => void
+      getSelection?: () => unknown
+      hasSelection?: () => boolean
+    }
+    textView.setSelection?.(0, 5)
+    const nativeBeforePlain = textView.getSelection?.()
+    const hadNativeSelectionPlain = typeof textView.hasSelection === "function" ? textView.hasSelection() : nativeBeforePlain !== undefined
     expect(getMainDocument(pane)).toBeUndefined()
     installMainContent(pane, { source: "commit", stableId: "same-entry", label: "Diff", document }, false)
     expect(getMainDocument(pane)).toBe(document)
@@ -296,6 +304,22 @@ describe("Main pane lifecycle", () => {
     await setup.flush()
     const hasDiffColor = setup.captureSpans().lines.some((line) => line.spans.some((span) => span.fg.intent === "indexed"))
     expect(hasDiffColor).toBe(true)
+    if (hadNativeSelectionPlain && typeof textView.hasSelection === "function") expect(textView.hasSelection()).toBe(false)
+    if (nativeBeforePlain !== undefined && typeof textView.getSelection === "function") expect(textView.getSelection()).toBeNull()
+    installMainContent(pane, { source: "commit", stableId: "same-entry", label: "ANSI", ansi: parseAnsi(document.text) }, false)
+    expect(getMainDocument(pane)).toBeUndefined()
+    expect(pane.text.wrapMode).toBe("none")
+    textView.setSelection?.(0, 5)
+    const nativeBeforeAnsi = textView.getSelection?.()
+    installMainContent(pane, { source: "commit", stableId: "same-entry", label: "Diff again", document }, false)
+    expect(getMainDocument(pane)).toBe(document)
+    expect(getMainDiffLineRangeState(pane)).toBeDefined()
+    expect(pane.text.wrapMode).toBe("char")
+    await setup.flush()
+    const hasDiffColorAfterAnsi = setup.captureSpans().lines.some((line) => line.spans.some((span) => span.fg.intent === "indexed"))
+    expect(hasDiffColorAfterAnsi).toBe(true)
+    if (typeof textView.hasSelection === "function") expect(textView.hasSelection()).toBe(false)
+    if (nativeBeforeAnsi !== undefined && typeof textView.getSelection === "function") expect(textView.getSelection()).toBeNull()
 
     setup.renderer.destroy()
   })

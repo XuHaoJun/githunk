@@ -357,6 +357,10 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     clearSelection()
     pane.text.scrollX = 0
     pane.text.scrollY = 0
+  } else if (enteringDocument) {
+    clearSelection()
+    pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
+    pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
   } else if (identicalText) {
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
