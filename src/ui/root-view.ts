@@ -58,13 +58,12 @@ import {
   type FileTreeState,
 } from "./file-tree"
 import { submoduleFullName } from "../domain/submodule"
-import type { ChangedFile, DiscardFileMode, WorkingTreeScope } from "../domain/review-target"
-import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
-import { commitFileRows } from "./panes/commit-files-pane"
+import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { PANE_SCROLLBAR_GUTTER, paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
 import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
+import { clearDiffLineRange, diffLineSelectionRange, expandDiffLineRange, moveDiffLineSelection, toggleDiffLineRange } from "../domain/diff/line-selection"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
 import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
@@ -1326,10 +1325,10 @@ export class RootView {
         this.menuOpen = !this.menuOpen
         this.recomputeLayout()
         return
-      case "main-scroll-down": scrollMainPane(this.panes.main, "y", MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
-      case "main-scroll-up": scrollMainPane(this.panes.main, "y", -MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
-      case "main-scroll-right": scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
-      case "main-scroll-left": scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
+      case "main-scroll-down": this.clearNonStickyMainRange(); scrollMainPane(this.panes.main, "y", MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
+      case "main-scroll-up": this.clearNonStickyMainRange(); scrollMainPane(this.panes.main, "y", -MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
+      case "main-scroll-right": this.clearNonStickyMainRange(); scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
+      case "main-scroll-left": this.clearNonStickyMainRange(); scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
       case "page-next": this.actionPage("next"); return
       case "page-previous": this.actionPage("previous"); return
       case "goto-top": this.actionJump("top"); return
@@ -1541,6 +1540,16 @@ export class RootView {
   }
 
   private actionToggleRangeSelection(): void {
+    if (this.focusManager.active === "main") {
+      const state = getMainDiffLineRangeState(this.panes.main)
+      if (state === undefined) return
+      const next = toggleDiffLineRange(state)
+      if (next === state) return
+      setMainDiffLineRangeState(this.panes.main, next)
+      this.revealMainDiffRange()
+      this.root.requestRender()
+      return
+    }
     const paneId = this.focusManager.active
     if (paneId !== "files" && paneId !== "branches" && paneId !== "commits" && paneId !== "stash") return
     const active = this.activeListView(paneId)
@@ -1555,6 +1564,16 @@ export class RootView {
   }
 
   private actionExpandRangeSelection(direction: "next" | "previous"): void {
+    if (this.focusManager.active === "main") {
+      const state = getMainDiffLineRangeState(this.panes.main)
+      if (state === undefined) return
+      const next = expandDiffLineRange(state, direction)
+      if (next === state) return
+      setMainDiffLineRangeState(this.panes.main, next)
+      this.revealMainDiffRange()
+      this.root.requestRender()
+      return
+    }
     const paneId = this.focusManager.active
     if (paneId !== "files" && paneId !== "branches" && paneId !== "commits" && paneId !== "stash") return
     const active = this.activeListView(paneId)
@@ -1656,14 +1675,19 @@ export class RootView {
         }
         return
       }
-      case "main":
+      case "main": {
         // One line, like lazygit's `ViewSelectionController.handleLineChange(±1)`
-        // (pkg/gui/controllers/view_selection_controller.go:53-70). The hunk cursor is githunk's
-        // own, for line staging, and `h`/`l` are what move it — binding j/k to it made a short
-        // press do nothing when the next hunk was already on screen, jump a screenful when it was
-        // not, and nothing at all on a pane holding no patch (a branch's commit graph).
+        // (pkg/gui/controllers/view_selection_controller.go:53-70). The line-range cursor is
+        // separate from the hunk cursor used by `h`/`l`; ordinary movement still scrolls exactly
+        // one row, while non-sticky keyboard ranges cancel before the scroll.
+        const state = getMainDiffLineRangeState(this.panes.main)
+        if (state !== undefined) {
+          const next = moveDiffLineSelection(state, direction)
+          if (next !== state) setMainDiffLineRangeState(this.panes.main, next)
+        }
         this.scrollMainBy(direction === "next" ? 1 : -1)
         return
+      }
       case "command-log":
         // `scrollUpExtra`/`scrollDownExtra` (pkg/gui/keybindings.go:249-258) scroll one line and
         // both clear `Autoscroll`, even scrolling down (pkg/gui/extras_panel.go:49,57) — holding
@@ -1700,9 +1724,24 @@ export class RootView {
   get mainPageDelta(): number {
     return Math.max(1, heightOf(this.geometry.windows.main) - 3)
   }
+  private revealMainDiffRange(): void {
+    const state = getMainDiffLineRangeState(this.panes.main)
+    if (state === undefined) return
+    const range = diffLineSelectionRange(state)
+    const visibleLines = Math.max(1, heightOf(this.geometry.windows.main) - 2)
+    this.panes.main.text.scrollY = scrollYToReveal(range.startIndex, range.endIndex, visibleLines, this.panes.main.text.scrollY)
+    this.panes.main.syncScrollbar()
+  }
 
   /** Every keyboard path that scrolls the main view vertically ends here. */
+  private clearNonStickyMainRange(): void {
+    const state = getMainDiffLineRangeState(this.panes.main)
+    if (state?.rangeMode !== "non-sticky") return
+    setMainDiffLineRangeState(this.panes.main, clearDiffLineRange(state))
+  }
+
   private scrollMainBy(delta: number): void {
+    this.clearNonStickyMainRange()
     scrollMainPane(this.panes.main, "y", delta)
     this.root.requestRender()
   }
@@ -2020,7 +2059,7 @@ export class RootView {
     }
     const selected = this.mainChangeSelection()
     const document = getMainDocument(this.panes.main)
-    const target = getMainCursorTarget(this.panes.main)
+    const target = document === undefined ? undefined : this.mainActionTarget(document)
     const parsedPath = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]?.newPath ?? document.files[target.fileIndex]?.oldPath
     const modelFile = parsedPath === undefined ? undefined : this.model.files.find((file) => file.path === parsedPath)
     const availability = modelFile?.conflicted
@@ -2050,8 +2089,8 @@ export class RootView {
       return
     }
     const selected = this.mainChangeSelection()
-    const target = getMainCursorTarget(this.panes.main)
     const document = getMainDocument(this.panes.main)
+    const target = document === undefined ? undefined : this.mainActionTarget(document)
     const targetFile = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]
     const path = targetFile?.newPath !== undefined && targetFile.newPath !== "/dev/null" ? targetFile.newPath : targetFile?.oldPath ?? "selected changes"
     const modelFile = this.model.files.find((file) => file.path === path)
@@ -3043,9 +3082,29 @@ export class RootView {
     return [...paths]
   }
 
+  private mainActionTarget(document: DiffDocument): MainCursorTarget | undefined {
+    const cursorTarget = getMainCursorTarget(this.panes.main)
+    if (cursorTarget !== undefined) return cursorTarget
+    const selected = getMainDiffLineSelection(this.panes.main)
+    const firstIndex = selected?.indexes[0]
+    const line = firstIndex === undefined ? undefined : document.lines[firstIndex]
+    if (line === undefined) return undefined
+    return {
+      fileIndex: line.fileIndex,
+      ...(line.hunkIndex === undefined ? {} : { hunkIndex: line.hunkIndex }),
+    }
+  }
+
   private mainChangeSelection(): { readonly document: DiffDocument; readonly indexes: readonly number[] } | undefined {
     const document = getMainDocument(this.panes.main)
     if (!document) return undefined
+    const keyboardSelection = getMainDiffLineSelection(this.panes.main)
+    if (keyboardSelection !== undefined) {
+      return {
+        document,
+        indexes: changeLineIndexes(document, keyboardSelection.startUtf16, keyboardSelection.endUtf16),
+      }
+    }
     const nativeRange = this.panes.main.text.getSelection()
     if (nativeRange) {
       const selection = selectionFromRenderable(document, nativeRange, this.panes.main.text.getSelectedText())
@@ -3775,8 +3834,17 @@ export class RootView {
       this.root.requestRender()
       return
     }
+    const keyboardSelection = getMainDiffLineSelection(pane)
     const nativeRange = pane.text.getSelection()
-    let selection = nativeRange ? selectionFromRenderable(document, nativeRange, pane.text.getSelectedText()) : undefined
+    let selection = mode === "hunk" || mode === "file" || keyboardSelection === undefined
+      ? undefined
+      : {
+        valid: true as const,
+        startUtf16: keyboardSelection.startUtf16,
+        endUtf16: keyboardSelection.endUtf16,
+        active: true as const,
+      }
+    if (selection === undefined && nativeRange) selection = selectionFromRenderable(document, nativeRange, pane.text.getSelectedText())
     if (!selection && (mode === "hunk" || mode === "file")) {
       const target = getMainCursorTarget(pane)
       if (target) {

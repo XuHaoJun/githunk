@@ -2,8 +2,10 @@ import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import type { DiffDocument, DiffFile } from "../../domain/diff/document"
 import { renderDiff } from "../../domain/diff/render"
+import { changedIndexesInDiffLineRange, createDiffLineRangeState, diffLineSelectionRange, type DiffLineRangeState } from "../../domain/diff/line-selection"
 import type { AnsiText } from "../ansi"
 import { createPane, type PaneHandle } from "./common"
+import { SELECTED_LINE_BG } from "../theme"
 import { installAnsiText, releaseAnsiText } from "./ansi-text"
 import { installDiffText, releaseDiffText } from "./diff-text"
 
@@ -11,6 +13,7 @@ import { installDiffText, releaseDiffText } from "./diff-text"
 
 const documents = new WeakMap<PaneHandle, DiffDocument>()
 const cursorTargets = new WeakMap<PaneHandle, MainCursorTarget>()
+const lineRanges = new WeakMap<PaneHandle, DiffLineRangeState>()
 const installedContents = new WeakMap<PaneHandle, MainPaneContent>()
 const renderedTexts = new WeakMap<PaneHandle, string>()
 const paneTitles = new WeakMap<PaneHandle, string>()
@@ -49,14 +52,123 @@ export const MAIN_TITLE_REMOTE_BRANCH = "Remote Branch"
 export const MAIN_TITLE_REMOTE = "Remote"
 export const MAIN_TITLE_TAG = "Tag"
 
+type MainTextSelectionSurface = {
+  setSelection?: (start: number, end: number) => void
+  resetSelection?: () => void
+  readonly textBufferView?: {
+    setSelection(start: number, end: number, bgColor?: unknown, fgColor?: unknown): void
+    resetSelection(): void
+  }
+  readonly _ctx?: { clearSelection?: () => void }
+  requestRender?: () => void
+}
+
+function ensureMainTextSelectionSurface(pane: PaneHandle): void {
+  const surface = pane.text as unknown as MainTextSelectionSurface
+  if (surface.setSelection === undefined && surface.textBufferView !== undefined) {
+    surface.setSelection = (start, end) => {
+      surface._ctx?.clearSelection?.()
+      surface.textBufferView!.setSelection(start, end, pane.text.selectionBg)
+      surface.requestRender?.()
+    }
+  }
+  if (surface.resetSelection === undefined && surface.textBufferView !== undefined) {
+    surface.resetSelection = () => {
+      surface.textBufferView!.resetSelection()
+      surface.requestRender?.()
+    }
+  }
+}
+
 export function createMainPane(renderer: CliRenderer, _model: AppModel): PaneHandle {
   const pane = createPane(renderer, "main", "0 Main", "", true)
+  // OpenTUI's two-argument UTF-16 setSelection uses selectionBg when it is configured on the
+  // renderable. Keep pointer and keyboard selections on the same visible blue background.
+  pane.text.selectionBg = SELECTED_LINE_BG
+  ensureMainTextSelectionSurface(pane)
   // content will be installed via gate; keep placeholder until first install
   pane.box.title = "0 Main"
   paneTitles.set(pane, "0 Main")
   return pane
 }
 
+export type MainDiffLineSelection = {
+  readonly document: DiffDocument
+  readonly state: DiffLineRangeState
+  readonly indexes: readonly number[]
+  readonly startUtf16: number
+  readonly endUtf16: number
+  readonly displayStartUtf16: number
+  readonly displayEndUtf16: number
+}
+
+export function getMainDiffLineRangeState(pane: PaneHandle): DiffLineRangeState | undefined {
+  return lineRanges.get(pane)
+}
+
+function normalizedPreamble(preamble: string): string {
+  return preamble.length === 0 || preamble.endsWith("\n") ? preamble : `${preamble}\n`
+}
+
+function mainDiffLineOffsets(document: DiffDocument, startIndex: number, endIndex: number, preamble: string): {
+  readonly startUtf16: number
+  readonly endUtf16: number
+  readonly displayStartUtf16: number
+  readonly displayEndUtf16: number
+} | undefined {
+  const first = document.lines[startIndex]
+  const last = document.lines[endIndex]
+  if (first === undefined || last === undefined) return undefined
+  const rendered = renderDiff(document)
+  const firstSegment = rendered.segments.find((segment) => segment.lineIndex === startIndex)
+  const lastSegment = rendered.segments.find((segment) => segment.lineIndex === endIndex)
+  if (firstSegment === undefined || lastSegment === undefined) return undefined
+  const firstDisplay = rendered.displayLines[startIndex]
+  const lastDisplay = rendered.displayLines[endIndex]
+  if (firstDisplay === undefined || lastDisplay === undefined) return undefined
+  const preambleLength = normalizedPreamble(preamble).length
+  return {
+    startUtf16: first.startUtf16,
+    endUtf16: last.endUtf16,
+    // Include the rendered line-number gutter in the visual selection. OpenTUI's range is
+    // UTF-16, just like renderDiff's display offsets and DiffLine raw offsets.
+    displayStartUtf16: preambleLength + firstSegment.displayStartUtf16 - firstDisplay.gutterCols,
+    displayEndUtf16: preambleLength + lastSegment.displayEndUtf16,
+  }
+}
+
+export function getMainDiffLineSelection(pane: PaneHandle): MainDiffLineSelection | undefined {
+  const document = documents.get(pane)
+  const state = lineRanges.get(pane)
+  if (document === undefined || state === undefined || state.rangeMode === "none") return undefined
+  const range = diffLineSelectionRange(state)
+  const offsets = mainDiffLineOffsets(document, range.startIndex, range.endIndex, installedContents.get(pane)?.preamble ?? "")
+  if (offsets === undefined) return undefined
+  return {
+    document,
+    state,
+    indexes: changedIndexesInDiffLineRange(document, state),
+    ...offsets,
+  }
+}
+
+function applyMainDiffLineVisualSelection(pane: PaneHandle): void {
+  const text = pane.text as unknown as {
+    setSelection?: (start: number, end: number) => void
+    resetSelection?: () => void
+  }
+  const selection = getMainDiffLineSelection(pane)
+  if (selection !== undefined) {
+    text.setSelection?.(selection.displayStartUtf16, selection.displayEndUtf16)
+  } else {
+    text.resetSelection?.()
+  }
+}
+
+export function setMainDiffLineRangeState(pane: PaneHandle, state: DiffLineRangeState): void {
+  lineRanges.set(pane, state)
+  applyMainDiffLineVisualSelection(pane)
+}
 export function getMainDocument(pane: PaneHandle): DiffDocument | undefined {
   return documents.get(pane)
 }
@@ -142,7 +254,7 @@ export function getMainRenderedText(pane: PaneHandle): string | undefined {
 
 function renderedTextFor(content: MainPaneContent): string {
   if (content.document !== undefined) {
-    return `${content.preamble ?? ""}${content.document.text}`
+    return `${normalizedPreamble(content.preamble ?? "")}${content.document.text}`
   }
   if (content.ansi !== undefined) return `${content.preamble ?? ""}${content.ansi.text}`
   if (content.plainText !== undefined) return content.plainText
@@ -186,6 +298,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
   renderedTexts.set(pane, nextText)
   paneTitles.set(pane, `0 Main — ${content.label}`)
 
+  const previousRange = lineRanges.get(pane)
   const clearSelection = (): void => {
     const view = pane.text
     if (view !== null && typeof view === "object" && "resetSelection" in view) {
@@ -193,6 +306,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
       if (typeof reset === "function") reset.call(view)
     }
     cursorTargets.delete(pane)
+    lineRanges.delete(pane)
   }
 
   if (tooSmall) {
@@ -250,6 +364,10 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     const initialTarget = preservedTarget ?? (!sameIdentity || !identicalText ? moveMainCursor(doc, undefined, "next") : previousTarget ?? moveMainCursor(doc, undefined, "next"))
     const shouldKeepTarget = sameIdentity && identicalText
     documents.set(pane, doc)
+    const nextRange = sameIdentity && identicalText && previousRange?.lineCount === doc.lines.length
+      ? previousRange
+      : createDiffLineRangeState(doc)
+    lineRanges.set(pane, nextRange)
     if (shouldKeepTarget && initialTarget) {
       cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
     } else {
@@ -263,6 +381,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
     pane.syncScrollbar()
+    applyMainDiffLineVisualSelection(pane)
     return
   }
 
@@ -283,6 +402,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
 
   // plainText or preamble-only
   documents.delete(pane)
+  clearSelection()
   updatePlain(pane, buildPlainContent(content))
   pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
   pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))

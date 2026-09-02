@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { TextAttributes, type RGBA } from "@opentui/core"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import type { TempRepository } from "../helpers/temp-repository"
+import { getMainDiffLineRangeState, getMainDiffLineSelection } from "../../src/ui/panes/main-pane"
 
 
 /** The main pane's spans on `row`, clipped to its own text window, in paint order. */
@@ -36,6 +37,10 @@ function expectDefault(color: RGBA): void {
 function expectIndexed(color: RGBA, slot: number): void {
   expect(color.intent).toBe("indexed")
   expect(color.slot).toBe(slot)
+}
+function mainHasSelectionBackground(harness: ShellHarness, row: number): boolean {
+  const line = harness.captureSpans().lines[row]
+  return line?.spans.some((span) => span.bg.intent !== "default" && span.bg.a > 0) ?? false
 }
 
 
@@ -145,6 +150,95 @@ describe("main pane diff rendering", () => {
     expect(body).toBeDefined()
     expect(body!.fg.intent).toBe("indexed")
     expect([1, 2]).toContain(body!.fg.slot)
+  })
+})
+
+describe("main pane keyboard line ranges", () => {
+  let harness: ShellHarness | undefined
+  afterEach(async () => {
+    await harness?.cleanup()
+    harness = undefined
+  })
+
+  async function changedFileHarness(): Promise<ShellHarness> {
+    return createShellHarness({
+      width: 140,
+      height: 30,
+      setup: async (repository: TempRepository) => {
+        await repository.write("a.txt", "one\ntwo\nthree\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("a.txt", "one\nTWO\nthree\n")
+      },
+    })
+  }
+  async function useUnstagedScope(): Promise<void> {
+    await harness!.pressKey("]")
+    await harness!.settle()
+    await harness!.pressKey("]")
+    await harness!.settle()
+  }
+
+
+  test("selects contiguous changed lines for staging and paints the visual range", async () => {
+    harness = await changedFileHarness()
+    await harness.pressKey("0")
+    const view = harness.app.view!
+    await useUnstagedScope()
+    expect(getMainDiffLineRangeState(view.mainPane)?.rangeMode).toBe("none")
+
+    await harness.pressKey("v")
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    const selected = getMainDiffLineSelection(view.mainPane)
+    expect(selected?.indexes.length).toBe(2)
+    expect(selected?.endUtf16).toBeGreaterThan(selected?.startUtf16 ?? 0)
+    const top = view.paneTextGeometry("main")!.screenY
+    for (const index of selected?.indexes ?? []) expect(mainHasSelectionBackground(harness, top + index)).toBe(true)
+
+    await harness.pressKey(" ")
+    await harness.settle()
+    const staged = await harness.repository.git(["diff", "--cached", "--", "a.txt"])
+    expect(staged.stdout).toContain("-two")
+    expect(staged.stdout).toContain("+TWO")
+  })
+
+  test("routes keyboard ranges through discard and preserves native copy text", async () => {
+    harness = await changedFileHarness()
+    await useUnstagedScope()
+    await harness.pressKey("0")
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    expect(getMainDiffLineRangeState(harness.app.view!.mainPane)?.rangeMode).toBe("non-sticky")
+
+    const copied: string[] = []
+    const renderer = harness.renderer as unknown as {
+      isOsc52Supported: () => boolean
+      copyToClipboardOSC52: (text: string) => boolean
+    }
+    renderer.isOsc52Supported = () => true
+    renderer.copyToClipboardOSC52 = (text) => {
+      copied.push(text)
+      return true
+    }
+    await harness.pressKey("o", { ctrl: true })
+    expect(copied).toHaveLength(1)
+    expect(copied[0]).toContain("-two\n+TWO\n")
+
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Confirm discard")
+    await harness.pressKey("d")
+    await harness.settle()
+    const worktree = await harness.repository.git(["diff", "--", "a.txt"])
+    expect(worktree.stdout).not.toContain("TWO")
+  })
+
+  test("ordinary main movement cancels a non-sticky range", async () => {
+    harness = await changedFileHarness()
+    await harness.pressKey("0")
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    expect(getMainDiffLineRangeState(harness.app.view!.mainPane)?.rangeMode).toBe("non-sticky")
+    await harness.pressKey("j")
+    expect(getMainDiffLineRangeState(harness.app.view!.mainPane)?.rangeMode).toBe("none")
+    expect(getMainDiffLineSelection(harness.app.view!.mainPane)).toBeUndefined()
   })
 })
 
