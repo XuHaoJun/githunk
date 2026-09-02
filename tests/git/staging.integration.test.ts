@@ -65,6 +65,64 @@ describe("GitMutations", () => {
     expect((await repo.git(["diff", "--cached", "--name-only"])).stdout.split("\n").filter(Boolean)).toEqual(["first.txt", "second.txt"])
     expect(refreshes).toBe(1)
   })
+  test("refreshes after a partially failed stage batch and rethrows the mutation error", async () => {
+    await repo.write("first.txt", "first\n")
+    let refreshes = 0
+    const mutations = new GitMutations(runner, async () => { refreshes += 1 })
+
+    await expect(mutations.stageFiles(["first.txt", "missing.txt"])).rejects.toThrow()
+
+    expect((await repo.git(["diff", "--cached", "--name-only"])).stdout.trim()).toBe("first.txt")
+    expect(refreshes).toBe(1)
+  })
+
+  test("refreshes after a partially failed unstage batch and rethrows the mutation error", async () => {
+    await repo.write("first.txt", "first\n")
+    await repo.git(["add", "--", "first.txt"])
+    let refreshes = 0
+    const mutations = new GitMutations(runner, async () => { refreshes += 1 })
+
+    await expect(mutations.unstageFiles(["first.txt", "missing.txt"])).rejects.toThrow()
+
+    expect((await repo.git(["diff", "--cached", "--name-only"])).stdout).toBe("")
+    expect(refreshes).toBe(1)
+  })
+
+  test("refreshes after a partially failed discard batch and rethrows the mutation error", async () => {
+    await repo.write("first.txt", "first\n")
+    let refreshes = 0
+    const mutations = new GitMutations(runner, async () => { refreshes += 1 })
+
+    await expect(mutations.discardFiles(["first.txt", "/"], "unstaged")).rejects.toThrow()
+
+    expect((await repo.git(["status", "--short"])).stdout).toBe("")
+    expect(refreshes).toBe(1)
+  })
+
+  test("unstages a batch and refreshes once on success", async () => {
+    await repo.write("first.txt", "first\n")
+    await repo.write("second.txt", "second\n")
+    await repo.git(["add", "--", "first.txt", "second.txt"])
+    let refreshes = 0
+    const mutations = new GitMutations(runner, async () => { refreshes += 1 })
+
+    await mutations.unstageFiles(["first.txt", "second.txt"])
+
+    expect((await repo.git(["diff", "--cached", "--name-only"])).stdout).toBe("")
+    expect(refreshes).toBe(1)
+  })
+
+  test("discards a batch and refreshes once on success", async () => {
+    await repo.write("first.txt", "first\n")
+    await repo.write("second.txt", "second\n")
+    let refreshes = 0
+    const mutations = new GitMutations(runner, async () => { refreshes += 1 })
+
+    await mutations.discardFiles(["first.txt", "second.txt"], "unstaged")
+
+    expect((await repo.git(["status", "--short"])).stdout).toBe("")
+    expect(refreshes).toBe(1)
+  })
 
   test("discards a batch of files and refreshes once", async () => {
     await repo.write("file.txt", "base\nchanged\n")

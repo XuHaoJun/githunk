@@ -29,6 +29,24 @@ export class GitMutations {
     this.runner = runner
     this.refresh = typeof options === "function" ? options : options?.refresh ?? (async () => undefined)
   }
+  private runBatch(paths: readonly string[], mutate: (path: string) => Promise<void>): Promise<void> {
+    return this.queue.run(async () => {
+      try {
+        for (const path of paths) {
+          await mutate(path)
+        }
+      } catch (error) {
+        try {
+          await this.refresh()
+        } catch {
+          // Preserve the original mutation error.
+        }
+        throw error
+      }
+      await this.refresh()
+    })
+  }
+
 
   async stageFile(path: string): Promise<void> {
     return this.queue.run(async () => {
@@ -37,21 +55,16 @@ export class GitMutations {
     })
   }
 
+
   async stageFiles(paths: readonly string[]): Promise<void> {
-    return this.queue.run(async () => {
-      for (const path of paths) {
-        await this.runner.run(["add", "--", path])
-      }
-      await this.refresh()
+    return this.runBatch(paths, async (path) => {
+      await this.runner.run(["add", "--", path])
     })
   }
 
   async unstageFiles(paths: readonly string[]): Promise<void> {
-    return this.queue.run(async () => {
-      for (const path of paths) {
-        await this.runner.run(["restore", "--staged", "--", path])
-      }
-      await this.refresh()
+    return this.runBatch(paths, async (path) => {
+      await this.runner.run(["restore", "--staged", "--", path])
     })
   }
 
@@ -75,17 +88,15 @@ export class GitMutations {
   }
 
   async discardFiles(paths: readonly string[], mode: DiscardFileMode): Promise<void> {
-    return this.queue.run(async () => {
-      for (const path of paths) {
-        if (mode === "all") {
-          await this.runner.run(["restore", "--staged", "--", path], { acceptedExitCodes: [0, 1] })
-        }
-        await this.runner.run(["restore", "--", path], { acceptedExitCodes: [0, 1] })
-        await this.runner.run(["clean", "-f", "-d", "--", path])
+    return this.runBatch(paths, async (path) => {
+      if (mode === "all") {
+        await this.runner.run(["restore", "--staged", "--", path], { acceptedExitCodes: [0, 1] })
       }
-      await this.refresh()
+      await this.runner.run(["restore", "--", path], { acceptedExitCodes: [0, 1] })
+      await this.runner.run(["clean", "-f", "-d", "--", path])
     })
   }
+
   async applySelection(
     document: DiffDocument,
     includedLineIndexes: readonly number[],
