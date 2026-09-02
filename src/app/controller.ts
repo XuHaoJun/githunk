@@ -1020,15 +1020,18 @@ export class AppController {
 
   async stageFiles(paths: readonly string[]): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    if (paths.length === 0) return
     this.logAction(LOG_ACTIONS.stageAllFiles)
     await this.runMutation(() => this.mutations?.stageFiles(paths), true)
   }
 
   async unstageFiles(paths: readonly string[]): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    if (paths.length === 0) return
     this.logAction(LOG_ACTIONS.unstageAllFiles)
     await this.runMutation(() => this.mutations?.unstageFiles(paths), true)
   }
+
 
 
   async unstageFile(path: string): Promise<void> {
@@ -1057,6 +1060,7 @@ export class AppController {
 
   async discardFiles(paths: readonly string[], mode: DiscardFileMode): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
+    if (paths.length === 0) return
     this.logAction(mode === "all" ? LOG_ACTIONS.discardAllChangesInFile : LOG_ACTIONS.discardAllUnstagedChangesInFile)
     await this.runMutation(() => this.mutations?.discardFiles(paths, mode), true)
   }

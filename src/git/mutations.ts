@@ -30,6 +30,7 @@ export class GitMutations {
     this.refresh = typeof options === "function" ? options : options?.refresh ?? (async () => undefined)
   }
   private runBatch(paths: readonly string[], mutate: (path: string) => Promise<void>): Promise<void> {
+    if (paths.length === 0) return Promise.resolve()
     return this.queue.run(async () => {
       try {
         for (const path of paths) {
@@ -47,7 +48,6 @@ export class GitMutations {
     })
   }
 
-
   async stageFile(path: string): Promise<void> {
     return this.queue.run(async () => {
       await this.runner.run(["add", "--", path])
@@ -55,19 +55,39 @@ export class GitMutations {
     })
   }
 
-
   async stageFiles(paths: readonly string[]): Promise<void> {
-    return this.runBatch(paths, async (path) => {
-      await this.runner.run(["add", "--", path])
+    if (paths.length === 0) return
+    return this.queue.run(async () => {
+      try {
+        await this.runner.run(["add", "--", ...paths])
+      } catch (error) {
+        try {
+          await this.refresh()
+        } catch {
+          // Preserve the original mutation error.
+        }
+        throw error
+      }
+      await this.refresh()
     })
   }
 
   async unstageFiles(paths: readonly string[]): Promise<void> {
-    return this.runBatch(paths, async (path) => {
-      await this.runner.run(["restore", "--staged", "--", path])
+    if (paths.length === 0) return
+    return this.queue.run(async () => {
+      try {
+        await this.runner.run(["restore", "--staged", "--", ...paths])
+      } catch (error) {
+        try {
+          await this.refresh()
+        } catch {
+          // Preserve the original mutation error.
+        }
+        throw error
+      }
+      await this.refresh()
     })
   }
-
 
   async unstageFile(path: string): Promise<void> {
     return this.queue.run(async () => {
@@ -88,12 +108,23 @@ export class GitMutations {
   }
 
   async discardFiles(paths: readonly string[], mode: DiscardFileMode): Promise<void> {
-    return this.runBatch(paths, async (path) => {
-      if (mode === "all") {
-        await this.runner.run(["restore", "--staged", "--", path], { acceptedExitCodes: [0, 1] })
+    if (paths.length === 0) return
+    return this.queue.run(async () => {
+      try {
+        if (mode === "all") {
+          await this.runner.run(["restore", "--staged", "--", ...paths], { acceptedExitCodes: [0, 1] })
+        }
+        await this.runner.run(["restore", "--", ...paths], { acceptedExitCodes: [0, 1] })
+        await this.runner.run(["clean", "-f", "-d", "--", ...paths])
+      } catch (error) {
+        try {
+          await this.refresh()
+        } catch {
+          // Preserve the original mutation error.
+        }
+        throw error
       }
-      await this.runner.run(["restore", "--", path], { acceptedExitCodes: [0, 1] })
-      await this.runner.run(["clean", "-f", "-d", "--", path])
+      await this.refresh()
     })
   }
 
