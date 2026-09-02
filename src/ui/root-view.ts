@@ -2600,8 +2600,13 @@ export class RootView {
     if (checkMerged === undefined) {
       const forced = this.branchDeleteRequests(targets, mode, true)
       if (mode === "local") {
-        this.collapseActiveListRange("branches")
-        this.runUiMutation(() => this.onDeleteBranches?.(forced))
+        this.openConfirmation(
+          branchForceDeleteRangeConfirmation(targets.map(({ branch }) => branch.name)),
+          () => {
+            this.collapseActiveListRange("branches")
+            this.runUiMutation(() => this.onDeleteBranches?.(forced))
+          },
+        )
       } else {
         const pairTargets = targets.flatMap(({ branch, upstream }) => upstream === undefined ? [] : [{ branch: branch.name, remote: upstream.remote, remoteBranch: upstream.branch }])
         this.openConfirmation(
