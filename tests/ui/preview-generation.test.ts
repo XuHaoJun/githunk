@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { MainPreviewGate } from "../../src/ui/main-preview"
 import { createTestRenderer } from "@opentui/core/testing"
-import { createMainPane, getMainDiffLineRangeState, getMainDocument, installMainContent, setMainDiffLineRangeState, setMainLoading } from "../../src/ui/panes/main-pane"
+import { createMainPane, getMainCursorTarget, getMainDiffLineRangeState, getMainDocument, installMainContent, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading } from "../../src/ui/panes/main-pane"
 import { parseDiff } from "../../src/domain/diff/parse"
 import type { CommitDetails } from "../../src/domain/commit"
 import type { MainPaneContent } from "../../src/ui/panes/main-pane"
 import { toggleDiffLineRange } from "../../src/domain/diff/line-selection"
+import { parseAnsi } from "../../src/ui/ansi"
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -216,6 +217,37 @@ describe("Main pane lifecycle", () => {
     installMainContent(pane, { source: "commit", stableId: "same", label: "Plain", plainText: document.text }, false)
     expect(getMainDocument(pane)).toBeUndefined()
     expect(getMainDiffLineRangeState(pane)).toBeUndefined()
+    setup.renderer.destroy()
+  })
+
+  test("clears diff state when same identity transitions to ANSI content", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
+    installMainContent(pane, { source: "commit", stableId: "same", label: "Diff", document }, false)
+    const range = getMainDiffLineRangeState(pane)
+    expect(range).toBeDefined()
+    setMainCursorTarget(pane, { fileIndex: 0, hunkIndex: 0 })
+    setMainDiffLineRangeState(pane, toggleDiffLineRange(range!))
+    const textView = pane.text as unknown as { setSelection?: (start: number, end: number) => void }
+    textView.setSelection?.(0, 5)
+    installMainContent(pane, { source: "commit", stableId: "same", label: "ANSI", ansi: parseAnsi("\u001b[31mansi\u001b[0m") }, false)
+    expect(getMainDocument(pane)).toBeUndefined()
+    expect(getMainDiffLineRangeState(pane)).toBeUndefined()
+    expect(getMainCursorTarget(pane)).toBeUndefined()
+    expect(pane.text.wrapMode).toBe("none")
+    expect(pane.text.plainText).toContain("ansi")
     setup.renderer.destroy()
   })
 
