@@ -1,7 +1,7 @@
 {
   "name": "@xuhaojun/githunk",
   "version": "0.1.0",
-  "description": "Review-first Git TUI for inspecting and managing changes.",
+  "description": "A review-first Git TUI combining lazygit's everyday Git workflow with focused hunk review.",
   "type": "module",
   "bin": {
     "githunk": "bin/githunk.js"
