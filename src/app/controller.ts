@@ -1037,9 +1037,13 @@ export class AppController {
     }
   }
 
-  private async reviewForSnapshot(target: ReviewTarget, files: readonly ChangedFile[], patches: readonly PatchSection[]): Promise<{
+  private async reviewForSnapshot(
+    target: ReviewTarget,
+    files: readonly ChangedFile[],
+    patches: readonly PatchSection[],
+  ): Promise<{
     readonly statuses: Readonly<Record<string, ReviewFileState>>
-    readonly summary: { readonly reviewed: number; readonly invalidated: number; readonly commits: number; readonly files: number; readonly additions: number; readonly deletions: number }
+    readonly sections: readonly IndexedPatchSection[]
     readonly warning?: string
   }> {
     let warning: string | undefined
@@ -1064,9 +1068,52 @@ export class AppController {
     }
     return {
       statuses,
-      summary: this.reviewSummaryFor(statuses, files),
+      sections,
       ...(warning === undefined ? {} : { warning }),
     }
+  }
+  private preserveReviewingStatuses(
+    statuses: Readonly<Record<string, ReviewFileState>>,
+    target: ReviewTarget,
+    files: readonly ChangedFile[],
+    sections: readonly IndexedPatchSection[],
+    previousState: AppModel,
+  ): Readonly<Record<string, ReviewFileState>> {
+    const previousTarget = previousState.reviewTarget
+    const previousMutableTarget = previousTarget.kind === "working-tree" || previousTarget.kind === "stash" ? previousTarget : undefined
+    const mutableTarget = target.kind === "working-tree" || target.kind === "stash" ? target : undefined
+    if (
+      previousMutableTarget === undefined ||
+      mutableTarget === undefined ||
+      workingTreeTargetKey(previousMutableTarget) !== workingTreeTargetKey(mutableTarget) ||
+      !previousState.files.some((file) => ownValue(previousState.reviewStatuses, file.path) === "reviewing")
+    ) return statuses
+
+    const previousSections = indexPatchSections(previousState.rawPatchSections)
+    const previousReviewingFingerprints = new Map<string, string>()
+    for (const file of previousState.files) {
+      if (ownValue(previousState.reviewStatuses, file.path) !== "reviewing") continue
+      previousReviewingFingerprints.set(file.path, fingerprintWorkingTreeFile(previousMutableTarget, {
+        currentPath: file.path,
+        previousPath: file.previousPath,
+        rawPatch: rawPatchForFile(file, previousSections),
+      }))
+    }
+
+    let mergedStatuses: Record<string, ReviewFileState> | undefined
+    for (const file of files) {
+      const previousFingerprint = previousReviewingFingerprints.get(file.path)
+      if (previousFingerprint === undefined) continue
+      const fingerprint = fingerprintWorkingTreeFile(mutableTarget, {
+        currentPath: file.path,
+        previousPath: file.previousPath,
+        rawPatch: rawPatchForFile(file, sections),
+      })
+      if (previousFingerprint !== fingerprint || statuses[file.path] === "reviewing") continue
+      mergedStatuses ??= { ...statuses }
+      mergedStatuses[file.path] = "reviewing"
+    }
+    return mergedStatuses ?? statuses
   }
   private async loadCommitHistory(range: string): Promise<{ readonly commits: readonly CommitSummary[]; readonly warning?: string }> {
     try {
@@ -1092,6 +1139,9 @@ export class AppController {
       if (generation !== this.generation) return
       const history = await this.loadCommitHistory("HEAD")
       if (generation !== this.generation) return
+      const reviewState = this.priorStashStateForRefresh ?? this.currentState
+      const reviewStatuses = this.preserveReviewingStatuses(review.statuses, snapshot.reviewTarget, snapshot.files, review.sections, reviewState)
+      const reviewSummary = this.reviewSummaryFor(reviewStatuses, snapshot.files)
       const cursor = this.currentState.reviewTarget.kind === "working-tree"
         ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
         : this.workingTreeCursor
@@ -1104,10 +1154,10 @@ export class AppController {
         banner: _previousBanner,
         selectionId: _previousSelectionId,
         focusId: _previousFocusId,
-        ...previousState
+        ...nextState
       } = this.currentState
       this.currentState = {
-        ...previousState,
+        ...nextState,
         ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
         ...(warning === undefined ? {} : { banner: warning }),
         ...(focusId === undefined ? {} : { focusId }),
@@ -1117,8 +1167,8 @@ export class AppController {
         files: snapshot.files,
         patches: snapshot.patches,
         rawPatchSections: snapshot.patches,
-        reviewStatuses: review.statuses,
-        reviewSummary: review.summary,
+        reviewStatuses,
+        reviewSummary,
         commits: history.commits,
         loading: false,
         ...this.commandLogSnapshot(),
@@ -1147,6 +1197,8 @@ export class AppController {
       const files = changedFilesFromDocument(document)
       const target: ReviewTarget = { kind: "stash", ref: loaded.stash.oid }
       const review = await this.reviewForSnapshot(target, files, [patch])
+      const reviewStatuses = this.preserveReviewingStatuses(review.statuses, target, files, review.sections, this.currentState)
+      const reviewSummary = this.reviewSummaryFor(reviewStatuses, files)
       const {
         banner: _previousBanner,
         ...previousState
@@ -1157,8 +1209,8 @@ export class AppController {
         files,
         patches: [patch],
         rawPatchSections: [patch],
-        reviewStatuses: review.statuses,
-        reviewSummary: review.summary,
+        reviewStatuses,
+        reviewSummary,
         loading: false,
         title: titleFor(target, this.currentState.branch),
         ...this.commandLogSnapshot(),
