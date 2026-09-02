@@ -1,6 +1,7 @@
 # githunk
 
 A review-first Git TUI for inspecting and managing changes.
+![githunk — lazygit panels with hunk review](assets/demo/githunk-review-hunk.gif)
 
 ## Requirements
 
@@ -26,14 +27,6 @@ Run githunk from any directory inside a Git repository:
 cd path/to/repository
 githunk
 ```
-
-## Review workflow
-
-Open Branch Review with `b`, move between files and hunks, mark a file viewed, then finish with `R`.
-
-![githunk Review — focused hunk review](assets/demo/githunk-review-hunk.gif)
-
-*`b` opens the aggregate review → `1` focuses files → `0` focuses the diff → `]` jumps to the next hunk → `r` marks the file viewed → `R` finishes.*
 
 ## Development
 
