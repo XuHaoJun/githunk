@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { RGBA, TextAttributes, type TextChunk } from "@opentui/core"
 import { computeColumnLayout, createListState, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRows } from "../../src/ui/list-view"
-import { FILE_STAGED_FG, REFLOG_HASH_FG, SELECTED_LINE_BG } from "../../src/ui/theme"
+import { FILE_STAGED_FG, REFLOG_HASH_FG, SELECTED_LINE_BG, DEFAULT_BACKGROUND } from "../../src/ui/theme"
 
 const rows = [
   { id: "a", columns: [{ text: "alpha", priority: 0 }] },
@@ -182,5 +182,49 @@ describe("selected row highlighting", () => {
     expect(chunks.every((c) => c.bg === undefined)).toBe(true)
     expect(chunks.every((c) => ((c.attributes ?? 0) & TextAttributes.BOLD) === 0)).toBe(true)
     expectIndexed(chunkFor(chunks, "abc1234").fg, 4)
+  })
+})
+
+describe("hovered row highlighting", () => {
+  const isBold = (chunk: TextChunk) => ((chunk.attributes ?? 0) & TextAttributes.BOLD) === TextAttributes.BOLD
+  const hoverState = selectListRow(createListState([
+    { id: "a", columns: [{ text: "alpha", priority: 0 }] },
+    { id: "b", columns: [{ text: "beta", priority: 0 }] },
+  ]), "a")
+
+  const line = (chunks: readonly TextChunk[], index: number): TextChunk[] => {
+    const lines: TextChunk[][] = [[]]
+    for (const chunk of chunks) {
+      if (chunk.text === "\n") lines.push([])
+      else lines[lines.length - 1]!.push(chunk)
+    }
+    return lines[index]!
+  }
+
+  const colorDistance = (left: RGBA, right: RGBA): number => {
+    const [lr, lg, lb] = left.toInts()
+    const [rr, rg, rb] = right.toInts()
+    return Math.abs(lr - rr) + Math.abs(lg - rg) + Math.abs(lb - rb)
+  }
+
+  test("renders a hovered row with a subdued full-width background", () => {
+    const chunks = line(renderListRows(hoverState, false, 20, "a").chunks, 0)
+    const hovered = chunks.find((chunk) => chunk.text === "alpha")!
+    const defaultBackground = DEFAULT_BACKGROUND
+
+    expect(hovered.bg).toBeDefined()
+    expect(hovered.bg?.intent).toBe("rgb")
+    expect(colorDistance(hovered.bg!, defaultBackground)).toBeLessThan(colorDistance(SELECTED_LINE_BG, defaultBackground))
+    expect(chunks.filter((chunk) => chunk.bg !== undefined).length).toBeGreaterThan(1)
+    expect(chunks.every((chunk) => ((chunk.attributes ?? 0) & TextAttributes.BOLD) === 0)).toBe(true)
+  })
+
+  test("selected styling wins over hover styling", () => {
+    const chunks = line(renderListRows(hoverState, true, 20, "a").chunks, 0)
+    const selected = chunks.find((chunk) => chunk.text === "alpha")!
+
+    expect(selected.bg?.intent).toBe("indexed")
+    expect(selected.bg?.slot).toBe(4)
+    expect(isBold(selected)).toBe(true)
   })
 })

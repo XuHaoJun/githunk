@@ -75,6 +75,22 @@ export const DEFAULT_BACKGROUND = RGBA.defaultBackground(defaultBackgroundFallba
 
 /** lazygit's selected-line background: `SelectedLineBgColor: []string{"blue"}`. */
 export const SELECTED_LINE_BG = ANSI_BLUE
+/** Hover background opacity relative to `SELECTED_LINE_BG`, resolved against terminal background. */
+const HOVER_LINE_MIX = 0.3
+
+/** Subdued selected-line background for pointer hover; unlike selection, this is RGB-resolved. */
+export const HOVER_LINE_BG = RGBA.fromInts(0, 0, 0, 255)
+
+function updateHoverLineBackground(): void {
+  const [selectedR, selectedG, selectedB] = SELECTED_LINE_BG.toInts()
+  const [backgroundR, backgroundG, backgroundB] = DEFAULT_BACKGROUND.toInts()
+  HOVER_LINE_BG.r = (backgroundR + (selectedR - backgroundR) * HOVER_LINE_MIX) / 255
+  HOVER_LINE_BG.g = (backgroundG + (selectedG - backgroundG) * HOVER_LINE_MIX) / 255
+  HOVER_LINE_BG.b = (backgroundB + (selectedB - backgroundB) * HOVER_LINE_MIX) / 255
+}
+
+updateHoverLineBackground()
+
 
 /** lazygit's active border color: `ActiveBorderColor: []string{"green", "bold"}`. */
 export const TAB_ACTIVE_FG = ANSI_GREEN
@@ -172,6 +188,7 @@ export function configureTerminalPalette(snapshot: TerminalPaletteSnapshot): voi
   }
   copyRgbFallback(DEFAULT_FOREGROUND, defaultForegroundFallback)
   copyRgbFallback(DEFAULT_BACKGROUND, defaultBackgroundFallback)
+  updateHoverLineBackground()
 }
 
 /**

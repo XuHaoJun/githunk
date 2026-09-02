@@ -111,6 +111,20 @@ const BRANCHES_TAB_ORDER = ["branches", "remotes", "tags"] as const
 const COMMITS_TAB_ORDER = ["commits", "reflog"] as const
 
 type PaneWindowDimensions = { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
+type ListPaneId = "files" | "branches" | "commits" | "stash"
+
+type ActiveListView = {
+  readonly paneId: ListPaneId
+  readonly viewId: string
+  readonly state: ListState
+}
+
+type HoveredListRow = {
+  readonly paneId: ListPaneId
+  readonly viewId: string
+  readonly rowId: string
+}
+
 
 /**
  * The scrollbar is painted above the list's rightmost text cell. Reserve that cell only when
@@ -243,6 +257,8 @@ export class RootView {
   private activeSplitterDrag: SplitterAxis | undefined
   gestureOwner: GestureOwner | undefined
   private pendingClick: { readonly viewId: string; readonly stableId: string; readonly x: number; readonly y: number; readonly at: number; readonly arrowToggled?: boolean } | undefined
+  private hoveredListRow: HoveredListRow | undefined
+
   private model: AppModel
   private readonly panes: Record<Exclude<FocusId, "command-log">, PaneHandle>
   private readonly commandLog: CommandLogPaneHandle
@@ -1097,14 +1113,15 @@ export class RootView {
       pane.setPlainTitle?.(`[${BRANCHES_JUMP_KEY}]${TITLE_PREFIX_FRAME_RUNE}${this.branchChildTitle(child.value)}`)
     }
     const focused = this.focusManager.active === "branches"
-    const state = this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab]
-    if (state === undefined) {
+    const activeView = this.activeListView("branches")
+    if (activeView === undefined) {
       pane.update("")
       return
     }
+    const { state } = activeView
     const win = this.geometry.windows.branches
     const width = sidePaneListWidth(win, state)
-    const content = renderListRows(state, focused, width)
+    const content = renderListRows(state, focused, width, this.hoveredIdFor(activeView))
     pane.update(content)
     pane.syncScrollbar(sidePaneViewportHeight(win))
   }
@@ -1167,14 +1184,15 @@ export class RootView {
     const pane = this.panes.files
     const tabsInput = this.filesTabsInput()
     pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
-    const state = this.filesView()
-    if (state === undefined) {
+    const activeView = this.activeListView("files")
+    if (activeView === undefined) {
       pane.update("")
       return
     }
+    const { state } = activeView
     const win = this.geometry.windows.files
     const width = sidePaneListWidth(win, state)
-    pane.update(renderListRows(state, tabsInput.focused, width))
+    pane.update(renderListRows(state, tabsInput.focused, width, this.hoveredIdFor(activeView)))
     pane.syncScrollbar(sidePaneViewportHeight(win))
   }
 
@@ -1188,10 +1206,16 @@ export class RootView {
 
   private renderStashPane(): void {
     const pane = this.panes.stash
+    const activeView = this.activeListView("stash")
+    if (activeView === undefined) {
+      pane.update("")
+      return
+    }
+    const { state } = activeView
     const focused = this.focusManager.active === "stash"
     const win = this.geometry.windows.stash
-    const width = sidePaneListWidth(win, this.stashState)
-    const content = renderListRows(this.stashState, focused, width)
+    const width = sidePaneListWidth(win, state)
+    const content = renderListRows(state, focused, width, this.hoveredIdFor(activeView))
     pane.update(content)
     pane.syncScrollbar(sidePaneViewportHeight(win))
   }
@@ -3364,14 +3388,15 @@ export class RootView {
       const tabsInput = this.commitsTabsInput()
       pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
     }
-    const state = this.commitsView()
-    if (state === undefined) {
+    const activeView = this.activeListView("commits")
+    if (activeView === undefined) {
       pane.update("")
       return
     }
+    const { state } = activeView
     const width = sidePaneListWidth(this.geometry.windows.commits, state)
     const focused = this.focusManager.active === "commits"
-    const content = renderListRows(state, focused, width)
+    const content = renderListRows(state, focused, width, this.hoveredIdFor(activeView))
     pane.update(content)
     pane.syncScrollbar(sidePaneViewportHeight(this.geometry.windows.commits))
   }
@@ -3741,6 +3766,88 @@ export class RootView {
     if (paneId === "command-log") this.commandLog.applyScrollInput("scrollbar")
   }
 
+  private activeListView(paneId: ListPaneId): ActiveListView | undefined {
+    if (paneId === "files") {
+      const state = this.filesView()
+      return state === undefined ? undefined : { paneId, viewId: `files:${this.filesPanel.activeTab}`, state }
+    }
+    if (paneId === "branches") {
+      const child = this.branchesPanel.child
+      if (child !== undefined) {
+        const viewId = child.value.kind === "remote-branches"
+          ? `branches-child:${child.value.remote}`
+          : `branches-child:local-commits:${child.value.branch}`
+        return { paneId, viewId, state: child.view }
+      }
+      const state = this.branchesPanel.views[this.branchesPanel.activeTab]
+      return state === undefined ? undefined : { paneId, viewId: `branches:${this.branchesPanel.activeTab}`, state }
+    }
+    if (paneId === "commits") {
+      const child = this.commitsPanel.child
+      if (child !== undefined) return { paneId, viewId: "commit-files", state: child.view }
+      const state = this.commitsPanel.views[this.commitsPanel.activeTab]
+      return state === undefined ? undefined : { paneId, viewId: `commits:${this.commitsPanel.activeTab}`, state }
+    }
+    return { paneId, viewId: "stash", state: this.stashState }
+  }
+
+  private hoveredIdFor(view: ActiveListView): string | undefined {
+    const target = this.hoveredListRow
+    if (target === undefined || target.paneId !== view.paneId || target.viewId !== view.viewId) return undefined
+    return view.state.rows.some((row) => row.id === target.rowId) ? target.rowId : undefined
+  }
+
+  private renderListPane(paneId: ListPaneId): void {
+    if (paneId === "branches") this.renderBranchesPane()
+    else if (paneId === "commits") this.renderCommitsPane()
+    else if (paneId === "files") this.renderFilesPane()
+    else this.renderStashPane()
+  }
+
+  private setHoveredListRow(next: HoveredListRow | undefined): void {
+    const previous = this.hoveredListRow
+    if (
+      previous?.paneId === next?.paneId &&
+      previous?.viewId === next?.viewId &&
+      previous?.rowId === next?.rowId
+    ) return
+    this.hoveredListRow = next
+    const previousPane = previous?.paneId
+    if (previousPane !== undefined) this.renderListPane(previousPane)
+    if (next !== undefined && next.paneId !== previousPane) this.renderListPane(next.paneId)
+    this.root.requestRender()
+  }
+
+  private updateHoveredListRow(x: number, y: number): void {
+    if (this.modalInputActive() || this.isOverVerticalSplitter(x, y) || this.isOverHorizontalSplitter(x, y)) {
+      this.setHoveredListRow(undefined)
+      return
+    }
+    const hit = this.findPaneAtPoint(x, y)
+    let next: HoveredListRow | undefined
+    if (
+      hit !== undefined &&
+      (hit.id === "files" || hit.id === "branches" || hit.id === "commits" || hit.id === "stash") &&
+      this.hitTestScrollbar(x, y) === undefined
+    ) {
+      const activeView = this.activeListView(hit.id)
+      const geometry = this.paneTextGeometry(hit.id)
+      const pane = this.panes[hit.id]
+      if (activeView !== undefined && geometry !== undefined && pane !== undefined) {
+        const row = listRowAtPoint(
+          activeView.state,
+          { ...geometry, scrollY: pane.text.scrollY },
+          x,
+          y,
+        )
+        if (row !== undefined) {
+          next = { paneId: activeView.paneId, viewId: activeView.viewId, rowId: row.id }
+        }
+      }
+    }
+    this.setHoveredListRow(next)
+  }
+
   private findPaneAtPoint(x: number, y: number): { id: FocusId; winName: WindowName } | undefined {
     const windows = this.geometry.windows as unknown as Record<string, { x0: number; y0: number; x1: number; y1: number } | undefined>
     const order: Array<[FocusId, WindowName]> = [
@@ -3937,6 +4044,15 @@ export class RootView {
     }
     this.root.onMouse = (event: MouseEvent) => {
       if (this.isBranchReviewActive?.()) return
+      const eventType = event.type as string
+      if (eventType === "out") {
+        if (this.gestureOwner === undefined) this.setHoveredListRow(undefined)
+        return
+      }
+      if (eventType === "over" || eventType === "move") {
+        if (this.gestureOwner === undefined) this.updateHoveredListRow(event.x, event.y)
+        return
+      }
       const scrollInfo = (event as unknown as { scroll?: { direction: string; delta: number } }).scroll
       if ((event.type as string) === "scroll") {
         this.pendingClick = undefined
@@ -3962,6 +4078,7 @@ export class RootView {
               if (hit.id === "command-log") this.commandLog.applyScrollInput(signed < 0 ? "scroll-up" : "scroll-down")
               pane.scrollBy(signed * 2 * delta)
             }
+            this.updateHoveredListRow(event.x, event.y)
           }
           event.preventDefault()
           event.stopPropagation()
@@ -4048,6 +4165,7 @@ export class RootView {
         }
       }
       if (event.type === "down") {
+        this.updateHoveredListRow(event.x, event.y)
         if (this.modalInputActive()) {
           this.cancelGesture()
           return

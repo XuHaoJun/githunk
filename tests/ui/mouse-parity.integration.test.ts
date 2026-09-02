@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { TextAttributes } from "@opentui/core"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
-import { paneScrollbar } from "../../src/ui/panes/common"
 
 describe("mouse parity - row selection and wheel routing", () => {
   let harness: ShellHarness | undefined
@@ -182,5 +182,49 @@ describe("mouse parity - row selection and wheel routing", () => {
     await harness.mockMouse.scroll(mainBox.screenX + 1, mainBox.screenY + 1, "down")
     await harness.flush()
     expect(view.mainScrollY).toBeGreaterThanOrEqual(before)
+  })
+  test("hovering an unfocused commit row paints a subtle background without selecting it", async () => {
+    harness = await createShellHarness({ commits: ["first", "second", "third"], width: 120, height: 40 })
+    const view = harness.app.view!
+    await harness.pressKey("0")
+    const commitsBox = view.paneTextGeometry("commits")!
+    const selectedBefore = view.commitsSelectedOid
+
+    await harness.mockMouse.moveTo(commitsBox.screenX + 2, commitsBox.screenY + 1)
+    await harness.flush()
+
+    const hoveredLine = harness.captureSpans().lines[commitsBox.screenY + 1]
+    const hovered = hoveredLine?.spans.find((span) => span.text.includes("second"))
+    expect(view.focusManager.active).toBe("main")
+    expect(view.commitsSelectedOid).toBe(selectedBefore)
+    expect(hovered).toBeDefined()
+    expect(hovered?.bg.intent).toBe("rgb")
+    expect(hovered?.bg.a).toBeGreaterThan(0)
+    expect((hovered?.attributes ?? 0) & TextAttributes.BOLD).toBe(0)
+
+    await harness.mockMouse.moveTo(0, 0)
+    await harness.flush()
+    const clearedLine = harness.captureSpans().lines[commitsBox.screenY + 1]
+    const cleared = clearedLine?.spans.find((span) => span.text.includes("second"))
+    expect(cleared?.bg.a).toBe(0)
+  })
+  test("a direct click at a new row coordinate clears the previous hover", async () => {
+    harness = await createShellHarness({ commits: ["first", "second", "third"], width: 120, height: 40 })
+    const view = harness.app.view!
+    await harness.pressKey("0")
+    const commitsBox = view.paneTextGeometry("commits")!
+
+    await harness.mockMouse.moveTo(commitsBox.screenX + 2, commitsBox.screenY + 1)
+    await harness.flush()
+    await harness.mockMouse.click(commitsBox.screenX + 2, commitsBox.screenY + 2)
+    await harness.flush()
+
+    const frame = harness.captureSpans()
+    const selected = frame.lines[commitsBox.screenY + 2]?.spans.find((span) => span.text.includes("first"))
+    const previousHover = frame.lines[commitsBox.screenY + 1]?.spans.find((span) => span.text.includes("second"))
+    expect(view.focusManager.active).toBe("commits")
+    expect(selected?.bg.intent).toBe("indexed")
+    expect(selected?.bg.slot).toBe(4)
+    expect(previousHover?.bg.a).toBe(0)
   })
 })

@@ -1,6 +1,6 @@
 import type { ColorInput, TextChunk } from "@opentui/core"
 import { StyledText, bg, bold, dim, fg } from "@opentui/core"
-import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, SELECTED_LINE_BG, brightenAnsiForeground } from "./theme"
+import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, HOVER_LINE_BG, SELECTED_LINE_BG, brightenAnsiForeground } from "./theme"
 
 export type ListColumnSegment = { readonly text: string; readonly color?: ColorInput | undefined }
 
@@ -305,7 +305,7 @@ function highlightChunk(chunk: TextChunk, selectedBg: (input: TextChunk) => Text
   return bold(selectedBg(brightened))
 }
 
-export function renderListRows(state: ListState, focused: boolean, width: number): StyledText {
+export function renderListRows(state: ListState, focused: boolean, width: number, hoveredId?: string): StyledText {
   const safeWidth = Math.max(0, Math.floor(width))
   const displayRows = state.displayRows
   if (displayRows.length === 0) {
@@ -323,6 +323,7 @@ export function renderListRows(state: ListState, focused: boolean, width: number
   for (let i = 0; i < displayRows.length; i++) {
     const dr = displayRows[i]!
     const isSelected = focused && dr.kind === "item" && dr.id === state.selectedId
+    const isHovered = !isSelected && dr.kind === "item" && dr.id === hoveredId
     let lineChunks: TextChunk[] = []
 
     if (dr.kind === "item") {
@@ -353,6 +354,17 @@ export function renderListRows(state: ListState, focused: boolean, width: number
         lineChunks.push(selectedBg(" ".repeat(pad)) as TextChunk)
       } else if (lineChunks.length === 0 && safeWidth > 0) {
         lineChunks.push(selectedBg(" ".repeat(safeWidth)) as TextChunk)
+      }
+    }
+    if (isHovered) {
+      const hoverBg = bg(HOVER_LINE_BG)
+      lineChunks = lineChunks.map((c) => hoverBg(c) as TextChunk)
+      const plainLen = lineChunks.reduce((sum, c) => sum + visualLength(c.text), 0)
+      const pad = Math.max(0, safeWidth - plainLen)
+      if (pad > 0) {
+        lineChunks.push(hoverBg(" ".repeat(pad)) as TextChunk)
+      } else if (lineChunks.length === 0 && safeWidth > 0) {
+        lineChunks.push(hoverBg(" ".repeat(safeWidth)) as TextChunk)
       }
     }
 
