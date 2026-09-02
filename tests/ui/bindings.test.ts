@@ -164,6 +164,22 @@ describe("BindingRegistry availability-aware resolution", () => {
     expect(registry.dispatch({ name: "down", shift: true }, { context: "main", model: workingTree, ui: ui({ hasMainDocument: true }) })).toBe("range-select-down")
     expect(registry.dispatch({ name: "v" }, { context: "modal", model: workingTree, ui: ui() })).toBeUndefined()
   })
+  test("gates branches range selection to local and remote-branch rows", () => {
+    const branchKinds: readonly UiState["selectedBranchKind"][] = ["remote", undefined]
+    for (const selectedBranchKind of branchKinds) {
+      const state = ui({ selectedBranchKind })
+      expect(registry.dispatch({ name: "v" }, { context: "branches", model: workingTree, ui: state })).toBeUndefined()
+      expect(registry.dispatch({ name: "up", shift: true }, { context: "branches", model: workingTree, ui: state })).toBeUndefined()
+      expect(registry.dispatch({ name: "down", shift: true }, { context: "branches", model: workingTree, ui: state })).toBeUndefined()
+    }
+    for (const selectedBranchKind of ["local", "remote-branch"] as const) {
+      const state = ui({ selectedBranchKind })
+      expect(registry.dispatch({ name: "v" }, { context: "branches", model: workingTree, ui: state })).toBe("toggle-range-select")
+      expect(registry.dispatch({ name: "up", shift: true }, { context: "branches", model: workingTree, ui: state })).toBe("range-select-up")
+      expect(registry.dispatch({ name: "down", shift: true }, { context: "branches", model: workingTree, ui: state })).toBe("range-select-down")
+    }
+  })
+
 
   test("gates range selection off Files navigation-only tabs", () => {
     const worktrees = ui({ filesTab: "worktrees" })
@@ -173,7 +189,7 @@ describe("BindingRegistry availability-aware resolution", () => {
       expect(registry.dispatch({ name: "up", shift: true }, { context: "files", model: workingTree, ui: tabUi })).toBeUndefined()
       expect(registry.dispatch({ name: "down", shift: true }, { context: "files", model: workingTree, ui: tabUi })).toBeUndefined()
     }
-    expect(registry.dispatch({ name: "v" }, { context: "branches", model: workingTree, ui: worktrees })).toBe("toggle-range-select")
+    expect(registry.dispatch({ name: "v" }, { context: "branches", model: workingTree, ui: worktrees })).toBeUndefined()
     expect(registry.dispatch({ name: "down", shift: true }, { context: "stash", model: workingTree, ui: submodules })).toBe("range-select-down")
   })
 

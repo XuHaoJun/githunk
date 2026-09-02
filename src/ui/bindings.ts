@@ -257,6 +257,9 @@ export function assertHandlersCover(registry: BindingRegistry, handlers: Readonl
 const writable = (model: AppModel): boolean => model.reviewTarget.kind === "working-tree"
 const lineActions = (model: AppModel, ui: UiState): boolean => writable(model) && ui.mainScope !== "all"
 const inCommit = (model: AppModel): boolean => model.reviewTarget.kind === "commit"
+const branchRangeSelection = (_model: AppModel, ui: UiState): boolean =>
+  ui.selectedBranchKind === "local" || ui.selectedBranchKind === "remote-branch"
+
 
 /**
  * Only panel 4's Commits tab drills into commit files. lazygit attaches
@@ -369,9 +372,12 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["v"], action: "toggle-range-select", description: "range", contexts: ["files"], available: onFilesTab },
   { keys: ["shift+up"], action: "range-select-up", description: "range up", contexts: ["files"], available: onFilesTab },
   { keys: ["shift+down"], action: "range-select-down", description: "range down", contexts: ["files"], available: onFilesTab },
-  { keys: ["v"], action: "toggle-range-select", description: "range", contexts: ["branches", "commits", "stash"] },
-  { keys: ["shift+up"], action: "range-select-up", description: "range up", contexts: ["branches", "commits", "stash"] },
-  { keys: ["shift+down"], action: "range-select-down", description: "range down", contexts: ["branches", "commits", "stash"] },
+  { keys: ["v"], action: "toggle-range-select", description: "range", contexts: ["commits", "stash"] },
+  { keys: ["v"], action: "toggle-range-select", description: "range", contexts: ["branches"], available: branchRangeSelection },
+  { keys: ["shift+up"], action: "range-select-up", description: "range up", contexts: ["commits", "stash"] },
+  { keys: ["shift+up"], action: "range-select-up", description: "range up", contexts: ["branches"], available: branchRangeSelection },
+  { keys: ["shift+down"], action: "range-select-down", description: "range down", contexts: ["commits", "stash"] },
+  { keys: ["shift+down"], action: "range-select-down", description: "range down", contexts: ["branches"], available: branchRangeSelection },
   { keys: ["="], action: "expand-files", description: "expand all", contexts: ["files"], available: onFilesTab, menuDescription: "expand every directory in the file tree" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["files"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["files"] },
