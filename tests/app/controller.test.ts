@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { AppController } from "../../src/app/controller"
 import { GitCommandError, GitRunner } from "../../src/git/runner"
+import { listBranches, listRemoteBranches } from "../../src/git/branches"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
 import type { PullRequest } from "../../src/domain/pull-request"
 import type { BranchDeleteRequest } from "../../src/domain/branch"
@@ -472,6 +473,42 @@ describe("AppController", () => {
     }
   })
 
+  test("refreshes stashes after a partial drop batch failure before rethrowing", async () => {
+    const repo = await createTempRepository()
+    try {
+      await repo.write("file.txt", "base\n")
+      await repo.git(["add", "--", "file.txt"])
+      await repo.git(["commit", "--quiet", "-m", "base"])
+      await repo.write("file.txt", "first\n")
+      await repo.git(["stash", "push", "--quiet", "-m", "first"])
+      const firstOid = (await repo.git(["stash", "list", "--format=%H"])).stdout.trim()
+      await repo.write("file.txt", "second\n")
+      await repo.git(["stash", "push", "--quiet", "-m", "second"])
+      const secondOid = (await repo.git(["stash", "list", "--format=%H"])).stdout.trim().split("\n")[0] ?? ""
+      if (firstOid.length === 0 || secondOid.length === 0) throw new Error("test stash setup failed")
+
+      const runner = new GitRunner({ cwd: repo.path })
+      let loads = 0
+      const controller = new AppController({
+        repositoryRoot: repo.path,
+        runner,
+        load: async (target) => {
+          loads += 1
+          return snapshot(target.scope, "working")
+        },
+      })
+
+      await controller.refresh()
+      await expect(controller.dropStashes([firstOid, "stash@{99}"], { confirmed: true })).rejects.toThrow("stash not found: stash@{99}")
+
+      expect(controller.state.stashes?.map((stash) => stash.oid)).toEqual([secondOid])
+      expect(controller.state.banner).toBe("stash not found: stash@{99}")
+      expect(loads).toBe(2)
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
   test("deletes branch batches in request order and refreshes once", async () => {
     const repository = await createTempRepository()
     const remote = await createTempRepository()
@@ -535,8 +572,63 @@ describe("AppController", () => {
         "  git branch -D -- both",
       ])
 
+      const actions = runner.log.lines()
+        .filter((line) => line.spans.some((span) => span.style === "action"))
+        .map((line) => line.spans.map((span) => span.text).join(""))
+      expect(actions).toEqual(["Delete local branch", "Delete remote branch"])
+
       expect(loads).toBe(2)
       expect(remoteRefreshes).toBe(1)
+    } finally {
+
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+  test("refreshes branches and remote refs after a partial delete batch failure before rethrowing", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["branch", "local-only"])
+      await repository.git(["push", "--quiet", "origin", "master:remote-only"])
+      await repository.git(["fetch", "--quiet", "origin"])
+
+      const runner = new GitRunner({ cwd: repository.path })
+      let loads = 0
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner,
+        load: async (target) => {
+          loads += 1
+          return snapshot(target.scope, "working")
+        },
+        loadBranches: async () => {
+          const listing = await listBranches(runner)
+          return {
+            ...listing,
+            remotes: await Promise.all(listing.remotes.map(async (candidate) => ({
+              ...candidate,
+              branches: await listRemoteBranches(runner, candidate.name),
+            }))),
+          }
+        },
+      })
+
+      await controller.refresh()
+      await expect(controller.deleteBranches([
+        { mode: "local", branch: "local-only", force: false },
+        { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
+        { mode: "local", branch: "missing", force: false },
+      ])).rejects.toThrow()
+
+      expect(controller.state.branches?.localBranches.map((branch) => branch.name)).not.toContain("local-only")
+      expect(controller.state.branches?.remotes[0]?.branches?.map((branch) => branch.name)).not.toContain("remote-only")
+      expect(loads).toBe(2)
     } finally {
       await remote.cleanup()
       await repository.cleanup()

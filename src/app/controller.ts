@@ -575,7 +575,7 @@ export class AppController {
           this.currentState = { ...this.currentState, reviewTarget: { kind: "working-tree", scope: "all" }, title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch) }
         }
       }
-    })
+    }, true)
   }
 
   async inspectStash(ref: string): Promise<void> {
@@ -669,18 +669,26 @@ export class AppController {
           throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
         }
       }
+      let localActionLogged = false
+      const remoteActionsLogged = new Set<string>()
       for (let index = 0; index < requests.length; index += 1) {
         const request = requests[index]
         if (request === undefined) continue
         if (request.mode === "local") {
-          this.logAction(LOG_ACTIONS.deleteLocalBranch)
+          if (!localActionLogged) {
+            this.logAction(LOG_ACTIONS.deleteLocalBranch)
+            localActionLogged = true
+          }
           await deleteBranch(runner, request.branch, request.force ? { force: true, confirmed: true } : {})
           continue
         }
         if (request.mode === "remote") {
           if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
           affectedRemotes.add(request.remote)
-          this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+          if (!remoteActionsLogged.has(request.remote)) {
+            this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+            remoteActionsLogged.add(request.remote)
+          }
           await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
           continue
         }
@@ -688,12 +696,18 @@ export class AppController {
           throw new Error("local and remote deletion requires an upstream")
         }
         affectedRemotes.add(request.remote)
-        this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+        if (!remoteActionsLogged.has(request.remote)) {
+          this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+          remoteActionsLogged.add(request.remote)
+        }
         await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
-        this.logAction(LOG_ACTIONS.deleteLocalBranch)
+        if (!localActionLogged) {
+          this.logAction(LOG_ACTIONS.deleteLocalBranch)
+          localActionLogged = true
+        }
         await deleteBranch(runner, request.branch, { force: true, confirmed: true })
       }
-    }))
+    }), { refreshOnFailure: true })
     for (const remote of affectedRemotes) await this.browseRemote(remote)
   }
 
@@ -822,7 +836,11 @@ export class AppController {
           ? (error.record.stderr || error.message)
           : error instanceof Error ? error.message : String(error)
         if (options.refreshOnFailure) {
-          await this.refresh()
+          try {
+            await this.refresh()
+          } catch {
+            // Preserve the original mutation error.
+          }
         }
         this.currentState = {
           ...this.currentState,
