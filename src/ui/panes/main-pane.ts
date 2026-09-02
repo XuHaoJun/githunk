@@ -126,19 +126,23 @@ function mainDiffLineOffsets(document: DiffDocument, startIndex: number, endInde
   const last = document.lines[endIndex]
   if (first === undefined || last === undefined) return undefined
   const rendered = renderDiff(document)
-  const lines = rendered.displayText.split("\n")
-  const starts = renderedLineStarts(rendered.displayText)
-  const firstText = lines[startIndex]
-  const lastText = lines[endIndex]
+  const { displayText } = rendered
+  const starts = renderedLineStarts(displayText)
+  if (startIndex >= starts.length || endIndex >= starts.length) return undefined
   const firstStart = starts[startIndex]
   const lastStart = starts[endIndex]
-  if (firstText === undefined || lastText === undefined || firstStart === undefined || lastStart === undefined) return undefined
+  if (firstStart === undefined || lastStart === undefined) return undefined
+  // Avoid displayText.split("\n") — for a 75k-line patch that allocates ~75k strings
+  // plus a number array per keystroke. Derive the last display line length from the
+  // starts index instead: next start minus one newline, or tail to end of text.
+  const lastLineEnd = endIndex + 1 < starts.length ? starts[endIndex + 1]! - 1 : displayText.length
+  const lastLength = lastLineEnd - lastStart
   const preambleLength = normalizedPreamble(preamble).length
   return {
     startUtf16: first.startUtf16,
     endUtf16: last.endUtf16,
     displayStartUtf16: preambleLength + firstStart,
-    displayEndUtf16: preambleLength + lastStart + lastText.length,
+    displayEndUtf16: preambleLength + lastStart + lastLength,
   }
 }
 
