@@ -36,6 +36,7 @@ import { buildPanePlainTitle, buildPaneTabsStrip, paneTabAtOffset } from "./pane
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
 import { tagRows } from "./panes/tags-pane"
 import { buildCommitRows, createCommitsPane } from "./panes/commits-pane"
+import { commitFileRows } from "./panes/commit-files-pane"
 import { COMMITS_JUMP_KEY, COMMITS_TABS, NO_REFLOG_HISTORY, reflogRows } from "./panes/reflog-pane"
 import type { RefLogTarget } from "../git/ref-log"
 import type { ItemOperation } from "../domain/item-operation"
