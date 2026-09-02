@@ -155,3 +155,4 @@ The final gate is `bun run check`, followed by an actual `bun run start` smoke t
 - New runtime dependencies.
 - Moving Git process execution into UI code.
 - Changing githunk's existing review-target or persistence model.
+- Commit drilldown behavior changes beyond the narrow Task 7 import restoration (`src/ui/root-view.ts` `commitFileRows`) which repairs a pre-existing regression exposed during Task 5 validation (historically passed at `10a1840`, failed at `569ddbe`). No new cherry-pick/rebase semantics are introduced.
