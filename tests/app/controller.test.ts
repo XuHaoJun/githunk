@@ -504,7 +504,7 @@ describe("AppController", () => {
     }
   })
 
-  test("rejects a remote branch batch request without an upstream", async () => {
+  test("rejects a malformed remote batch before any deletion", async () => {
     const repository = await createTempRepository()
     const remote = await createTempRepository()
     try {
@@ -513,6 +513,7 @@ describe("AppController", () => {
       await repository.git(["commit", "--quiet", "-m", "base"])
       await remote.git(["config", "core.bare", "true"])
       await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["branch", "local-only"])
       await repository.git(["push", "--quiet", "origin", "master:remote-only"])
 
       const runner = new GitRunner({ cwd: repository.path })
@@ -522,16 +523,15 @@ describe("AppController", () => {
         load: async (target) => snapshot(target.scope, "working"),
       })
 
-      await expect(controller.deleteBranches([{
-        mode: "remote",
-        branch: "remote-only",
-        remote: "origin",
-        force: false,
-      }])).rejects.toThrow("remote branch deletion requires an upstream")
+      await expect(controller.deleteBranches([
+        { mode: "local", branch: "local-only", force: false },
+        { mode: "remote", branch: "remote-only", remote: "origin", force: false },
+      ])).rejects.toThrow("remote branch deletion requires an upstream")
+      expect((await repository.git(["show-ref", "--verify", "--quiet", "refs/heads/local-only"])).exitCode).toBe(0)
       expect((await remote.git(["show-ref", "--verify", "--quiet", "refs/heads/remote-only"])).exitCode).toBe(0)
       const deleteCommands = runner.log.lines()
         .map((line) => line.spans.map((span) => span.text).join(""))
-        .filter((text) => text.includes("git push origin --delete"))
+        .filter((text) => text.includes("git branch -d --") || text.includes("git push origin --delete"))
       expect(deleteCommands).toEqual([])
     } finally {
       await remote.cleanup()

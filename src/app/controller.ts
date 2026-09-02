@@ -651,6 +651,14 @@ export class AppController {
   }
 
   async deleteBranches(requests: readonly BranchDeleteRequest[]): Promise<void> {
+    for (const request of requests) {
+      if (request.mode === "local") continue
+      if (request.remote === undefined || request.remoteBranch === undefined) {
+        throw new Error(request.mode === "remote"
+          ? "remote branch deletion requires an upstream"
+          : "local and remote deletion requires an upstream")
+      }
+    }
     const affectedRemotes = new Set<string>()
     await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
       for (const request of requests) {
