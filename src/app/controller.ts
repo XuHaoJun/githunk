@@ -567,8 +567,16 @@ export class AppController {
   async dropStashes(refs: readonly string[], options: StashDropOptions): Promise<void> {
     if (!this.ensureStashOperation()) return
     this.logAction(LOG_ACTIONS.dropStash)
+    // stash@{n} indices shift after each drop, so stash refs must be dropped descending.
+    // OID refs are resolved by OID each time and are order-independent, but sorting stash
+    // refs descending keeps batch deletes deterministic when the caller supplies stash refs.
+    const stashRefIndex = (ref: string): number => {
+      const match = /^stash@\{(\d+)\}$/.exec(ref)
+      return match === null ? -1 : Number(match[1])
+    }
+    const ordered = [...refs].sort((left, right) => stashRefIndex(right) - stashRefIndex(left))
     await this.runMutation(async () => {
-      for (const ref of refs) {
+      for (const ref of ordered) {
         await this.requireRunnerOperation((runner) => dropGitStash(runner, ref, options))
         if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
           this.priorStashStateForRefresh = this.currentState
