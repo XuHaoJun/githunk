@@ -65,7 +65,7 @@ import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { PANE_SCROLLBAR_GUTTER, paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
-import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
+import { copySelection, selectionFromRenderable, type DocumentSelection } from "../domain/diff/selection"
 import { clearDiffLineRange, diffLineSelectionRange, expandDiffLineRange, moveDiffLineSelection, toggleDiffLineRange } from "../domain/diff/line-selection"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
@@ -2420,7 +2420,8 @@ export class RootView {
       const name = row.id.slice("local:".length)
       const branch = branches.find((candidate) => candidate.name === name)
       if (branch === undefined) return undefined
-      targets.push({ branch, upstream: liveBranchUpstream(branch) })
+      const upstream = liveBranchUpstream(branch)
+      targets.push({ branch, ...(upstream === undefined ? {} : { upstream }) })
     }
     return targets.length === rows.length && targets.length > 1 ? targets : undefined
   }
@@ -4184,7 +4185,7 @@ export class RootView {
     }
     const keyboardSelection = getMainDiffLineSelection(pane)
     const nativeRange = pane.text.getSelection()
-    let selection = mode === "hunk" || mode === "file" || keyboardSelection === undefined
+    let selection: DocumentSelection | undefined = mode === "hunk" || mode === "file" || keyboardSelection === undefined
       ? undefined
       : {
         valid: true as const,
