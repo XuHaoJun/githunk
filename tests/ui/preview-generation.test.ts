@@ -5,7 +5,7 @@ import { createMainPane, getMainCursorTarget, getMainDiffLineRangeState, getMain
 import { parseDiff } from "../../src/domain/diff/parse"
 import type { CommitDetails } from "../../src/domain/commit"
 import type { MainPaneContent } from "../../src/ui/panes/main-pane"
-import { toggleDiffLineRange } from "../../src/domain/diff/line-selection"
+import { createDiffLineRangeState, toggleDiffLineRange } from "../../src/domain/diff/line-selection"
 import { parseAnsi } from "../../src/ui/ansi"
 
 function deferred<T>() {
@@ -14,7 +14,6 @@ function deferred<T>() {
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
   return { promise, resolve, reject }
 }
-import { createDiffLineRangeState, toggleDiffLineRange } from "../../src/domain/diff/line-selection"
 function presentCommit(details: CommitDetails): MainPaneContent {
   return {
     source: "commit",
