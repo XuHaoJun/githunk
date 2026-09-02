@@ -522,11 +522,16 @@ describe("AppController", () => {
         runner,
         load: async (target) => snapshot(target.scope, "working"),
       })
+      runner.log.logAction("before batch validation")
+
 
       await expect(controller.deleteBranches([
         { mode: "local", branch: "local-only", force: false },
         { mode: "remote", branch: "remote-only", remote: "origin", force: false },
       ])).rejects.toThrow("remote branch deletion requires an upstream")
+      expect(controller.state.banner).toBe("remote branch deletion requires an upstream")
+      expect(controller.state.commandLog.at(-1)?.spans.map((span) => span.text).join("")).toBe("before batch validation")
+
       expect((await repository.git(["show-ref", "--verify", "--quiet", "refs/heads/local-only"])).exitCode).toBe(0)
       expect((await remote.git(["show-ref", "--verify", "--quiet", "refs/heads/remote-only"])).exitCode).toBe(0)
       const deleteCommands = runner.log.lines()
