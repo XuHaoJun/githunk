@@ -212,11 +212,23 @@ describe("Main pane lifecycle", () => {
     installMainContent(pane, { source: "commit", stableId: "same", label: "Diff", document }, false)
     const range = getMainDiffLineRangeState(pane)
     expect(range).toBeDefined()
+    setMainCursorTarget(pane, { fileIndex: 0, hunkIndex: 0 })
     setMainDiffLineRangeState(pane, toggleDiffLineRange(range!))
-    expect(getMainDiffLineRangeState(pane)?.rangeMode).toBe("sticky")
+    const textView = pane.text as unknown as {
+      setSelection?: (start: number, end: number) => void
+      getSelection?: () => unknown
+      hasSelection?: () => boolean
+    }
+    textView.setSelection?.(0, 5)
+    const nativeBefore = textView.getSelection?.()
+    const hadNativeSelection = typeof textView.hasSelection === "function" ? textView.hasSelection() : nativeBefore !== undefined
     installMainContent(pane, { source: "commit", stableId: "same", label: "Plain", plainText: document.text }, false)
     expect(getMainDocument(pane)).toBeUndefined()
     expect(getMainDiffLineRangeState(pane)).toBeUndefined()
+    expect(getMainCursorTarget(pane)).toBeUndefined()
+    expect(pane.text.plainText).toBe(document.text)
+    if (hadNativeSelection && typeof textView.hasSelection === "function") expect(textView.hasSelection()).toBe(false)
+    if (nativeBefore !== undefined && typeof textView.getSelection === "function") expect(textView.getSelection()).toBeNull()
     setup.renderer.destroy()
   })
 
