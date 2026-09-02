@@ -76,12 +76,18 @@ describe("GitMutations", () => {
     expect(refreshes).toBe(1)
   })
   test("preserves the mutation error when failure refresh also rejects", async () => {
-    const mutations = new GitMutations(runner, async () => { throw new Error("refresh failed") })
+    let refreshes = 0
+    const mutations = new GitMutations(runner, async () => {
+      refreshes += 1
+      throw new Error("refresh failed")
+    })
 
-    const error = await mutations.stageFiles(["missing.txt", "another-missing.txt"]).catch((failure: unknown) => failure)
+    const error = await mutations.stageFiles(["missing.txt"]).catch((failure: unknown) => failure)
 
     expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toContain("missing.txt")
     expect((error as Error).message).not.toBe("refresh failed")
+    expect(refreshes).toBe(1)
   })
 
 
