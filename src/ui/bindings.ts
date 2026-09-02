@@ -9,7 +9,7 @@ export const ACTIONS = [
   "command-log", "pane-next", "pane-previous",
   "screen-mode-next", "screen-mode-previous", "keybinding-menu",
   // list and document navigation
-  "next", "previous", "page-next", "page-previous", "goto-top", "goto-bottom",
+  "next", "previous", "toggle-range-select", "range-select-up", "range-select-down", "page-next", "page-previous", "goto-top", "goto-bottom",
   "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
   "hunk-next", "hunk-previous", "tab-next", "tab-previous", "scope-next", "scope-previous",
   // review targets
@@ -346,6 +346,9 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["e"], action: "edit-file", description: "edit", contexts: ["main"], displayOnScreen: true, available: (_model, ui) => ui.hasMainDocument === true, menuDescription: "open the file in an external editor, at the selected hunk" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["main"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["main"] },
+  { keys: ["v"], action: "toggle-range-select", description: "range", contexts: ["main"], available: (_model, ui) => ui.hasMainDocument === true },
+  { keys: ["shift+up"], action: "range-select-up", description: "range up", contexts: ["main"], available: (_model, ui) => ui.hasMainDocument === true },
+  { keys: ["shift+down"], action: "range-select-down", description: "range down", contexts: ["main"], available: (_model, ui) => ui.hasMainDocument === true },
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["main"], available: inCommit },
   // The working-tree scope ring (all → staged → unstaged) is githunk's PRD §8.1 review-target
   // selector; Main is the only context whose `[`/`]` are free, since side windows use them for tabs.
@@ -360,8 +363,9 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["r"], action: "mark-reviewed", description: "reviewed", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "mark the file reviewed" },
   { keys: ["enter"], action: "inspect", description: "open", contexts: ["files"], displayOnScreen: true, menuDescription: "open the file in the main pane, or collapse a directory" },
   // pkg/config/user_config.go:1100-1106 — ToggleTreeView, CollapseAll, ExpandAll.
-  { keys: ["`"], action: "toggle-file-tree", description: "tree view", contexts: ["files"], available: onFilesTab, menuDescription: "toggle between the file tree and a flat list" },
-  { keys: ["-"], action: "collapse-files", description: "collapse all", contexts: ["files"], available: onFilesTab, menuDescription: "collapse every directory in the file tree" },
+  { keys: ["v"], action: "toggle-range-select", description: "range", contexts: ["files", "branches", "commits", "stash"] },
+  { keys: ["shift+up"], action: "range-select-up", description: "range up", contexts: ["files", "branches", "commits", "stash"] },
+  { keys: ["shift+down"], action: "range-select-down", description: "range down", contexts: ["files", "branches", "commits", "stash"] },
   { keys: ["="], action: "expand-files", description: "expand all", contexts: ["files"], available: onFilesTab, menuDescription: "expand every directory in the file tree" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["files"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["files"] },

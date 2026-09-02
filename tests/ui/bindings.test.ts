@@ -158,6 +158,13 @@ describe("BindingRegistry availability-aware resolution", () => {
     expect(registry.dispatch({ name: "]" }, { context: "files", model: workingTree, ui: ui() })).toBe("tab-next")
   })
 
+  test("resolves range selection keys only in available list contexts", () => {
+    expect(registry.dispatch({ name: "v" }, { context: "files", model: workingTree, ui: ui() })).toBe("toggle-range-select")
+    expect(registry.dispatch({ name: "up", shift: true }, { context: "stash", model: workingTree, ui: ui() })).toBe("range-select-up")
+    expect(registry.dispatch({ name: "down", shift: true }, { context: "main", model: workingTree, ui: ui({ hasMainDocument: true }) })).toBe("range-select-down")
+    expect(registry.dispatch({ name: "v" }, { context: "modal", model: workingTree, ui: ui() })).toBeUndefined()
+  })
+
   test("resolves to undefined when the only binding for a key is unavailable", () => {
     const onlyUnavailable = new BindingRegistry([
       { keys: ["x"], action: "quit", description: "quit", contexts: ["files"], available: () => false },

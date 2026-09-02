@@ -87,7 +87,19 @@ import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
 import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, updatePanelView, type PanelState } from "./panel-state"
 import { ANSI_CYAN, ANSI_GREEN, DEFAULT_FOREGROUND, TITLE_PREFIX_FRAME_RUNE } from "./theme"
-import { createListState, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRows, type ListState, type ListRow } from "./list-view"
+import {
+  createListState,
+  expandListRangeSelection,
+  listRowAtPoint,
+  moveListSelection,
+  renderListRows,
+  selectListRow,
+  setListRangeSelection,
+  setListRows,
+  toggleListRangeSelection,
+  type ListState,
+  type ListRow,
+} from "./list-view"
 import { MainPreviewGate } from "./main-preview"
 import type { CommitSummary } from "../domain/commit"
 // Review workspace screen ownership is managed by AppScreenController (src/app/screen-controller.ts).
@@ -219,8 +231,8 @@ export type RootViewOptions = {
   readonly onEditFile?: (path: string, line?: number) => Promise<void>
   readonly onQuit?: () => void
 }
-
 /** Renders a `ConfirmationRequest`'s `confirmKey`/`cancelKey` (e.g. "enter") for display (e.g. "Enter"). */
+
 function capitalizeKeyName(key: string): string {
   return key.length === 0 ? key : key[0]!.toUpperCase() + key.slice(1)
 }
@@ -232,6 +244,7 @@ export type GestureOwner =
   | { readonly kind: "horizontal-splitter" }
   | { readonly kind: "scrollbar"; readonly paneId: FocusId }
   | { readonly kind: "main-selection" }
+  | { readonly kind: "list-range"; readonly paneId: ListPaneId; readonly viewId: string; readonly anchorId: string }
 
 
 /**
@@ -828,6 +841,7 @@ export class RootView {
     // read-only tabs have no such split and report their row ids unchanged.
     if (pane === "files") {
       if (this.filesPanel.activeTab !== "files") return this.filesView()?.selectedId
+
       return this.selectedFileRow()?.path
     }
     if (pane === "stash") return this.stashState?.selectedId
@@ -838,6 +852,16 @@ export class RootView {
       return panel.views[panel.activeTab]?.selectedId
     }
     return undefined
+  }
+  selectedListRange(pane: "files" | "branches" | "commits" | "stash" | string): { readonly startId?: string; readonly endId?: string; readonly mode: string } {
+    if (pane !== "files" && pane !== "branches" && pane !== "commits" && pane !== "stash") return { mode: "none" }
+    const state = this.activeListView(pane)?.state
+    if (state === undefined) return { mode: "none" }
+    return {
+      mode: state.rangeMode,
+      ...(state.rangeStartId === undefined ? {} : { startId: state.rangeStartId }),
+      ...(state.selectedId === undefined ? {} : { endId: state.selectedId }),
+    }
   }
 
   renderedListText(pane: "files" | "branches" | "commits" | "stash" | string): string {
@@ -1240,6 +1264,9 @@ export class RootView {
       case "pane-previous": this.focusManager.cycle("previous"); return
       case "next": this.actionMoveCursor("next"); return
       case "previous": this.actionMoveCursor("previous"); return
+      case "toggle-range-select": this.actionToggleRangeSelection(); return
+      case "range-select-up": this.actionExpandRangeSelection("previous"); return
+      case "range-select-down": this.actionExpandRangeSelection("next"); return
       case "stage-file": this.actionStageFile(); return
       case "discard-file": this.actionDiscardFile(); return
       case "stage-all": this.actionStageAll(); return
@@ -1444,6 +1471,7 @@ export class RootView {
   }
 
   private handleGenericFilterKey(key: KeyEvent): boolean {
+
     if (this.activeFilterKey === undefined) return false
     const activeKey = this.activeFilterKey
     const result = this.filterInput.handleKey(key)
@@ -1466,6 +1494,59 @@ export class RootView {
     this.recomputeLayout()
     return result.consumed
   }
+  private updateActiveListState(paneId: ListPaneId, state: ListState): void {
+    if (paneId === "files") {
+      this.filesPanel = updatePanelView(this.filesPanel, this.filesPanel.activeTab, state)
+      return
+    }
+    if (paneId === "branches") {
+      if (this.branchesPanel.child !== undefined) {
+        this.branchesPanel = { ...this.branchesPanel, child: { ...this.branchesPanel.child, view: state } }
+      } else {
+        const active = this.branchesPanel.activeTab
+        this.branchesPanel = { ...this.branchesPanel, views: { ...this.branchesPanel.views, [active]: state } }
+      }
+      return
+    }
+    if (paneId === "commits") {
+      if (this.commitsPanel.child !== undefined) {
+        this.commitsPanel = { ...this.commitsPanel, child: { ...this.commitsPanel.child, view: state } }
+      } else {
+        this.commitsPanel = updatePanelView(this.commitsPanel, this.commitsPanel.activeTab, state)
+      }
+      return
+    }
+    this.stashState = state
+  }
+
+  private actionToggleRangeSelection(): void {
+    const paneId = this.focusManager.active
+    if (paneId !== "files" && paneId !== "branches" && paneId !== "commits" && paneId !== "stash") return
+    const active = this.activeListView(paneId)
+    if (active === undefined) return
+    const next = toggleListRangeSelection(active.state)
+    if (next === active.state) return
+    this.updateActiveListState(paneId, next)
+    this.renderListPane(paneId)
+    this.revealListRow(paneId, this.panes[paneId], next.selectedIndex)
+    this.syncPreviewForFocus(paneId)
+    this.root.requestRender()
+  }
+
+  private actionExpandRangeSelection(direction: "next" | "previous"): void {
+    const paneId = this.focusManager.active
+    if (paneId !== "files" && paneId !== "branches" && paneId !== "commits" && paneId !== "stash") return
+    const active = this.activeListView(paneId)
+    if (active === undefined) return
+    const next = expandListRangeSelection(active.state, direction)
+    if (next === active.state) return
+    this.updateActiveListState(paneId, next)
+    this.renderListPane(paneId)
+    this.revealListRow(paneId, this.panes[paneId], next.selectedIndex)
+    this.syncPreviewForFocus(paneId)
+    this.root.requestRender()
+  }
+
 
   private actionMoveCursor(direction: "next" | "previous"): void {
     switch (this.focusManager.active) {
@@ -4115,7 +4196,6 @@ export class RootView {
             this.logHeight = logHeightForMouseY(this.geometry, event.y)
             this.recomputeLayout()
             this.notifyGeometry()
-            event.preventDefault()
             event.stopPropagation()
             return
           }
@@ -4157,6 +4237,39 @@ export class RootView {
           }
           if (event.type === "up") {
             this.gestureOwner = undefined
+            event.stopPropagation()
+            return
+          }
+          event.stopPropagation()
+          return
+        }
+        if (owner.kind === "list-range") {
+          if (event.type === "drag") {
+            const active = this.activeListView(owner.paneId)
+            const geometry = this.paneTextGeometry(owner.paneId)
+            const pane = this.panes[owner.paneId]
+            if (active?.viewId === owner.viewId && geometry !== undefined) {
+              const row = listRowAtPoint(active.state, { ...geometry, scrollY: pane.text.scrollY }, event.x, event.y)
+              if (row !== undefined) {
+                const next = setListRangeSelection(active.state, owner.anchorId, row.id)
+                if (next !== active.state) {
+                  this.updateActiveListState(owner.paneId, next)
+                  this.renderListPane(owner.paneId)
+                  this.revealListRow(owner.paneId, pane, next.selectedIndex)
+                  this.syncPreviewForFocus(owner.paneId)
+                  this.root.requestRender()
+                }
+              }
+            }
+            this.pendingClick = undefined
+            this.lastSplitterPress = undefined
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          if (event.type === "up" || (event.type as string) === "cancel") {
+            this.gestureOwner = undefined
+            event.preventDefault()
             event.stopPropagation()
             return
           }
@@ -4239,7 +4352,6 @@ export class RootView {
         }
         if (tabsGeometry === undefined && tabWindow !== undefined && event.y === tabWindow.y0) {
           this.pendingClick = undefined
-          this.lastSplitterPress = undefined
           if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
           event.preventDefault()
           event.stopPropagation()
@@ -4327,6 +4439,10 @@ export class RootView {
               this.lastSplitterPress = undefined
               if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
               this.selectRowForPane(paneId, stableId)
+              if (paneId === "files" || paneId === "branches" || paneId === "commits" || paneId === "stash") {
+                const active = this.activeListView(paneId)
+                if (active !== undefined) this.gestureOwner = { kind: "list-range", paneId, viewId: active.viewId, anchorId: stableId }
+              }
               event.preventDefault()
               event.stopPropagation()
               if (pending.arrowToggled !== true) this.handleDoubleClick(paneId)
@@ -4336,6 +4452,10 @@ export class RootView {
             this.lastSplitterPress = undefined
             if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
             this.selectRowForPane(paneId, stableId)
+            if (paneId === "files" || paneId === "branches" || paneId === "commits" || paneId === "stash") {
+              const active = this.activeListView(paneId)
+              if (active !== undefined) this.gestureOwner = { kind: "list-range", paneId, viewId: active.viewId, anchorId: stableId }
+            }
             if (arrowRow !== undefined) {
               // files_controller.go:232-242 toggles only the arrow and its trailing space.
               this.applyFilesTree(toggleFileTreeCollapsedPath(this.filesTree, arrowRow.internalPath))
