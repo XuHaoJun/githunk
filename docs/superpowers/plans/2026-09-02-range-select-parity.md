@@ -180,7 +180,6 @@ git commit -m "feat: route lazygit range selection keys"
 **Files:**
 - Modify: `src/git/mutations.ts`
 - Modify: `src/app/controller.ts`
-- Modify: `src/app/create-app.ts`
 - Test: `tests/git/staging.integration.test.ts`
 - Test: `tests/app/controller.test.ts`
 
@@ -217,18 +216,13 @@ Implement batch loops in `GitMutations` using the existing runner arguments (`ad
 
 For branches, execute each existing `BranchDeleteRequest` with its current local/remote/both semantics inside one queued operation, collect affected remote names, refresh once, then refresh each affected remote listing without calling the full repository refresh again. Preserve force-confirmation validation and existing `GitCommandError` banner text.
 
-- [ ] **Step 4: Wire create-app callbacks and verify green**
+- [ ] **Step 4: Verify the batch APIs and commit the mutation slice**
 
-Wire the new RootView callback options in `src/app/create-app.ts` with the same `try/finally` `view.update(controller.state)` contract as singular callbacks. Re-run:
+Re-run `bun test tests/git/staging.integration.test.ts tests/app/controller.test.ts`. Expected: PASS, including existing singular mutation tests. Commit:
 
 ```bash
 bun test tests/git/staging.integration.test.ts tests/app/controller.test.ts
-```
-
-Expected: PASS, including existing singular mutation tests. Commit:
-
-```bash
-git add src/git/mutations.ts src/app/controller.ts src/app/create-app.ts tests/git/staging.integration.test.ts tests/app/controller.test.ts
+git add src/git/mutations.ts src/app/controller.ts tests/git/staging.integration.test.ts tests/app/controller.test.ts
 git commit -m "feat: add serialized batch mutations"
 ```
 
@@ -238,6 +232,7 @@ git commit -m "feat: add serialized batch mutations"
 
 **Files:**
 - Modify: `src/ui/root-view.ts`
+- Modify: `src/app/create-app.ts`
 - Modify: `src/ui/branch-dialogs.ts`
 - Modify: `src/ui/bindings.ts`
 - Modify: `tests/ui/branch-actions.integration.test.ts`
@@ -281,6 +276,8 @@ Expected: FAIL because `Space`/`d`/branch delete/stash drop still consume one se
 
 Add RootView callback fields/options and update `actionStageFile`/`actionDiscardFile` only when `hasMultipleListRowsSelected` is true. Resolve rows by id, expand directory leaves with `forEachFile`, deduplicate by `ChangedFile.path`, reject conflicts with the existing visible bottom-title error, and call the Task 3 callback through `runUiMutation`. Keep single-row directory behavior and editor/review-marker behavior unchanged. For a discard range, preserve the existing confirmation menu and use the comma-separated unique file paths in its message.
 
+Wire the new callbacks in `src/app/create-app.ts` with the same `try/finally` `view.update(controller.state)` contract as the singular callbacks.
+
 Collapse the active range to its first row before opening/confirming a batch mutation so the next refresh selects the first surviving row. Do not collapse a range for non-mutating actions such as `Enter`, `e`, tabs, or filtering.
 
 - [ ] **Step 4: Implement Branch range confirmation and Stash range drop**
@@ -299,8 +296,7 @@ bun test tests/ui/branch-actions.integration.test.ts tests/ui/dispatch.integrati
 
 Expected: PASS for new and existing side-pane mutation flows. Commit:
 
-```bash
-git add src/ui/root-view.ts src/ui/branch-dialogs.ts src/ui/bindings.ts tests/ui/branch-actions.integration.test.ts tests/ui/dispatch.integration.test.ts tests/ui/filter-search.integration.test.ts tests/ui/list-selection.integration.test.ts
+git add src/ui/root-view.ts src/ui/branch-dialogs.ts src/ui/bindings.ts src/app/create-app.ts tests/ui/branch-actions.integration.test.ts tests/ui/dispatch.integration.test.ts tests/ui/filter-search.integration.test.ts tests/ui/list-selection.integration.test.ts
 git commit -m "feat: apply side-pane actions to ranges"
 ```
 
