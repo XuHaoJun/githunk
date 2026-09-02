@@ -543,6 +543,45 @@ describe("AppController", () => {
       await repository.cleanup()
     }
   })
+  test("preflights local-and-remote merge checks before deleting any branch", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["branch", "merged"])
+      await repository.git(["branch", "unmerged"])
+      await repository.git(["switch", "--quiet", "unmerged"])
+      await repository.write("file.txt", "unmerged\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "unmerged"])
+      await repository.git(["push", "--quiet", "origin", "master:merged"])
+      await repository.git(["push", "--quiet", "origin", "unmerged"])
+      await repository.git(["switch", "--quiet", "master"])
+
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner: new GitRunner({ cwd: repository.path }),
+        load: async (target) => snapshot(target.scope, "working"),
+      })
+
+      await expect(controller.deleteBranches([
+        { mode: "local-and-remote", branch: "merged", remote: "origin", remoteBranch: "merged", force: false },
+        { mode: "local-and-remote", branch: "unmerged", remote: "origin", remoteBranch: "unmerged", force: false },
+      ])).rejects.toThrow("force deletion requires separate confirmation for unmerged")
+
+      for (const branch of ["merged", "unmerged"]) {
+        expect((await repository.git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).exitCode).toBe(0)
+        expect((await remote.git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).exitCode).toBe(0)
+      }
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
 
 })
 
