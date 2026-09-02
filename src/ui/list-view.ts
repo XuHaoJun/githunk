@@ -20,12 +20,16 @@ export type ListDisplayRow =
   | { readonly kind: "item"; readonly id: string }
   | { readonly kind: "header" | "message"; readonly text: string }
 
+export type ListRangeMode = "none" | "sticky" | "non-sticky"
+
 export type ListState = {
   readonly rows: readonly ListRow[]
   readonly displayRows: readonly ListDisplayRow[]
   readonly selectedId?: string
   readonly selectedIndex: number
   readonly scrollY: number
+  readonly rangeMode: ListRangeMode
+  readonly rangeStartId?: string
 }
 
 export type ListViewport = {
@@ -74,6 +78,7 @@ export function createListState(rows: readonly ListRow[], displayRows?: readonly
       displayRows: resolvedDisplayRows,
       selectedIndex: selection.selectedIndex,
       scrollY: 0,
+      rangeMode: "none",
     }
   }
   return {
@@ -82,18 +87,36 @@ export function createListState(rows: readonly ListRow[], displayRows?: readonly
     selectedId: selection.selectedId,
     selectedIndex: selection.selectedIndex,
     scrollY: 0,
+    rangeMode: "none",
   }
 }
 
 export function setListRows(state: ListState, rows: readonly ListRow[], displayRows?: readonly ListDisplayRow[]): ListState {
   const resolvedDisplayRows = toDisplayRows(rows, displayRows)
   const selection = resolveSelectionAfterChange(state.selectedId, state.selectedIndex, rows)
+  // Preserve range only when both stable endpoints still resolve against the new rows.
+  let nextRangeMode: ListRangeMode = "none"
+  let nextRangeStartId: string | undefined = undefined
+  if (state.rangeMode !== "none" && state.rangeStartId !== undefined && selection.selectedId !== undefined) {
+    const anchorExists = rows.some((row) => row.id === state.rangeStartId)
+    // Check both the stored anchor and the original selected endpoint as stable ids.
+    // Using state.selectedId ensures we test the endpoint that defined the range, not a clamped fallback.
+    const endpointExists = state.selectedId !== undefined && rows.some((row) => row.id === state.selectedId)
+    const resolvedAnchorIdx = anchorExists ? rows.findIndex((row) => row.id === state.rangeStartId) : -1
+    const resolvedEndpointIdx = endpointExists ? rows.findIndex((row) => row.id === selection.selectedId) : -1
+    if (anchorExists && endpointExists && resolvedAnchorIdx !== -1 && resolvedEndpointIdx !== -1) {
+      nextRangeMode = state.rangeMode
+      nextRangeStartId = state.rangeStartId
+    }
+  }
   if (selection.selectedId === undefined) {
     return {
       rows,
       displayRows: resolvedDisplayRows,
       selectedIndex: selection.selectedIndex,
       scrollY: state.scrollY,
+      rangeMode: nextRangeMode,
+      ...(nextRangeStartId === undefined ? {} : { rangeStartId: nextRangeStartId }),
     }
   }
   return {
@@ -102,6 +125,130 @@ export function setListRows(state: ListState, rows: readonly ListRow[], displayR
     selectedId: selection.selectedId,
     selectedIndex: selection.selectedIndex,
     scrollY: state.scrollY,
+    rangeMode: nextRangeMode,
+    ...(nextRangeStartId === undefined ? {} : { rangeStartId: nextRangeStartId }),
+  }
+}
+
+export function isListRangeActive(state: ListState): boolean {
+  if (state.rangeMode === "none") return false
+  if (state.rangeStartId === undefined) return false
+  if (state.selectedId === undefined) return false
+  const anchorIdx = state.rows.findIndex((row) => row.id === state.rangeStartId)
+  if (anchorIdx === -1) return false
+  const selectedIdx = state.rows.findIndex((row) => row.id === state.selectedId)
+  return selectedIdx !== -1
+}
+
+export function getListSelectionRange(state: ListState): { readonly startIndex: number; readonly endIndex: number } {
+  if (!isListRangeActive(state)) {
+    return { startIndex: state.selectedIndex, endIndex: state.selectedIndex }
+  }
+  const anchorIdx = state.rows.findIndex((row) => row.id === state.rangeStartId)
+  const selectedIdx = state.rows.findIndex((row) => row.id === state.selectedId)
+  if (anchorIdx === -1 || selectedIdx === -1) {
+    return { startIndex: state.selectedIndex, endIndex: state.selectedIndex }
+  }
+  const startIndex = anchorIdx < selectedIdx ? anchorIdx : selectedIdx
+  const endIndex = anchorIdx < selectedIdx ? selectedIdx : anchorIdx
+  return { startIndex, endIndex }
+}
+
+export function hasMultipleListRowsSelected(state: ListState): boolean {
+  if (!isListRangeActive(state)) return false
+  const range = getListSelectionRange(state)
+  return range.startIndex !== range.endIndex
+}
+
+export function clearListRangeSelection(state: ListState): ListState {
+  if (state.rangeMode === "none" && state.rangeStartId === undefined) return state
+  return {
+    rows: state.rows,
+    displayRows: state.displayRows,
+    selectedIndex: state.selectedIndex,
+    scrollY: state.scrollY,
+    rangeMode: "none",
+    ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId }),
+  }
+}
+
+export function toggleListRangeSelection(state: ListState): ListState {
+  if (state.rows.length === 0) return state
+  if (state.rangeMode !== "none") {
+    // Any active or stale range is cancelled; keep endpoint as new single selection.
+    return {
+      rows: state.rows,
+      displayRows: state.displayRows,
+      selectedIndex: state.selectedIndex,
+      scrollY: state.scrollY,
+      rangeMode: "none",
+      ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId }),
+    }
+  }
+  if (state.selectedId === undefined) return state
+  const selectedIdx = state.rows.findIndex((row) => row.id === state.selectedId)
+  if (selectedIdx === -1) return state
+  return {
+    ...state,
+    rangeMode: "sticky",
+    rangeStartId: state.selectedId,
+  }
+}
+
+export function expandListRangeSelection(state: ListState, direction: "next" | "previous"): ListState {
+  if (state.rows.length === 0) return state
+  if (state.selectedId === undefined) return state
+  let currentIndex = state.selectedIndex
+  const found = state.rows.findIndex((row) => row.id === state.selectedId)
+  if (found !== -1) currentIndex = found
+  else if (currentIndex < 0 || currentIndex >= state.rows.length) currentIndex = 0
+
+  if (isListRangeActive(state) && state.rangeStartId !== undefined) {
+    const delta = direction === "next" ? 1 : -1
+    const nextIndex = Math.max(0, Math.min(state.rows.length - 1, currentIndex + delta))
+    const nextId = state.rows[nextIndex]!.id
+    if (nextIndex === currentIndex && nextId === state.selectedId) return state
+    return {
+      ...state,
+      selectedId: nextId,
+      selectedIndex: nextIndex,
+    }
+  }
+
+  const delta = direction === "next" ? 1 : -1
+  const nextIndex = Math.max(0, Math.min(state.rows.length - 1, currentIndex + delta))
+  const nextId = state.rows[nextIndex]!.id
+  const anchorId = state.selectedId
+  // Starting a non-sticky range from the current row; even a clamped single-row range is a valid range.
+  return {
+    ...state,
+    rangeMode: "non-sticky",
+    rangeStartId: anchorId,
+    selectedId: nextId,
+    selectedIndex: nextIndex,
+  }
+}
+
+export function setListRangeSelection(state: ListState, anchorId: string, endpointId: string): ListState {
+  const anchorIdx = state.rows.findIndex((row) => row.id === anchorId)
+  const endpointIdx = state.rows.findIndex((row) => row.id === endpointId)
+  if (anchorIdx === -1 || endpointIdx === -1) {
+    if (state.rangeMode === "none" && state.rangeStartId === undefined) return state
+    return {
+      rows: state.rows,
+      displayRows: state.displayRows,
+      selectedIndex: state.selectedIndex,
+      scrollY: state.scrollY,
+      rangeMode: "none",
+      ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId }),
+    }
+  }
+  return {
+    ...state,
+    rangeMode: "non-sticky",
+    rangeStartId: anchorId,
+    selectedId: endpointId,
+    selectedIndex: endpointIdx,
   }
 }
 
@@ -118,7 +265,48 @@ export function moveListSelection(state: ListState, direction: "next" | "previou
   }
   const nextIndex = Math.max(0, Math.min(state.rows.length - 1, currentIndex + delta))
   const nextId = state.rows[nextIndex]!.id
-  if (nextIndex === state.selectedIndex && nextId === state.selectedId) return state
+  const isNoMovement = nextIndex === state.selectedIndex && nextId === state.selectedId
+
+  if (state.rangeMode === "sticky" && state.rangeStartId !== undefined) {
+    const anchorIdx = state.rows.findIndex((row) => row.id === state.rangeStartId)
+    if (anchorIdx !== -1 && isListRangeActive(state)) {
+      if (isNoMovement) return state
+      return {
+        ...state,
+        selectedId: nextId,
+        selectedIndex: nextIndex,
+      }
+    }
+    // Stale sticky anchor: fall through to clear handling.
+  }
+
+  if (state.rangeMode === "non-sticky" || (state.rangeMode === "sticky" && state.rangeStartId !== undefined)) {
+    // Non-sticky cancels before ordinary movement; a stale sticky anchor also clears.
+    const shouldClear = state.rangeMode === "non-sticky" || !isListRangeActive(state)
+    if (shouldClear) {
+      if (isNoMovement) {
+        // Even without movement, the range is cancelled.
+        return {
+          rows: state.rows,
+          displayRows: state.displayRows,
+          selectedIndex: state.selectedIndex,
+          scrollY: state.scrollY,
+          rangeMode: "none",
+          ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId }),
+        }
+      }
+      return {
+        rows: state.rows,
+        displayRows: state.displayRows,
+        selectedIndex: nextIndex,
+        scrollY: state.scrollY,
+        rangeMode: "none",
+        selectedId: nextId,
+      }
+    }
+  }
+
+  if (isNoMovement) return state
   return {
     ...state,
     selectedId: nextId,
@@ -129,7 +317,31 @@ export function moveListSelection(state: ListState, direction: "next" | "previou
 export function selectListRow(state: ListState, id: string): ListState {
   const idx = state.rows.findIndex((row) => row.id === id)
   if (idx === -1) return state
-  if (state.selectedId === id && state.selectedIndex === idx) return state
+  const isSameSelection = state.selectedId === id && state.selectedIndex === idx
+  const isRangeActive = state.rangeMode !== "none" || state.rangeStartId !== undefined
+  if (isSameSelection && !isRangeActive) return state
+  if (isSameSelection && isRangeActive) {
+    // Direct click on the already-selected row still clears an active range.
+    return {
+      rows: state.rows,
+      displayRows: state.displayRows,
+      selectedIndex: idx,
+      scrollY: state.scrollY,
+      rangeMode: "none",
+      selectedId: id,
+    }
+  }
+  // Any direct selection clears an active range.
+  if (state.rangeMode !== "none" || state.rangeStartId !== undefined) {
+    return {
+      rows: state.rows,
+      displayRows: state.displayRows,
+      selectedIndex: idx,
+      scrollY: state.scrollY,
+      rangeMode: "none",
+      selectedId: id,
+    }
+  }
   return {
     ...state,
     selectedId: id,
@@ -312,6 +524,7 @@ export function renderListRows(state: ListState, focused: boolean, width: number
     return new StyledText([])
   }
   const rowMap = new Map(state.rows.map((r) => [r.id, r] as const))
+  const rowIndexById = new Map(state.rows.map((r, idx) => [r.id, idx] as const))
   const visibleRows = displayRows.flatMap((dr) => {
     if (dr.kind !== "item") return []
     const row = rowMap.get(dr.id)
@@ -319,11 +532,21 @@ export function renderListRows(state: ListState, focused: boolean, width: number
   })
   const layout = computeColumnLayout(visibleRows, safeWidth)
   const allChunks: TextChunk[] = []
+  const rangeActive = focused && isListRangeActive(state)
+  const selectionRange = rangeActive ? getListSelectionRange(state) : undefined
 
   for (let i = 0; i < displayRows.length; i++) {
     const dr = displayRows[i]!
     const isSelected = focused && dr.kind === "item" && dr.id === state.selectedId
-    const isHovered = !isSelected && dr.kind === "item" && dr.id === hoveredId
+    // Range membership is resolved against rows order, not displayRows order, and excludes headers/messages/unknown ids.
+    let isInRange = false
+    if (rangeActive && selectionRange !== undefined && dr.kind === "item") {
+      const rowIdx = rowIndexById.get(dr.id)
+      if (rowIdx !== undefined && rowIdx >= selectionRange.startIndex && rowIdx <= selectionRange.endIndex) {
+        isInRange = true
+      }
+    }
+    const isHovered = !isSelected && !isInRange && dr.kind === "item" && dr.id === hoveredId
     let lineChunks: TextChunk[] = []
 
     if (dr.kind === "item") {
@@ -342,12 +565,23 @@ export function renderListRows(state: ListState, focused: boolean, width: number
       }
     }
 
-    const shouldHighlight = isSelected && dr.kind === "item"
+    const shouldHighlightSelected = isSelected && dr.kind === "item"
+    const shouldHighlightRange = isInRange && !isSelected && dr.kind === "item"
 
-    if (shouldHighlight) {
+    if (shouldHighlightSelected) {
       // lazygit's indexed SelectedLineBgColor, not a fixed CSS blue — see ./theme.
       const selectedBg = bg(SELECTED_LINE_BG)
       lineChunks = lineChunks.map((c) => highlightChunk(c, selectedBg))
+      const plainLen = lineChunks.reduce((sum, c) => sum + visualLength(c.text), 0)
+      const pad = Math.max(0, safeWidth - plainLen)
+      if (pad > 0) {
+        lineChunks.push(selectedBg(" ".repeat(pad)) as TextChunk)
+      } else if (lineChunks.length === 0 && safeWidth > 0) {
+        lineChunks.push(selectedBg(" ".repeat(safeWidth)) as TextChunk)
+      }
+    } else if (shouldHighlightRange) {
+      const selectedBg = bg(SELECTED_LINE_BG)
+      lineChunks = lineChunks.map((c) => selectedBg(c) as TextChunk)
       const plainLen = lineChunks.reduce((sum, c) => sum + visualLength(c.text), 0)
       const pad = Math.max(0, safeWidth - plainLen)
       if (pad > 0) {
