@@ -165,6 +165,18 @@ describe("BindingRegistry availability-aware resolution", () => {
     expect(registry.dispatch({ name: "v" }, { context: "modal", model: workingTree, ui: ui() })).toBeUndefined()
   })
 
+  test("gates range selection off Files navigation-only tabs", () => {
+    const worktrees = ui({ filesTab: "worktrees" })
+    const submodules = ui({ filesTab: "submodules" })
+    for (const tabUi of [worktrees, submodules]) {
+      expect(registry.dispatch({ name: "v" }, { context: "files", model: workingTree, ui: tabUi })).toBeUndefined()
+      expect(registry.dispatch({ name: "up", shift: true }, { context: "files", model: workingTree, ui: tabUi })).toBeUndefined()
+      expect(registry.dispatch({ name: "down", shift: true }, { context: "files", model: workingTree, ui: tabUi })).toBeUndefined()
+    }
+    expect(registry.dispatch({ name: "v" }, { context: "branches", model: workingTree, ui: worktrees })).toBe("toggle-range-select")
+    expect(registry.dispatch({ name: "down", shift: true }, { context: "stash", model: workingTree, ui: submodules })).toBe("range-select-down")
+  })
+
   test("resolves to undefined when the only binding for a key is unavailable", () => {
     const onlyUnavailable = new BindingRegistry([
       { keys: ["x"], action: "quit", description: "quit", contexts: ["files"], available: () => false },
