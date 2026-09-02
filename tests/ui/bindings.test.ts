@@ -158,6 +158,41 @@ describe("BindingRegistry availability-aware resolution", () => {
     expect(registry.dispatch({ name: "]" }, { context: "files", model: workingTree, ui: ui() })).toBe("tab-next")
   })
 
+  test("resolves range selection keys only in available list contexts", () => {
+    expect(registry.dispatch({ name: "v" }, { context: "files", model: workingTree, ui: ui() })).toBe("toggle-range-select")
+    expect(registry.dispatch({ name: "up", shift: true }, { context: "stash", model: workingTree, ui: ui() })).toBe("range-select-up")
+    expect(registry.dispatch({ name: "down", shift: true }, { context: "main", model: workingTree, ui: ui({ hasMainDocument: true }) })).toBe("range-select-down")
+    expect(registry.dispatch({ name: "v" }, { context: "modal", model: workingTree, ui: ui() })).toBeUndefined()
+  })
+  test("gates branches range selection to local and remote-branch rows", () => {
+    const branchKinds: readonly UiState["selectedBranchKind"][] = ["remote", undefined]
+    for (const selectedBranchKind of branchKinds) {
+      const state = ui({ selectedBranchKind })
+      expect(registry.dispatch({ name: "v" }, { context: "branches", model: workingTree, ui: state })).toBeUndefined()
+      expect(registry.dispatch({ name: "up", shift: true }, { context: "branches", model: workingTree, ui: state })).toBeUndefined()
+      expect(registry.dispatch({ name: "down", shift: true }, { context: "branches", model: workingTree, ui: state })).toBeUndefined()
+    }
+    for (const selectedBranchKind of ["local", "remote-branch"] as const) {
+      const state = ui({ selectedBranchKind })
+      expect(registry.dispatch({ name: "v" }, { context: "branches", model: workingTree, ui: state })).toBe("toggle-range-select")
+      expect(registry.dispatch({ name: "up", shift: true }, { context: "branches", model: workingTree, ui: state })).toBe("range-select-up")
+      expect(registry.dispatch({ name: "down", shift: true }, { context: "branches", model: workingTree, ui: state })).toBe("range-select-down")
+    }
+  })
+
+
+  test("gates range selection off Files navigation-only tabs", () => {
+    const worktrees = ui({ filesTab: "worktrees" })
+    const submodules = ui({ filesTab: "submodules" })
+    for (const tabUi of [worktrees, submodules]) {
+      expect(registry.dispatch({ name: "v" }, { context: "files", model: workingTree, ui: tabUi })).toBeUndefined()
+      expect(registry.dispatch({ name: "up", shift: true }, { context: "files", model: workingTree, ui: tabUi })).toBeUndefined()
+      expect(registry.dispatch({ name: "down", shift: true }, { context: "files", model: workingTree, ui: tabUi })).toBeUndefined()
+    }
+    expect(registry.dispatch({ name: "v" }, { context: "branches", model: workingTree, ui: worktrees })).toBeUndefined()
+    expect(registry.dispatch({ name: "down", shift: true }, { context: "stash", model: workingTree, ui: submodules })).toBe("range-select-down")
+  })
+
   test("resolves to undefined when the only binding for a key is unavailable", () => {
     const onlyUnavailable = new BindingRegistry([
       { keys: ["x"], action: "quit", description: "quit", contexts: ["files"], available: () => false },
@@ -304,6 +339,11 @@ describe("GITHUNK_BINDINGS", () => {
     expect(ACTIONS).toContain("tab-previous")
     expect(ACTIONS).toContain("scope-next")
     expect(ACTIONS).toContain("scope-previous")
+  })
+
+  test("keeps Files tree controls alongside range selection", () => {
+    expect(registry.dispatch({ name: "`" }, { context: "files", model: model(), ui: ui() })).toBe("toggle-file-tree")
+    expect(registry.dispatch({ name: "-" }, { context: "files", model: model(), ui: ui() })).toBe("collapse-files")
   })
 
   test("declares paging, jumping, main scrolling, screen modes and the menu", () => {

@@ -731,5 +731,221 @@ describe("lazygit core UI acceptance", () => {
     expect(observed.paneTitles.commits).toBeDefined()
     expect(observed.selectedIds.commits).toMatch(/^[0-9a-f]{40}$/)
     expect(observed.main.source).toBeDefined()
+
+    // 11. Contiguous keyboard ranges use stable IDs across list mutations, confirmation dialogs,
+    // and Main's existing patch/copy actions.
+    const commandLogText = (): string => app.controller.state.commandLog
+      .map((line) => line.spans.map((span) => span.text).join(""))
+      .join("\n")
+    const moveToListId = async (pane: "files" | "branches" | "stash", id: string, limit = 32): Promise<void> => {
+      for (let attempt = 0; attempt < limit && view.selectedListId(pane) !== id; attempt++) {
+        await harness!.pressKey("j")
+        await harness!.flush()
+      }
+      if (view.selectedListId(pane) !== id) {
+        for (let attempt = 0; attempt < limit && view.selectedListId(pane) !== id; attempt++) {
+          await harness!.pressKey("k")
+          await harness!.flush()
+        }
+      }
+      expect(view.selectedListId(pane)).toBe(id)
+    }
+
+    // Files: v makes a sticky range, ordinary movement extends it, v clears it, and
+    // Shift+Down starts a non-sticky range that ordinary movement cancels.
+    const rangeStagePaths = ["range-stage-a.txt", "range-stage-b.txt", "range-stage-c.txt", "range-stage-d.txt"] as const
+    for (const path of rangeStagePaths) await harness.repository.write(path, `${path}\nbase\n`)
+    await expectGit(harness.repository, ["add", ...rangeStagePaths])
+    await expectGit(harness.repository, ["commit", "--only", "-m", "range stage base", "--", ...rangeStagePaths])
+    for (const path of rangeStagePaths) await harness.repository.write(path, `${path}\nchanged\n`)
+    await app.controller.refresh()
+    await app.refresh()
+    await harness.flush()
+    await harness.pressKey("2")
+    await harness.flush()
+    await moveToListId("files", "range-stage-a.txt")
+    await harness.pressKey("v")
+    await harness.flush()
+    expect(view.selectedListRange("files")).toMatchObject({ mode: "sticky", startId: "file:./range-stage-a.txt", endId: "file:./range-stage-a.txt" })
+    await harness.pressKey("j")
+    await harness.flush()
+    expect(view.selectedListRange("files")).toMatchObject({ mode: "sticky", startId: "file:./range-stage-a.txt", endId: "file:./range-stage-b.txt" })
+    await harness.pressKey("v")
+    await harness.flush()
+    expect(view.selectedListRange("files")).toMatchObject({ mode: "none" })
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    await harness.flush()
+    expect(view.selectedListRange("files")).toMatchObject({ mode: "non-sticky", startId: "file:./range-stage-b.txt", endId: "file:./range-stage-c.txt" })
+    await harness.pressKey("j")
+    await harness.flush()
+    expect(view.selectedListRange("files")).toMatchObject({ mode: "none", endId: "file:./range-stage-d.txt" })
+
+    // Files range stage: the selected paths are staged together, the range collapses to its
+    // first stable row, and refresh removes no unrelated rows.
+    await moveToListId("files", "range-stage-a.txt")
+    await harness.pressKey("v")
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    await harness.flush()
+    expect(view.selectedListRange("files")).toMatchObject({ mode: "sticky", startId: "file:./range-stage-a.txt", endId: "file:./range-stage-b.txt" })
+    await harness.pressKey(" ")
+    await harness.settle()
+    expect(view.selectedListRange("files")).toMatchObject({ mode: "none", endId: "file:./range-stage-a.txt" })
+    const stagedRangePaths = (await harness.repository.git(["diff", "--cached", "--name-only"])).stdout
+    expect(stagedRangePaths).toContain("range-stage-a.txt")
+    expect(stagedRangePaths).toContain("range-stage-b.txt")
+    expect(stagedRangePaths).not.toContain("range-stage-c.txt")
+    expect(stagedRangePaths).not.toContain("range-stage-d.txt")
+    expect(commandLogText()).toContain("Stage all files")
+    expect(commandLogText()).toContain("git add")
+
+    // Files range discard: x confirms all changes for both selected untracked paths; the
+    // post-mutation refresh collapses the range and removes exactly those paths.
+    for (const path of ["range-discard-a.txt", "range-discard-b.txt"]) {
+      await harness.repository.write(path, `${path}\n`)
+    }
+    await app.controller.refresh()
+    await app.refresh()
+    await harness.flush()
+    await harness.pressKey("2")
+    await moveToListId("files", "range-discard-a.txt")
+    await harness.pressKey("v")
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    await harness.flush()
+    expect(view.selectedListRange("files")).toMatchObject({ mode: "sticky", startId: "file:./range-discard-a.txt", endId: "file:./range-discard-b.txt" })
+    await harness.pressKey("d")
+    await harness.flush()
+    expect(harness.frame()).toContain("Discard changes")
+    expect(harness.frame()).toContain("range-discard-a.txt, range-discard-b.txt")
+    await harness.pressKey("x")
+    await harness.settle()
+    expect(view.selectedListRange("files").mode).toBe("none")
+    const discardedStatus = (await harness.repository.git(["status", "--short", "--", "range-discard-a.txt", "range-discard-b.txt"])).stdout
+    expect(discardedStatus.trim()).toBe("")
+    const unrelatedDirtyStatus = (await harness.repository.git(["status", "--short", "--", "unstaged.txt"])).stdout
+    expect(unrelatedDirtyStatus.trim()).toContain("?? unstaged.txt")
+    expect(commandLogText()).toContain("Discard all changes in selected file(s)")
+
+    // Local Branches: a contiguous range opens the existing delete-options confirmation and
+    // deletes only the selected local refs.
+    for (const name of ["range-a", "range-b", "range-c"]) {
+      await expectGit(harness.repository, ["branch", "--track", name, "origin/master"])
+    }
+    await app.controller.refresh()
+    await app.refresh()
+    await harness.flush()
+    await harness.pressKey("3")
+    while (view.activeBranchesTab !== "branches") {
+      await harness.pressKey("]")
+      await harness.flush()
+    }
+    await moveToListId("branches", "local:range-a")
+    await harness.pressKey("v")
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    await harness.flush()
+    expect(view.selectedListRange("branches")).toMatchObject({ mode: "sticky", startId: "local:range-a", endId: "local:range-b" })
+    await harness.pressKey("d")
+    await harness.flush()
+    expect(harness.frame()).toContain("Delete branches")
+    expect(harness.frame()).toContain("'range-a'")
+    expect(harness.frame()).toContain("'range-b'")
+    await harness.pressKey("c")
+    await harness.settle()
+    expect((await harness.repository.git(["show-ref", "--verify", "--quiet", "refs/heads/range-a"])).exitCode).not.toBe(0)
+    expect((await harness.repository.git(["show-ref", "--verify", "--quiet", "refs/heads/range-b"])).exitCode).not.toBe(0)
+    expect((await harness.repository.git(["show-ref", "--verify", "--quiet", "refs/heads/range-c"])).exitCode).toBe(0)
+    expect(view.selectedListRange("branches").mode).toBe("none")
+    expect(commandLogText()).toContain("Delete local branch")
+    expect(harness.frame()).toContain("range-c")
+    expect(harness.frame()).not.toContain("range-a")
+
+    // Stash: the displayed newest two entries form the selected range; dropping them leaves the
+    // pre-existing review stash intact.
+    await harness.repository.write("stash-range.txt", "base\n")
+    await expectGit(harness.repository, ["add", "stash-range.txt"])
+    await expectGit(harness.repository, ["commit", "--only", "-m", "stash range base", "--", "stash-range.txt"])
+    await harness.repository.write("stash-range.txt", "first\n")
+    await expectGit(harness.repository, ["stash", "push", "-m", "range stash first", "--", "stash-range.txt"])
+    await harness.repository.write("stash-range.txt", "second\n")
+    await expectGit(harness.repository, ["stash", "push", "-m", "range stash second", "--", "stash-range.txt"])
+    await app.controller.refresh()
+    await app.refresh()
+    await harness.flush()
+    const stashes = app.controller.state.stashes ?? []
+    const stashSecond = stashes.find((stash) => stash.message.includes("range stash second"))
+    const stashFirst = stashes.find((stash) => stash.message.includes("range stash first"))
+    expect(stashSecond).toBeDefined()
+    expect(stashFirst).toBeDefined()
+    await harness.pressKey("5")
+    await harness.flush()
+    await moveToListId("stash", stashSecond!.oid)
+    await harness.pressKey("v")
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    await harness.flush()
+    expect(view.selectedListRange("stash")).toMatchObject({ mode: "sticky", startId: stashSecond!.oid, endId: stashFirst!.oid })
+    await harness.pressKey("d")
+    await harness.flush()
+    expect(harness.frame()).toContain("Stash drop")
+    expect(harness.frame()).toContain(stashSecond!.ref)
+    expect(harness.frame()).toContain(stashFirst!.ref)
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    const stashList = (await harness.repository.git(["stash", "list"])).stdout
+    expect(stashList).not.toContain("range stash second")
+    expect(stashList).not.toContain("range stash first")
+    expect(stashList).toContain("review stash")
+    expect(view.selectedListRange("stash").mode).toBe("none")
+    expect(commandLogText()).toContain("Drop stash")
+
+    // Main: a changed-line range uses the existing native selection surface, copy route, and
+    // line staging route. The fixture commit is path-limited so earlier staged files remain intact.
+    await harness.repository.write("line-range.txt", "one\ntwo\nthree\nfour\n")
+    await expectGit(harness.repository, ["add", "line-range.txt"])
+    await expectGit(harness.repository, ["commit", "--only", "-m", "line range base", "--", "line-range.txt"])
+    await harness.repository.write("line-range.txt", "one\nTWO\nTHREE\nfour\n")
+    await app.controller.refresh()
+    await app.refresh()
+    await harness.flush()
+    await harness.pressKey("2")
+    await moveToListId("files", "line-range.txt")
+    await harness.pressKey("RETURN")
+    await harness.flush()
+    await harness.pressKey("0")
+    await harness.flush()
+    await harness.pressKey("[")
+    await harness.settle()
+    await harness.flush()
+    const lineTextView = view.mainPane.text as unknown as {
+      hasSelection?: () => boolean
+      getSelectedText?: () => string
+    }
+    await harness.pressKey("v")
+    await harness.flush()
+    expect(lineTextView.hasSelection?.()).toBe(true)
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    await harness.flush()
+    expect(lineTextView.hasSelection?.()).toBe(true)
+    expect(lineTextView.getSelectedText?.()).toMatch(/-two|-three/)
+    const copiedRangeText: string[] = []
+    const rendererClipboard = harness.renderer as unknown as {
+      isOsc52Supported: () => boolean
+      copyToClipboardOSC52: (text: string) => boolean
+    }
+    rendererClipboard.isOsc52Supported = () => true
+    rendererClipboard.copyToClipboardOSC52 = (text) => {
+      copiedRangeText.push(text)
+      return true
+    }
+    await harness.pressKey("o", { ctrl: true })
+    await harness.flush()
+    expect(copiedRangeText).toHaveLength(1)
+    expect(copiedRangeText[0]).toMatch(/-two|-three/)
+    expect(harness.frame()).toContain("OSC52 emitted")
+    await harness.pressKey(" ")
+    await harness.settle()
+    const stagedLineDiff = (await harness.repository.git(["diff", "--cached", "--", "line-range.txt"])).stdout
+    expect(stagedLineDiff).toContain("line-range.txt")
+    expect(stagedLineDiff).toMatch(/-two|-three/)
+    expect(commandLogText()).toContain("Apply patch")
+    expect(view.mainContent?.stableId).toBe("line-range.txt")
   }, 30000)
 })

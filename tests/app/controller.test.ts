@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { AppController } from "../../src/app/controller"
 import { GitCommandError, GitRunner } from "../../src/git/runner"
+import { listBranches, listRemoteBranches } from "../../src/git/branches"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
 import type { PullRequest } from "../../src/domain/pull-request"
+import type { BranchDeleteRequest } from "../../src/domain/branch"
 import type { GitMutations } from "../../src/git/mutations"
+import { createTempRepository } from "../helpers/temp-repository"
 function snapshot(scope: "all" | "staged" | "unstaged", marker: string): WorkingTreeSnapshot {
   return {
     repositoryRoot: "/tmp/repo",
@@ -175,6 +178,97 @@ describe("AppController", () => {
     expect(controller.state.banner).toBe("second failed")
   })
 
+  test("passes file batches through one controller refresh", async () => {
+    const runner = new GitRunner({ cwd: "/tmp/repo" })
+    let loads = 0
+    const staged: string[][] = []
+    const mutations = {
+      stageFiles: async (paths: readonly string[]) => { staged.push([...paths]) },
+      unstageFiles: async () => undefined,
+      discardFiles: async () => undefined,
+    } as unknown as GitMutations
+    const controller = new AppController({
+      runner,
+      mutations,
+      load: async (target) => {
+        loads += 1
+        return {
+          ...snapshot(target.scope, "batch"),
+          files: [{
+            path: "first.txt",
+            indexStatus: ".",
+            worktreeStatus: "M",
+            untracked: false,
+            conflicted: false,
+            additions: 1,
+            deletions: 0,
+          }, {
+            path: "second.txt",
+            indexStatus: ".",
+            worktreeStatus: "M",
+            untracked: false,
+            conflicted: false,
+            additions: 1,
+            deletions: 0,
+          }],
+        }
+      },
+      loadCommits: async () => [],
+      loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
+      loadStashes: async () => [],
+      loadTags: async () => [],
+      loadReflog: async () => [],
+      loadWorktrees: async () => [],
+      loadSubmodules: async () => [],
+    })
+
+    await controller.refresh()
+    await controller.stageFiles(["first.txt", "second.txt"])
+
+    expect(staged).toEqual([["first.txt", "second.txt"]])
+    expect(loads).toBe(2)
+  })
+  test("refreshes controller state after a failed file batch", async () => {
+    const runner = new GitRunner({ cwd: "/tmp/repo" })
+    let changed = false
+    let loads = 0
+    const mutations = {
+      stageFiles: async () => {
+        changed = true
+        throw new Error("batch failed")
+      },
+      unstageFiles: async () => undefined,
+      discardFiles: async () => undefined,
+    } as unknown as GitMutations
+    const controller = new AppController({
+      runner,
+      mutations,
+      load: async (target) => {
+        loads += 1
+        return { ...snapshot(target.scope, changed ? "changed patch" : "old patch"), files: changed ? [{
+          path: "changed.txt", indexStatus: "M", worktreeStatus: ".", untracked: false, conflicted: false, additions: 1, deletions: 0,
+        }] : [] }
+      },
+      loadCommits: async () => [],
+      loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
+      loadStashes: async () => [],
+      loadTags: async () => [],
+      loadReflog: async () => [],
+      loadWorktrees: async () => [],
+      loadSubmodules: async () => [],
+    })
+
+    await controller.refresh()
+    await expect(controller.stageFiles(["changed.txt"])).rejects.toThrow("batch failed")
+
+    expect(loads).toBe(2)
+    expect(controller.state.files[0]?.path).toBe("changed.txt")
+    expect(controller.state.patches[0]?.text).toBe("changed patch")
+    expect(controller.state.banner).toBe("batch failed")
+  })
+
+
+
   test("refresh publishes the worktree and submodule listings", async () => {
     const worktrees = [{ path: "/tmp/repo", name: "repo", isMain: true, isCurrent: true, isPathMissing: false }] as const
     const submodules = [{ name: "vendor/lib", path: "vendor/lib", url: "/tmp/lib" }] as const
@@ -331,5 +425,400 @@ describe("AppController", () => {
 
     expect(controller.state.pullRequests?.feature?.state).toBe("MERGED")
   })
+  test("drops stash batches in supplied order and falls back from the active stash", async () => {
+    const repo = await createTempRepository()
+    try {
+      await repo.write("file.txt", "base\n")
+      await repo.git(["add", "--", "file.txt"])
+      await repo.git(["commit", "--quiet", "-m", "base"])
+      await repo.write("file.txt", "first\n")
+      await repo.git(["stash", "push", "--quiet", "-m", "first"])
+      const firstOid = (await repo.git(["stash", "list", "--format=%H"])).stdout.trim()
+      await repo.write("file.txt", "second\n")
+      await repo.git(["stash", "push", "--quiet", "-m", "second"])
+      const stashOids = (await repo.git(["stash", "list", "--format=%H"])).stdout.trim().split("\n")
+      const secondOid = stashOids[0]
+      if (firstOid.length === 0 || secondOid === undefined) throw new Error("test stash setup failed")
+
+      const runner = new GitRunner({ cwd: repo.path })
+      let loads = 0
+      const controller = new AppController({
+        repositoryRoot: repo.path,
+        runner,
+        load: async (target) => {
+          loads += 1
+          return snapshot(target.scope, "working")
+        },
+        loadCommits: async () => [],
+        loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
+        loadStashes: async () => [],
+        loadTags: async () => [],
+        loadReflog: async () => [],
+        loadWorktrees: async () => [],
+        loadSubmodules: async () => [],
+      })
+
+      await controller.refresh()
+      await controller.inspectStash(firstOid)
+      await controller.dropStashes([firstOid, secondOid], { confirmed: true })
+
+      const dropCommands = runner.log.lines()
+        .map((line) => line.spans.map((span) => span.text).join(""))
+        .filter((text) => text.includes("git stash drop"))
+      expect(dropCommands).toEqual(["  git stash drop stash@{1}", "  git stash drop stash@{0}"])
+      expect(loads).toBe(2)
+      expect(controller.state.reviewTarget).toEqual({ kind: "working-tree", scope: "all" })
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("refreshes stashes after a partial drop batch failure before rethrowing", async () => {
+    const repo = await createTempRepository()
+    try {
+      await repo.write("file.txt", "base\n")
+      await repo.git(["add", "--", "file.txt"])
+      await repo.git(["commit", "--quiet", "-m", "base"])
+      await repo.write("file.txt", "first\n")
+      await repo.git(["stash", "push", "--quiet", "-m", "first"])
+      const firstOid = (await repo.git(["stash", "list", "--format=%H"])).stdout.trim()
+      await repo.write("file.txt", "second\n")
+      await repo.git(["stash", "push", "--quiet", "-m", "second"])
+      const secondOid = (await repo.git(["stash", "list", "--format=%H"])).stdout.trim().split("\n")[0] ?? ""
+      if (firstOid.length === 0 || secondOid.length === 0) throw new Error("test stash setup failed")
+
+      const runner = new GitRunner({ cwd: repo.path })
+      let loads = 0
+      const controller = new AppController({
+        repositoryRoot: repo.path,
+        runner,
+        load: async (target) => {
+          loads += 1
+          return snapshot(target.scope, "working")
+        },
+      })
+
+      await controller.refresh()
+      await expect(controller.dropStashes([firstOid, "stash@{99}"], { confirmed: true })).rejects.toThrow("stash not found: stash@{99}")
+
+      expect(controller.state.stashes?.map((stash) => stash.oid)).toEqual([secondOid])
+      expect(controller.state.banner).toBe("stash not found: stash@{99}")
+      expect(loads).toBe(2)
+    } finally {
+      await repo.cleanup()
+    }
+  })
+
+  test("deletes branch batches in request order and refreshes once", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["branch", "local-only"])
+      await repository.git(["branch", "both"])
+      await repository.git(["push", "--quiet", "origin", "master:remote-only"])
+      await repository.git(["push", "--quiet", "origin", "master:both"])
+      await repository.git(["fetch", "--quiet", "origin"])
+
+      const runner = new GitRunner({ cwd: repository.path })
+      let remoteRefreshes = 0
+      const run = runner.run.bind(runner)
+      runner.run = async (args, options = {}) => {
+        if (args[0] === "for-each-ref" && args[2] === "refs/remotes/origin") remoteRefreshes += 1
+        return run(args, options)
+      }
+      let loads = 0
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner,
+        load: async (target) => {
+          loads += 1
+          return snapshot(target.scope, "working")
+        },
+        loadCommits: async () => [],
+        loadBranches: async () => ({
+          detached: false,
+          current: "master",
+          localBranches: [],
+          remotes: [{ name: "origin" }],
+        }),
+        loadStashes: async () => [],
+        loadTags: async () => [],
+        loadReflog: async () => [],
+        loadWorktrees: async () => [],
+        loadSubmodules: async () => [],
+      })
+      const requests: readonly BranchDeleteRequest[] = [
+        { mode: "local", branch: "local-only", force: false },
+        { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
+        { mode: "local-and-remote", branch: "both", remote: "origin", remoteBranch: "both", force: false },
+      ]
+
+      await controller.refresh()
+      await controller.deleteBranches(requests)
+
+      expect((await repository.git(["show-ref", "--verify", "--quiet", "refs/heads/local-only"])).exitCode).not.toBe(0)
+      const deleteCommands = runner.log.lines()
+        .map((line) => line.spans.map((span) => span.text).join(""))
+        .filter((text) => text.includes("git branch -d --") || text.includes("git branch -D --") || text.includes("git push origin --delete"))
+      expect(deleteCommands).toEqual([
+        "  git branch -d -- local-only",
+        "  git push origin --delete refs/heads/remote-only",
+        "  git push origin --delete refs/heads/both",
+        "  git branch -D -- both",
+      ])
+
+      const actions = runner.log.lines()
+        .filter((line) => line.spans.some((span) => span.style === "action"))
+        .map((line) => line.spans.map((span) => span.text).join(""))
+      expect(actions).toEqual(["Delete local branch", "Delete remote branch"])
+
+      expect(loads).toBe(2)
+      expect(remoteRefreshes).toBe(1)
+    } finally {
+
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+  test("refreshes branches and remote refs after a partial delete batch failure before rethrowing", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["branch", "local-only"])
+      await repository.git(["push", "--quiet", "origin", "master:remote-only"])
+      await repository.git(["fetch", "--quiet", "origin"])
+
+      const runner = new GitRunner({ cwd: repository.path })
+      let loads = 0
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner,
+        load: async (target) => {
+          loads += 1
+          return snapshot(target.scope, "working")
+        },
+        loadBranches: async () => {
+          const listing = await listBranches(runner)
+          return {
+            ...listing,
+            remotes: await Promise.all(listing.remotes.map(async (candidate) => ({
+              ...candidate,
+              branches: await listRemoteBranches(runner, candidate.name),
+            }))),
+          }
+        },
+      })
+
+      await controller.refresh()
+      await expect(controller.deleteBranches([
+        { mode: "local", branch: "local-only", force: false },
+        { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
+        { mode: "local", branch: "missing", force: false },
+      ])).rejects.toThrow()
+
+      expect(controller.state.branches?.localBranches.map((branch) => branch.name)).not.toContain("local-only")
+      expect(controller.state.branches?.remotes[0]?.branches?.map((branch) => branch.name)).not.toContain("remote-only")
+      expect(loads).toBe(2)
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+
+  test("rebuilds affected remote children after a later batch failure", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["push", "--quiet", "origin", "master:remote-only"])
+      await repository.git(["fetch", "--quiet", "origin"])
+
+      const runner = new GitRunner({ cwd: repository.path })
+      let loads = 0
+      let browseCalls = 0
+      const run = runner.run.bind(runner)
+      runner.run = async (args, options = {}) => {
+        if (args[0] === "for-each-ref" && args[2] === "refs/remotes/origin") browseCalls += 1
+        return run(args, options)
+      }
+      const staleRemoteBranch = { name: "remote-only", ref: "origin/remote-only" } as const
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner,
+        load: async (target) => {
+          loads += 1
+          return snapshot(target.scope, "working")
+        },
+        loadBranches: async () => ({
+          detached: false,
+          current: "master",
+          localBranches: [],
+          remotes: [{ name: "origin", branches: [staleRemoteBranch] }],
+        }),
+      })
+
+      await controller.refresh()
+      await expect(controller.deleteBranches([
+        { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
+        { mode: "local", branch: "missing", force: false },
+      ])).rejects.toThrow()
+
+      expect(controller.state.branches?.remotes[0]?.branches).toEqual([])
+      expect(controller.state.banner).toContain("missing")
+      expect(loads).toBe(2)
+      expect(browseCalls).toBe(1)
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+
+  test("preserves a failed branch mutation when remote reconciliation fails", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["push", "--quiet", "origin", "master:remote-only"])
+
+      const runner = new GitRunner({ cwd: repository.path })
+      let remoteDeletionFinished = false
+      let browseCalls = 0
+      const run = runner.run.bind(runner)
+      runner.run = async (args, options = {}) => {
+        if (args[0] === "push" && args[1] === "origin" && args[2] === "--delete") {
+          const result = await run(args, options)
+          remoteDeletionFinished = true
+          return result
+        }
+        if (remoteDeletionFinished && args[0] === "for-each-ref" && args[2] === "refs/remotes/origin") {
+          browseCalls += 1
+          throw new Error("remote browse failed")
+        }
+        return run(args, options)
+      }
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner,
+        load: async (target) => snapshot(target.scope, "working"),
+        loadBranches: async () => ({
+          detached: false,
+          current: "master",
+          localBranches: [],
+          remotes: [{ name: "origin", branches: [] }],
+        }),
+      })
+
+      await controller.refresh()
+      await expect(controller.deleteBranches([
+        { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
+        { mode: "local", branch: "missing", force: false },
+      ])).rejects.toThrow()
+
+      expect(controller.state.banner).toContain("missing")
+      expect(controller.state.banner).not.toContain("remote browse failed")
+      expect(browseCalls).toBe(1)
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+
+  test("rejects a malformed remote batch before any deletion", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["branch", "local-only"])
+      await repository.git(["push", "--quiet", "origin", "master:remote-only"])
+
+      const runner = new GitRunner({ cwd: repository.path })
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner,
+        load: async (target) => snapshot(target.scope, "working"),
+      })
+      runner.log.logAction("before batch validation")
+
+
+      await expect(controller.deleteBranches([
+        { mode: "local", branch: "local-only", force: false },
+        { mode: "remote", branch: "remote-only", remote: "origin", force: false },
+      ])).rejects.toThrow("remote branch deletion requires an upstream")
+      expect(controller.state.banner).toBe("remote branch deletion requires an upstream")
+      expect(controller.state.commandLog.at(-1)?.spans.map((span) => span.text).join("")).toBe("before batch validation")
+
+      expect((await repository.git(["show-ref", "--verify", "--quiet", "refs/heads/local-only"])).exitCode).toBe(0)
+      expect((await remote.git(["show-ref", "--verify", "--quiet", "refs/heads/remote-only"])).exitCode).toBe(0)
+      const deleteCommands = runner.log.lines()
+        .map((line) => line.spans.map((span) => span.text).join(""))
+        .filter((text) => text.includes("git branch -d --") || text.includes("git push origin --delete"))
+      expect(deleteCommands).toEqual([])
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+  test("preflights local-and-remote merge checks before deleting any branch", async () => {
+    const repository = await createTempRepository()
+    const remote = await createTempRepository()
+    try {
+      await repository.write("file.txt", "base\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "base"])
+      await remote.git(["config", "core.bare", "true"])
+      await repository.git(["remote", "add", "origin", remote.path])
+      await repository.git(["branch", "merged"])
+      await repository.git(["branch", "unmerged"])
+      await repository.git(["switch", "--quiet", "unmerged"])
+      await repository.write("file.txt", "unmerged\n")
+      await repository.git(["add", "--", "file.txt"])
+      await repository.git(["commit", "--quiet", "-m", "unmerged"])
+      await repository.git(["push", "--quiet", "origin", "master:merged"])
+      await repository.git(["push", "--quiet", "origin", "unmerged"])
+      await repository.git(["switch", "--quiet", "master"])
+
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        runner: new GitRunner({ cwd: repository.path }),
+        load: async (target) => snapshot(target.scope, "working"),
+      })
+
+      await expect(controller.deleteBranches([
+        { mode: "local-and-remote", branch: "merged", remote: "origin", remoteBranch: "merged", force: false },
+        { mode: "local-and-remote", branch: "unmerged", remote: "origin", remoteBranch: "unmerged", force: false },
+      ])).rejects.toThrow("force deletion requires separate confirmation for unmerged")
+
+      for (const branch of ["merged", "unmerged"]) {
+        expect((await repository.git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).exitCode).toBe(0)
+        expect((await remote.git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).exitCode).toBe(0)
+      }
+    } finally {
+      await remote.cleanup()
+      await repository.cleanup()
+    }
+  })
+
 })
 

@@ -921,4 +921,156 @@ describe("commit files transient context", () => {
       if (harness === undefined) await repository.cleanup()
     }
   })
+  test("stages every file represented by a directory and child range without unrelated files", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("dir/a.txt", "a\n")
+        await repository.write("dir/b.txt", "b\n")
+        await repository.write("unrelated.txt", "unrelated\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("dir/a.txt", "a changed\n")
+        await repository.write("dir/b.txt", "b changed\n")
+        await repository.write("unrelated.txt", "unrelated changed\n")
+      },
+    })
+    const controller = harness.app.controller
+    const originalStageFiles = controller.stageFiles.bind(controller)
+    let releaseStage: () => void = () => undefined
+    const stageGate = new Promise<void>((resolve) => { releaseStage = resolve })
+    controller.stageFiles = async (paths) => {
+      await stageGate
+      await originalStageFiles(paths)
+    }
+
+
+    await harness.pressKey("2")
+    await harness.pressKey("j")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey(" ")
+    expect(harness.app.view!.isMutating).toBe(true)
+    expect(harness.app.view!.selectedListRange("files").mode).toBe("none")
+    await harness.pressKey("j")
+    releaseStage()
+    await harness.settle()
+
+    const staged = (await harness.repository.git(["diff", "--cached", "--name-only"])).stdout.trim().split("\n").filter(Boolean)
+    expect(staged.sort()).toEqual(["dir/a.txt", "dir/b.txt"])
+    expect((await harness.repository.git(["diff", "--name-only"])).stdout.trim()).toBe("unrelated.txt")
+    expect(harness.app.view!.selectedListId("files")).toBe("dir")
+  })
+
+  test("stages only unstaged files when a range mixes staged and unstaged statuses", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("a.txt", "base a\n")
+        await repository.write("b.txt", "base b\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("a.txt", "staged a\n")
+        await repository.git(["add", "a.txt"])
+        await repository.write("b.txt", "unstaged b\n")
+      },
+    })
+    const commandLogBefore = harness.app.controller.state.commandLog.length
+
+    await harness.pressKey("2")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey(" ")
+    await harness.settle()
+
+    expect((await harness.repository.git(["diff", "--cached", "--name-only"])).stdout.trim().split("\n").filter(Boolean).sort()).toEqual(["a.txt", "b.txt"])
+    expect((await harness.repository.git(["diff", "--name-only"])).stdout.trim()).toBe("")
+    const newCommands = harness.app.controller.state.commandLog
+      .slice(commandLogBefore)
+      .flatMap((line) => line.spans.map((span) => span.text))
+      .join("\n")
+    expect(newCommands).toContain("git add -- b.txt")
+    expect(newCommands).not.toContain("git add -- a.txt")
+  })
+
+  test("refuses a files range containing a conflict before staging anything", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("conflict.txt", "base\n")
+        await repository.write("other.txt", "base\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.git(["switch", "-c", "side"])
+        await repository.write("conflict.txt", "side\n")
+        await repository.git(["add", "conflict.txt"])
+        await repository.git(["commit", "-m", "side"])
+        await repository.git(["switch", "master"])
+        await repository.write("conflict.txt", "master\n")
+        await repository.git(["add", "conflict.txt"])
+        await repository.git(["commit", "-m", "master"])
+        await repository.git(["merge", "side"])
+        await repository.write("other.txt", "other changed\n")
+      },
+    })
+
+    await harness.pressKey("2")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey(" ")
+    await harness.settle()
+    expect((await harness.repository.git(["status", "--short"])).stdout).toContain("UU conflict.txt")
+    expect(harness.app.controller.state.files.find((file) => file.path === "conflict.txt")?.conflicted).toBe(true)
+    const bottomTitle = (harness.app.view!.filesPane.box as unknown as { bottomTitle?: unknown }).bottomTitle
+    expect(String(bottomTitle)).toContain("conflicted")
+  })
+
+  test("discard range keeps the existing all and unstaged confirmation modes", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("dir/a.txt", "base a\n")
+        await repository.write("dir/b.txt", "base b\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("dir/a.txt", "staged a\n")
+        await repository.write("dir/b.txt", "staged b\n")
+        await repository.git(["add", "dir/a.txt", "dir/b.txt"])
+        await repository.write("dir/a.txt", "unstaged a\n")
+        await repository.write("dir/b.txt", "unstaged b\n")
+      },
+    })
+
+    await harness.pressKey("2")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("dir/a.txt, dir/b.txt")
+    expect(harness.frame()).toContain("Discard all changes")
+    expect(harness.frame()).toContain("Discard unstaged changes")
+    await harness.pressKey("u")
+    await harness.settle()
+
+    expect((await harness.repository.git(["diff", "--name-only"])).stdout.trim()).toBe("")
+    expect((await harness.repository.git(["diff", "--cached", "--name-only"])).stdout.trim().split("\n").filter(Boolean).sort()).toEqual(["dir/a.txt", "dir/b.txt"])
+  })
+  test("cancelling a Files discard range menu preserves both endpoints", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("dir/a.txt", "base a\n")
+        await repository.write("dir/b.txt", "base b\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("dir/a.txt", "changed a\n")
+        await repository.write("dir/b.txt", "changed b\n")
+      },
+    })
+
+    await harness.pressKey("2")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    const before = harness.app.view!.selectedListRange("files")
+    expect(before.mode).toBe("sticky")
+    await harness.pressKey("d")
+    expect(harness.app.view!.actionMenuOpen).toBe(true)
+    await harness.pressKey("ESCAPE")
+
+    expect(harness.app.view!.selectedListRange("files")).toEqual(before)
+  })
 })

@@ -2,8 +2,10 @@ import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import type { DiffDocument, DiffFile } from "../../domain/diff/document"
 import { renderDiff } from "../../domain/diff/render"
+import { changedIndexesInDiffLineRange, createDiffLineRangeState, diffLineSelectionRange, type DiffLineRangeState } from "../../domain/diff/line-selection"
 import type { AnsiText } from "../ansi"
 import { createPane, type PaneHandle } from "./common"
+import { SELECTED_LINE_BG } from "../theme"
 import { installAnsiText, releaseAnsiText } from "./ansi-text"
 import { installDiffText, releaseDiffText } from "./diff-text"
 
@@ -11,6 +13,7 @@ import { installDiffText, releaseDiffText } from "./diff-text"
 
 const documents = new WeakMap<PaneHandle, DiffDocument>()
 const cursorTargets = new WeakMap<PaneHandle, MainCursorTarget>()
+const lineRanges = new WeakMap<PaneHandle, DiffLineRangeState>()
 const installedContents = new WeakMap<PaneHandle, MainPaneContent>()
 const renderedTexts = new WeakMap<PaneHandle, string>()
 const paneTitles = new WeakMap<PaneHandle, string>()
@@ -49,14 +52,156 @@ export const MAIN_TITLE_REMOTE_BRANCH = "Remote Branch"
 export const MAIN_TITLE_REMOTE = "Remote"
 export const MAIN_TITLE_TAG = "Tag"
 
+type MainTextSelectionSurface = {
+  setSelection?: (start: number, end: number) => void
+  resetSelection?: () => void
+  readonly textBufferView?: {
+    setSelection(start: number, end: number, bgColor?: unknown, fgColor?: unknown): void
+    resetSelection(): void
+  }
+  readonly _ctx?: { clearSelection?: () => void }
+  requestRender?: () => void
+}
+
+function ensureMainTextSelectionSurface(pane: PaneHandle): void {
+  const surface = pane.text as unknown as MainTextSelectionSurface
+  if (surface.setSelection === undefined && surface.textBufferView !== undefined) {
+    surface.setSelection = (start, end) => {
+      surface._ctx?.clearSelection?.()
+      surface.textBufferView!.setSelection(start, end, pane.text.selectionBg)
+      surface.requestRender?.()
+    }
+  }
+  if (surface.resetSelection === undefined && surface.textBufferView !== undefined) {
+    surface.resetSelection = () => {
+      surface._ctx?.clearSelection?.()
+      surface.textBufferView!.resetSelection()
+      surface.requestRender?.()
+    }
+  }
+}
+
 export function createMainPane(renderer: CliRenderer, _model: AppModel): PaneHandle {
   const pane = createPane(renderer, "main", "0 Main", "", true)
+  // OpenTUI's two-argument UTF-16 setSelection uses selectionBg when it is configured on the
+  // renderable. Keep pointer and keyboard selections on the same visible blue background.
+  pane.text.selectionBg = SELECTED_LINE_BG
+  ensureMainTextSelectionSurface(pane)
   // content will be installed via gate; keep placeholder until first install
   pane.box.title = "0 Main"
   paneTitles.set(pane, "0 Main")
   return pane
 }
 
+export type MainDiffLineSelection = {
+  readonly document: DiffDocument
+  readonly state: DiffLineRangeState
+  readonly indexes: readonly number[]
+  readonly startUtf16: number
+  readonly endUtf16: number
+  readonly displayStartUtf16: number
+  readonly displayEndUtf16: number
+}
+
+export function getMainDiffLineRangeState(pane: PaneHandle): DiffLineRangeState | undefined {
+  return lineRanges.get(pane)
+}
+
+function normalizedPreamble(preamble: string): string {
+  return preamble.length === 0 || preamble.endsWith("\n") ? preamble : `${preamble}\n`
+}
+function renderedLineStarts(text: string): readonly number[] {
+  const starts: number[] = [0]
+  for (let index = text.indexOf("\n"); index >= 0; index = text.indexOf("\n", index + 1)) starts.push(index + 1)
+  return starts
+}
+
+function mainDiffLineOffsets(document: DiffDocument, startIndex: number, endIndex: number, preamble: string): {
+  readonly startUtf16: number
+  readonly endUtf16: number
+  readonly displayStartUtf16: number
+  readonly displayEndUtf16: number
+} | undefined {
+  const first = document.lines[startIndex]
+  const last = document.lines[endIndex]
+  if (first === undefined || last === undefined) return undefined
+  const rendered = renderDiff(document)
+  const { displayText } = rendered
+  const starts = renderedLineStarts(displayText)
+  if (startIndex >= starts.length || endIndex >= starts.length) return undefined
+  const firstStart = starts[startIndex]
+  const lastStart = starts[endIndex]
+  if (firstStart === undefined || lastStart === undefined) return undefined
+  // Avoid displayText.split("\n") — for a 75k-line patch that allocates ~75k strings
+  // plus a number array per keystroke. Derive the last display line length from the
+  // starts index instead: next start minus one newline, or tail to end of text.
+  const lastLineEnd = endIndex + 1 < starts.length ? starts[endIndex + 1]! - 1 : displayText.length
+  const lastLength = lastLineEnd - lastStart
+  const preambleLength = normalizedPreamble(preamble).length
+  return {
+    startUtf16: first.startUtf16,
+    endUtf16: last.endUtf16,
+    displayStartUtf16: preambleLength + firstStart,
+    displayEndUtf16: preambleLength + lastStart + lastLength,
+  }
+}
+
+export function mainDiffVisualRowRange(
+  pane: PaneHandle,
+  startIndex: number,
+  endIndex: number,
+): { readonly startRow: number; readonly endRow: number } | undefined {
+  const document = documents.get(pane)
+  if (document === undefined) return undefined
+  const content = installedContents.get(pane)
+  const preambleRows = (normalizedPreamble(content?.preamble ?? "").match(/\n/g) ?? []).length
+  const firstSource = preambleRows + Math.max(0, startIndex)
+  const lastSource = preambleRows + Math.max(startIndex, endIndex)
+  const lineInfo = (pane.text as unknown as { readonly lineInfo?: { readonly lineSources?: readonly number[] } }).lineInfo
+  const sources = lineInfo?.lineSources
+  if (sources !== undefined && sources.length > 0) {
+    const startRow = sources.findIndex((source) => source === firstSource)
+    let endRow = -1
+    for (let row = 0; row < sources.length; row += 1) {
+      if (sources[row]! >= firstSource && sources[row]! <= lastSource) endRow = row
+    }
+    if (startRow >= 0 && endRow >= startRow) return { startRow, endRow }
+  }
+  return { startRow: firstSource, endRow: lastSource }
+}
+
+export function getMainDiffLineSelection(pane: PaneHandle): MainDiffLineSelection | undefined {
+  const document = documents.get(pane)
+  const state = lineRanges.get(pane)
+  if (document === undefined || state === undefined || state.rangeMode === "none") return undefined
+  const range = diffLineSelectionRange(state)
+  const offsets = mainDiffLineOffsets(document, range.startIndex, range.endIndex, installedContents.get(pane)?.preamble ?? "")
+  if (offsets === undefined) return undefined
+  return {
+    document,
+    state,
+    indexes: changedIndexesInDiffLineRange(document, state),
+    ...offsets,
+  }
+}
+
+function applyMainDiffLineVisualSelection(pane: PaneHandle, resetWhenInactive = true): void {
+  const text = pane.text as unknown as {
+    setSelection?: (start: number, end: number) => void
+    resetSelection?: () => void
+  }
+  const selection = getMainDiffLineSelection(pane)
+  if (selection !== undefined) {
+    text.setSelection?.(selection.displayStartUtf16, selection.displayEndUtf16)
+  } else if (resetWhenInactive) {
+    text.resetSelection?.()
+  }
+}
+
+export function setMainDiffLineRangeState(pane: PaneHandle, state: DiffLineRangeState): void {
+  lineRanges.set(pane, state)
+  applyMainDiffLineVisualSelection(pane)
+}
 export function getMainDocument(pane: PaneHandle): DiffDocument | undefined {
   return documents.get(pane)
 }
@@ -64,7 +209,6 @@ export function getMainDocument(pane: PaneHandle): DiffDocument | undefined {
 export function getMainCursorTarget(pane: PaneHandle): MainCursorTarget | undefined {
   return cursorTargets.get(pane)
 }
-
 function hunkKey(hunk: DiffFile["hunks"][number]): string {
   return `${hunk.header.raw}\u0000${hunk.oldStart}:${hunk.oldCount}:${hunk.newStart}:${hunk.newCount}`
 }
@@ -142,7 +286,7 @@ export function getMainRenderedText(pane: PaneHandle): string | undefined {
 
 function renderedTextFor(content: MainPaneContent): string {
   if (content.document !== undefined) {
-    return `${content.preamble ?? ""}${content.document.text}`
+    return `${normalizedPreamble(content.preamble ?? "")}${content.document.text}`
   }
   if (content.ansi !== undefined) return `${content.preamble ?? ""}${content.ansi.text}`
   if (content.plainText !== undefined) return content.plainText
@@ -180,12 +324,17 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
 
   const sameIdentity = previousIdentity !== undefined && previousIdentity === nextIdentity
   const identicalText = previousText !== undefined && previousText === nextText
+  const previousWasDocument = documents.has(pane)
+  const replacingDocument = previousWasDocument && content.document === undefined
+  const enteringDocument = !previousWasDocument && content.document !== undefined
+  const leavingAnsi = previousContent?.ansi !== undefined && content.ansi === undefined
 
   // Update installed tracking before rendering so subsequent installs compare correctly
   installedContents.set(pane, content)
   renderedTexts.set(pane, nextText)
   paneTitles.set(pane, `0 Main — ${content.label}`)
 
+  const previousRange = lineRanges.get(pane)
   const clearSelection = (): void => {
     const view = pane.text
     if (view !== null && typeof view === "object" && "resetSelection" in view) {
@@ -193,6 +342,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
       if (typeof reset === "function") reset.call(view)
     }
     cursorTargets.delete(pane)
+    lineRanges.delete(pane)
   }
 
   if (tooSmall) {
@@ -212,6 +362,10 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     clearSelection()
     pane.text.scrollX = 0
     pane.text.scrollY = 0
+  } else if (enteringDocument) {
+    clearSelection()
+    pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
+    pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
   } else if (identicalText) {
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
@@ -243,13 +397,17 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
           const key = previousTarget.hunkKey ?? (oldFile?.hunks[previousTarget.hunkIndex] === undefined ? undefined : hunkKey(oldFile.hunks[previousTarget.hunkIndex]!))
           const newHunkIndex = key === undefined ? -1 : newFile.hunks.findIndex((hunk) => hunkKey(hunk) === key)
           if (newHunkIndex >= 0) preservedTarget = { fileIndex: newFileIndex, hunkIndex: newHunkIndex, ...(filePath === undefined ? {} : { filePath }), ...(key === undefined ? {} : { hunkKey: key }) }
-        }
       }
     }
+      }
     // If not preserved, pick first hunk
     const initialTarget = preservedTarget ?? (!sameIdentity || !identicalText ? moveMainCursor(doc, undefined, "next") : previousTarget ?? moveMainCursor(doc, undefined, "next"))
     const shouldKeepTarget = sameIdentity && identicalText
     documents.set(pane, doc)
+    const nextRange = !enteringDocument && sameIdentity && identicalText && previousRange?.lineCount === doc.lines.length
+      ? previousRange
+      : createDiffLineRangeState(doc)
+    lineRanges.set(pane, nextRange)
     if (shouldKeepTarget && initialTarget) {
       cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
     } else {
@@ -257,20 +415,21 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     }
     pane.text.wrapMode = "char"
     releaseAnsiText(pane.text)
-    const rendered = renderDiff(doc)
-    installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })
+    if (enteringDocument || !sameIdentity || !identicalText) {
+      const rendered = renderDiff(doc)
+      installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })
+    }
     // clamp again after content size known
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
     pane.syncScrollbar()
+    if (!enteringDocument && sameIdentity && identicalText && previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
     return
   }
 
   if (content.ansi !== undefined) {
     documents.delete(pane)
-    clearSelection()
-    // A log graph is pre-wrapped by git around the terminal it thinks it has; letting OpenTUI
-    // wrap it too would fold the graph lanes into the message text. lazygit's main view does not
+    if (replacingDocument || !sameIdentity || !identicalText) clearSelection()
     // wrap either (pkg/gui/views.go: the Normal view leaves `Wrap` false for command output).
     pane.text.wrapMode = "none"
     releaseDiffText(pane.text)
@@ -280,14 +439,13 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     pane.syncScrollbar()
     return
   }
-
-  // plainText or preamble-only
   documents.delete(pane)
-  updatePlain(pane, buildPlainContent(content))
+  if (replacingDocument || leavingAnsi || !sameIdentity || !identicalText) clearSelection()
+  if (replacingDocument || leavingAnsi || !sameIdentity || !identicalText) updatePlain(pane, buildPlainContent(content))
   pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
   pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
   pane.syncScrollbar()
-  }
+}
 
 export function setMainLoading(pane: PaneHandle, loading: boolean, tooSmall: boolean): void {
   if (tooSmall) return

@@ -6,6 +6,7 @@ import {
   type MouseEvent,
 } from "@opentui/core"
 import type { AppModel } from "../app/model"
+import type { ChangedFile, DiscardFileMode, WorkingTreeScope } from "../domain/review-target"
 import { sanitizeBranchName, type BranchDeleteRequest, type LocalBranch } from "../domain/branch"
 import type { CommitDetails } from "../domain/commit"
 import type { TagSummary, TagPreview } from "../domain/tag"
@@ -35,6 +36,7 @@ import { buildPanePlainTitle, buildPaneTabsStrip, paneTabAtOffset } from "./pane
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
 import { tagRows } from "./panes/tags-pane"
 import { buildCommitRows, createCommitsPane } from "./panes/commits-pane"
+import { commitFileRows } from "./panes/commit-files-pane"
 import { COMMITS_JUMP_KEY, COMMITS_TABS, NO_REFLOG_HISTORY, reflogRows } from "./panes/reflog-pane"
 import type { RefLogTarget } from "../git/ref-log"
 import type { ItemOperation } from "../domain/item-operation"
@@ -50,6 +52,7 @@ import {
   collapseAllFileTree,
   expandAllFileTree,
   fileTreeRows,
+  forEachFile,
   setFileTreeItems,
   someFileInNode,
   toggleFileTreeCollapsedPath,
@@ -58,23 +61,22 @@ import {
   type FileTreeState,
 } from "./file-tree"
 import { submoduleFullName } from "../domain/submodule"
-import type { ChangedFile, DiscardFileMode, WorkingTreeScope } from "../domain/review-target"
-import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDocument, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
-import { commitFileRows } from "./panes/commit-files-pane"
+import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainDiffVisualRowRange, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { PANE_SCROLLBAR_GUTTER, paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
-import { copySelection, selectionFromRenderable } from "../domain/diff/selection"
+import { copySelection, selectionFromRenderable, type DocumentSelection } from "../domain/diff/selection"
+import { clearDiffLineRange, diffLineSelectionRange, expandDiffLineRange, moveDiffLineSelection, toggleDiffLineRange } from "../domain/diff/line-selection"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
 import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
 import { discardConfirmation, stashApplyConfirmation, stashDropConfirmation, stashPopConfirmation, type ConfirmationRequest } from "./confirm-dialog"
-import { branchAutostashConfirmation, branchForceDeleteConfirmation, branchLocalAndRemoteDeleteConfirmation, branchRemoteDeleteConfirmation, branchRenameConfirmation, remoteTrackingMismatchConfirmation, worktreeForceRemoveConfirmation } from "./branch-dialogs"
 import { COPY_MENU_ITEMS } from "./copy-menu"
 import { branchCheckoutRequiresStash, type CheckoutRemoteTrackingResult, type CreateBranchOptions, type RemoteBranchSelection } from "../git/branches"
 import { worktreeRemovalRequiresForce } from "../git/worktrees"
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
 import { createCommitMessagePanel, type CommitMessagePanelHandle } from "./commit-message-panel"
+import { branchAutostashConfirmation, branchForceDeleteConfirmation, branchForceDeleteRangeConfirmation, branchLocalAndRemoteDeleteConfirmation, branchLocalAndRemoteDeleteRangeConfirmation, branchRemoteDeleteConfirmation, branchRemoteDeleteRangeConfirmation, branchRenameConfirmation, remoteTrackingMismatchConfirmation, worktreeForceRemoveConfirmation } from "./branch-dialogs"
 import { createPromptPopup, type PromptPopupHandle } from "./prompt-popup"
 import { FilterInput } from "./filter-input"
 import { filterItems } from "../app/filter"
@@ -85,9 +87,23 @@ import { createActionMenu, type ActionMenuHandle } from "./action-menu"
 import { createSplitter, type SplitterAxis, type SplitterHandle } from "./splitter"
 import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
-import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, updatePanelView, type PanelState } from "./panel-state"
 import { ANSI_CYAN, ANSI_GREEN, DEFAULT_FOREGROUND, TITLE_PREFIX_FRAME_RUNE } from "./theme"
-import { createListState, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRows, type ListState, type ListRow } from "./list-view"
+import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, updatePanelView, type PanelState } from "./panel-state"
+import {
+  createListState,
+  expandListRangeSelection,
+  getListSelectionRange,
+  hasMultipleListRowsSelected,
+  listRowAtPoint,
+  moveListSelection,
+  renderListRows,
+  selectListRow,
+  setListRangeSelection,
+  setListRows,
+  toggleListRangeSelection,
+  type ListState,
+  type ListRow,
+} from "./list-view"
 import { MainPreviewGate } from "./main-preview"
 import type { CommitSummary } from "../domain/commit"
 // Review workspace screen ownership is managed by AppScreenController (src/app/screen-controller.ts).
@@ -162,6 +178,27 @@ function liveBranchUpstream(branch: LocalBranch): { readonly remote: string; rea
   return { remote: upstream.slice(0, separator), branch: upstream.slice(separator + 1) }
 }
 
+type BranchDeleteTarget = {
+  readonly branch: LocalBranch
+  readonly upstream?: { readonly remote: string; readonly branch: string }
+}
+
+function stashRangeDropConfirmation(refs: readonly string[]): ConfirmationRequest {
+  return {
+    title: "Stash drop",
+    message: `Are you sure you want to drop the selected stash entries: ${refs.join(", ")}?`,
+    confirmLabel: "Drop",
+    cancelLabel: "Cancel",
+    confirmKey: "enter",
+    cancelKey: "escape",
+  }
+}
+
+function stashIndex(ref: string): number {
+  const match = /^stash@\{(\d+)\}$/.exec(ref)
+  return match === null ? -1 : Number(match[1])
+}
+
 export type RootViewOptions = {
   readonly sidePanelRatio?: number
   readonly logHeight?: number
@@ -174,8 +211,10 @@ export type RootViewOptions = {
    */
   readonly onMutationSettled?: () => void
   readonly onStageFile?: (path: string) => Promise<void>
+  readonly onStageFiles?: (paths: readonly string[], stage: boolean) => Promise<void>
   readonly onUnstageFile?: (path: string) => Promise<void>
   readonly onDiscardFile?: (path: string, mode: DiscardFileMode) => Promise<void>
+  readonly onDiscardFiles?: (paths: readonly string[], mode: DiscardFileMode) => Promise<void>
   readonly onToggleAllFiles?: () => Promise<void>
   readonly onScopeChange?: (scope: WorkingTreeScope) => Promise<void>
   readonly onOpenBranchReview?: () => Promise<void>
@@ -193,11 +232,12 @@ export type RootViewOptions = {
   readonly onCommitMessage?: (message: string) => Promise<void>
   readonly onAmendMessage?: (message: string) => Promise<void>
   readonly onCurrentCommitMessage?: () => Promise<string>
-  readonly onRefresh?: () => Promise<void>
-  readonly onSwitchLocalBranch?: (branch: string) => Promise<void>
   readonly onCreateBranch?: (startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>
   readonly onCreateBranchWithAutostash?: (startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>
+  readonly onRefresh?: () => Promise<void>
+  readonly onSwitchLocalBranch?: (branch: string) => Promise<void>
   readonly onDeleteBranch?: (request: BranchDeleteRequest) => Promise<void>
+  readonly onDeleteBranches?: (requests: readonly BranchDeleteRequest[]) => Promise<void>
   readonly onCheckBranchMerged?: (branch: string, upstream?: string) => Promise<boolean>
   readonly onDeleteBranchFromWorktree?: (path: string, action: "remove" | "detach", request: BranchDeleteRequest, forceWorktree?: boolean) => Promise<void>
   readonly onFetchRemote?: (remote: string) => Promise<void>
@@ -211,6 +251,7 @@ export type RootViewOptions = {
   readonly onCreateStash?: (message: string, includeUntracked: boolean) => Promise<void>
   readonly onApplyStash?: (ref: string) => Promise<void>
   readonly onDropStash?: (ref: string) => Promise<void>
+  readonly onDropStashes?: (refs: readonly string[]) => Promise<void>
   readonly onInspectStash?: (ref: string) => Promise<void>
   readonly onBrowseRemote?: (remote: string) => Promise<void>
   readonly onInspectBranch?: (branch: string) => Promise<void>
@@ -219,8 +260,8 @@ export type RootViewOptions = {
   readonly onEditFile?: (path: string, line?: number) => Promise<void>
   readonly onQuit?: () => void
 }
-
 /** Renders a `ConfirmationRequest`'s `confirmKey`/`cancelKey` (e.g. "enter") for display (e.g. "Enter"). */
+
 function capitalizeKeyName(key: string): string {
   return key.length === 0 ? key : key[0]!.toUpperCase() + key.slice(1)
 }
@@ -232,6 +273,7 @@ export type GestureOwner =
   | { readonly kind: "horizontal-splitter" }
   | { readonly kind: "scrollbar"; readonly paneId: FocusId }
   | { readonly kind: "main-selection" }
+  | { readonly kind: "list-range"; readonly paneId: ListPaneId; readonly viewId: string; readonly anchorId: string }
 
 
 /**
@@ -271,8 +313,10 @@ export class RootView {
   private readonly keybindingMenu: KeybindingMenuHandle
   private readonly actionMenu: ActionMenuHandle
   private readonly onStageFile: ((path: string) => Promise<void>) | undefined
+  private readonly onStageFiles: ((paths: readonly string[], stage: boolean) => Promise<void>) | undefined
   private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
   private readonly onDiscardFile: ((path: string, mode: DiscardFileMode) => Promise<void>) | undefined
+  private readonly onDiscardFiles: ((paths: readonly string[], mode: DiscardFileMode) => Promise<void>) | undefined
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
   private readonly onScopeChange: ((scope: WorkingTreeScope) => Promise<void>) | undefined
   private readonly onOpenBranchReview: (() => Promise<void>) | undefined
@@ -312,6 +356,7 @@ export class RootView {
   private readonly onCreateBranch: ((startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>) | undefined
   private readonly onCreateBranchWithAutostash: ((startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>) | undefined
   private readonly onDeleteBranch: ((request: BranchDeleteRequest) => Promise<void>) | undefined
+  private readonly onDeleteBranches: ((requests: readonly BranchDeleteRequest[]) => Promise<void>) | undefined
   private readonly onCheckBranchMerged: ((branch: string, upstream?: string) => Promise<boolean>) | undefined
   private readonly onDeleteBranchFromWorktree: ((path: string, action: "remove" | "detach", request: BranchDeleteRequest, forceWorktree?: boolean) => Promise<void>) | undefined
   private readonly onFetchRemote: ((remote: string) => Promise<void>) | undefined
@@ -325,6 +370,7 @@ export class RootView {
   private readonly onApplyStash: ((ref: string) => Promise<void>) | undefined
   private readonly onPopStash: ((ref: string) => Promise<void>) | undefined
   private readonly onDropStash: ((ref: string) => Promise<void>) | undefined
+  private readonly onDropStashes: ((refs: readonly string[]) => Promise<void>) | undefined
   private readonly onInspectStash: ((ref: string) => Promise<void>) | undefined
   private readonly onBrowseRemote: ((remote: string) => Promise<void>) | undefined
   private readonly loadBranchCommits: ((branch: string) => Promise<readonly CommitSummary[]>) | undefined
@@ -341,6 +387,7 @@ export class RootView {
     | { readonly mode: "branch-rename"; readonly branch: string }
     | undefined
   private mutationInFlight = false
+  private fileRangeRefreshSelectionId: string | undefined
   private pendingRemoteMismatch: { readonly selection: RemoteBranchSelection; readonly message: string } | undefined
   private remoteCheckoutGeneration = 0
   private remoteCheckoutInFlight = false
@@ -388,6 +435,7 @@ export class RootView {
     }
     this.clipboard = new ClipboardService(clipboardPort)
     this.onStageFile = options.onStageFile
+    this.onStageFiles = options.onStageFiles
     this.onApplyStash = options.onApplyStash
     this.onScopeChange = options.onScopeChange
     this.onOpenBranchReview = options.onOpenBranchReview
@@ -397,6 +445,7 @@ export class RootView {
     this.onMutationSettled = options.onMutationSettled
     this.onUnstageFile = options.onUnstageFile
     this.onDiscardFile = options.onDiscardFile
+    this.onDiscardFiles = options.onDiscardFiles
     this.onToggleAllFiles = options.onToggleAllFiles
     this.onApplySelection = options.onApplySelection
     this.onDiscardSelection = options.onDiscardSelection
@@ -411,11 +460,13 @@ export class RootView {
     this.onCancelUpstream = options.onCancelUpstream
     this.onPopStash = options.onPopStash
     this.onDropStash = options.onDropStash
+    this.onDropStashes = options.onDropStashes
     this.onInspectStash = options.onInspectStash
     this.onSwitchLocalBranch = options.onSwitchLocalBranch
     this.onCreateBranch = options.onCreateBranch
     this.onCreateBranchWithAutostash = options.onCreateBranchWithAutostash
     this.onDeleteBranch = options.onDeleteBranch
+    this.onDeleteBranches = options.onDeleteBranches
     this.onCheckBranchMerged = options.onCheckBranchMerged
     this.onDeleteBranchFromWorktree = options.onDeleteBranchFromWorktree
     this.onRenameBranch = options.onRenameBranch
@@ -775,6 +826,82 @@ export class RootView {
     return fileTreeRows(this.filesTree).find((row) => row.id === id)
   }
 
+  private selectedFileRowsForRange(): readonly FileTreeRow<ChangedFile>[] | undefined {
+    if (this.filesPanel.activeTab !== "files") return undefined
+    const active = this.activeListView("files")
+    if (active === undefined) return undefined
+    const range = getListSelectionRange(active.state)
+    const treeRows = new Map(fileTreeRows(this.filesTree).map((row) => [row.id, row] as const))
+    return active.state.rows
+      .slice(range.startIndex, range.endIndex + 1)
+      .map((row) => treeRows.get(row.id))
+      .filter((row): row is FileTreeRow<ChangedFile> => row !== undefined)
+  }
+
+  private resolveFilesForRows(rows: readonly FileTreeRow<ChangedFile>[]): {
+    readonly files: readonly ChangedFile[]
+    readonly paths: readonly string[]
+  } {
+    const filesByPath = new Map<string, ChangedFile>()
+    const add = (file: ChangedFile): void => {
+      if (!filesByPath.has(file.path)) filesByPath.set(file.path, file)
+    }
+    // Lazygit's files_controller.go:569-600 expands directories to individual
+    // visible files when filtering, so a filtered directory row does not stage
+    // files hidden by the filter (pkg/gui/filetree/file_tree_view_model.go:270).
+    const filesFilter = this.getFilterForKey(this.filterKey("files", "files"))
+    const isFiltering = filesFilter.length > 0
+    let visiblePaths: ReadonlySet<string> | undefined
+    if (isFiltering) {
+      const active = this.filesView()
+      if (active !== undefined) {
+        const treeById = new Map(fileTreeRows(this.filesTree).map((row) => [row.id, row] as const))
+        const paths = new Set<string>()
+        for (const listRow of active.rows) {
+          const treeRow = treeById.get(listRow.id)
+          if (treeRow?.kind === "file" && treeRow.payload !== undefined) paths.add(treeRow.payload.path)
+        }
+        visiblePaths = paths
+      }
+    }
+    for (const row of rows) {
+      if (row.kind === "directory") {
+        if (visiblePaths !== undefined) {
+          forEachFile(row.node, (file) => {
+            if (visiblePaths!.has(file.path)) add(file)
+          })
+        } else {
+          forEachFile(row.node, add)
+        }
+      } else if (row.payload !== undefined) add(row.payload)
+    }
+    return { files: [...filesByPath.values()], paths: [...filesByPath.keys()] }
+  }
+
+  private canSetListRangeGesture(paneId: ListPaneId, stableId: string): boolean {
+    // Mirror the same availability used for keyboard range bindings
+    // (bindings.ts: onFilesTab / branchRangeSelection) so mouse drag
+    // does not create a highlight where the keys would be disabled.
+    if (paneId === "files") return this.filesPanel.activeTab === "files"
+    if (paneId === "branches") return stableId.startsWith("local:") || stableId.startsWith("remote-branch:")
+    return paneId === "commits" || paneId === "stash"
+  }
+
+  private collapseActiveListRange(paneId: ListPaneId): boolean {
+    const active = this.activeListView(paneId)
+    if (active === undefined || !hasMultipleListRowsSelected(active.state)) return false
+    const range = getListSelectionRange(active.state)
+    const first = active.state.rows[range.startIndex]
+    if (first === undefined) return false
+    const next = selectListRow(active.state, first.id)
+    this.updateActiveListState(paneId, next)
+    this.renderListPane(paneId)
+    this.revealListRow(paneId, this.panes[paneId], next.selectedIndex)
+    if (paneId === "files") this.syncListSelectionAfterChange(paneId)
+    this.root.requestRender()
+    return true
+  }
+
   /** The lazygit Files arrow hit area, including the review marker and separator columns. */
   private filesTreeArrowRowAt(stableId: string, eventX: number, screenX: number): FileTreeRow<ChangedFile> | undefined {
     if (this.filesPanel.activeTab !== "files") return undefined
@@ -828,6 +955,7 @@ export class RootView {
     // read-only tabs have no such split and report their row ids unchanged.
     if (pane === "files") {
       if (this.filesPanel.activeTab !== "files") return this.filesView()?.selectedId
+
       return this.selectedFileRow()?.path
     }
     if (pane === "stash") return this.stashState?.selectedId
@@ -838,6 +966,16 @@ export class RootView {
       return panel.views[panel.activeTab]?.selectedId
     }
     return undefined
+  }
+  selectedListRange(pane: "files" | "branches" | "commits" | "stash" | string): { readonly startId?: string; readonly endId?: string; readonly mode: string } {
+    if (pane !== "files" && pane !== "branches" && pane !== "commits" && pane !== "stash") return { mode: "none" }
+    const state = this.activeListView(pane)?.state
+    if (state === undefined) return { mode: "none" }
+    return {
+      mode: state.rangeMode,
+      ...(state.rangeStartId === undefined ? {} : { startId: state.rangeStartId }),
+      ...(state.selectedId === undefined ? {} : { endId: state.selectedId }),
+    }
   }
 
   renderedListText(pane: "files" | "branches" | "commits" | "stash" | string): string {
@@ -1152,10 +1290,19 @@ export class RootView {
   private refreshFilesPanel(model: AppModel): void {
     this.filesTree = setFileTreeItems(this.filesTree, model.files)
     let filesView = this.filesTabView(model)
-    if (model.focusId !== undefined) {
+    const rangeFocusId = this.fileRangeRefreshSelectionId
+    if (rangeFocusId !== undefined) {
+      const withFocus = selectListRow(filesView, rangeFocusId)
+      if (withFocus.selectedId === rangeFocusId) filesView = withFocus
+    } else if (model.focusId !== undefined) {
       // The controller tracks a logical path; tree rows may carry the root item's `./` prefix.
       const focusRowId = fileTreeRows(this.filesTree).find((row) => row.kind === "file" && row.path === model.focusId)?.id
-      if (focusRowId !== undefined && filesView.rows.some((row) => row.id === focusRowId)) {
+      if (
+        focusRowId !== undefined &&
+        filesView.rows.some((row) => row.id === focusRowId) &&
+        filesView.rangeMode === "none" &&
+        filesView.rangeStartId === undefined
+      ) {
         const withFocus = selectListRow(filesView, focusRowId)
         if (withFocus.selectedId === focusRowId) filesView = withFocus
       }
@@ -1240,6 +1387,9 @@ export class RootView {
       case "pane-previous": this.focusManager.cycle("previous"); return
       case "next": this.actionMoveCursor("next"); return
       case "previous": this.actionMoveCursor("previous"); return
+      case "toggle-range-select": this.actionToggleRangeSelection(); return
+      case "range-select-up": this.actionExpandRangeSelection("previous"); return
+      case "range-select-down": this.actionExpandRangeSelection("next"); return
       case "stage-file": this.actionStageFile(); return
       case "discard-file": this.actionDiscardFile(); return
       case "stage-all": this.actionStageAll(); return
@@ -1294,10 +1444,10 @@ export class RootView {
         this.menuOpen = !this.menuOpen
         this.recomputeLayout()
         return
-      case "main-scroll-down": scrollMainPane(this.panes.main, "y", MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
-      case "main-scroll-up": scrollMainPane(this.panes.main, "y", -MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
-      case "main-scroll-right": scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
-      case "main-scroll-left": scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
+      case "main-scroll-down": this.clearNonStickyMainRange(); scrollMainPane(this.panes.main, "y", MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
+      case "main-scroll-up": this.clearNonStickyMainRange(); scrollMainPane(this.panes.main, "y", -MAIN_SCROLL_HEIGHT); this.root.requestRender(); return
+      case "main-scroll-right": this.clearNonStickyMainRange(); scrollMainPane(this.panes.main, "x", 4); this.root.requestRender(); return
+      case "main-scroll-left": this.clearNonStickyMainRange(); scrollMainPane(this.panes.main, "x", -4); this.root.requestRender(); return
       case "page-next": this.actionPage("next"); return
       case "page-previous": this.actionPage("previous"); return
       case "goto-top": this.actionJump("top"); return
@@ -1444,6 +1594,7 @@ export class RootView {
   }
 
   private handleGenericFilterKey(key: KeyEvent): boolean {
+
     if (this.activeFilterKey === undefined) return false
     const activeKey = this.activeFilterKey
     const result = this.filterInput.handleKey(key)
@@ -1466,6 +1617,93 @@ export class RootView {
     this.recomputeLayout()
     return result.consumed
   }
+  private updateActiveListState(paneId: ListPaneId, state: ListState): void {
+    if (paneId === "files") {
+      this.filesPanel = updatePanelView(this.filesPanel, this.filesPanel.activeTab, state)
+      return
+    }
+    if (paneId === "branches") {
+      this.branchActionGeneration += 1
+      this.invalidateBranchCommitsRequest()
+      this.invalidateRemoteCheckout()
+      this.panes.branches.box.bottomTitle = undefined
+      if (this.branchesPanel.child !== undefined) {
+        this.branchesPanel = { ...this.branchesPanel, child: { ...this.branchesPanel.child, view: state } }
+      } else {
+        const active = this.branchesPanel.activeTab
+        this.branchesPanel = { ...this.branchesPanel, views: { ...this.branchesPanel.views, [active]: state } }
+      }
+      return
+    }
+    if (paneId === "commits") {
+      if (this.commitsPanel.child !== undefined) {
+        this.commitsPanel = { ...this.commitsPanel, child: { ...this.commitsPanel.child, view: state } }
+      } else {
+        this.commitsPanel = updatePanelView(this.commitsPanel, this.commitsPanel.activeTab, state)
+      }
+      return
+    }
+    this.stashState = state
+  }
+  private syncListSelectionAfterChange(paneId: ListPaneId): void {
+    if (paneId !== "files" || this.filesPanel.activeTab !== "files") {
+      this.syncPreviewForFocus(paneId)
+      return
+    }
+    const row = this.selectedFileRow()
+    this.panes.files.box.bottomTitle = row?.path ?? "No files"
+    // A directory is not a review target: telling the controller about it would file a
+    // review status under a path that is not a file.
+    if (row?.kind === "file") this.onSelectFile?.(row.path)
+    this.mainGate.installSynchronous(this.presentFilesContent(this.model))
+  }
+
+  private actionToggleRangeSelection(): void {
+    if (this.focusManager.active === "main") {
+      const state = getMainDiffLineRangeState(this.panes.main)
+      if (state === undefined) return
+      const next = toggleDiffLineRange(state)
+      if (next === state) return
+      setMainDiffLineRangeState(this.panes.main, next)
+      this.revealMainDiffRange(next.selectedIndex)
+      return
+    }
+    const paneId = this.focusManager.active
+    if (paneId !== "files" && paneId !== "branches" && paneId !== "commits" && paneId !== "stash") return
+    const active = this.activeListView(paneId)
+    if (active === undefined) return
+    const next = toggleListRangeSelection(active.state)
+    if (next === active.state) return
+    this.updateActiveListState(paneId, next)
+    this.renderListPane(paneId)
+    this.revealListRow(paneId, this.panes[paneId], next.selectedIndex)
+    this.syncListSelectionAfterChange(paneId)
+    this.root.requestRender()
+  }
+
+  private actionExpandRangeSelection(direction: "next" | "previous"): void {
+    if (this.focusManager.active === "main") {
+      const state = getMainDiffLineRangeState(this.panes.main)
+      if (state === undefined) return
+      const next = expandDiffLineRange(state, direction)
+      if (next === state) return
+      setMainDiffLineRangeState(this.panes.main, next)
+      this.revealMainDiffRange(next.selectedIndex)
+      return
+    }
+    const paneId = this.focusManager.active
+    if (paneId !== "files" && paneId !== "branches" && paneId !== "commits" && paneId !== "stash") return
+    const active = this.activeListView(paneId)
+    if (active === undefined) return
+    const next = expandListRangeSelection(active.state, direction)
+    if (next === active.state) return
+    this.updateActiveListState(paneId, next)
+    this.renderListPane(paneId)
+    this.revealListRow(paneId, this.panes[paneId], next.selectedIndex)
+    this.syncListSelectionAfterChange(paneId)
+    this.root.requestRender()
+  }
+
 
   private actionMoveCursor(direction: "next" | "previous"): void {
     switch (this.focusManager.active) {
@@ -1554,14 +1792,24 @@ export class RootView {
         }
         return
       }
-      case "main":
+      case "main": {
         // One line, like lazygit's `ViewSelectionController.handleLineChange(±1)`
-        // (pkg/gui/controllers/view_selection_controller.go:53-70). The hunk cursor is githunk's
-        // own, for line staging, and `h`/`l` are what move it — binding j/k to it made a short
-        // press do nothing when the next hunk was already on screen, jump a screenful when it was
-        // not, and nothing at all on a pane holding no patch (a branch's commit graph).
+        // (pkg/gui/controllers/view_selection_controller.go:53-70). The line-range cursor is
+        // separate from the hunk cursor used by `h`/`l`; ordinary movement still scrolls exactly
+        // one row, while non-sticky keyboard ranges cancel before the scroll.
+        const state = getMainDiffLineRangeState(this.panes.main)
+        let movedSticky = false
+        let endpoint: number | undefined
+        if (state !== undefined) {
+          const next = moveDiffLineSelection(state, direction)
+          movedSticky = state.rangeMode === "sticky" && next !== state
+          endpoint = next.selectedIndex
+          if (next !== state) setMainDiffLineRangeState(this.panes.main, next)
+        }
         this.scrollMainBy(direction === "next" ? 1 : -1)
+        if (movedSticky && endpoint !== undefined) this.revealMainDiffRange(endpoint)
         return
+      }
       case "command-log":
         // `scrollUpExtra`/`scrollDownExtra` (pkg/gui/keybindings.go:249-258) scroll one line and
         // both clear `Autoscroll`, even scrolling down (pkg/gui/extras_panel.go:49,57) — holding
@@ -1598,9 +1846,41 @@ export class RootView {
   get mainPageDelta(): number {
     return Math.max(1, heightOf(this.geometry.windows.main) - 3)
   }
+  private revealMainDiffRange(endpointIndex?: number): void {
+    const state = getMainDiffLineRangeState(this.panes.main)
+    if (state === undefined) return
+    const range = diffLineSelectionRange(state)
+    const endpoint = endpointIndex === undefined ? range.endIndex : endpointIndex
+    const rows = mainDiffVisualRowRange(this.panes.main, endpoint, endpoint)
+      ?? mainDiffVisualRowRange(this.panes.main, range.startIndex, range.endIndex)
+    if (rows === undefined) return
+    const visibleLines = Math.max(1, heightOf(this.geometry.windows.main) - 2)
+    this.panes.main.text.scrollY = scrollYToReveal(rows.startRow, rows.endRow, visibleLines, this.panes.main.text.scrollY)
+    this.panes.main.syncScrollbar()
+  }
 
   /** Every keyboard path that scrolls the main view vertically ends here. */
+  private clearNonStickyMainRange(): void {
+    const state = getMainDiffLineRangeState(this.panes.main)
+    if (state?.rangeMode !== "non-sticky") return
+    setMainDiffLineRangeState(this.panes.main, clearDiffLineRange(state))
+  }
+  private adjustMainLineCursor(delta: number): void {
+    const state = getMainDiffLineRangeState(this.panes.main)
+    if (state === undefined || state.lineCount <= 0) return
+    const selectedIndex = Math.max(0, Math.min(state.lineCount - 1, state.selectedIndex + Math.trunc(delta)))
+    if (selectedIndex !== state.selectedIndex) setMainDiffLineRangeState(this.panes.main, { ...state, selectedIndex })
+  }
+
+  private selectMainLineCursor(edge: "top" | "bottom"): void {
+    const state = getMainDiffLineRangeState(this.panes.main)
+    if (state === undefined || state.lineCount <= 0) return
+    const selectedIndex = edge === "top" ? 0 : state.lineCount - 1
+    if (selectedIndex !== state.selectedIndex) setMainDiffLineRangeState(this.panes.main, { ...state, selectedIndex })
+  }
+
   private scrollMainBy(delta: number): void {
+    this.clearNonStickyMainRange()
     scrollMainPane(this.panes.main, "y", delta)
     this.root.requestRender()
   }
@@ -1617,7 +1897,9 @@ export class RootView {
   private actionPage(direction: "next" | "previous"): void {
     if (this.focusManager.active === "main") {
       // `ViewSelectionController.handlePrevPage`/`handleNextPage` — view_selection_controller.go:72-78.
-      this.scrollMainBy(direction === "next" ? this.mainPageDelta : -this.mainPageDelta)
+      const delta = direction === "next" ? this.mainPageDelta : -this.mainPageDelta
+      this.adjustMainLineCursor(delta)
+      this.scrollMainBy(delta)
       return
     }
     const step = this.focusedPageStep()
@@ -1635,6 +1917,7 @@ export class RootView {
     if (this.focusManager.active === "main") {
       // `handleGotoTop`/`handleGotoBottom` scroll by the whole content height, which the pane's
       // own clamping turns into "as far as it goes" — view_selection_controller.go:81-97.
+      this.selectMainLineCursor(edge)
       this.scrollMainBy(edge === "bottom" ? this.panes.main.text.scrollHeight : -this.panes.main.text.scrollHeight)
       return
     }
@@ -1702,6 +1985,29 @@ export class RootView {
 
   private actionStageFile(): void {
     if (this.mutationInFlight) return
+    const active = this.activeListView("files")
+    if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
+      const rows = this.selectedFileRowsForRange()
+      if (rows === undefined) return
+      const range = getListSelectionRange(active.state)
+      const firstRow = active.state.rows[range.startIndex]
+      if (firstRow === undefined) return
+      const resolved = this.resolveFilesForRows(rows)
+      if (resolved.files.some((file) => file.conflicted)) {
+        this.panes.files.box.bottomTitle = "line actions disabled: conflicted file"
+        this.root.requestRender()
+        return
+      }
+      if (this.onStageFiles === undefined) return
+      const stage = resolved.files.some(fileHasUnstagedChanges)
+      const files = resolved.files.filter(stage ? fileHasUnstagedChanges : fileHasStagedChanges)
+      const paths = files.map((file) => file.path)
+      if (paths.length === 0) return
+      this.collapseActiveListRange("files")
+      this.fileRangeRefreshSelectionId = firstRow.id
+      this.runUiMutation(() => this.onStageFiles?.(paths, stage))
+      return
+    }
     const row = this.selectedFileRow()
     if (row === undefined) return
     if (row.kind === "directory") {
@@ -1722,6 +2028,50 @@ export class RootView {
 
   private actionDiscardFile(): void {
     if (this.mutationInFlight) return
+    const active = this.activeListView("files")
+    if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
+      if (this.onDiscardFiles === undefined) return
+      const rows = this.selectedFileRowsForRange()
+      if (rows === undefined) return
+      const range = getListSelectionRange(active.state)
+      const firstRow = active.state.rows[range.startIndex]
+      if (firstRow === undefined) return
+      const resolved = this.resolveFilesForRows(rows)
+      if (resolved.files.some((file) => file.conflicted)) {
+        this.panes.files.box.bottomTitle = "line actions disabled: conflicted file"
+        this.root.requestRender()
+        return
+      }
+      if (resolved.paths.length === 0) return
+      const hasStaged = resolved.files.some(fileHasStagedChanges)
+      const hasUnstaged = resolved.files.some(fileHasUnstagedChanges)
+      const unstagedReason = !hasStaged || !hasUnstaged
+        ? "The selected items don't have both staged and unstaged changes."
+        : undefined
+      this.actionMenu.openMenu("Discard changes", [
+        {
+          key: "x",
+          label: "Discard all changes",
+          onPress: () => {
+            this.collapseActiveListRange("files")
+            this.fileRangeRefreshSelectionId = firstRow.id
+            this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "all"))
+          },
+        },
+        {
+          key: "u",
+          label: "Discard unstaged changes",
+          onPress: () => {
+            this.collapseActiveListRange("files")
+            this.fileRangeRefreshSelectionId = firstRow.id
+            this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "unstaged"))
+          },
+          ...(unstagedReason === undefined ? {} : { disabledReason: unstagedReason }),
+        },
+      ], resolved.paths.join(", "))
+      this.recomputeLayout()
+      return
+    }
     const row = this.selectedFileRow()
     if (row === undefined || this.onDiscardFile === undefined) return
     const path = row.path
@@ -1918,7 +2268,7 @@ export class RootView {
     }
     const selected = this.mainChangeSelection()
     const document = getMainDocument(this.panes.main)
-    const target = getMainCursorTarget(this.panes.main)
+    const target = document === undefined ? undefined : this.mainActionTarget(document)
     const parsedPath = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]?.newPath ?? document.files[target.fileIndex]?.oldPath
     const modelFile = parsedPath === undefined ? undefined : this.model.files.find((file) => file.path === parsedPath)
     const availability = modelFile?.conflicted
@@ -1938,7 +2288,6 @@ export class RootView {
 
   private actionDiscardSelection(): void {
     if (this.mutationInFlight) return
-    if (this.onDiscardSelection === undefined) return
     if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "all") {
       this.panes.main.box.bottomTitle = "Line actions disabled in All scope; press ] to choose staged or unstaged"
       return
@@ -1948,11 +2297,31 @@ export class RootView {
       return
     }
     const selected = this.mainChangeSelection()
-    const target = getMainCursorTarget(this.panes.main)
     const document = getMainDocument(this.panes.main)
+    const target = document === undefined ? undefined : this.mainActionTarget(document)
     const targetFile = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]
     const path = targetFile?.newPath !== undefined && targetFile.newPath !== "/dev/null" ? targetFile.newPath : targetFile?.oldPath ?? "selected changes"
     const modelFile = this.model.files.find((file) => file.path === path)
+    const paths = selected === undefined ? [] : this.selectionPaths(selected.document, selected.indexes)
+    const selectedFiles = paths.map((selectedPath) => this.model.files.find((file) => file.path === selectedPath))
+    const untrackedCount = selectedFiles.filter((file) => file?.untracked === true).length
+    if (paths.length > 1 && untrackedCount > 0) {
+      if (selectedFiles.length !== paths.length || untrackedCount !== paths.length) {
+        this.panes.main.box.bottomTitle = "Line actions disabled: selection spans tracked and untracked files"
+        this.root.requestRender()
+        return
+      }
+      if (this.onDiscardFiles === undefined) {
+        this.panes.main.box.bottomTitle = "Line actions disabled: batch discard is unavailable"
+        this.root.requestRender()
+        return
+      }
+      this.openConfirmation(
+        discardConfirmation(paths.join(", "), true),
+        () => this.runUiMutation(() => this.onDiscardFiles?.(paths, "all")),
+      )
+      return
+    }
     if (modelFile?.untracked && this.onDiscardFile !== undefined) {
       this.openConfirmation(discardConfirmation(path, true), () => this.runUiMutation(() => this.onDiscardFile?.(path, "all")))
       return
@@ -1970,7 +2339,7 @@ export class RootView {
       this.panes.main.box.bottomTitle = "No changed lines selected"
       return
     }
-    const paths = this.selectionPaths(selected.document, selected.indexes)
+    if (this.onDiscardSelection === undefined) return
     const label = paths.join(", ")
     this.openConfirmation(
       discardConfirmation(label || path),
@@ -2124,8 +2493,220 @@ export class RootView {
     this.branchDialogContext = { mode: "branch-create", startPoint, suggestedBranchName, branchBase }
     this.openBranchDialog("branch-create", suggestedBranchName, branchBase)
   }
+
+  private branchDeleteTargetsFromRange(active: ActiveListView): readonly BranchDeleteTarget[] | undefined {
+    const panel = this.branchesPanel
+    const range = getListSelectionRange(active.state)
+    const rows = active.state.rows.slice(range.startIndex, range.endIndex + 1)
+    if (panel.child?.value.kind === "remote-branches") return undefined
+    if (panel.child !== undefined || panel.activeTab !== "branches") return undefined
+    const branches = this.model.branches?.localBranches
+    if (branches === undefined) return undefined
+    const targets: BranchDeleteTarget[] = []
+    for (const row of rows) {
+      if (!row.id.startsWith("local:")) return undefined
+      const name = row.id.slice("local:".length)
+      const branch = branches.find((candidate) => candidate.name === name)
+      if (branch === undefined) return undefined
+      const upstream = liveBranchUpstream(branch)
+      targets.push({ branch, ...(upstream === undefined ? {} : { upstream }) })
+    }
+    return targets.length === rows.length && targets.length > 1 ? targets : undefined
+  }
+
+  private branchDeleteRequests(targets: readonly BranchDeleteTarget[], mode: BranchDeleteRequest["mode"], force: boolean): readonly BranchDeleteRequest[] {
+    return targets.map(({ branch, upstream }) => ({
+      mode,
+      branch: mode === "remote" ? upstream?.branch ?? branch.name : branch.name,
+      ...(mode === "local" || upstream === undefined ? {} : { remote: upstream.remote, remoteBranch: upstream.branch }),
+      force,
+    }))
+  }
+
+  private branchBatchBlockReason(targets: readonly BranchDeleteTarget[], mode: BranchDeleteRequest["mode"]): string | undefined {
+    if (mode === "remote") {
+      return targets.some(({ upstream }) => upstream === undefined)
+        ? "The selected branch has no upstream (or the upstream is not stored locally)"
+        : undefined
+    }
+    const checkedOut = targets.find(({ branch }) => branch.isCurrent)
+    if (checkedOut !== undefined) return "You cannot delete the checked out branch!"
+    const worktree = targets
+      .map(({ branch }) => (this.model.worktrees ?? []).find((candidate) => candidate.branch === branch.name && !candidate.isCurrent))
+      .find((candidate) => candidate !== undefined)
+    if (worktree !== undefined) {
+      const branch = targets.find(({ branch: candidate }) => candidate.name === worktree.branch)?.branch
+      return branch === undefined ? "The selected branch is checked out by another worktree" : `Branch ${branch.name} is checked out by worktree ${worktree.name}`
+    }
+    if (mode === "local-and-remote" && targets.some(({ upstream }) => upstream === undefined)) {
+      return "The selected branch has no upstream (or the upstream is not stored locally)"
+    }
+    return undefined
+  }
+
+  private actionBranchDeleteRange(active: ActiveListView): void {
+    const panel = this.branchesPanel
+    const range = getListSelectionRange(active.state)
+    const rows = active.state.rows.slice(range.startIndex, range.endIndex + 1)
+    if (panel.child?.value.kind === "remote-branches") {
+      const remote = panel.child.value.remote
+      const prefix = `${remote}/`
+      const requests: BranchDeleteRequest[] = []
+      const names: string[] = []
+      for (const row of rows) {
+        if (!row.id.startsWith("remote-branch:")) return
+        const ref = row.id.slice("remote-branch:".length)
+        if (!ref.startsWith(prefix)) return
+        const remoteBranch = ref.slice(prefix.length)
+        if (remoteBranch.length === 0) return
+        names.push(remoteBranch)
+        requests.push({ mode: "remote", branch: remoteBranch, remote, remoteBranch, force: false })
+      }
+      if (requests.length !== rows.length || requests.length < 2 || this.onDeleteBranches === undefined) return
+      this.openConfirmation(
+        branchRemoteDeleteRangeConfirmation(names, remote),
+        () => {
+          this.collapseActiveListRange("branches")
+          this.runUiMutation(() => this.onDeleteBranches?.(requests))
+        },
+      )
+      return
+    }
+    const targets = this.branchDeleteTargetsFromRange(active)
+    if (targets === undefined || this.onDeleteBranches === undefined) return
+    const names = targets.map(({ branch }) => branch.name)
+    const localReason = this.branchBatchBlockReason(targets, "local")
+    const upstreamReason = this.branchBatchBlockReason(targets, "remote")
+    const bothReason = this.branchBatchBlockReason(targets, "local-and-remote")
+    this.actionMenu.openMenu(`Delete branches '${names.join("', '")}'?`, [
+      {
+        key: "c",
+        label: "Delete local branches",
+        onPress: () => this.beginBranchDeleteBatch(targets, "local"),
+        ...(localReason === undefined ? {} : { disabledReason: localReason }),
+      },
+      {
+        key: "r",
+        label: "Delete remote branches",
+        onPress: () => this.beginBranchDeleteBatch(targets, "remote"),
+        ...(upstreamReason === undefined ? {} : { disabledReason: upstreamReason }),
+      },
+      {
+        key: "b",
+        label: "Delete local and remote branches",
+        onPress: () => this.beginBranchDeleteBatch(targets, "local-and-remote"),
+        ...(bothReason === undefined ? {} : { disabledReason: bothReason }),
+      },
+    ])
+    this.recomputeLayout()
+  }
+
+  private beginBranchDeleteBatch(targets: readonly BranchDeleteTarget[], mode: BranchDeleteRequest["mode"]): void {
+    if (this.mutationInFlight || this.onDeleteBranches === undefined) return
+    const reason = this.branchBatchBlockReason(targets, mode)
+    if (reason !== undefined) {
+      this.panes.branches.box.bottomTitle = reason
+      this.root.requestRender()
+      return
+    }
+    const requests = this.branchDeleteRequests(targets, mode, false)
+    if (mode !== "local" && requests.some((request) => request.remote === undefined || request.remoteBranch === undefined)) {
+      this.panes.branches.box.bottomTitle = "The selected branch has no upstream (or the upstream is not stored locally)"
+      this.root.requestRender()
+      return
+    }
+    if (mode === "remote") {
+      const remoteTargets = requests
+        .flatMap((request) => request.remote === undefined || request.remoteBranch === undefined
+          ? []
+          : [{ branch: request.remoteBranch, remote: request.remote }])
+      if (remoteTargets.length !== requests.length) return
+      this.openConfirmation(
+        branchRemoteDeleteRangeConfirmation(remoteTargets),
+        () => {
+          this.collapseActiveListRange("branches")
+          this.runUiMutation(() => this.onDeleteBranches?.(requests))
+        },
+      )
+      return
+    }
+    const checkMerged = this.onCheckBranchMerged
+    if (checkMerged === undefined) {
+      const forced = this.branchDeleteRequests(targets, mode, true)
+      if (mode === "local") {
+        this.openConfirmation(
+          branchForceDeleteRangeConfirmation(targets.map(({ branch }) => branch.name)),
+          () => {
+            this.collapseActiveListRange("branches")
+            this.runUiMutation(() => this.onDeleteBranches?.(forced))
+          },
+        )
+      } else {
+        const pairTargets = targets.flatMap(({ branch, upstream }) => upstream === undefined ? [] : [{ branch: branch.name, remote: upstream.remote, remoteBranch: upstream.branch }])
+        this.openConfirmation(
+          branchLocalAndRemoteDeleteRangeConfirmation(pairTargets, true),
+          () => {
+            this.collapseActiveListRange("branches")
+            this.runUiMutation(() => this.onDeleteBranches?.(forced))
+          },
+        )
+      }
+      return
+    }
+    const requestGeneration = this.branchActionGeneration
+    const requestSelectedId = this.activeListView("branches")?.state.selectedId
+    this.mutationInFlight = true
+    this.panes.main.box.bottomTitle = "Checking branch merge state…"
+    void Promise.all(targets.map(({ branch }) => checkMerged(branch.name, branch.upstream))).then((merged) => {
+      this.mutationInFlight = false
+      const current = this.activeListView("branches")
+      if (requestGeneration !== this.branchActionGeneration || this.focusManager.active !== "branches" || current?.state.selectedId !== requestSelectedId) {
+        this.panes.main.box.bottomTitle = undefined
+        this.root.requestRender()
+        return
+      }
+      const forceRequired = merged.some((isMerged) => !isMerged)
+      const forced = this.branchDeleteRequests(targets, mode, true)
+      if (mode === "local" && forceRequired) {
+        this.openConfirmation(branchForceDeleteRangeConfirmation(targets.map(({ branch }) => branch.name)), () => {
+          this.collapseActiveListRange("branches")
+          this.runUiMutation(() => this.onDeleteBranches?.(forced))
+        })
+        return
+      }
+      if (mode === "local") {
+        this.collapseActiveListRange("branches")
+        this.runUiMutation(() => this.onDeleteBranches?.(forced))
+        return
+      }
+      const pairTargets = targets.flatMap(({ branch, upstream }) => upstream === undefined ? [] : [{ branch: branch.name, remote: upstream.remote, remoteBranch: upstream.branch }])
+      this.openConfirmation(
+        branchLocalAndRemoteDeleteRangeConfirmation(pairTargets, forceRequired),
+        () => {
+          this.collapseActiveListRange("branches")
+          this.runUiMutation(() => this.onDeleteBranches?.(forced))
+        },
+      )
+    }).catch((error: unknown) => {
+      this.mutationInFlight = false
+      const current = this.activeListView("branches")
+      if (requestGeneration !== this.branchActionGeneration || this.focusManager.active !== "branches" || current?.state.selectedId !== requestSelectedId) {
+        this.panes.main.box.bottomTitle = undefined
+        this.root.requestRender()
+        return
+      }
+      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+      this.root.requestRender()
+    })
+  }
   private actionBranchDelete(): void {
-    if (this.mutationInFlight || this.onDeleteBranch === undefined) return
+    if (this.mutationInFlight) return
+    const active = this.activeListView("branches")
+    if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
+      this.actionBranchDeleteRange(active)
+      return
+    }
+    if (this.onDeleteBranch === undefined) return
     const panel = this.branchesPanel
     if (panel.child?.value.kind === "remote-branches") {
       const id = panel.child.view.selectedId
@@ -2634,6 +3215,28 @@ export class RootView {
 
   private actionStashDrop(): void {
     if (this.mutationInFlight) return
+    const active = this.activeListView("stash")
+    if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
+      if (this.onDropStashes === undefined) return
+      const range = getListSelectionRange(active.state)
+      const selectedRows = active.state.rows.slice(range.startIndex, range.endIndex + 1)
+      const entries = selectedRows
+        .map((row) => (this.model.stashes ?? []).find((stash) => stash.oid === row.id))
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined)
+      if (entries.length !== selectedRows.length) return
+      const ordered = entries.slice().sort((a, b) => stashIndex(b.ref) - stashIndex(a.ref))
+      const refs = ordered.map((entry) => entry.oid)
+      const labels = ordered.map((entry) => entry.ref)
+      if (refs.length < 2) return
+      this.openConfirmation(
+        stashRangeDropConfirmation(labels),
+        () => {
+          this.collapseActiveListRange("stash")
+          this.runUiMutation(() => this.onDropStashes?.(refs))
+        },
+      )
+      return
+    }
     const selected = selectedStashEntryFromState(this.stashState, this.model)
     if (selected === undefined || this.onDropStash === undefined) return
     this.openConfirmation(stashDropConfirmation(selected.ref), () => this.runUiMutation(() => this.onDropStash?.(selected.oid)))
@@ -2840,6 +3443,7 @@ export class RootView {
         }
       }
       if (nextLine !== -1) {
+        this.clearNonStickyMainRange()
         const targetY = Math.max(0, nextLine - 2)
         this.panes.main.text.scrollY = targetY
         this.panes.main.box.bottomTitle = `Search: ${query} (${nextLine + 1}/${lines.length})`
@@ -2904,6 +3508,7 @@ export class RootView {
         }
       }
       if (prevLine !== -1) {
+        this.clearNonStickyMainRange()
         const targetY = Math.max(0, prevLine - 2)
         this.panes.main.text.scrollY = targetY
         this.panes.main.box.bottomTitle = `Search: ${query} (${prevLine + 1}/${lines.length})`
@@ -2941,9 +3546,29 @@ export class RootView {
     return [...paths]
   }
 
+  private mainActionTarget(document: DiffDocument): MainCursorTarget | undefined {
+    const selected = getMainDiffLineSelection(this.panes.main)
+    const firstIndex = selected?.indexes[0]
+    const line = firstIndex === undefined ? undefined : document.lines[firstIndex]
+    if (line !== undefined) {
+      return {
+        fileIndex: line.fileIndex,
+        ...(line.hunkIndex === undefined ? {} : { hunkIndex: line.hunkIndex }),
+      }
+    }
+    return getMainCursorTarget(this.panes.main)
+  }
+
   private mainChangeSelection(): { readonly document: DiffDocument; readonly indexes: readonly number[] } | undefined {
     const document = getMainDocument(this.panes.main)
     if (!document) return undefined
+    const keyboardSelection = getMainDiffLineSelection(this.panes.main)
+    if (keyboardSelection !== undefined) {
+      return {
+        document,
+        indexes: changeLineIndexes(document, keyboardSelection.startUtf16, keyboardSelection.endUtf16),
+      }
+    }
     const nativeRange = this.panes.main.text.getSelection()
     if (nativeRange) {
       const selection = selectionFromRenderable(document, nativeRange, this.panes.main.text.getSelectedText())
@@ -3300,6 +3925,7 @@ export class RootView {
     const promise = operation()
     if (promise === undefined) {
       this.mutationInFlight = false
+      this.fileRangeRefreshSelectionId = undefined
       if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
       return
     }
@@ -3310,6 +3936,7 @@ export class RootView {
       this.mutationInFlight = false
       this.clearTransientMenus()
       if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
+      this.fileRangeRefreshSelectionId = undefined
       this.onMutationSettled?.()
     })
   }
@@ -3644,6 +4271,7 @@ export class RootView {
     // Same for status, etc.: keep whatever is installed.
   }
   private moveMainCursor(direction: "next" | "previous"): void {
+    this.clearNonStickyMainRange()
     const pane = this.panes.main
     const document = getMainDocument(pane)
     if (!document) {
@@ -3662,7 +4290,6 @@ export class RootView {
     if (targetLine !== undefined) this.revealListRow("main", pane, targetLine)
     this.clearTransientMenus()
     const location = target.hunkIndex === undefined ? "file" : `hunk ${target.hunkIndex + 1}`
-    pane.box.bottomTitle = `Cursor file ${target.fileIndex + 1}, ${location}`
     this.root.requestRender()
   }
   private copyMainMode(mode: CopyMode): void {
@@ -3673,8 +4300,17 @@ export class RootView {
       this.root.requestRender()
       return
     }
+    const keyboardSelection = getMainDiffLineSelection(pane)
     const nativeRange = pane.text.getSelection()
-    let selection = nativeRange ? selectionFromRenderable(document, nativeRange, pane.text.getSelectedText()) : undefined
+    let selection: DocumentSelection | undefined = mode === "hunk" || mode === "file" || keyboardSelection === undefined
+      ? undefined
+      : {
+        valid: true as const,
+        startUtf16: keyboardSelection.startUtf16,
+        endUtf16: keyboardSelection.endUtf16,
+        active: true as const,
+      }
+    if (selection === undefined && keyboardSelection === undefined && nativeRange) selection = selectionFromRenderable(document, nativeRange, pane.text.getSelectedText())
     if (!selection && (mode === "hunk" || mode === "file")) {
       const target = getMainCursorTarget(pane)
       if (target) {
@@ -3762,6 +4398,7 @@ export class RootView {
     const ratio = trackSize <= 1 ? 0 : clamped / trackSpan
     const range = Math.max(0, bar.scrollSize - bar.viewportSize)
     const newPos = Math.round(ratio * range)
+    if (paneId === "main") this.clearNonStickyMainRange()
     barPane.scrollTo(newPos)
     if (paneId === "command-log") this.commandLog.applyScrollInput("scrollbar")
   }
@@ -4075,6 +4712,7 @@ export class RootView {
               // (pkg/gui/keybindings.go:248-258), the same handlers `,`/`.` use, and both assign
               // `Autoscroll = false` (pkg/gui/extras_panel.go:49,57) before scrolling. This is the
               // only wheel dispatcher in the app, so the transition has to be applied here.
+              if (hit.id === "main") this.clearNonStickyMainRange()
               if (hit.id === "command-log") this.commandLog.applyScrollInput(signed < 0 ? "scroll-up" : "scroll-down")
               pane.scrollBy(signed * 2 * delta)
             }
@@ -4115,7 +4753,6 @@ export class RootView {
             this.logHeight = logHeightForMouseY(this.geometry, event.y)
             this.recomputeLayout()
             this.notifyGeometry()
-            event.preventDefault()
             event.stopPropagation()
             return
           }
@@ -4157,6 +4794,39 @@ export class RootView {
           }
           if (event.type === "up") {
             this.gestureOwner = undefined
+            event.stopPropagation()
+            return
+          }
+          event.stopPropagation()
+          return
+        }
+        if (owner.kind === "list-range") {
+          if (event.type === "drag") {
+            const active = this.activeListView(owner.paneId)
+            const geometry = this.paneTextGeometry(owner.paneId)
+            const pane = this.panes[owner.paneId]
+            if (active?.viewId === owner.viewId && geometry !== undefined) {
+              const row = listRowAtPoint(active.state, { ...geometry, scrollY: pane.text.scrollY }, event.x, event.y)
+              if (row !== undefined) {
+                const next = setListRangeSelection(active.state, owner.anchorId, row.id)
+                if (next !== active.state) {
+                  this.updateActiveListState(owner.paneId, next)
+                  this.renderListPane(owner.paneId)
+                  this.revealListRow(owner.paneId, pane, next.selectedIndex)
+                  this.syncListSelectionAfterChange(owner.paneId)
+                  this.root.requestRender()
+                }
+              }
+            }
+            this.pendingClick = undefined
+            this.lastSplitterPress = undefined
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          if (event.type === "up" || (event.type as string) === "cancel") {
+            this.gestureOwner = undefined
+            event.preventDefault()
             event.stopPropagation()
             return
           }
@@ -4246,6 +4916,10 @@ export class RootView {
           return
         }
         if (paneId === "main") {
+          const rangeState = getMainDiffLineRangeState(this.panes.main)
+          if (rangeState !== undefined && rangeState.rangeMode !== "none") setMainDiffLineRangeState(this.panes.main, clearDiffLineRange(rangeState))
+        }
+        if (paneId === "main") {
           this.pendingClick = undefined
           this.lastSplitterPress = undefined
           this.gestureOwner = { kind: "main-selection" }
@@ -4327,6 +5001,12 @@ export class RootView {
               this.lastSplitterPress = undefined
               if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
               this.selectRowForPane(paneId, stableId)
+              if (paneId === "files" || paneId === "branches" || paneId === "commits" || paneId === "stash") {
+                if (this.canSetListRangeGesture(paneId, stableId)) {
+                  const active = this.activeListView(paneId)
+                  if (active !== undefined) this.gestureOwner = { kind: "list-range", paneId, viewId: active.viewId, anchorId: stableId }
+                }
+              }
               event.preventDefault()
               event.stopPropagation()
               if (pending.arrowToggled !== true) this.handleDoubleClick(paneId)
@@ -4336,6 +5016,12 @@ export class RootView {
             this.lastSplitterPress = undefined
             if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
             this.selectRowForPane(paneId, stableId)
+            if (paneId === "files" || paneId === "branches" || paneId === "commits" || paneId === "stash") {
+              if (this.canSetListRangeGesture(paneId, stableId)) {
+                const active = this.activeListView(paneId)
+                if (active !== undefined) this.gestureOwner = { kind: "list-range", paneId, viewId: active.viewId, anchorId: stableId }
+              }
+            }
             if (arrowRow !== undefined) {
               // files_controller.go:232-242 toggles only the arrow and its trailing space.
               this.applyFilesTree(toggleFileTreeCollapsedPath(this.filesTree, arrowRow.internalPath))

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { RGBA, TextAttributes, type TextChunk } from "@opentui/core"
-import { computeColumnLayout, createListState, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRows } from "../../src/ui/list-view"
+import type { ListDisplayRow, ListRow } from "../../src/ui/list-view"
+import { clearListRangeSelection, computeColumnLayout, createListState, expandListRangeSelection, getListSelectionRange, hasMultipleListRowsSelected, isListRangeActive, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRangeSelection, setListRows, toggleListRangeSelection } from "../../src/ui/list-view"
 import { FILE_STAGED_FG, REFLOG_HASH_FG, SELECTED_LINE_BG, DEFAULT_BACKGROUND } from "../../src/ui/theme"
 
 const rows = [
@@ -226,5 +227,262 @@ describe("hovered row highlighting", () => {
     expect(selected.bg?.intent).toBe("indexed")
     expect(selected.bg?.slot).toBe(4)
     expect(isBold(selected)).toBe(true)
+  })
+})
+
+describe("list range selection", () => {
+  test("sticky range expands inclusively and v cancels it", () => {
+    let state = selectListRow(createListState(rows), "b")
+    state = toggleListRangeSelection(state)
+    expect(state).toMatchObject({ rangeMode: "sticky", rangeStartId: "b" })
+    state = moveListSelection(state, "next")
+    expect(getListSelectionRange(state)).toEqual({ startIndex: 1, endIndex: 2 })
+    state = toggleListRangeSelection(state)
+    expect(state).toMatchObject({ rangeMode: "none", selectedId: "c" })
+    expect(state.rangeStartId).toBeUndefined()
+  })
+
+  test("shift expansion starts non-sticky and ordinary navigation cancels it", () => {
+    let state = selectListRow(createListState(rows), "b")
+    state = expandListRangeSelection(state, "next")
+    expect(state).toMatchObject({ rangeMode: "non-sticky", rangeStartId: "b", selectedId: "c" })
+    state = moveListSelection(state, "previous")
+    expect(state).toMatchObject({ rangeMode: "none", selectedId: "b" })
+  })
+
+  test("reverse ranges include both stable-id endpoints", () => {
+    const state = setListRangeSelection(createListState(rows), "c", "a")
+    expect(getListSelectionRange(state)).toEqual({ startIndex: 0, endIndex: 2 })
+    expect(hasMultipleListRowsSelected(state)).toBe(true)
+  })
+
+  test("direct click clears active sticky range", () => {
+    let state = selectListRow(createListState(rows), "a")
+    state = toggleListRangeSelection(state)
+    state = moveListSelection(state, "next")
+    expect(isListRangeActive(state)).toBe(true)
+    state = selectListRow(state, "c")
+    expect(state).toMatchObject({ rangeMode: "none", selectedId: "c" })
+    expect(state.rangeStartId).toBeUndefined()
+    expect(isListRangeActive(state)).toBe(false)
+    expect(hasMultipleListRowsSelected(state)).toBe(false)
+    expect(getListSelectionRange(state)).toEqual({ startIndex: 2, endIndex: 2 })
+  })
+
+  test("direct click clears active non-sticky range", () => {
+    let state = selectListRow(createListState(rows), "b")
+    state = expandListRangeSelection(state, "next")
+    expect(isListRangeActive(state)).toBe(true)
+    state = selectListRow(state, "a")
+    expect(state).toMatchObject({ rangeMode: "none", selectedId: "a" })
+    expect(state.rangeStartId).toBeUndefined()
+  })
+
+  test("setListRows preserves range only when both endpoints remain", () => {
+    let state = setListRangeSelection(createListState(rows), "a", "c")
+    expect(isListRangeActive(state)).toBe(true)
+    // both endpoints remain -> preserve
+    let preserved = setListRows(state, rows)
+    expect(preserved).toMatchObject({ rangeMode: "non-sticky", rangeStartId: "a", selectedId: "c" })
+    expect(getListSelectionRange(preserved)).toEqual({ startIndex: 0, endIndex: 2 })
+    // anchor missing -> clear
+    const withoutAnchor = setListRows(state, [rows[1]!, rows[2]!])
+    expect(withoutAnchor.rangeMode).toBe("none")
+    expect(withoutAnchor.rangeStartId).toBeUndefined()
+    expect(withoutAnchor.selectedId).toBe("c")
+    // endpoint missing -> clear (selected fallback to remaining)
+    const withoutEndpoint = setListRows(state, [rows[0]!, rows[1]!])
+    expect(withoutEndpoint.rangeMode).toBe("none")
+    expect(withoutEndpoint.rangeStartId).toBeUndefined()
+    // sticky variant also clears when endpoint gone
+    let sticky = selectListRow(createListState(rows), "b")
+    sticky = toggleListRangeSelection(sticky)
+    sticky = moveListSelection(sticky, "next")
+    expect(sticky.rangeMode).toBe("sticky")
+    const stickyCleared = setListRows(sticky, [rows[0]!, rows[1]!])
+    expect(stickyCleared.rangeMode).toBe("none")
+    expect(stickyCleared.rangeStartId).toBeUndefined()
+  })
+
+  test("empty list has no active range and single index", () => {
+    const empty = createListState([])
+    expect(empty.rangeMode).toBe("none")
+    expect(empty.rangeStartId).toBeUndefined()
+    expect(isListRangeActive(empty)).toBe(false)
+    expect(hasMultipleListRowsSelected(empty)).toBe(false)
+    expect(getListSelectionRange(empty)).toEqual({ startIndex: 0, endIndex: 0 })
+    expect(toggleListRangeSelection(empty)).toMatchObject({ rangeMode: "none" })
+    expect(expandListRangeSelection(empty, "next").rangeMode).toBe("none")
+    expect(clearListRangeSelection(empty).rangeMode).toBe("none")
+    expect(moveListSelection(empty, "next")).toBe(empty)
+  })
+
+  test("one-row boundaries clamp without multi-select", () => {
+    const oneRow = [{ id: "solo", columns: [{ text: "only", priority: 0 }] }] as const
+    let state = createListState(oneRow as unknown as typeof rows)
+    expect(state.rangeMode).toBe("none")
+    state = toggleListRangeSelection(state)
+    expect(state).toMatchObject({ rangeMode: "sticky", rangeStartId: "solo" })
+    expect(getListSelectionRange(state)).toEqual({ startIndex: 0, endIndex: 0 })
+    expect(hasMultipleListRowsSelected(state)).toBe(false)
+    const moved = moveListSelection(state, "next")
+    expect(moved.selectedId).toBe("solo")
+    expect(getListSelectionRange(moved)).toEqual({ startIndex: 0, endIndex: 0 })
+    expect(hasMultipleListRowsSelected(moved)).toBe(false)
+    const expanded = expandListRangeSelection(createListState(oneRow as unknown as typeof rows), "next")
+    expect(expanded).toMatchObject({ rangeMode: "non-sticky", rangeStartId: "solo", selectedId: "solo" })
+    expect(getListSelectionRange(expanded)).toEqual({ startIndex: 0, endIndex: 0 })
+    expect(hasMultipleListRowsSelected(expanded)).toBe(false)
+    // setListRangeSelection with same id is single
+    const same = setListRangeSelection(createListState(oneRow as unknown as typeof rows), "solo", "solo")
+    expect(getListSelectionRange(same)).toEqual({ startIndex: 0, endIndex: 0 })
+    expect(hasMultipleListRowsSelected(same)).toBe(false)
+  })
+
+  test("clearListRangeSelection keeps selected and drops anchor", () => {
+    let state = setListRangeSelection(createListState(rows), "a", "c")
+    expect(isListRangeActive(state)).toBe(true)
+    state = clearListRangeSelection(state)
+    expect(state).toMatchObject({ rangeMode: "none", selectedId: "c" })
+    expect(state.rangeStartId).toBeUndefined()
+    expect(isListRangeActive(state)).toBe(false)
+  })
+
+  test("toggle from non-sticky clears the range", () => {
+    let state = selectListRow(createListState(rows), "b")
+    state = expandListRangeSelection(state, "next")
+    expect(state.rangeMode).toBe("non-sticky")
+    state = toggleListRangeSelection(state)
+    expect(state).toMatchObject({ rangeMode: "none", selectedId: "c" })
+    expect(state.rangeStartId).toBeUndefined()
+  })
+
+  test("setListRangeSelection with unknown ids does not activate", () => {
+    const state = createListState(rows)
+    const unknownAnchor = setListRangeSelection(state, "unknown", "a")
+    expect(unknownAnchor.rangeMode).toBe("none")
+    expect(isListRangeActive(unknownAnchor)).toBe(false)
+    const unknownEndpoint = setListRangeSelection(state, "a", "unknown")
+    expect(unknownEndpoint.rangeMode).toBe("none")
+    expect(isListRangeActive(unknownEndpoint)).toBe(false)
+  })
+
+  test("sticky navigation retains anchor while non-sticky clears on ordinary move", () => {
+    let sticky = selectListRow(createListState(rows), "a")
+    sticky = toggleListRangeSelection(sticky)
+    sticky = moveListSelection(sticky, "next")
+    expect(sticky).toMatchObject({ rangeMode: "sticky", rangeStartId: "a", selectedId: "b" })
+    sticky = moveListSelection(sticky, "next")
+    expect(sticky).toMatchObject({ rangeMode: "sticky", rangeStartId: "a", selectedId: "c" })
+    // reverse retains anchor
+    sticky = moveListSelection(sticky, "previous")
+    expect(sticky).toMatchObject({ rangeMode: "sticky", rangeStartId: "a", selectedId: "b" })
+
+    let nonSticky = selectListRow(createListState(rows), "a")
+    nonSticky = expandListRangeSelection(nonSticky, "next")
+    expect(nonSticky.rangeMode).toBe("non-sticky")
+    nonSticky = moveListSelection(nonSticky, "next")
+    // non-sticky should clear before moving from current selected
+    expect(nonSticky).toMatchObject({ rangeMode: "none", selectedId: "c" })
+    expect(nonSticky.rangeStartId).toBeUndefined()
+  })
+})
+
+describe("list range rendering", () => {
+  const rangeRows = [
+    { id: "a", columns: [{ text: "alpha", priority: 0 }] },
+    { id: "b", columns: [{ text: "beta", priority: 0 }] },
+    { id: "c", columns: [{ text: "gamma", priority: 0 }] },
+  ] as const
+
+  const isBold = (chunk: TextChunk) => ((chunk.attributes ?? 0) & TextAttributes.BOLD) === TextAttributes.BOLD
+  const lineChunks = (chunks: readonly TextChunk[], line: number) => {
+    const lines: TextChunk[][] = [[]]
+    for (const chunk of chunks) {
+      if (chunk.text === "\n") lines.push([])
+      else lines[lines.length - 1]!.push(chunk)
+    }
+    return lines[line]!
+  }
+
+  test("paints every inclusive row in focused range and none when unfocused", () => {
+    const ranged = setListRangeSelection(createListState(rangeRows), "a", "c")
+    const focused = renderListRows(ranged, true, 20).chunks
+    for (let i = 0; i < 3; i++) {
+      const line = lineChunks(focused, i)
+      const hasSelectedBg = line.some((c) => c.bg !== undefined && c.bg.intent === "indexed" && c.bg.slot === 4)
+      expect(hasSelectedBg).toBe(true)
+    }
+    // only selectedId keeps bold/bright styling
+    const focusedBoldLines = [0, 1, 2].map((i) => lineChunks(focused, i).some(isBold))
+    expect(focusedBoldLines).toEqual([false, false, true])
+
+    const unfocused = renderListRows(ranged, false, 20).chunks
+    for (let i = 0; i < 3; i++) {
+      const line = lineChunks(unfocused, i)
+      expect(line.every((c) => c.bg === undefined)).toBe(true)
+      expect(line.every((c) => !isBold(c))).toBe(true)
+    }
+  })
+
+  test("single-row focused range still highlights exactly the selected row", () => {
+    const single = setListRangeSelection(createListState(rangeRows), "b", "b")
+    expect(hasMultipleListRowsSelected(single)).toBe(false)
+    expect(isListRangeActive(single)).toBe(true)
+    const focused = renderListRows(single, true, 20).chunks
+    const lines = [0, 1, 2].map((i) => lineChunks(focused, i))
+    expect(lines[0]!.every((c) => c.bg === undefined)).toBe(true)
+    expect(lines[1]!.some((c) => c.bg !== undefined && c.bg.slot === 4)).toBe(true)
+    expect(lines[2]!.every((c) => c.bg === undefined)).toBe(true)
+    expect(lines[1]!.some(isBold)).toBe(true)
+    expect(lines[0]!.some(isBold)).toBe(false)
+  })
+
+  test("range derived from stable ids highlights by row order even with headers", () => {
+    const rowsWithHeaders = [
+      { id: "a", columns: [{ text: "alpha", priority: 0 }] },
+      { id: "b", columns: [{ text: "beta", priority: 0 }] },
+      { id: "c", columns: [{ text: "gamma", priority: 0 }] },
+    ] as const
+    const displayRows = [
+      { kind: "header" as const, text: "Header" },
+      { kind: "item" as const, id: "c" },
+      { kind: "item" as const, id: "a" },
+      { kind: "item" as const, id: "b" },
+      { kind: "message" as const, text: "footer" },
+    ]
+    const state = setListRangeSelection(createListState(rowsWithHeaders, displayRows), "a", "c")
+    // rows indexes: a=0,c=2 -> range 0-2 includes all three items, header/message must stay unhighlighted
+    expect(getListSelectionRange(state)).toEqual({ startIndex: 0, endIndex: 2 })
+    const focused = renderListRows(state, true, 30).chunks
+    // displayRows order: 0 header, 1 c, 2 a, 3 b, 4 message
+    const headerLine = lineChunks(focused, 0)
+    expect(headerLine.every((c) => c.bg === undefined)).toBe(true)
+    const cLine = lineChunks(focused, 1)
+    expect(cLine.some((c) => c.bg !== undefined && c.bg.slot === 4)).toBe(true)
+    const aLine = lineChunks(focused, 2)
+    expect(aLine.some((c) => c.bg !== undefined && c.bg.slot === 4)).toBe(true)
+    const bLine = lineChunks(focused, 3)
+    expect(bLine.some((c) => c.bg !== undefined && c.bg.slot === 4)).toBe(true)
+    const msgLine = lineChunks(focused, 4)
+    expect(msgLine.every((c) => c.bg === undefined)).toBe(true)
+    // unknown ids are left unhighlighted: add an unknown item row
+    const withUnknownDisplay: readonly ListDisplayRow[] = [...displayRows, { kind: "item" as const, id: "unknown" }]
+    const stateWithUnknown = setListRangeSelection(createListState(rowsWithHeaders, withUnknownDisplay), "a", "c")
+    const focused2 = renderListRows(stateWithUnknown, true, 30).chunks
+    const unknownLine = lineChunks(focused2, 5)
+    expect(unknownLine.every((c) => c.bg === undefined)).toBe(true)
+  })
+
+  test("empty and one-row ranges render without crashing and follow focused contract", () => {
+    const empty = createListState([])
+    expect(renderListRows(empty, true, 20).chunks.length).toBe(0)
+    expect(renderListRows(empty, false, 20).chunks.length).toBe(0)
+    const oneRow: readonly ListRow[] = [{ id: "solo", columns: [{ text: "only", priority: 0 }] }]
+    const rangedOne = setListRangeSelection(createListState(oneRow), "solo", "solo")
+    const focusedOne = renderListRows(rangedOne, true, 20).chunks
+    expect(lineChunks(focusedOne, 0).some((c) => c.bg !== undefined && c.bg.slot === 4)).toBe(true)
+    const unfocusedOne = renderListRows(rangedOne, false, 20).chunks
+    expect(lineChunks(unfocusedOne, 0).every((c) => c.bg === undefined)).toBe(true)
   })
 })

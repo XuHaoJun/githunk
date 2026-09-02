@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
+import { getMainDiffLineRangeState } from "../../src/ui/panes/main-pane"
+import { diffLineSelectionRange } from "../../src/domain/diff/line-selection"
 import { MAIN_SCROLL_HEIGHT } from "../../src/ui/root-view"
 
 /**
@@ -80,6 +82,21 @@ describe("main view scrolling", () => {
     expect(bottom).toBeGreaterThan(0)
     await harness.pressKey("j")
     expect(scrollY(harness)).toBe(bottom)
+  })
+
+  test("focused page and jump navigation move the main line cursor", async () => {
+    harness = await harnessWithTallDiff()
+    const view = harness.app.view!
+    const before = getMainDiffLineRangeState(view.mainPane)!.selectedIndex
+    await harness.pressKey(".")
+    const afterPage = getMainDiffLineRangeState(view.mainPane)!.selectedIndex
+    expect(afterPage).toBeGreaterThan(before)
+    await harness.pressKey(">")
+    const afterBottom = getMainDiffLineRangeState(view.mainPane)!
+    expect(afterBottom.selectedIndex).toBe(afterBottom.lineCount - 1)
+    await harness.pressKey("<")
+    expect(getMainDiffLineRangeState(view.mainPane)!.selectedIndex).toBe(0)
+    expect(diffLineSelectionRange(getMainDiffLineRangeState(view.mainPane)!)).toEqual({ startIndex: 0, endIndex: 0 })
   })
 
   test("a branch's commit graph scrolls with j and k, though it is no diff at all", async () => {

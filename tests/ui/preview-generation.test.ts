@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { MainPreviewGate } from "../../src/ui/main-preview"
 import { createTestRenderer } from "@opentui/core/testing"
-import { createMainPane, installMainContent, setMainLoading } from "../../src/ui/panes/main-pane"
-import type { MainPaneContent } from "../../src/ui/panes/main-pane"
+import { createMainPane, getMainCursorTarget, getMainDiffLineRangeState, getMainDocument, installMainContent, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading } from "../../src/ui/panes/main-pane"
+import { parseDiff } from "../../src/domain/diff/parse"
 import type { CommitDetails } from "../../src/domain/commit"
+import type { MainPaneContent } from "../../src/ui/panes/main-pane"
+import { createDiffLineRangeState, toggleDiffLineRange } from "../../src/domain/diff/line-selection"
+import { parseAnsi } from "../../src/ui/ansi"
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -11,7 +14,6 @@ function deferred<T>() {
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
   return { promise, resolve, reject }
 }
-
 function presentCommit(details: CommitDetails): MainPaneContent {
   return {
     source: "commit",
@@ -165,6 +167,229 @@ describe("Main pane lifecycle", () => {
     setup.renderer.destroy()
   })
 
+  test("clears stale document when diff transitions to plain content", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    installMainContent(pane, {
+      source: "commit",
+      stableId: "diff",
+      label: "Diff",
+      document: parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n"),
+    }, false)
+    expect(getMainDocument(pane)).toBeDefined()
+    installMainContent(pane, { source: "commit", stableId: "plain", label: "Plain", plainText: "No patch loaded" }, false)
+    expect(getMainDocument(pane)).toBeUndefined()
+    setup.renderer.destroy()
+  })
+
+  test("clears diff state when same identity transitions to matching plain content", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
+    installMainContent(pane, { source: "commit", stableId: "same", label: "Diff", document }, false)
+    const range = getMainDiffLineRangeState(pane)
+    expect(range).toBeDefined()
+    setMainCursorTarget(pane, { fileIndex: 0, hunkIndex: 0 })
+    setMainDiffLineRangeState(pane, toggleDiffLineRange(range!))
+    const textView = pane.text as unknown as {
+      setSelection?: (start: number, end: number) => void
+      getSelection?: () => unknown
+      hasSelection?: () => boolean
+    }
+    textView.setSelection?.(0, 5)
+    const nativeBefore = textView.getSelection?.()
+    const hadNativeSelection = typeof textView.hasSelection === "function" ? textView.hasSelection() : nativeBefore !== undefined
+    installMainContent(pane, { source: "commit", stableId: "same", label: "Plain", plainText: document.text }, false)
+    expect(getMainDocument(pane)).toBeUndefined()
+    expect(getMainDiffLineRangeState(pane)).toBeUndefined()
+    expect(getMainCursorTarget(pane)).toBeUndefined()
+    expect(pane.text.plainText).toBe(document.text)
+    if (hadNativeSelection && typeof textView.hasSelection === "function") expect(textView.hasSelection()).toBe(false)
+    if (nativeBefore !== undefined && typeof textView.getSelection === "function") expect(textView.getSelection()).toBeNull()
+    setup.renderer.destroy()
+  })
+
+  test("clears diff state when same identity transitions to ANSI content", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
+    installMainContent(pane, { source: "commit", stableId: "same", label: "Diff", document }, false)
+    const range = getMainDiffLineRangeState(pane)
+    expect(range).toBeDefined()
+    setMainCursorTarget(pane, { fileIndex: 0, hunkIndex: 0 })
+    setMainDiffLineRangeState(pane, toggleDiffLineRange(range!))
+    const textView = pane.text as unknown as {
+      setSelection?: (start: number, end: number) => void
+      getSelection?: () => unknown
+      hasSelection?: () => boolean
+    }
+    textView.setSelection?.(0, 5)
+    const nativeBefore = textView.getSelection?.()
+    const hadNativeSelection = typeof textView.hasSelection === "function" ? textView.hasSelection() : nativeBefore !== undefined
+    installMainContent(pane, { source: "commit", stableId: "same", label: "ANSI", ansi: parseAnsi(document.text) }, false)
+    expect(getMainDocument(pane)).toBeUndefined()
+    expect(getMainDiffLineRangeState(pane)).toBeUndefined()
+    expect(getMainCursorTarget(pane)).toBeUndefined()
+    expect(pane.text.wrapMode).toBe("none")
+    expect(pane.text.plainText).toBe(document.text)
+    if (hadNativeSelection && typeof textView.hasSelection === "function") expect(textView.hasSelection()).toBe(false)
+    if (nativeBefore !== undefined && typeof textView.getSelection === "function") expect(textView.getSelection()).toBeNull()
+    setup.renderer.destroy()
+  })
+
+  test("clears ANSI painter when same identity transitions to plain content", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    setup.renderer.root.add(pane.box)
+    const rendered = "plain output\n"
+    const ansi = parseAnsi(`\u001b[31m${rendered}\u001b[0m`)
+    installMainContent(pane, { source: "commit", stableId: "ansi-plain", label: "ANSI", ansi }, false)
+    await setup.flush()
+    const hasAnsiColor = setup.captureSpans().lines.some((line) => line.spans.some((span) => span.fg.intent === "indexed"))
+    expect(hasAnsiColor).toBe(true)
+
+    const textView = pane.text as unknown as {
+      setSelection?: (start: number, end: number) => void
+      getSelection?: () => unknown
+      hasSelection?: () => boolean
+    }
+    textView.setSelection?.(0, 5)
+    const nativeBefore = textView.getSelection?.()
+    const hadNativeSelection = typeof textView.hasSelection === "function" ? textView.hasSelection() : nativeBefore !== undefined
+    installMainContent(pane, { source: "commit", stableId: "ansi-plain", label: "Plain", plainText: rendered }, false)
+    await setup.flush()
+    expect(pane.text.plainText).toBe(rendered)
+    const hasAnsiColorAfterPlain = setup.captureSpans().lines.some((line) => line.spans.some((span) => span.fg.intent === "indexed"))
+    expect(hasAnsiColorAfterPlain).toBe(false)
+    if (hadNativeSelection && typeof textView.hasSelection === "function") expect(textView.hasSelection()).toBe(false)
+    if (nativeBefore !== undefined && typeof textView.getSelection === "function") expect(textView.getSelection()).toBeNull()
+
+    setup.renderer.destroy()
+  })
+
+  test("starts a fresh range when a plain preview enters a document", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
+    installMainContent(pane, { source: "commit", stableId: "same-range", label: "Plain", plainText: document.text }, false)
+    const seededRange = toggleDiffLineRange(createDiffLineRangeState(document))
+    setMainDiffLineRangeState(pane, seededRange)
+    expect(getMainDiffLineRangeState(pane)?.rangeMode).toBe("sticky")
+
+    installMainContent(pane, { source: "commit", stableId: "same-range", label: "Diff", document }, false)
+    expect(getMainDocument(pane)).toBe(document)
+    expect(getMainDiffLineRangeState(pane)?.rangeMode).toBe("none")
+
+    setup.renderer.destroy()
+  })
+
+  test("restores diff rendering when plain content enters a document with same identity", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    setup.renderer.root.add(pane.box)
+    const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
+    installMainContent(pane, { source: "commit", stableId: "same-entry", label: "Plain", plainText: document.text }, false)
+    const textView = pane.text as unknown as {
+      setSelection?: (start: number, end: number) => void
+      getSelection?: () => unknown
+      hasSelection?: () => boolean
+    }
+    textView.setSelection?.(0, 5)
+    const nativeBeforePlain = textView.getSelection?.()
+    const hadNativeSelectionPlain = typeof textView.hasSelection === "function" ? textView.hasSelection() : nativeBeforePlain !== undefined
+    expect(getMainDocument(pane)).toBeUndefined()
+    installMainContent(pane, { source: "commit", stableId: "same-entry", label: "Diff", document }, false)
+    expect(getMainDocument(pane)).toBe(document)
+    expect(getMainDiffLineRangeState(pane)).toBeDefined()
+    expect(pane.text.wrapMode).toBe("char")
+    await setup.flush()
+    const hasDiffColor = setup.captureSpans().lines.some((line) => line.spans.some((span) => span.fg.intent === "indexed"))
+    expect(hasDiffColor).toBe(true)
+    if (hadNativeSelectionPlain && typeof textView.hasSelection === "function") expect(textView.hasSelection()).toBe(false)
+    if (nativeBeforePlain !== undefined && typeof textView.getSelection === "function") expect(textView.getSelection()).toBeNull()
+    installMainContent(pane, { source: "commit", stableId: "same-entry", label: "ANSI", ansi: parseAnsi(document.text) }, false)
+    expect(getMainDocument(pane)).toBeUndefined()
+    expect(pane.text.wrapMode).toBe("none")
+    textView.setSelection?.(0, 5)
+    const nativeBeforeAnsi = textView.getSelection?.()
+    installMainContent(pane, { source: "commit", stableId: "same-entry", label: "Diff again", document }, false)
+    expect(getMainDocument(pane)).toBe(document)
+    expect(getMainDiffLineRangeState(pane)).toBeDefined()
+    expect(pane.text.wrapMode).toBe("char")
+    await setup.flush()
+    const hasDiffColorAfterAnsi = setup.captureSpans().lines.some((line) => line.spans.some((span) => span.fg.intent === "indexed"))
+    expect(hasDiffColorAfterAnsi).toBe(true)
+    if (typeof textView.hasSelection === "function") expect(textView.hasSelection()).toBe(false)
+    if (nativeBeforeAnsi !== undefined && typeof textView.getSelection === "function") expect(textView.getSelection()).toBeNull()
+
+    setup.renderer.destroy()
+  })
   test("loading retains prior content and selection", async () => {
     const setup = await createTestRenderer({ width: 120, height: 40 })
     const model = {
