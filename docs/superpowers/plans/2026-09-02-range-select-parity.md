@@ -414,3 +414,25 @@ git commit -m "docs: record contiguous range parity"
 ```
 
 The branch is ready for the final whole-branch review only after the gate and smoke output are captured.
+### Task 7: Restore commit drilldown compatibility regression
+
+**Files:**
+- Modify: `src/ui/root-view.ts`
+- Test: `tests/ui/dispatch.integration.test.ts`
+
+**Reason:** Historical verification found the existing commit-files drilldown passed at `10a1840` and failed at `569ddbe`; Task 5's import rewrite removed `commitFileRows` while its runtime usages remained. This is a compatibility regression exposed while validating Task 4 and must be repaired before final acceptance.
+
+- [ ] **Step 1: Add a focused regression assertion**
+
+Run `bun test tests/ui/dispatch.integration.test.ts` against the current branch and retain the three failing `commitsContextKind` assertions as the observable contract: Enter in Commits opens commit-files, Escape closes a menu before preserving the child, and the transient commit-files workflow opens and restores.
+
+- [ ] **Step 2: Restore the existing import and verify green**
+
+Restore the `commitFileRows` import used by `actionCommitDrilldown`, then run `bun test tests/ui/dispatch.integration.test.ts`. Expected: 56 pass, 0 fail. Do not change commit drilldown behavior or add range semantics to it.
+
+- [ ] **Step 3: Commit the compatibility fix**
+
+```bash
+git add src/ui/root-view.ts tests/ui/dispatch.integration.test.ts
+git commit -m "fix: restore commit files drilldown"
+```
