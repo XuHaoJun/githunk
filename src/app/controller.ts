@@ -661,12 +661,10 @@ export class AppController {
             : "local and remote deletion requires an upstream")
         }
       }
-      const mergedLocalAndRemote = new Map<number, boolean>()
       for (let index = 0; index < requests.length; index += 1) {
         const request = requests[index]
         if (request === undefined || request.mode !== "local-and-remote") continue
         const merged = await isGitBranchMerged(runner, request.branch)
-        mergedLocalAndRemote.set(index, merged)
         if (!merged && request.force !== true) {
           throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
         }
@@ -973,13 +971,13 @@ export class AppController {
   async stageFiles(paths: readonly string[]): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
     this.logAction(LOG_ACTIONS.stageAllFiles)
-    await this.runMutation(() => this.mutations?.stageFiles(paths))
+    await this.runMutation(() => this.mutations?.stageFiles(paths), true)
   }
 
   async unstageFiles(paths: readonly string[]): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
     this.logAction(LOG_ACTIONS.unstageAllFiles)
-    await this.runMutation(() => this.mutations?.unstageFiles(paths))
+    await this.runMutation(() => this.mutations?.unstageFiles(paths), true)
   }
 
 
@@ -1010,7 +1008,7 @@ export class AppController {
   async discardFiles(paths: readonly string[], mode: DiscardFileMode): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
     this.logAction(mode === "all" ? LOG_ACTIONS.discardAllChangesInFile : LOG_ACTIONS.discardAllUnstagedChangesInFile)
-    await this.runMutation(() => this.mutations?.discardFiles(paths, mode))
+    await this.runMutation(() => this.mutations?.discardFiles(paths, mode), true)
   }
 
 
@@ -1084,11 +1082,22 @@ export class AppController {
     this.runner?.log.logAction(action)
   }
 
-  private async runMutation(operation: () => Promise<void> | undefined): Promise<void> {
+  private async runMutation(operation: () => Promise<void> | undefined, refreshOnFailure = false): Promise<void> {
     if (operation === undefined) throw new Error("Mutations require a GitRunner")
     await this.mutationQueue.run(async () => {
       try {
-        await operation()
+        try {
+          await operation()
+        } catch (error) {
+          if (refreshOnFailure) {
+            try {
+              await this.refresh()
+            } catch {
+              // Preserve the original mutation error.
+            }
+          }
+          throw error
+        }
         await this.refresh()
       } catch (error) {
         const banner = error instanceof GitCommandError
