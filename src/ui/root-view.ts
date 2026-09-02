@@ -6,6 +6,7 @@ import {
   type MouseEvent,
 } from "@opentui/core"
 import type { AppModel } from "../app/model"
+import type { ChangedFile, DiscardFileMode, WorkingTreeScope } from "../domain/review-target"
 import { sanitizeBranchName, type BranchDeleteRequest, type LocalBranch } from "../domain/branch"
 import type { CommitDetails } from "../domain/commit"
 import type { TagSummary, TagPreview } from "../domain/tag"
@@ -50,6 +51,7 @@ import {
   collapseAllFileTree,
   expandAllFileTree,
   fileTreeRows,
+  forEachFile,
   setFileTreeItems,
   someFileInNode,
   toggleFileTreeCollapsedPath,
@@ -68,12 +70,12 @@ import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
 import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
 import { discardConfirmation, stashApplyConfirmation, stashDropConfirmation, stashPopConfirmation, type ConfirmationRequest } from "./confirm-dialog"
-import { branchAutostashConfirmation, branchForceDeleteConfirmation, branchLocalAndRemoteDeleteConfirmation, branchRemoteDeleteConfirmation, branchRenameConfirmation, remoteTrackingMismatchConfirmation, worktreeForceRemoveConfirmation } from "./branch-dialogs"
 import { COPY_MENU_ITEMS } from "./copy-menu"
 import { branchCheckoutRequiresStash, type CheckoutRemoteTrackingResult, type CreateBranchOptions, type RemoteBranchSelection } from "../git/branches"
 import { worktreeRemovalRequiresForce } from "../git/worktrees"
 import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
 import { createCommitMessagePanel, type CommitMessagePanelHandle } from "./commit-message-panel"
+import { branchAutostashConfirmation, branchForceDeleteConfirmation, branchForceDeleteRangeConfirmation, branchLocalAndRemoteDeleteConfirmation, branchLocalAndRemoteDeleteRangeConfirmation, branchRemoteDeleteConfirmation, branchRemoteDeleteRangeConfirmation, branchRenameConfirmation, remoteTrackingMismatchConfirmation, worktreeForceRemoveConfirmation } from "./branch-dialogs"
 import { createPromptPopup, type PromptPopupHandle } from "./prompt-popup"
 import { FilterInput } from "./filter-input"
 import { filterItems } from "../app/filter"
@@ -84,11 +86,13 @@ import { createActionMenu, type ActionMenuHandle } from "./action-menu"
 import { createSplitter, type SplitterAxis, type SplitterHandle } from "./splitter"
 import { type UiState as PersistedUiState } from "./ui-state-store"
 import { createRegistry, type Action, type MenuEntry, type UiState } from "./bindings"
-import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, updatePanelView, type PanelState } from "./panel-state"
 import { ANSI_CYAN, ANSI_GREEN, DEFAULT_FOREGROUND, TITLE_PREFIX_FRAME_RUNE } from "./theme"
+import { createPanelState, cyclePanelTab, enterPanelChild, leavePanelChild, updatePanelView, type PanelState } from "./panel-state"
 import {
   createListState,
   expandListRangeSelection,
+  getListSelectionRange,
+  hasMultipleListRowsSelected,
   listRowAtPoint,
   moveListSelection,
   renderListRows,
@@ -173,6 +177,27 @@ function liveBranchUpstream(branch: LocalBranch): { readonly remote: string; rea
   return { remote: upstream.slice(0, separator), branch: upstream.slice(separator + 1) }
 }
 
+type BranchDeleteTarget = {
+  readonly branch: LocalBranch
+  readonly upstream?: { readonly remote: string; readonly branch: string }
+}
+
+function stashRangeDropConfirmation(refs: readonly string[]): ConfirmationRequest {
+  return {
+    title: "Stash drop",
+    message: `Are you sure you want to drop the selected stash entries: ${refs.join(", ")}?`,
+    confirmLabel: "Drop",
+    cancelLabel: "Cancel",
+    confirmKey: "enter",
+    cancelKey: "escape",
+  }
+}
+
+function stashIndex(ref: string): number {
+  const match = /^stash@\{(\d+)\}$/.exec(ref)
+  return match === null ? -1 : Number(match[1])
+}
+
 export type RootViewOptions = {
   readonly sidePanelRatio?: number
   readonly logHeight?: number
@@ -185,8 +210,10 @@ export type RootViewOptions = {
    */
   readonly onMutationSettled?: () => void
   readonly onStageFile?: (path: string) => Promise<void>
+  readonly onStageFiles?: (paths: readonly string[], stage: boolean) => Promise<void>
   readonly onUnstageFile?: (path: string) => Promise<void>
   readonly onDiscardFile?: (path: string, mode: DiscardFileMode) => Promise<void>
+  readonly onDiscardFiles?: (paths: readonly string[], mode: DiscardFileMode) => Promise<void>
   readonly onToggleAllFiles?: () => Promise<void>
   readonly onScopeChange?: (scope: WorkingTreeScope) => Promise<void>
   readonly onOpenBranchReview?: () => Promise<void>
@@ -204,11 +231,12 @@ export type RootViewOptions = {
   readonly onCommitMessage?: (message: string) => Promise<void>
   readonly onAmendMessage?: (message: string) => Promise<void>
   readonly onCurrentCommitMessage?: () => Promise<string>
-  readonly onRefresh?: () => Promise<void>
-  readonly onSwitchLocalBranch?: (branch: string) => Promise<void>
   readonly onCreateBranch?: (startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>
   readonly onCreateBranchWithAutostash?: (startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>
+  readonly onRefresh?: () => Promise<void>
+  readonly onSwitchLocalBranch?: (branch: string) => Promise<void>
   readonly onDeleteBranch?: (request: BranchDeleteRequest) => Promise<void>
+  readonly onDeleteBranches?: (requests: readonly BranchDeleteRequest[]) => Promise<void>
   readonly onCheckBranchMerged?: (branch: string, upstream?: string) => Promise<boolean>
   readonly onDeleteBranchFromWorktree?: (path: string, action: "remove" | "detach", request: BranchDeleteRequest, forceWorktree?: boolean) => Promise<void>
   readonly onFetchRemote?: (remote: string) => Promise<void>
@@ -222,6 +250,7 @@ export type RootViewOptions = {
   readonly onCreateStash?: (message: string, includeUntracked: boolean) => Promise<void>
   readonly onApplyStash?: (ref: string) => Promise<void>
   readonly onDropStash?: (ref: string) => Promise<void>
+  readonly onDropStashes?: (refs: readonly string[]) => Promise<void>
   readonly onInspectStash?: (ref: string) => Promise<void>
   readonly onBrowseRemote?: (remote: string) => Promise<void>
   readonly onInspectBranch?: (branch: string) => Promise<void>
@@ -283,8 +312,10 @@ export class RootView {
   private readonly keybindingMenu: KeybindingMenuHandle
   private readonly actionMenu: ActionMenuHandle
   private readonly onStageFile: ((path: string) => Promise<void>) | undefined
+  private readonly onStageFiles: ((paths: readonly string[], stage: boolean) => Promise<void>) | undefined
   private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
   private readonly onDiscardFile: ((path: string, mode: DiscardFileMode) => Promise<void>) | undefined
+  private readonly onDiscardFiles: ((paths: readonly string[], mode: DiscardFileMode) => Promise<void>) | undefined
   private readonly onToggleAllFiles: (() => Promise<void>) | undefined
   private readonly onScopeChange: ((scope: WorkingTreeScope) => Promise<void>) | undefined
   private readonly onOpenBranchReview: (() => Promise<void>) | undefined
@@ -324,6 +355,7 @@ export class RootView {
   private readonly onCreateBranch: ((startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>) | undefined
   private readonly onCreateBranchWithAutostash: ((startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>) | undefined
   private readonly onDeleteBranch: ((request: BranchDeleteRequest) => Promise<void>) | undefined
+  private readonly onDeleteBranches: ((requests: readonly BranchDeleteRequest[]) => Promise<void>) | undefined
   private readonly onCheckBranchMerged: ((branch: string, upstream?: string) => Promise<boolean>) | undefined
   private readonly onDeleteBranchFromWorktree: ((path: string, action: "remove" | "detach", request: BranchDeleteRequest, forceWorktree?: boolean) => Promise<void>) | undefined
   private readonly onFetchRemote: ((remote: string) => Promise<void>) | undefined
@@ -337,6 +369,7 @@ export class RootView {
   private readonly onApplyStash: ((ref: string) => Promise<void>) | undefined
   private readonly onPopStash: ((ref: string) => Promise<void>) | undefined
   private readonly onDropStash: ((ref: string) => Promise<void>) | undefined
+  private readonly onDropStashes: ((refs: readonly string[]) => Promise<void>) | undefined
   private readonly onInspectStash: ((ref: string) => Promise<void>) | undefined
   private readonly onBrowseRemote: ((remote: string) => Promise<void>) | undefined
   private readonly loadBranchCommits: ((branch: string) => Promise<readonly CommitSummary[]>) | undefined
@@ -400,6 +433,7 @@ export class RootView {
     }
     this.clipboard = new ClipboardService(clipboardPort)
     this.onStageFile = options.onStageFile
+    this.onStageFiles = options.onStageFiles
     this.onApplyStash = options.onApplyStash
     this.onScopeChange = options.onScopeChange
     this.onOpenBranchReview = options.onOpenBranchReview
@@ -409,6 +443,7 @@ export class RootView {
     this.onMutationSettled = options.onMutationSettled
     this.onUnstageFile = options.onUnstageFile
     this.onDiscardFile = options.onDiscardFile
+    this.onDiscardFiles = options.onDiscardFiles
     this.onToggleAllFiles = options.onToggleAllFiles
     this.onApplySelection = options.onApplySelection
     this.onDiscardSelection = options.onDiscardSelection
@@ -423,11 +458,13 @@ export class RootView {
     this.onCancelUpstream = options.onCancelUpstream
     this.onPopStash = options.onPopStash
     this.onDropStash = options.onDropStash
+    this.onDropStashes = options.onDropStashes
     this.onInspectStash = options.onInspectStash
     this.onSwitchLocalBranch = options.onSwitchLocalBranch
     this.onCreateBranch = options.onCreateBranch
     this.onCreateBranchWithAutostash = options.onCreateBranchWithAutostash
     this.onDeleteBranch = options.onDeleteBranch
+    this.onDeleteBranches = options.onDeleteBranches
     this.onCheckBranchMerged = options.onCheckBranchMerged
     this.onDeleteBranchFromWorktree = options.onDeleteBranchFromWorktree
     this.onRenameBranch = options.onRenameBranch
@@ -785,6 +822,48 @@ export class RootView {
     const id = this.filesPanel.views.files?.selectedId
     if (id === undefined) return undefined
     return fileTreeRows(this.filesTree).find((row) => row.id === id)
+  }
+
+  private selectedFileRowsForRange(): readonly FileTreeRow<ChangedFile>[] | undefined {
+    if (this.filesPanel.activeTab !== "files") return undefined
+    const active = this.activeListView("files")
+    if (active === undefined) return undefined
+    const range = getListSelectionRange(active.state)
+    const treeRows = new Map(fileTreeRows(this.filesTree).map((row) => [row.id, row] as const))
+    return active.state.rows
+      .slice(range.startIndex, range.endIndex + 1)
+      .map((row) => treeRows.get(row.id))
+      .filter((row): row is FileTreeRow<ChangedFile> => row !== undefined)
+  }
+
+  private resolveFilesForRows(rows: readonly FileTreeRow<ChangedFile>[]): {
+    readonly files: readonly ChangedFile[]
+    readonly paths: readonly string[]
+  } {
+    const filesByPath = new Map<string, ChangedFile>()
+    const add = (file: ChangedFile): void => {
+      if (!filesByPath.has(file.path)) filesByPath.set(file.path, file)
+    }
+    for (const row of rows) {
+      if (row.kind === "directory") forEachFile(row.node, add)
+      else if (row.payload !== undefined) add(row.payload)
+    }
+    return { files: [...filesByPath.values()], paths: [...filesByPath.keys()] }
+  }
+
+  private collapseActiveListRange(paneId: ListPaneId): boolean {
+    const active = this.activeListView(paneId)
+    if (active === undefined || !hasMultipleListRowsSelected(active.state)) return false
+    const range = getListSelectionRange(active.state)
+    const first = active.state.rows[range.startIndex]
+    if (first === undefined) return false
+    const next = selectListRow(active.state, first.id)
+    this.updateActiveListState(paneId, next)
+    this.renderListPane(paneId)
+    this.revealListRow(paneId, this.panes[paneId], next.selectedIndex)
+    if (paneId === "files") this.syncListSelectionAfterChange(paneId)
+    this.root.requestRender()
+    return true
   }
 
   /** The lazygit Files arrow hit area, including the review marker and separator columns. */
@@ -1850,6 +1929,25 @@ export class RootView {
 
   private actionStageFile(): void {
     if (this.mutationInFlight) return
+    const active = this.activeListView("files")
+    if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
+      const rows = this.selectedFileRowsForRange()
+      if (rows === undefined) return
+      const resolved = this.resolveFilesForRows(rows)
+      if (resolved.files.some((file) => file.conflicted)) {
+        this.panes.files.box.bottomTitle = "line actions disabled: conflicted file"
+        this.root.requestRender()
+        return
+      }
+      if (this.onStageFiles === undefined) return
+      const stage = resolved.files.some(fileHasUnstagedChanges)
+      const files = resolved.files.filter(stage ? fileHasUnstagedChanges : fileHasStagedChanges)
+      const paths = files.map((file) => file.path)
+      if (paths.length === 0) return
+      this.collapseActiveListRange("files")
+      this.runUiMutation(() => this.onStageFiles?.(paths, stage))
+      return
+    }
     const row = this.selectedFileRow()
     if (row === undefined) return
     if (row.kind === "directory") {
@@ -1870,6 +1968,40 @@ export class RootView {
 
   private actionDiscardFile(): void {
     if (this.mutationInFlight) return
+    const active = this.activeListView("files")
+    if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
+      if (this.onDiscardFiles === undefined) return
+      const rows = this.selectedFileRowsForRange()
+      if (rows === undefined) return
+      const resolved = this.resolveFilesForRows(rows)
+      if (resolved.files.some((file) => file.conflicted)) {
+        this.panes.files.box.bottomTitle = "line actions disabled: conflicted file"
+        this.root.requestRender()
+        return
+      }
+      if (resolved.paths.length === 0) return
+      const hasStaged = resolved.files.some(fileHasStagedChanges)
+      const hasUnstaged = resolved.files.some(fileHasUnstagedChanges)
+      const unstagedReason = !hasStaged || !hasUnstaged
+        ? "The selected items don't have both staged and unstaged changes."
+        : undefined
+      this.collapseActiveListRange("files")
+      this.actionMenu.openMenu("Discard changes", [
+        {
+          key: "x",
+          label: "Discard all changes",
+          onPress: () => this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "all")),
+        },
+        {
+          key: "u",
+          label: "Discard unstaged changes",
+          onPress: () => this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "unstaged")),
+          ...(unstagedReason === undefined ? {} : { disabledReason: unstagedReason }),
+        },
+      ], resolved.paths.join(", "))
+      this.recomputeLayout()
+      return
+    }
     const row = this.selectedFileRow()
     if (row === undefined || this.onDiscardFile === undefined) return
     const path = row.path
@@ -2272,8 +2404,194 @@ export class RootView {
     this.branchDialogContext = { mode: "branch-create", startPoint, suggestedBranchName, branchBase }
     this.openBranchDialog("branch-create", suggestedBranchName, branchBase)
   }
+
+  private branchDeleteTargetsFromRange(active: ActiveListView): readonly BranchDeleteTarget[] | undefined {
+    const panel = this.branchesPanel
+    const range = getListSelectionRange(active.state)
+    const rows = active.state.rows.slice(range.startIndex, range.endIndex + 1)
+    if (panel.child?.value.kind === "remote-branches") return undefined
+    if (panel.child !== undefined || panel.activeTab !== "branches") return undefined
+    const branches = this.model.branches?.localBranches
+    if (branches === undefined) return undefined
+    const targets: BranchDeleteTarget[] = []
+    for (const row of rows) {
+      if (!row.id.startsWith("local:")) return undefined
+      const name = row.id.slice("local:".length)
+      const branch = branches.find((candidate) => candidate.name === name)
+      if (branch === undefined) return undefined
+      targets.push({ branch, upstream: liveBranchUpstream(branch) })
+    }
+    return targets.length === rows.length && targets.length > 1 ? targets : undefined
+  }
+
+  private branchDeleteRequests(targets: readonly BranchDeleteTarget[], mode: BranchDeleteRequest["mode"], force: boolean): readonly BranchDeleteRequest[] {
+    return targets.map(({ branch, upstream }) => ({
+      mode,
+      branch: mode === "remote" ? upstream?.branch ?? branch.name : branch.name,
+      ...(mode === "local" || upstream === undefined ? {} : { remote: upstream.remote, remoteBranch: upstream.branch }),
+      force,
+    }))
+  }
+
+  private branchBatchBlockReason(targets: readonly BranchDeleteTarget[], mode: BranchDeleteRequest["mode"]): string | undefined {
+    if (mode === "remote") {
+      return targets.some(({ upstream }) => upstream === undefined)
+        ? "The selected branch has no upstream (or the upstream is not stored locally)"
+        : undefined
+    }
+    const checkedOut = targets.find(({ branch }) => branch.isCurrent)
+    if (checkedOut !== undefined) return "You cannot delete the checked out branch!"
+    const worktree = targets
+      .map(({ branch }) => (this.model.worktrees ?? []).find((candidate) => candidate.branch === branch.name && !candidate.isCurrent))
+      .find((candidate) => candidate !== undefined)
+    if (worktree !== undefined) {
+      const branch = targets.find(({ branch: candidate }) => candidate.name === worktree.branch)?.branch
+      return branch === undefined ? "The selected branch is checked out by another worktree" : `Branch ${branch.name} is checked out by worktree ${worktree.name}`
+    }
+    if ((mode === "local" || mode === "local-and-remote") && targets.some(({ upstream }) => upstream === undefined)) {
+      return "The selected branch has no upstream (or the upstream is not stored locally)"
+    }
+    return undefined
+  }
+
+  private actionBranchDeleteRange(active: ActiveListView): void {
+    const panel = this.branchesPanel
+    const range = getListSelectionRange(active.state)
+    const rows = active.state.rows.slice(range.startIndex, range.endIndex + 1)
+    if (panel.child?.value.kind === "remote-branches") {
+      const remote = panel.child.value.remote
+      const prefix = `${remote}/`
+      const requests: BranchDeleteRequest[] = []
+      const names: string[] = []
+      for (const row of rows) {
+        if (!row.id.startsWith("remote-branch:")) return
+        const ref = row.id.slice("remote-branch:".length)
+        if (!ref.startsWith(prefix)) return
+        const remoteBranch = ref.slice(prefix.length)
+        if (remoteBranch.length === 0) return
+        names.push(remoteBranch)
+        requests.push({ mode: "remote", branch: remoteBranch, remote, remoteBranch, force: false })
+      }
+      if (requests.length !== rows.length || requests.length < 2 || this.onDeleteBranches === undefined) return
+      this.collapseActiveListRange("branches")
+      this.openConfirmation(
+        branchRemoteDeleteRangeConfirmation(names, remote),
+        () => this.runUiMutation(() => this.onDeleteBranches?.(requests)),
+      )
+      return
+    }
+    const targets = this.branchDeleteTargetsFromRange(active)
+    if (targets === undefined || this.onDeleteBranches === undefined) return
+    const names = targets.map(({ branch }) => branch.name)
+    const localReason = this.branchBatchBlockReason(targets, "local")
+    const upstreamReason = this.branchBatchBlockReason(targets, "remote")
+    const bothReason = this.branchBatchBlockReason(targets, "local-and-remote")
+    this.collapseActiveListRange("branches")
+    this.actionMenu.openMenu(`Delete branches '${names.join("', '")}'?`, [
+      {
+        key: "c",
+        label: "Delete local branches",
+        onPress: () => this.beginBranchDeleteBatch(targets, "local"),
+        ...(localReason === undefined ? {} : { disabledReason: localReason }),
+      },
+      {
+        key: "r",
+        label: "Delete remote branches",
+        onPress: () => this.beginBranchDeleteBatch(targets, "remote"),
+        ...(upstreamReason === undefined ? {} : { disabledReason: upstreamReason }),
+      },
+      {
+        key: "b",
+        label: "Delete local and remote branches",
+        onPress: () => this.beginBranchDeleteBatch(targets, "local-and-remote"),
+        ...(bothReason === undefined ? {} : { disabledReason: bothReason }),
+      },
+    ])
+    this.recomputeLayout()
+  }
+
+  private beginBranchDeleteBatch(targets: readonly BranchDeleteTarget[], mode: BranchDeleteRequest["mode"]): void {
+    if (this.mutationInFlight || this.onDeleteBranches === undefined) return
+    const reason = this.branchBatchBlockReason(targets, mode)
+    if (reason !== undefined) {
+      this.panes.branches.box.bottomTitle = reason
+      this.root.requestRender()
+      return
+    }
+    const requests = this.branchDeleteRequests(targets, mode, false)
+    if (mode !== "local" && requests.some((request) => request.remote === undefined || request.remoteBranch === undefined)) {
+      this.panes.branches.box.bottomTitle = "The selected branch has no upstream (or the upstream is not stored locally)"
+      this.root.requestRender()
+      return
+    }
+    if (mode === "remote") {
+      const remoteTargets = requests
+        .flatMap((request) => request.remote === undefined || request.remoteBranch === undefined
+          ? []
+          : [{ branch: request.remoteBranch, remote: request.remote }])
+      if (remoteTargets.length !== requests.length) return
+      this.openConfirmation(
+        branchRemoteDeleteRangeConfirmation(remoteTargets),
+        () => this.runUiMutation(() => this.onDeleteBranches?.(requests)),
+      )
+      return
+    }
+    const checkMerged = this.onCheckBranchMerged
+    if (checkMerged === undefined) {
+      const forced = this.branchDeleteRequests(targets, mode, true)
+      if (mode === "local") {
+        this.runUiMutation(() => this.onDeleteBranches?.(forced))
+      } else {
+        const pairTargets = targets.flatMap(({ branch, upstream }) => upstream === undefined ? [] : [{ branch: branch.name, remote: upstream.remote, remoteBranch: upstream.branch }])
+        this.openConfirmation(
+          branchLocalAndRemoteDeleteRangeConfirmation(pairTargets, true),
+          () => this.runUiMutation(() => this.onDeleteBranches?.(forced)),
+        )
+      }
+      return
+    }
+    const requestGeneration = this.branchActionGeneration
+    this.mutationInFlight = true
+    this.panes.main.box.bottomTitle = "Checking branch merge state…"
+    void Promise.all(targets.map(({ branch }) => checkMerged(branch.name, branch.upstream))).then((merged) => {
+      this.mutationInFlight = false
+      const current = this.activeListView("branches")
+      const expectedSelectedId = targets[0] === undefined ? undefined : `local:${targets[0].branch.name}`
+      if (requestGeneration !== this.branchActionGeneration || this.focusManager.active !== "branches" || current?.state.selectedId !== expectedSelectedId) {
+        this.panes.main.box.bottomTitle = undefined
+        this.root.requestRender()
+        return
+      }
+      const forceRequired = merged.some((isMerged) => !isMerged)
+      const forced = this.branchDeleteRequests(targets, mode, true)
+      if (mode === "local" && forceRequired) {
+        this.openConfirmation(branchForceDeleteRangeConfirmation(targets.map(({ branch }) => branch.name)), () =>
+          this.runUiMutation(() => this.onDeleteBranches?.(forced)))
+        return
+      }
+      if (mode === "local") {
+        this.runUiMutation(() => this.onDeleteBranches?.(forced))
+        return
+      }
+      const pairTargets = targets.flatMap(({ branch, upstream }) => upstream === undefined ? [] : [{ branch: branch.name, remote: upstream.remote, remoteBranch: upstream.branch }])
+      this.openConfirmation(
+        branchLocalAndRemoteDeleteRangeConfirmation(pairTargets, forceRequired),
+        () => this.runUiMutation(() => this.onDeleteBranches?.(forced)),
+      )
+    }).catch((error: unknown) => {
+      this.mutationInFlight = false
+      this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
+      this.root.requestRender()
+    })
+  }
   private actionBranchDelete(): void {
-    if (this.mutationInFlight || this.onDeleteBranch === undefined) return
+    if (this.mutationInFlight) return
+    const active = this.activeListView("branches")
+    if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
+      this.actionBranchDeleteRange(active)
+      return
+    }
+    if (this.onDeleteBranch === undefined) return
     const panel = this.branchesPanel
     if (panel.child?.value.kind === "remote-branches") {
       const id = panel.child.view.selectedId
@@ -2782,6 +3100,26 @@ export class RootView {
 
   private actionStashDrop(): void {
     if (this.mutationInFlight) return
+    const active = this.activeListView("stash")
+    if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
+      if (this.onDropStashes === undefined) return
+      const range = getListSelectionRange(active.state)
+      const selectedRows = active.state.rows.slice(range.startIndex, range.endIndex + 1)
+      const entries = selectedRows
+        .map((row) => (this.model.stashes ?? []).find((stash) => stash.oid === row.id))
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined)
+      if (entries.length !== selectedRows.length) return
+      const ordered = entries.slice().sort((a, b) => stashIndex(b.ref) - stashIndex(a.ref))
+      const refs = ordered.map((entry) => entry.oid)
+      const labels = ordered.map((entry) => entry.ref)
+      if (refs.length < 2) return
+      this.collapseActiveListRange("stash")
+      this.openConfirmation(
+        stashRangeDropConfirmation(labels),
+        () => this.runUiMutation(() => this.onDropStashes?.(refs)),
+      )
+      return
+    }
     const selected = selectedStashEntryFromState(this.stashState, this.model)
     if (selected === undefined || this.onDropStash === undefined) return
     this.openConfirmation(stashDropConfirmation(selected.ref), () => this.runUiMutation(() => this.onDropStash?.(selected.oid)))

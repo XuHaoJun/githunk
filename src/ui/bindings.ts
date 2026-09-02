@@ -355,9 +355,10 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["]"], action: "scope-next", description: "next scope", contexts: ["main"], displayOnScreen: true, available: writable, menuDescription: "cycle the working-tree scope: all, staged, unstaged" },
   { keys: ["["], action: "scope-previous", description: "previous scope", contexts: ["main"], available: writable },
 
-  // ---- files pane ----
-  { keys: ["space"], action: "stage-file", description: "stage", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "stage or unstage the selected file or directory" },
-  { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "discard the file's (or directory's) changes" },
+  // Side-pane mutations consume the inclusive stable-id range when one is active; singular
+  // callbacks remain the fallback for an unselected range.
+  { keys: ["space"], action: "stage-file", description: "stage", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "stage or unstage the selected files or directory" },
+  { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "discard the selected files' (or directory's) changes" },
   { keys: ["a"], action: "stage-all", description: "all", contexts: ["files"], displayOnScreen: true, available: (model, ui) => writable(model) && onFilesTab(model, ui), menuDescription: "stage or unstage every file" },
   { keys: ["e"], action: "edit-file", description: "edit", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "open the file in an external editor" },
   { keys: ["r"], action: "mark-reviewed", description: "reviewed", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "mark the file reviewed" },
@@ -374,9 +375,9 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["files"], available: inCommit },
 
   // ---- branches pane ----
-  { keys: ["space"], action: "branch-checkout", description: "checkout", contexts: ["branches"], displayOnScreen: true, menuDescription: "switch to the branch, creating a local tracking branch if needed" },
   { keys: ["n"], action: "branch-create", description: "new", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local" || ui.selectedBranchKind === "remote-branch" },
-  { keys: ["d"], action: "branch-delete", description: "delete", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local" || ui.selectedBranchKind === "remote-branch", menuDescription: "open branch delete options" },
+  { keys: ["space"], action: "branch-checkout", description: "checkout", contexts: ["branches"], displayOnScreen: true, menuDescription: "switch to the branch, creating a local tracking branch if needed" },
+  { keys: ["d"], action: "branch-delete", description: "delete", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local" || ui.selectedBranchKind === "remote-branch", menuDescription: "open branch delete options for the selected branch or range" },
   { keys: ["r"], action: "branch-rename", description: "rename", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "local" },
   { keys: ["f"], action: "fetch-remote", description: "fetch", contexts: ["branches"], displayOnScreen: true, available: (_model, ui) => ui.selectedBranchKind === "remote", menuDescription: "fetch the selected remote" },
   { keys: ["enter"], action: "inspect", description: "view commits", contexts: ["branches"], displayOnScreen: true, menuDescription: "view commits" },
@@ -403,7 +404,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   // ---- stash pane ----
   { keys: ["space"], action: "stash-apply", description: "apply", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
   { keys: ["g"], action: "stash-pop", description: "pop", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
-  { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
+  { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"], displayOnScreen: true, available: stashOperation, menuDescription: "drop the selected stash entry or range" },
   { keys: ["enter"], action: "stash-inspect", description: "inspect", contexts: ["stash"], displayOnScreen: true, available: stashOperation },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["stash"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["stash"] },

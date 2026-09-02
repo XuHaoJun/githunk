@@ -372,4 +372,60 @@ describe("filter slash parity with lazygit", () => {
     await harness.pressKey("ESCAPE")
     expect(harness.frame()).not.toContain("Search: b")
   })
+  test("stash range drop removes selected normal rows in descending index order", async () => {
+    harness = await createShellHarness({
+      stash: true,
+      setup: async (repo) => {
+        await repo.write("a.txt", "base\n")
+        await repo.git(["add", "a.txt"])
+        await repo.git(["commit", "-m", "base"])
+        for (const message of ["oldest", "middle", "newest"]) {
+          await repo.write("a.txt", `${message}\n`)
+          await repo.git(["stash", "push", "-m", message])
+        }
+        await repo.write("a.txt", "working\n")
+      },
+    })
+    await harness.pressKey("5")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Stash drop")
+    await harness.pressKey("RETURN")
+    await harness.settle()
+
+    const remaining = (await harness.repository.git(["stash", "list"])).stdout
+    expect(remaining).toContain("oldest")
+    expect(remaining).not.toContain("middle")
+    expect(remaining).not.toContain("newest")
+  })
+
+  test("stash range drop uses the displayed filtered rows only", async () => {
+    harness = await createShellHarness({
+      setup: async (repo) => {
+        await repo.write("a.txt", "base\n")
+        await repo.git(["add", "a.txt"])
+        await repo.git(["commit", "-m", "base"])
+        for (const message of ["keep", "drop-one", "drop-two"]) {
+          await repo.write("a.txt", `${message}\n`)
+          await repo.git(["stash", "push", "-m", message])
+        }
+        await repo.write("a.txt", "working\n")
+      },
+    })
+    await harness.pressKey("5")
+    await harness.pressKey("/")
+    await harness.typeText("drop")
+    await harness.pressKey("RETURN")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey("d")
+    await harness.pressKey("RETURN")
+    await harness.settle()
+
+    const remaining = (await harness.repository.git(["stash", "list"])).stdout
+    expect(remaining).toContain("keep")
+    expect(remaining).not.toContain("drop-one")
+    expect(remaining).not.toContain("drop-two")
+  })
 })

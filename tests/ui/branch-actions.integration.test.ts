@@ -489,4 +489,94 @@ describe("branch action parity", () => {
     expect((await harness.repository.git(["worktree", "list", "--porcelain"])).stdout).toContain("wt-feature")
     expect(harness.app.view!.mainPane.box.bottomTitle).toBeUndefined()
   })
+  test("deletes a contiguous local branch range as one confirmed batch", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("base.txt", "base\n")
+        await repository.git(["add", "base.txt"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.git(["branch", "feature-a"])
+        await repository.git(["branch", "feature-b"])
+        await repository.git(["update-ref", "refs/remotes/origin/feature-a", "HEAD"])
+        await repository.git(["update-ref", "refs/remotes/origin/feature-b", "HEAD"])
+        await repository.git(["config", "branch.feature-a.remote", "origin"])
+        await repository.git(["config", "branch.feature-a.merge", "refs/heads/feature-a"])
+        await repository.git(["config", "branch.feature-b.remote", "origin"])
+        await repository.git(["config", "branch.feature-b.merge", "refs/heads/feature-b"])
+        await repository.git(["branch", "keep"])
+      },
+    })
+
+    await harness.pressKey("3")
+    await harness.pressKey("j")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("feature-a")
+    expect(harness.frame()).toContain("feature-b")
+    expect(harness.frame()).toContain("Delete local branch")
+    await harness.pressKey("c")
+    await harness.settle()
+
+    expect((await harness.repository.git(["branch", "--list", "feature-a"])).stdout).not.toContain("feature-a")
+    expect((await harness.repository.git(["branch", "--list", "feature-b"])).stdout).not.toContain("feature-b")
+    expect((await harness.repository.git(["branch", "--list", "keep"])).stdout).toContain("keep")
+  })
+
+  test("deletes local branches tracking different remotes in one remote batch", async () => {
+    harness = await createShellHarness({
+      setup: async (repository, fetchBare, pushBare) => {
+        await fetchBare.git(["config", "core.bare", "true"])
+        await pushBare.git(["config", "core.bare", "true"])
+        await repository.write("base.txt", "base\n")
+        await repository.git(["add", "base.txt"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.git(["remote", "add", "origin", fetchBare.path])
+        await repository.git(["remote", "add", "backup", pushBare.path])
+        await repository.git(["switch", "-c", "feature-a"])
+        await repository.git(["push", "-u", "origin", "feature-a"])
+        await repository.git(["switch", "master"])
+        await repository.git(["switch", "-c", "feature-b"])
+        await repository.git(["push", "-u", "backup", "feature-b"])
+        await repository.git(["switch", "master"])
+      },
+    })
+
+    await harness.pressKey("3")
+    await harness.pressKey("j")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey("d")
+    await harness.pressKey("r")
+    expect(harness.frame()).toContain("origin/feature-a")
+    expect(harness.frame()).toContain("backup/feature-b")
+    await harness.pressKey("d")
+    await harness.settle()
+
+    const origin = harness.fetchBare
+    const backup = harness.pushBare
+    if (origin === undefined || backup === undefined) throw new Error("test remotes were not created")
+    expect((await origin.git(["show-ref", "--verify", "--quiet", "refs/heads/feature-a"])).exitCode).not.toBe(0)
+    expect((await backup.git(["show-ref", "--verify", "--quiet", "refs/heads/feature-b"])).exitCode).not.toBe(0)
+  })
+
+  test("deletes a contiguous remote-child range without touching unrelated refs", async () => {
+    harness = await createShellHarness({ setup: seedTwoRemoteBranches })
+
+    await harness.pressKey("3")
+    await harness.pressKey("]")
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("feature/")
+    await harness.pressKey("d")
+    await harness.settle()
+
+    const remote = harness.fetchBare
+    if (remote === undefined) throw new Error("test remote was not created")
+    expect((await remote.git(["show-ref", "--verify", "--quiet", "refs/heads/feature/foo"])).exitCode).not.toBe(0)
+    expect((await remote.git(["show-ref", "--verify", "--quiet", "refs/heads/feature/bar"])).exitCode).not.toBe(0)
+  })
 })

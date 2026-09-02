@@ -290,11 +290,20 @@ export function createApp(options: CreateAppOptions): App {
     onStageFile: async (path) => {
       try { await controller.stageFile(path) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
+    onStageFiles: async (paths, stage) => {
+      try {
+        if (stage) await controller.stageFiles(paths)
+        else await controller.unstageFiles(paths)
+      } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
+    },
     onUnstageFile: async (path) => {
       try { await controller.unstageFile(path) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onDiscardFile: async (path, mode) => {
       try { await controller.discardFile(path, mode) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
+    },
+    onDiscardFiles: async (paths, mode) => {
+      try { await controller.discardFiles(paths, mode) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onToggleAllFiles: async () => {
       try { await controller.toggleAllFiles() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
@@ -375,6 +384,10 @@ export function createApp(options: CreateAppOptions): App {
         }
       } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
+    onDeleteBranches: async (requests) => {
+      if (!(screenController?.shouldRenderRepository() ?? true)) return
+      try { await controller.deleteBranches(requests) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
+    },
     onCheckBranchMerged: options.onCheckBranchMerged ?? ((branch, upstream) => controller.branchIsMerged(branch, upstream)),
     onDeleteBranchFromWorktree: async (path, action, request, forceWorktree) => {
       try { await controller.deleteBranchFromWorktree(path, action, request, forceWorktree) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
@@ -407,6 +420,9 @@ export function createApp(options: CreateAppOptions): App {
     },
     onDropStash: async (ref) => {
       try { await controller.dropStash(ref, { confirmed: true }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
+    },
+    onDropStashes: async (refs) => {
+      try { await controller.dropStashes(refs, { confirmed: true }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
     },
     onInspectStash: async (ref) => {
       try { await controller.inspectStash(ref) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
