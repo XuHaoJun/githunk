@@ -1257,7 +1257,6 @@ export class RootView {
     this.filesTree = setFileTreeItems(this.filesTree, model.files)
     let filesView = this.filesTabView(model)
     const rangeFocusId = this.fileRangeRefreshSelectionId
-    this.fileRangeRefreshSelectionId = undefined
     if (rangeFocusId !== undefined) {
       const withFocus = selectListRow(filesView, rangeFocusId)
       if (withFocus.selectedId === rangeFocusId) filesView = withFocus
@@ -3829,6 +3828,7 @@ export class RootView {
     const promise = operation()
     if (promise === undefined) {
       this.mutationInFlight = false
+      this.fileRangeRefreshSelectionId = undefined
       if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
       return
     }
@@ -3839,6 +3839,7 @@ export class RootView {
       this.mutationInFlight = false
       this.clearTransientMenus()
       if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
+      this.fileRangeRefreshSelectionId = undefined
       this.onMutationSettled?.()
     })
   }

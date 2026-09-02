@@ -934,12 +934,24 @@ describe("commit files transient context", () => {
         await repository.write("unrelated.txt", "unrelated changed\n")
       },
     })
+    const controller = harness.app.controller
+    const originalStageFiles = controller.stageFiles.bind(controller)
+    let releaseStage: () => void = () => undefined
+    const stageGate = new Promise<void>((resolve) => { releaseStage = resolve })
+    controller.stageFiles = async (paths) => {
+      await stageGate
+      await originalStageFiles(paths)
+    }
+
 
     await harness.pressKey("2")
     await harness.pressKey("j")
     await harness.pressKey("v")
     await harness.pressKey("j")
     await harness.pressKey(" ")
+    expect(harness.app.view!.isMutating).toBe(true)
+    await harness.pressKey("j")
+    releaseStage()
     await harness.settle()
 
     const staged = (await harness.repository.git(["diff", "--cached", "--name-only"])).stdout.trim().split("\n").filter(Boolean)
