@@ -320,6 +320,8 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
 
   const sameIdentity = previousIdentity !== undefined && previousIdentity === nextIdentity
   const identicalText = previousText !== undefined && previousText === nextText
+  const previousWasDocument = documents.has(pane)
+  const replacingDocument = previousWasDocument && content.document === undefined
 
   // Update installed tracking before rendering so subsequent installs compare correctly
   installedContents.set(pane, content)
@@ -417,7 +419,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
 
   if (content.ansi !== undefined) {
     documents.delete(pane)
-    if (!sameIdentity || !identicalText) clearSelection()
+    if (replacingDocument || !sameIdentity || !identicalText) clearSelection()
     // wrap either (pkg/gui/views.go: the Normal view leaves `Wrap` false for command output).
     pane.text.wrapMode = "none"
     releaseDiffText(pane.text)
@@ -428,8 +430,8 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     return
   }
   documents.delete(pane)
-  if (!sameIdentity || !identicalText) clearSelection()
-  if (!sameIdentity || !identicalText) updatePlain(pane, buildPlainContent(content))
+  if (replacingDocument || !sameIdentity || !identicalText) clearSelection()
+  if (replacingDocument || !sameIdentity || !identicalText) updatePlain(pane, buildPlainContent(content))
   pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
   pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
   pane.syncScrollbar()

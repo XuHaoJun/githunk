@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { MainPreviewGate } from "../../src/ui/main-preview"
 import { createTestRenderer } from "@opentui/core/testing"
-import { createMainPane, getMainDocument, installMainContent, setMainLoading } from "../../src/ui/panes/main-pane"
+import { createMainPane, getMainDiffLineRangeState, getMainDocument, installMainContent, setMainDiffLineRangeState, setMainLoading } from "../../src/ui/panes/main-pane"
 import { parseDiff } from "../../src/domain/diff/parse"
 import type { CommitDetails } from "../../src/domain/commit"
 import type { MainPaneContent } from "../../src/ui/panes/main-pane"
+import { toggleDiffLineRange } from "../../src/domain/diff/line-selection"
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -189,6 +190,32 @@ describe("Main pane lifecycle", () => {
     expect(getMainDocument(pane)).toBeDefined()
     installMainContent(pane, { source: "commit", stableId: "plain", label: "Plain", plainText: "No patch loaded" }, false)
     expect(getMainDocument(pane)).toBeUndefined()
+    setup.renderer.destroy()
+  })
+
+  test("clears diff state when same identity transitions to matching plain content", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
+    installMainContent(pane, { source: "commit", stableId: "same", label: "Diff", document }, false)
+    const range = getMainDiffLineRangeState(pane)
+    expect(range).toBeDefined()
+    setMainDiffLineRangeState(pane, toggleDiffLineRange(range!))
+    expect(getMainDiffLineRangeState(pane)?.rangeMode).toBe("sticky")
+    installMainContent(pane, { source: "commit", stableId: "same", label: "Plain", plainText: document.text }, false)
+    expect(getMainDocument(pane)).toBeUndefined()
+    expect(getMainDiffLineRangeState(pane)).toBeUndefined()
     setup.renderer.destroy()
   })
 
