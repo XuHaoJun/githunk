@@ -54,6 +54,31 @@ describe("GitMutations", () => {
     ].join("\n"))
   })
 
+  test("stages a batch of files and refreshes once", async () => {
+    await repo.write("first.txt", "first\n")
+    await repo.write("second.txt", "second\n")
+    let refreshes = 0
+    const mutations = new GitMutations(runner, async () => { refreshes += 1 })
+
+    await mutations.stageFiles(["first.txt", "second.txt"])
+
+    expect((await repo.git(["diff", "--cached", "--name-only"])).stdout.split("\n").filter(Boolean)).toEqual(["first.txt", "second.txt"])
+    expect(refreshes).toBe(1)
+  })
+
+  test("discards a batch of files and refreshes once", async () => {
+    await repo.write("file.txt", "base\nchanged\n")
+    await repo.write("untracked.txt", "remove me\n")
+    let refreshes = 0
+    const mutations = new GitMutations(runner, async () => { refreshes += 1 })
+
+    await mutations.discardFiles(["file.txt", "untracked.txt"], "all")
+
+    expect((await repo.git(["status", "--short"])).stdout).toBe("")
+    expect(refreshes).toBe(1)
+  })
+
+
   test("serially stages a file and then unstages it without losing the change", async () => {
     await repo.write("file.txt", "base\nchanged\n")
     const mutations = new GitMutations(runner)

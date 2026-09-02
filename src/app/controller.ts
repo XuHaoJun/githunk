@@ -563,6 +563,21 @@ export class AppController {
       }
     })
   }
+
+  async dropStashes(refs: readonly string[], options: StashDropOptions): Promise<void> {
+    if (!this.ensureStashOperation()) return
+    this.logAction(LOG_ACTIONS.dropStash)
+    await this.runMutation(async () => {
+      for (const ref of refs) {
+        await this.requireRunnerOperation((runner) => dropGitStash(runner, ref, options))
+        if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
+          this.priorStashStateForRefresh = this.currentState
+          this.currentState = { ...this.currentState, reviewTarget: { kind: "working-tree", scope: "all" }, title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch) }
+        }
+      }
+    })
+  }
+
   async inspectStash(ref: string): Promise<void> {
     if (!this.ensureStashOperation()) return
     await this.mutationQueue.run(async () => {
@@ -634,6 +649,41 @@ export class AppController {
     this.logAction(LOG_ACTIONS.deleteLocalBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => deleteBranch(runner, branch, options)))
   }
+
+  async deleteBranches(requests: readonly BranchDeleteRequest[]): Promise<void> {
+    const affectedRemotes = new Set<string>()
+    await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
+      for (const request of requests) {
+        if (request.mode === "local") {
+          this.logAction(LOG_ACTIONS.deleteLocalBranch)
+          await deleteBranch(runner, request.branch, request.force ? { force: true, confirmed: true } : {})
+          continue
+        }
+        if (request.remote === undefined) {
+          if (request.mode === "local-and-remote") throw new Error("local and remote deletion requires an upstream")
+          throw new Error("remote deletion requires a remote")
+        }
+        const remoteBranch = request.remoteBranch ?? request.branch
+        affectedRemotes.add(request.remote)
+        if (request.mode === "remote") {
+          this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+          await deleteRemoteGitBranch(runner, request.remote, remoteBranch)
+          continue
+        }
+        if (request.remoteBranch === undefined) throw new Error("local and remote deletion requires an upstream")
+        const merged = await isGitBranchMerged(runner, request.branch)
+        if (!merged && request.force !== true) {
+          throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
+        }
+        this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+        await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
+        this.logAction(LOG_ACTIONS.deleteLocalBranch)
+        await deleteBranch(runner, request.branch, { force: true, confirmed: true })
+      }
+    }))
+    for (const remote of affectedRemotes) await this.browseRemote(remote)
+  }
+
 
   async deleteRemoteBranch(remote: string, branch: string): Promise<void> {
     this.logAction(LOG_ACTIONS.deleteRemoteBranch)
@@ -905,6 +955,19 @@ export class AppController {
     await this.runMutation(() => this.mutations?.stageFile(path))
   }
 
+  async stageFiles(paths: readonly string[]): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.stageAllFiles)
+    await this.runMutation(() => this.mutations?.stageFiles(paths))
+  }
+
+  async unstageFiles(paths: readonly string[]): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.unstageAllFiles)
+    await this.runMutation(() => this.mutations?.unstageFiles(paths))
+  }
+
+
   async unstageFile(path: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
     this.logAction(LOG_ACTIONS.unstageFile)
@@ -928,6 +991,13 @@ export class AppController {
     this.logAction(mode === "all" ? LOG_ACTIONS.discardAllChangesInFile : LOG_ACTIONS.discardAllUnstagedChangesInFile)
     await this.runMutation(() => this.mutations?.discardFile(path, mode))
   }
+
+  async discardFiles(paths: readonly string[], mode: DiscardFileMode): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(mode === "all" ? LOG_ACTIONS.discardAllChangesInFile : LOG_ACTIONS.discardAllUnstagedChangesInFile)
+    await this.runMutation(() => this.mutations?.discardFiles(paths, mode))
+  }
+
 
 
   async toggleAllFiles(): Promise<void> {

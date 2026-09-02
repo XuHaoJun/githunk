@@ -37,6 +37,25 @@ export class GitMutations {
     })
   }
 
+  async stageFiles(paths: readonly string[]): Promise<void> {
+    return this.queue.run(async () => {
+      for (const path of paths) {
+        await this.runner.run(["add", "--", path])
+      }
+      await this.refresh()
+    })
+  }
+
+  async unstageFiles(paths: readonly string[]): Promise<void> {
+    return this.queue.run(async () => {
+      for (const path of paths) {
+        await this.runner.run(["restore", "--staged", "--", path])
+      }
+      await this.refresh()
+    })
+  }
+
+
   async unstageFile(path: string): Promise<void> {
     return this.queue.run(async () => {
       await this.runner.run(["restore", "--staged", "--", path])
@@ -55,9 +74,23 @@ export class GitMutations {
     })
   }
 
+  async discardFiles(paths: readonly string[], mode: DiscardFileMode): Promise<void> {
+    return this.queue.run(async () => {
+      for (const path of paths) {
+        if (mode === "all") {
+          await this.runner.run(["restore", "--staged", "--", path], { acceptedExitCodes: [0, 1] })
+        }
+        await this.runner.run(["restore", "--", path], { acceptedExitCodes: [0, 1] })
+        await this.runner.run(["clean", "-f", "-d", "--", path])
+      }
+      await this.refresh()
+    })
+  }
   async applySelection(
     document: DiffDocument,
     includedLineIndexes: readonly number[],
+
+
     options: SelectionMutationOptions = { reverse: false, wholeFile: false },
   ): Promise<void> {
     return this.queue.run(async () => {
