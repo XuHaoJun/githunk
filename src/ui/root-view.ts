@@ -1831,6 +1831,19 @@ export class RootView {
     if (state?.rangeMode !== "non-sticky") return
     setMainDiffLineRangeState(this.panes.main, clearDiffLineRange(state))
   }
+  private adjustMainLineCursor(delta: number): void {
+    const state = getMainDiffLineRangeState(this.panes.main)
+    if (state === undefined || state.lineCount <= 0) return
+    const selectedIndex = Math.max(0, Math.min(state.lineCount - 1, state.selectedIndex + Math.trunc(delta)))
+    if (selectedIndex !== state.selectedIndex) setMainDiffLineRangeState(this.panes.main, { ...state, selectedIndex })
+  }
+
+  private selectMainLineCursor(edge: "top" | "bottom"): void {
+    const state = getMainDiffLineRangeState(this.panes.main)
+    if (state === undefined || state.lineCount <= 0) return
+    const selectedIndex = edge === "top" ? 0 : state.lineCount - 1
+    if (selectedIndex !== state.selectedIndex) setMainDiffLineRangeState(this.panes.main, { ...state, selectedIndex })
+  }
 
   private scrollMainBy(delta: number): void {
     this.clearNonStickyMainRange()
@@ -1850,7 +1863,9 @@ export class RootView {
   private actionPage(direction: "next" | "previous"): void {
     if (this.focusManager.active === "main") {
       // `ViewSelectionController.handlePrevPage`/`handleNextPage` — view_selection_controller.go:72-78.
-      this.scrollMainBy(direction === "next" ? this.mainPageDelta : -this.mainPageDelta)
+      const delta = direction === "next" ? this.mainPageDelta : -this.mainPageDelta
+      this.adjustMainLineCursor(delta)
+      this.scrollMainBy(delta)
       return
     }
     const step = this.focusedPageStep()
@@ -1868,6 +1883,7 @@ export class RootView {
     if (this.focusManager.active === "main") {
       // `handleGotoTop`/`handleGotoBottom` scroll by the whole content height, which the pane's
       // own clamping turns into "as far as it goes" — view_selection_controller.go:81-97.
+      this.selectMainLineCursor(edge)
       this.scrollMainBy(edge === "bottom" ? this.panes.main.text.scrollHeight : -this.panes.main.text.scrollHeight)
       return
     }
