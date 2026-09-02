@@ -99,6 +99,7 @@ describe("full-row list selection", () => {
 
   test("drag paints the inclusive list range", async () => {
     harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
+
     const view = harness.app.view as unknown as ListViewProbe
     await harness.pressKey("4")
     const geometry = harness.paneTextGeometry("commits")
@@ -111,6 +112,28 @@ describe("full-row list selection", () => {
     expect(range.startId).toBe(firstId)
     expect(range.endId).toBe(view.selectedListId("commits"))
     expect(range.endId).not.toBe(firstId)
+  })
+  test("Files refresh preserves range after endpoint focus synchronization", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("a.txt", "a\n")
+        await repository.write("b.txt", "b\n")
+        await repository.git(["add", "a.txt", "b.txt"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("a.txt", "aa\n")
+        await repository.write("b.txt", "bb\n")
+      },
+    })
+    const view = harness.app.view as unknown as ListViewProbe
+    await harness.pressKey("2")
+    await harness.pressKey("j")
+    await harness.pressKey("v")
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    const before = view.selectedListRange("files")
+    expect(before.mode).toBe("sticky")
+    await harness.app.refresh()
+    await harness.flush()
+    expect(view.selectedListRange("files")).toEqual(before)
   })
 
   test("empty has no selection", async () => {

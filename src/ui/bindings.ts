@@ -363,6 +363,8 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["r"], action: "mark-reviewed", description: "reviewed", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "mark the file reviewed" },
   { keys: ["enter"], action: "inspect", description: "open", contexts: ["files"], displayOnScreen: true, menuDescription: "open the file in the main pane, or collapse a directory" },
   // pkg/config/user_config.go:1100-1106 — ToggleTreeView, CollapseAll, ExpandAll.
+  { keys: ["`"], action: "toggle-file-tree", description: "tree view", contexts: ["files"], available: onFilesTab, menuDescription: "toggle between the file tree and a flat list" },
+  { keys: ["-"], action: "collapse-files", description: "collapse all", contexts: ["files"], available: onFilesTab, menuDescription: "collapse every directory in the file tree" },
   { keys: ["v"], action: "toggle-range-select", description: "range", contexts: ["files", "branches", "commits", "stash"] },
   { keys: ["shift+up"], action: "range-select-up", description: "range up", contexts: ["files", "branches", "commits", "stash"] },
   { keys: ["shift+down"], action: "range-select-down", description: "range down", contexts: ["files", "branches", "commits", "stash"] },

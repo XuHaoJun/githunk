@@ -313,6 +313,11 @@ describe("GITHUNK_BINDINGS", () => {
     expect(ACTIONS).toContain("scope-previous")
   })
 
+  test("keeps Files tree controls alongside range selection", () => {
+    expect(registry.dispatch({ name: "`" }, { context: "files", model: model(), ui: ui() })).toBe("toggle-file-tree")
+    expect(registry.dispatch({ name: "-" }, { context: "files", model: model(), ui: ui() })).toBe("collapse-files")
+  })
+
   test("declares paging, jumping, main scrolling, screen modes and the menu", () => {
     expect(registry.dispatch({ name: "." })).toBe("page-next")
     expect(registry.dispatch({ name: "," })).toBe("page-previous")

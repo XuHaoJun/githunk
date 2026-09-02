@@ -1179,7 +1179,12 @@ export class RootView {
     if (model.focusId !== undefined) {
       // The controller tracks a logical path; tree rows may carry the root item's `./` prefix.
       const focusRowId = fileTreeRows(this.filesTree).find((row) => row.kind === "file" && row.path === model.focusId)?.id
-      if (focusRowId !== undefined && filesView.rows.some((row) => row.id === focusRowId)) {
+      if (
+        focusRowId !== undefined &&
+        filesView.rows.some((row) => row.id === focusRowId) &&
+        filesView.rangeMode === "none" &&
+        filesView.rangeStartId === undefined
+      ) {
         const withFocus = selectListRow(filesView, focusRowId)
         if (withFocus.selectedId === focusRowId) filesView = withFocus
       }
@@ -1500,6 +1505,10 @@ export class RootView {
       return
     }
     if (paneId === "branches") {
+      this.branchActionGeneration += 1
+      this.invalidateBranchCommitsRequest()
+      this.invalidateRemoteCheckout()
+      this.panes.branches.box.bottomTitle = undefined
       if (this.branchesPanel.child !== undefined) {
         this.branchesPanel = { ...this.branchesPanel, child: { ...this.branchesPanel.child, view: state } }
       } else {
@@ -1518,6 +1527,18 @@ export class RootView {
     }
     this.stashState = state
   }
+  private syncListSelectionAfterChange(paneId: ListPaneId): void {
+    if (paneId !== "files" || this.filesPanel.activeTab !== "files") {
+      this.syncPreviewForFocus(paneId)
+      return
+    }
+    const row = this.selectedFileRow()
+    this.panes.files.box.bottomTitle = row?.path ?? "No files"
+    // A directory is not a review target: telling the controller about it would file a
+    // review status under a path that is not a file.
+    if (row?.kind === "file") this.onSelectFile?.(row.path)
+    this.mainGate.installSynchronous(this.presentFilesContent(this.model))
+  }
 
   private actionToggleRangeSelection(): void {
     const paneId = this.focusManager.active
@@ -1529,7 +1550,7 @@ export class RootView {
     this.updateActiveListState(paneId, next)
     this.renderListPane(paneId)
     this.revealListRow(paneId, this.panes[paneId], next.selectedIndex)
-    this.syncPreviewForFocus(paneId)
+    this.syncListSelectionAfterChange(paneId)
     this.root.requestRender()
   }
 
@@ -1543,7 +1564,7 @@ export class RootView {
     this.updateActiveListState(paneId, next)
     this.renderListPane(paneId)
     this.revealListRow(paneId, this.panes[paneId], next.selectedIndex)
-    this.syncPreviewForFocus(paneId)
+    this.syncListSelectionAfterChange(paneId)
     this.root.requestRender()
   }
 
@@ -4256,7 +4277,7 @@ export class RootView {
                   this.updateActiveListState(owner.paneId, next)
                   this.renderListPane(owner.paneId)
                   this.revealListRow(owner.paneId, pane, next.selectedIndex)
-                  this.syncPreviewForFocus(owner.paneId)
+                  this.syncListSelectionAfterChange(owner.paneId)
                   this.root.requestRender()
                 }
               }
@@ -4352,6 +4373,7 @@ export class RootView {
         }
         if (tabsGeometry === undefined && tabWindow !== undefined && event.y === tabWindow.y0) {
           this.pendingClick = undefined
+          this.lastSplitterPress = undefined
           if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
           event.preventDefault()
           event.stopPropagation()
