@@ -17,7 +17,11 @@ function clampIndex(index: number, lineCount: number): number {
 
 function withSelection(state: DiffLineRangeState, selectedIndex: number): DiffLineRangeState {
   const selected = clampIndex(selectedIndex, state.lineCount)
-  if (state.rangeStartIndex === undefined) return { ...state, selectedIndex: selected }
+  // Preserve invariant: mode "none" implies no rangeStartIndex, even if a stale
+  // index was carried via spread from a prior range (e.g. through adjustMainLineCursor).
+  if (state.rangeMode === "none" && state.rangeStartIndex !== undefined) {
+    return { lineCount: state.lineCount, selectedIndex: selected, rangeMode: "none" }
+  }
   return { ...state, selectedIndex: selected }
 }
 
@@ -65,6 +69,7 @@ export function expandDiffLineRange(state: DiffLineRangeState, direction: "next"
     if (nextIndex === current) return state
     return { ...state, selectedIndex: nextIndex }
   }
+  if (nextIndex === current) return state
   return {
     ...state,
     selectedIndex: nextIndex,

@@ -4271,6 +4271,7 @@ export class RootView {
     // Same for status, etc.: keep whatever is installed.
   }
   private moveMainCursor(direction: "next" | "previous"): void {
+    this.clearNonStickyMainRange()
     const pane = this.panes.main
     const document = getMainDocument(pane)
     if (!document) {
@@ -4289,7 +4290,6 @@ export class RootView {
     if (targetLine !== undefined) this.revealListRow("main", pane, targetLine)
     this.clearTransientMenus()
     const location = target.hunkIndex === undefined ? "file" : `hunk ${target.hunkIndex + 1}`
-    pane.box.bottomTitle = `Cursor file ${target.fileIndex + 1}, ${location}`
     this.root.requestRender()
   }
   private copyMainMode(mode: CopyMode): void {
