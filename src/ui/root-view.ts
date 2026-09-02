@@ -846,9 +846,34 @@ export class RootView {
     const add = (file: ChangedFile): void => {
       if (!filesByPath.has(file.path)) filesByPath.set(file.path, file)
     }
+    // Lazygit's files_controller.go:569-600 expands directories to individual
+    // visible files when filtering, so a filtered directory row does not stage
+    // files hidden by the filter (pkg/gui/filetree/file_tree_view_model.go:270).
+    const filesFilter = this.getFilterForKey(this.filterKey("files", "files"))
+    const isFiltering = filesFilter.length > 0
+    let visiblePaths: ReadonlySet<string> | undefined
+    if (isFiltering) {
+      const active = this.filesView()
+      if (active !== undefined) {
+        const treeById = new Map(fileTreeRows(this.filesTree).map((row) => [row.id, row] as const))
+        const paths = new Set<string>()
+        for (const listRow of active.rows) {
+          const treeRow = treeById.get(listRow.id)
+          if (treeRow?.kind === "file" && treeRow.payload !== undefined) paths.add(treeRow.payload.path)
+        }
+        visiblePaths = paths
+      }
+    }
     for (const row of rows) {
-      if (row.kind === "directory") forEachFile(row.node, add)
-      else if (row.payload !== undefined) add(row.payload)
+      if (row.kind === "directory") {
+        if (visiblePaths !== undefined) {
+          forEachFile(row.node, (file) => {
+            if (visiblePaths!.has(file.path)) add(file)
+          })
+        } else {
+          forEachFile(row.node, add)
+        }
+      } else if (row.payload !== undefined) add(row.payload)
     }
     return { files: [...filesByPath.values()], paths: [...filesByPath.keys()] }
   }
