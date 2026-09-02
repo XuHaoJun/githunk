@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { MainPreviewGate } from "../../src/ui/main-preview"
 import { createTestRenderer } from "@opentui/core/testing"
-import { createMainPane, installMainContent, setMainLoading } from "../../src/ui/panes/main-pane"
-import type { MainPaneContent } from "../../src/ui/panes/main-pane"
+import { createMainPane, getMainDocument, installMainContent, setMainLoading } from "../../src/ui/panes/main-pane"
+import { parseDiff } from "../../src/domain/diff/parse"
 import type { CommitDetails } from "../../src/domain/commit"
 
 function deferred<T>() {
@@ -162,6 +162,32 @@ describe("Main pane lifecycle", () => {
     expect(pane.text.scrollX).toBe(0)
     expect(typeof textView.hasSelection === "function" ? textView.hasSelection() : false).toBe(false)
 
+    setup.renderer.destroy()
+  })
+
+  test("clears stale document when diff transitions to plain content", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    installMainContent(pane, {
+      source: "commit",
+      stableId: "diff",
+      label: "Diff",
+      document: parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n"),
+    }, false)
+    expect(getMainDocument(pane)).toBeDefined()
+    installMainContent(pane, { source: "commit", stableId: "plain", label: "Plain", plainText: "No patch loaded" }, false)
+    expect(getMainDocument(pane)).toBeUndefined()
     setup.renderer.destroy()
   })
 

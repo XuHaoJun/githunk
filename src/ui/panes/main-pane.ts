@@ -427,6 +427,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     pane.syncScrollbar()
     return
   }
+  documents.delete(pane)
   if (!sameIdentity || !identicalText) clearSelection()
   if (!sameIdentity || !identicalText) updatePlain(pane, buildPlainContent(content))
   pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
