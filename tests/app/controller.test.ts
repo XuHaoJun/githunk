@@ -227,6 +227,45 @@ describe("AppController", () => {
     expect(staged).toEqual([["first.txt", "second.txt"]])
     expect(loads).toBe(2)
   })
+  test("refreshes controller state after a failed file batch", async () => {
+    const runner = new GitRunner({ cwd: "/tmp/repo" })
+    let changed = false
+    let loads = 0
+    const mutations = {
+      stageFiles: async () => {
+        changed = true
+        throw new Error("batch failed")
+      },
+      unstageFiles: async () => undefined,
+      discardFiles: async () => undefined,
+    } as unknown as GitMutations
+    const controller = new AppController({
+      runner,
+      mutations,
+      load: async (target) => {
+        loads += 1
+        return { ...snapshot(target.scope, changed ? "changed patch" : "old patch"), files: changed ? [{
+          path: "changed.txt", indexStatus: "M", worktreeStatus: ".", untracked: false, conflicted: false, additions: 1, deletions: 0,
+        }] : [] }
+      },
+      loadCommits: async () => [],
+      loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
+      loadStashes: async () => [],
+      loadTags: async () => [],
+      loadReflog: async () => [],
+      loadWorktrees: async () => [],
+      loadSubmodules: async () => [],
+    })
+
+    await controller.refresh()
+    await expect(controller.stageFiles(["changed.txt"])).rejects.toThrow("batch failed")
+
+    expect(loads).toBe(2)
+    expect(controller.state.files[0]?.path).toBe("changed.txt")
+    expect(controller.state.patches[0]?.text).toBe("changed patch")
+    expect(controller.state.banner).toBe("batch failed")
+  })
+
 
 
   test("refresh publishes the worktree and submodule listings", async () => {
