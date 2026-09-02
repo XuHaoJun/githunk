@@ -428,4 +428,28 @@ describe("filter slash parity with lazygit", () => {
     expect(remaining).not.toContain("drop-one")
     expect(remaining).not.toContain("drop-two")
   })
+  test("cancelling a stash range drop confirmation preserves both endpoints", async () => {
+    harness = await createShellHarness({
+      setup: async (repo) => {
+        await repo.write("a.txt", "base\n")
+        await repo.git(["add", "a.txt"])
+        await repo.git(["commit", "-m", "base"])
+        for (const message of ["oldest", "middle", "newest"]) {
+          await repo.write("a.txt", `${message}\n`)
+          await repo.git(["stash", "push", "-m", message])
+        }
+        await repo.write("a.txt", "working\n")
+      },
+    })
+    await harness.pressKey("5")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    const before = harness.app.view!.selectedListRange("stash")
+    expect(before.mode).toBe("sticky")
+    await harness.pressKey("d")
+    expect(harness.app.view!.actionMenuOpen).toBe(true)
+    await harness.pressKey("ESCAPE")
+
+    expect(harness.app.view!.selectedListRange("stash")).toEqual(before)
+  })
 })

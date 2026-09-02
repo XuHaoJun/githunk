@@ -950,6 +950,7 @@ describe("commit files transient context", () => {
     await harness.pressKey("j")
     await harness.pressKey(" ")
     expect(harness.app.view!.isMutating).toBe(true)
+    expect(harness.app.view!.selectedListRange("files").mode).toBe("none")
     await harness.pressKey("j")
     releaseStage()
     await harness.settle()
@@ -1048,5 +1049,28 @@ describe("commit files transient context", () => {
 
     expect((await harness.repository.git(["diff", "--name-only"])).stdout.trim()).toBe("")
     expect((await harness.repository.git(["diff", "--cached", "--name-only"])).stdout.trim().split("\n").filter(Boolean).sort()).toEqual(["dir/a.txt", "dir/b.txt"])
+  })
+  test("cancelling a Files discard range menu preserves both endpoints", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("dir/a.txt", "base a\n")
+        await repository.write("dir/b.txt", "base b\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("dir/a.txt", "changed a\n")
+        await repository.write("dir/b.txt", "changed b\n")
+      },
+    })
+
+    await harness.pressKey("2")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    const before = harness.app.view!.selectedListRange("files")
+    expect(before.mode).toBe("sticky")
+    await harness.pressKey("d")
+    expect(harness.app.view!.actionMenuOpen).toBe(true)
+    await harness.pressKey("ESCAPE")
+
+    expect(harness.app.view!.selectedListRange("files")).toEqual(before)
   })
 })

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { TextAttributes, type RGBA } from "@opentui/core"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import type { TempRepository } from "../helpers/temp-repository"
-import { getMainDiffLineRangeState, getMainDiffLineSelection } from "../../src/ui/panes/main-pane"
+import { getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument } from "../../src/ui/panes/main-pane"
 
 
 /** The main pane's spans on `row`, clipped to its own text window, in paint order. */
@@ -229,6 +229,80 @@ describe("main pane keyboard line ranges", () => {
     await harness.settle()
     const worktree = await harness.repository.git(["diff", "--", "a.txt"])
     expect(worktree.stdout).not.toContain("TWO")
+  })
+  test("batches a keyboard range spanning multiple untracked files", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("base.txt", "base\n")
+        await repository.git(["add", "base.txt"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("a.txt", "untracked a\n")
+        await repository.write("b.txt", "untracked b\n")
+      },
+    })
+    await useUnstagedScope()
+    await harness.pressKey("0")
+    await harness.pressKey("v")
+
+    const view = harness.app.view!
+    const document = getMainDocument(view.mainPane)
+    expect(document).toBeDefined()
+    let fileIndexes = new Set<number>()
+    for (let step = 0; step < 40; step += 1) {
+      const selected = getMainDiffLineSelection(view.mainPane)
+      fileIndexes = new Set((selected?.indexes ?? []).flatMap((index) => {
+        const fileIndex = document?.lines[index]?.fileIndex
+        return fileIndex === undefined ? [] : [fileIndex]
+      }))
+      if (fileIndexes.size >= 2) break
+      await harness.pressKey("ARROW_DOWN", { shift: true })
+    }
+    expect(fileIndexes.size).toBe(2)
+
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Confirm discard")
+    await harness.pressKey("d")
+    await harness.settle()
+
+    const status = (await harness.repository.git(["status", "--short"])).stdout
+    expect(status).not.toContain("?? a.txt")
+    expect(status).not.toContain("?? b.txt")
+  })
+
+  test("rejects a keyboard range mixing tracked and untracked files", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("tracked.txt", "base\n")
+        await repository.git(["add", "tracked.txt"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("tracked.txt", "tracked change\n")
+        await repository.write("untracked.txt", "untracked change\n")
+      },
+    })
+    await useUnstagedScope()
+    await harness.pressKey("0")
+    await harness.pressKey("v")
+
+    const view = harness.app.view!
+    const document = getMainDocument(view.mainPane)
+    expect(document).toBeDefined()
+    let fileIndexes = new Set<number>()
+    for (let step = 0; step < 40; step += 1) {
+      const selected = getMainDiffLineSelection(view.mainPane)
+      fileIndexes = new Set((selected?.indexes ?? []).flatMap((index) => {
+        const fileIndex = document?.lines[index]?.fileIndex
+        return fileIndex === undefined ? [] : [fileIndex]
+      }))
+      if (fileIndexes.size >= 2) break
+      await harness.pressKey("ARROW_DOWN", { shift: true })
+    }
+    expect(fileIndexes.size).toBe(2)
+
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("tracked and untracked")
+    expect(harness.app.view!.actionMenuOpen).toBe(false)
+    expect((await harness.repository.git(["diff", "--", "tracked.txt"])).stdout).toContain("tracked change")
+    expect((await harness.repository.git(["status", "--short"])).stdout).toContain("?? untracked.txt")
   })
 
   test("ordinary main movement cancels a non-sticky range", async () => {

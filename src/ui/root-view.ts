@@ -2014,12 +2014,12 @@ export class RootView {
       const unstagedReason = !hasStaged || !hasUnstaged
         ? "The selected items don't have both staged and unstaged changes."
         : undefined
-      this.collapseActiveListRange("files")
       this.actionMenu.openMenu("Discard changes", [
         {
           key: "x",
           label: "Discard all changes",
           onPress: () => {
+            this.collapseActiveListRange("files")
             this.fileRangeRefreshSelectionId = firstRow.id
             this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "all"))
           },
@@ -2028,6 +2028,7 @@ export class RootView {
           key: "u",
           label: "Discard unstaged changes",
           onPress: () => {
+            this.collapseActiveListRange("files")
             this.fileRangeRefreshSelectionId = firstRow.id
             this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "unstaged"))
           },
@@ -2253,7 +2254,6 @@ export class RootView {
 
   private actionDiscardSelection(): void {
     if (this.mutationInFlight) return
-    if (this.onDiscardSelection === undefined) return
     if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "all") {
       this.panes.main.box.bottomTitle = "Line actions disabled in All scope; press ] to choose staged or unstaged"
       return
@@ -2268,6 +2268,26 @@ export class RootView {
     const targetFile = target === undefined || document === undefined ? undefined : document.files[target.fileIndex]
     const path = targetFile?.newPath !== undefined && targetFile.newPath !== "/dev/null" ? targetFile.newPath : targetFile?.oldPath ?? "selected changes"
     const modelFile = this.model.files.find((file) => file.path === path)
+    const paths = selected === undefined ? [] : this.selectionPaths(selected.document, selected.indexes)
+    const selectedFiles = paths.map((selectedPath) => this.model.files.find((file) => file.path === selectedPath))
+    const untrackedCount = selectedFiles.filter((file) => file?.untracked === true).length
+    if (paths.length > 1 && untrackedCount > 0) {
+      if (selectedFiles.length !== paths.length || untrackedCount !== paths.length) {
+        this.panes.main.box.bottomTitle = "Line actions disabled: selection spans tracked and untracked files"
+        this.root.requestRender()
+        return
+      }
+      if (this.onDiscardFiles === undefined) {
+        this.panes.main.box.bottomTitle = "Line actions disabled: batch discard is unavailable"
+        this.root.requestRender()
+        return
+      }
+      this.openConfirmation(
+        discardConfirmation(paths.join(", "), true),
+        () => this.runUiMutation(() => this.onDiscardFiles?.(paths, "all")),
+      )
+      return
+    }
     if (modelFile?.untracked && this.onDiscardFile !== undefined) {
       this.openConfirmation(discardConfirmation(path, true), () => this.runUiMutation(() => this.onDiscardFile?.(path, "all")))
       return
@@ -2285,7 +2305,7 @@ export class RootView {
       this.panes.main.box.bottomTitle = "No changed lines selected"
       return
     }
-    const paths = this.selectionPaths(selected.document, selected.indexes)
+    if (this.onDiscardSelection === undefined) return
     const label = paths.join(", ")
     this.openConfirmation(
       discardConfirmation(label || path),
@@ -2509,10 +2529,12 @@ export class RootView {
         requests.push({ mode: "remote", branch: remoteBranch, remote, remoteBranch, force: false })
       }
       if (requests.length !== rows.length || requests.length < 2 || this.onDeleteBranches === undefined) return
-      this.collapseActiveListRange("branches")
       this.openConfirmation(
         branchRemoteDeleteRangeConfirmation(names, remote),
-        () => this.runUiMutation(() => this.onDeleteBranches?.(requests)),
+        () => {
+          this.collapseActiveListRange("branches")
+          this.runUiMutation(() => this.onDeleteBranches?.(requests))
+        },
       )
       return
     }
@@ -2522,7 +2544,6 @@ export class RootView {
     const localReason = this.branchBatchBlockReason(targets, "local")
     const upstreamReason = this.branchBatchBlockReason(targets, "remote")
     const bothReason = this.branchBatchBlockReason(targets, "local-and-remote")
-    this.collapseActiveListRange("branches")
     this.actionMenu.openMenu(`Delete branches '${names.join("', '")}'?`, [
       {
         key: "c",
@@ -2568,7 +2589,10 @@ export class RootView {
       if (remoteTargets.length !== requests.length) return
       this.openConfirmation(
         branchRemoteDeleteRangeConfirmation(remoteTargets),
-        () => this.runUiMutation(() => this.onDeleteBranches?.(requests)),
+        () => {
+          this.collapseActiveListRange("branches")
+          this.runUiMutation(() => this.onDeleteBranches?.(requests))
+        },
       )
       return
     }
@@ -2576,24 +2600,28 @@ export class RootView {
     if (checkMerged === undefined) {
       const forced = this.branchDeleteRequests(targets, mode, true)
       if (mode === "local") {
+        this.collapseActiveListRange("branches")
         this.runUiMutation(() => this.onDeleteBranches?.(forced))
       } else {
         const pairTargets = targets.flatMap(({ branch, upstream }) => upstream === undefined ? [] : [{ branch: branch.name, remote: upstream.remote, remoteBranch: upstream.branch }])
         this.openConfirmation(
           branchLocalAndRemoteDeleteRangeConfirmation(pairTargets, true),
-          () => this.runUiMutation(() => this.onDeleteBranches?.(forced)),
+          () => {
+            this.collapseActiveListRange("branches")
+            this.runUiMutation(() => this.onDeleteBranches?.(forced))
+          },
         )
       }
       return
     }
     const requestGeneration = this.branchActionGeneration
+    const requestSelectedId = this.activeListView("branches")?.state.selectedId
     this.mutationInFlight = true
     this.panes.main.box.bottomTitle = "Checking branch merge state…"
     void Promise.all(targets.map(({ branch }) => checkMerged(branch.name, branch.upstream))).then((merged) => {
       this.mutationInFlight = false
       const current = this.activeListView("branches")
-      const expectedSelectedId = targets[0] === undefined ? undefined : `local:${targets[0].branch.name}`
-      if (requestGeneration !== this.branchActionGeneration || this.focusManager.active !== "branches" || current?.state.selectedId !== expectedSelectedId) {
+      if (requestGeneration !== this.branchActionGeneration || this.focusManager.active !== "branches" || current?.state.selectedId !== requestSelectedId) {
         this.panes.main.box.bottomTitle = undefined
         this.root.requestRender()
         return
@@ -2601,24 +2629,29 @@ export class RootView {
       const forceRequired = merged.some((isMerged) => !isMerged)
       const forced = this.branchDeleteRequests(targets, mode, true)
       if (mode === "local" && forceRequired) {
-        this.openConfirmation(branchForceDeleteRangeConfirmation(targets.map(({ branch }) => branch.name)), () =>
-          this.runUiMutation(() => this.onDeleteBranches?.(forced)))
+        this.openConfirmation(branchForceDeleteRangeConfirmation(targets.map(({ branch }) => branch.name)), () => {
+          this.collapseActiveListRange("branches")
+          this.runUiMutation(() => this.onDeleteBranches?.(forced))
+        })
         return
       }
       if (mode === "local") {
+        this.collapseActiveListRange("branches")
         this.runUiMutation(() => this.onDeleteBranches?.(forced))
         return
       }
       const pairTargets = targets.flatMap(({ branch, upstream }) => upstream === undefined ? [] : [{ branch: branch.name, remote: upstream.remote, remoteBranch: upstream.branch }])
       this.openConfirmation(
         branchLocalAndRemoteDeleteRangeConfirmation(pairTargets, forceRequired),
-        () => this.runUiMutation(() => this.onDeleteBranches?.(forced)),
+        () => {
+          this.collapseActiveListRange("branches")
+          this.runUiMutation(() => this.onDeleteBranches?.(forced))
+        },
       )
     }).catch((error: unknown) => {
       this.mutationInFlight = false
       const current = this.activeListView("branches")
-      const expectedSelectedId = targets[0] === undefined ? undefined : `local:${targets[0].branch.name}`
-      if (requestGeneration !== this.branchActionGeneration || this.focusManager.active !== "branches" || current?.state.selectedId !== expectedSelectedId) {
+      if (requestGeneration !== this.branchActionGeneration || this.focusManager.active !== "branches" || current?.state.selectedId !== requestSelectedId) {
         this.panes.main.box.bottomTitle = undefined
         this.root.requestRender()
         return
@@ -3156,10 +3189,12 @@ export class RootView {
       const refs = ordered.map((entry) => entry.oid)
       const labels = ordered.map((entry) => entry.ref)
       if (refs.length < 2) return
-      this.collapseActiveListRange("stash")
       this.openConfirmation(
         stashRangeDropConfirmation(labels),
-        () => this.runUiMutation(() => this.onDropStashes?.(refs)),
+        () => {
+          this.collapseActiveListRange("stash")
+          this.runUiMutation(() => this.onDropStashes?.(refs))
+        },
       )
       return
     }

@@ -260,6 +260,25 @@ describe("branch action parity", () => {
     expect(view.branchesPanel.child?.view.selectedId).toBe(`remote-branch:origin/${remaining}`)
     expect(view.renderedListText("branches")).toContain(remaining)
   })
+  test("cancelling a branch delete range menu preserves both endpoints", async () => {
+    harness = await createShellHarness()
+    await harness.repository.git(["branch", "alpha"])
+    await harness.repository.git(["branch", "beta"])
+    await harness.app.refresh()
+
+    await harness.pressKey("3")
+    await harness.pressKey("j")
+    await harness.pressKey("v")
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    const before = harness.app.view!.selectedListRange("branches")
+    expect(before.mode).toBe("sticky")
+    await harness.pressKey("d")
+    expect(harness.app.view!.actionMenuOpen).toBe(true)
+    await harness.pressKey("ESCAPE")
+
+    expect(harness.app.view!.selectedListRange("branches")).toEqual(before)
+  })
+
 
   test("rename of a tracking branch asks before opening the name prompt", async () => {
     harness = await createShellHarness({ setup: seedTrackedRemoteBranch })
