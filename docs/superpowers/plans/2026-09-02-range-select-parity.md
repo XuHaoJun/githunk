@@ -296,6 +296,7 @@ bun test tests/ui/branch-actions.integration.test.ts tests/ui/dispatch.integrati
 
 Expected: PASS for new and existing side-pane mutation flows. Commit:
 
+```bash
 git add src/ui/root-view.ts src/ui/branch-dialogs.ts src/ui/bindings.ts src/app/create-app.ts tests/ui/branch-actions.integration.test.ts tests/ui/dispatch.integration.test.ts tests/ui/filter-search.integration.test.ts tests/ui/list-selection.integration.test.ts
 git commit -m "feat: apply side-pane actions to ranges"
 ```
