@@ -75,6 +75,15 @@ describe("GitMutations", () => {
     expect((await repo.git(["diff", "--cached", "--name-only"])).stdout.trim()).toBe("first.txt")
     expect(refreshes).toBe(1)
   })
+  test("preserves the mutation error when failure refresh also rejects", async () => {
+    const mutations = new GitMutations(runner, async () => { throw new Error("refresh failed") })
+
+    const error = await mutations.stageFiles(["missing.txt", "another-missing.txt"]).catch((failure: unknown) => failure)
+
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).not.toBe("refresh failed")
+  })
+
 
   test("refreshes after a partially failed unstage batch and rethrows the mutation error", async () => {
     await repo.write("first.txt", "first\n")
