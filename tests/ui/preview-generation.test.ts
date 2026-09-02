@@ -271,6 +271,34 @@ describe("Main pane lifecycle", () => {
     setup.renderer.destroy()
   })
 
+  test("restores diff rendering when plain content enters a document with same identity", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    setup.renderer.root.add(pane.box)
+    const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
+    installMainContent(pane, { source: "commit", stableId: "same-entry", label: "Plain", plainText: document.text }, false)
+    expect(getMainDocument(pane)).toBeUndefined()
+    installMainContent(pane, { source: "commit", stableId: "same-entry", label: "Diff", document }, false)
+    expect(getMainDocument(pane)).toBe(document)
+    expect(getMainDiffLineRangeState(pane)).toBeDefined()
+    expect(pane.text.wrapMode).toBe("char")
+    await setup.flush()
+    const hasDiffColor = setup.captureSpans().lines.some((line) => line.spans.some((span) => span.fg.intent === "indexed"))
+    expect(hasDiffColor).toBe(true)
+
+    setup.renderer.destroy()
+  })
   test("loading retains prior content and selection", async () => {
     const setup = await createTestRenderer({ width: 120, height: 40 })
     const model = {

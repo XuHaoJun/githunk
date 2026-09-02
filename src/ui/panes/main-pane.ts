@@ -322,6 +322,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
   const identicalText = previousText !== undefined && previousText === nextText
   const previousWasDocument = documents.has(pane)
   const replacingDocument = previousWasDocument && content.document === undefined
+  const enteringDocument = !previousWasDocument && content.document !== undefined
 
   // Update installed tracking before rendering so subsequent installs compare correctly
   installedContents.set(pane, content)
@@ -405,7 +406,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     }
     pane.text.wrapMode = "char"
     releaseAnsiText(pane.text)
-    if (!sameIdentity || !identicalText) {
+    if (enteringDocument || !sameIdentity || !identicalText) {
       const rendered = renderDiff(doc)
       installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })
     }
