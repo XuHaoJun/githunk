@@ -945,6 +945,7 @@ describe("commit files transient context", () => {
     const staged = (await harness.repository.git(["diff", "--cached", "--name-only"])).stdout.trim().split("\n").filter(Boolean)
     expect(staged.sort()).toEqual(["dir/a.txt", "dir/b.txt"])
     expect((await harness.repository.git(["diff", "--name-only"])).stdout.trim()).toBe("unrelated.txt")
+    expect(harness.app.view!.selectedListId("files")).toBe("dir")
   })
 
   test("stages only unstaged files when a range mixes staged and unstaged statuses", async () => {

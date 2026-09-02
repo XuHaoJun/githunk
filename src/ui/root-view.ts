@@ -387,6 +387,7 @@ export class RootView {
     | { readonly mode: "branch-rename"; readonly branch: string }
     | undefined
   private mutationInFlight = false
+  private fileRangeRefreshSelectionId: string | undefined
   private pendingRemoteMismatch: { readonly selection: RemoteBranchSelection; readonly message: string } | undefined
   private remoteCheckoutGeneration = 0
   private remoteCheckoutInFlight = false
@@ -1255,7 +1256,12 @@ export class RootView {
   private refreshFilesPanel(model: AppModel): void {
     this.filesTree = setFileTreeItems(this.filesTree, model.files)
     let filesView = this.filesTabView(model)
-    if (model.focusId !== undefined) {
+    const rangeFocusId = this.fileRangeRefreshSelectionId
+    this.fileRangeRefreshSelectionId = undefined
+    if (rangeFocusId !== undefined) {
+      const withFocus = selectListRow(filesView, rangeFocusId)
+      if (withFocus.selectedId === rangeFocusId) filesView = withFocus
+    } else if (model.focusId !== undefined) {
       // The controller tracks a logical path; tree rows may carry the root item's `./` prefix.
       const focusRowId = fileTreeRows(this.filesTree).find((row) => row.kind === "file" && row.path === model.focusId)?.id
       if (
@@ -1934,6 +1940,9 @@ export class RootView {
     if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
       const rows = this.selectedFileRowsForRange()
       if (rows === undefined) return
+      const range = getListSelectionRange(active.state)
+      const firstRow = active.state.rows[range.startIndex]
+      if (firstRow === undefined) return
       const resolved = this.resolveFilesForRows(rows)
       if (resolved.files.some((file) => file.conflicted)) {
         this.panes.files.box.bottomTitle = "line actions disabled: conflicted file"
@@ -1946,6 +1955,7 @@ export class RootView {
       const paths = files.map((file) => file.path)
       if (paths.length === 0) return
       this.collapseActiveListRange("files")
+      this.fileRangeRefreshSelectionId = firstRow.id
       this.runUiMutation(() => this.onStageFiles?.(paths, stage))
       return
     }
@@ -1974,6 +1984,9 @@ export class RootView {
       if (this.onDiscardFiles === undefined) return
       const rows = this.selectedFileRowsForRange()
       if (rows === undefined) return
+      const range = getListSelectionRange(active.state)
+      const firstRow = active.state.rows[range.startIndex]
+      if (firstRow === undefined) return
       const resolved = this.resolveFilesForRows(rows)
       if (resolved.files.some((file) => file.conflicted)) {
         this.panes.files.box.bottomTitle = "line actions disabled: conflicted file"
@@ -1991,12 +2004,18 @@ export class RootView {
         {
           key: "x",
           label: "Discard all changes",
-          onPress: () => this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "all")),
+          onPress: () => {
+            this.fileRangeRefreshSelectionId = firstRow.id
+            this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "all"))
+          },
         },
         {
           key: "u",
           label: "Discard unstaged changes",
-          onPress: () => this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "unstaged")),
+          onPress: () => {
+            this.fileRangeRefreshSelectionId = firstRow.id
+            this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "unstaged"))
+          },
           ...(unstagedReason === undefined ? {} : { disabledReason: unstagedReason }),
         },
       ], resolved.paths.join(", "))
