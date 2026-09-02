@@ -2468,7 +2468,7 @@ export class RootView {
       const branch = targets.find(({ branch: candidate }) => candidate.name === worktree.branch)?.branch
       return branch === undefined ? "The selected branch is checked out by another worktree" : `Branch ${branch.name} is checked out by worktree ${worktree.name}`
     }
-    if ((mode === "local" || mode === "local-and-remote") && targets.some(({ upstream }) => upstream === undefined)) {
+    if (mode === "local-and-remote" && targets.some(({ upstream }) => upstream === undefined)) {
       return "The selected branch has no upstream (or the upstream is not stored locally)"
     }
     return undefined

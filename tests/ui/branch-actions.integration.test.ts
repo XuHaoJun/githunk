@@ -523,6 +523,33 @@ describe("branch action parity", () => {
     expect((await harness.repository.git(["branch", "--list", "keep"])).stdout).toContain("keep")
   })
 
+  test("deletes a local branch range when selected branches have no upstream", async () => {
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("base.txt", "base\n")
+        await repository.git(["add", "base.txt"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.git(["branch", "orphan-a"])
+        await repository.git(["branch", "orphan-b"])
+        await repository.git(["branch", "keep"])
+      },
+    })
+
+    await harness.pressKey("3")
+    await harness.pressKey("j")
+    await harness.pressKey("j")
+    await harness.pressKey("v")
+    await harness.pressKey("j")
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Delete local branches")
+    await harness.pressKey("c")
+    await harness.settle()
+
+    expect((await harness.repository.git(["branch", "--list", "orphan-a"])).stdout).not.toContain("orphan-a")
+    expect((await harness.repository.git(["branch", "--list", "orphan-b"])).stdout).not.toContain("orphan-b")
+    expect((await harness.repository.git(["branch", "--list", "keep"])).stdout).toContain("keep")
+  })
+
   test("deletes local branches tracking different remotes in one remote batch", async () => {
     harness = await createShellHarness({
       setup: async (repository, fetchBare, pushBare) => {
