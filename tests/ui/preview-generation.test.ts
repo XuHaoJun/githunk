@@ -14,7 +14,7 @@ function deferred<T>() {
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
   return { promise, resolve, reject }
 }
-
+import { createDiffLineRangeState, toggleDiffLineRange } from "../../src/domain/diff/line-selection"
 function presentCommit(details: CommitDetails): MainPaneContent {
   return {
     source: "commit",
@@ -268,6 +268,33 @@ describe("Main pane lifecycle", () => {
     expect(pane.text.plainText).toBe(document.text)
     if (hadNativeSelection && typeof textView.hasSelection === "function") expect(textView.hasSelection()).toBe(false)
     if (nativeBefore !== undefined && typeof textView.getSelection === "function") expect(textView.getSelection()).toBeNull()
+    setup.renderer.destroy()
+  })
+
+  test("starts a fresh range when a plain preview enters a document", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
+    installMainContent(pane, { source: "commit", stableId: "same-range", label: "Plain", plainText: document.text }, false)
+    const seededRange = toggleDiffLineRange(createDiffLineRangeState(document))
+    setMainDiffLineRangeState(pane, seededRange)
+    expect(getMainDiffLineRangeState(pane)?.rangeMode).toBe("sticky")
+
+    installMainContent(pane, { source: "commit", stableId: "same-range", label: "Diff", document }, false)
+    expect(getMainDocument(pane)).toBe(document)
+    expect(getMainDiffLineRangeState(pane)?.rangeMode).toBe("none")
+
     setup.renderer.destroy()
   })
 

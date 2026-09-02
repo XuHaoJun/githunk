@@ -399,7 +399,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     const initialTarget = preservedTarget ?? (!sameIdentity || !identicalText ? moveMainCursor(doc, undefined, "next") : previousTarget ?? moveMainCursor(doc, undefined, "next"))
     const shouldKeepTarget = sameIdentity && identicalText
     documents.set(pane, doc)
-    const nextRange = sameIdentity && identicalText && previousRange?.lineCount === doc.lines.length
+    const nextRange = !enteringDocument && sameIdentity && identicalText && previousRange?.lineCount === doc.lines.length
       ? previousRange
       : createDiffLineRangeState(doc)
     lineRanges.set(pane, nextRange)
@@ -418,7 +418,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
     pane.syncScrollbar()
-    if (sameIdentity && identicalText && previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
+    if (!enteringDocument && sameIdentity && identicalText && previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
     return
   }
 
