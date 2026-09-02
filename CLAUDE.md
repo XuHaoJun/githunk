@@ -124,3 +124,4 @@ Match that depth.
 **Claims are evidence-bounded.** `docs/release-checklist-v0.1.md` and the clipboard matrix
 distinguish `Automated` / `Manual smoke observed` / `Not tested`. Do not upgrade a status without
 running the thing.
+**`.superpowers` is local-only (prefer A).** `.superpowers/` is gitignored (`.gitignore:1`) — never `git add -f` it. Task evidence stays local via `local://`/`artifact://` or PR description; only `docs/superpowers/` (no dot) is tracked for specs/plans.
