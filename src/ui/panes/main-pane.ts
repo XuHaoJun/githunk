@@ -401,6 +401,8 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     } else {
       cursorTargets.delete(pane)
     }
+    pane.text.wrapMode = "char"
+    releaseAnsiText(pane.text)
     if (!sameIdentity || !identicalText) {
       const rendered = renderDiff(doc)
       installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })

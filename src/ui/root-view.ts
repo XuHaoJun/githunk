@@ -2990,6 +2990,7 @@ export class RootView {
       if (nextLine !== -1) {
         this.clearNonStickyMainRange()
         const targetY = Math.max(0, nextLine - 2)
+        this.panes.main.text.scrollY = targetY
         this.panes.main.box.bottomTitle = `Search: ${query} (${nextLine + 1}/${lines.length})`
         this.root.requestRender()
       }
