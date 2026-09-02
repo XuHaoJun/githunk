@@ -659,18 +659,17 @@ export class AppController {
           await deleteBranch(runner, request.branch, request.force ? { force: true, confirmed: true } : {})
           continue
         }
-        if (request.remote === undefined) {
-          if (request.mode === "local-and-remote") throw new Error("local and remote deletion requires an upstream")
-          throw new Error("remote deletion requires a remote")
-        }
-        const remoteBranch = request.remoteBranch ?? request.branch
-        affectedRemotes.add(request.remote)
         if (request.mode === "remote") {
+          if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
+          affectedRemotes.add(request.remote)
           this.logAction(LOG_ACTIONS.deleteRemoteBranch)
-          await deleteRemoteGitBranch(runner, request.remote, remoteBranch)
+          await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
           continue
         }
-        if (request.remoteBranch === undefined) throw new Error("local and remote deletion requires an upstream")
+        if (request.remote === undefined || request.remoteBranch === undefined) {
+          throw new Error("local and remote deletion requires an upstream")
+        }
+        affectedRemotes.add(request.remote)
         const merged = await isGitBranchMerged(runner, request.branch)
         if (!merged && request.force !== true) {
           throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
