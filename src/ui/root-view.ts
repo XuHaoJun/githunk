@@ -878,6 +878,15 @@ export class RootView {
     return { files: [...filesByPath.values()], paths: [...filesByPath.keys()] }
   }
 
+  private canSetListRangeGesture(paneId: ListPaneId, stableId: string): boolean {
+    // Mirror the same availability used for keyboard range bindings
+    // (bindings.ts: onFilesTab / branchRangeSelection) so mouse drag
+    // does not create a highlight where the keys would be disabled.
+    if (paneId === "files") return this.filesPanel.activeTab === "files"
+    if (paneId === "branches") return stableId.startsWith("local:") || stableId.startsWith("remote-branch:")
+    return paneId === "commits" || paneId === "stash"
+  }
+
   private collapseActiveListRange(paneId: ListPaneId): boolean {
     const active = this.activeListView(paneId)
     if (active === undefined || !hasMultipleListRowsSelected(active.state)) return false
@@ -4993,8 +5002,10 @@ export class RootView {
               if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
               this.selectRowForPane(paneId, stableId)
               if (paneId === "files" || paneId === "branches" || paneId === "commits" || paneId === "stash") {
-                const active = this.activeListView(paneId)
-                if (active !== undefined) this.gestureOwner = { kind: "list-range", paneId, viewId: active.viewId, anchorId: stableId }
+                if (this.canSetListRangeGesture(paneId, stableId)) {
+                  const active = this.activeListView(paneId)
+                  if (active !== undefined) this.gestureOwner = { kind: "list-range", paneId, viewId: active.viewId, anchorId: stableId }
+                }
               }
               event.preventDefault()
               event.stopPropagation()
@@ -5006,8 +5017,10 @@ export class RootView {
             if (this.focusManager.active !== paneId) this.focusManager.focus(paneId)
             this.selectRowForPane(paneId, stableId)
             if (paneId === "files" || paneId === "branches" || paneId === "commits" || paneId === "stash") {
-              const active = this.activeListView(paneId)
-              if (active !== undefined) this.gestureOwner = { kind: "list-range", paneId, viewId: active.viewId, anchorId: stableId }
+              if (this.canSetListRangeGesture(paneId, stableId)) {
+                const active = this.activeListView(paneId)
+                if (active !== undefined) this.gestureOwner = { kind: "list-range", paneId, viewId: active.viewId, anchorId: stableId }
+              }
             }
             if (arrowRow !== undefined) {
               // files_controller.go:232-242 toggles only the arrow and its trailing space.
