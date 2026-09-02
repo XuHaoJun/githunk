@@ -270,6 +270,47 @@ describe("Main pane lifecycle", () => {
     setup.renderer.destroy()
   })
 
+  test("clears ANSI painter when same identity transitions to plain content", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    const model = {
+      repositoryRoot: "",
+      branch: "",
+      reviewTarget: { kind: "working-tree", scope: "all" },
+      files: [],
+      patches: [],
+      rawPatchSections: [],
+      loading: false,
+      commandLog: [],
+      title: "",
+    } as unknown as import("../../src/app/model").AppModel
+    const pane = createMainPane(setup.renderer, model)
+    setup.renderer.root.add(pane.box)
+    const rendered = "plain output\n"
+    const ansi = parseAnsi(`\u001b[31m${rendered}\u001b[0m`)
+    installMainContent(pane, { source: "commit", stableId: "ansi-plain", label: "ANSI", ansi }, false)
+    await setup.flush()
+    const hasAnsiColor = setup.captureSpans().lines.some((line) => line.spans.some((span) => span.fg.intent === "indexed"))
+    expect(hasAnsiColor).toBe(true)
+
+    const textView = pane.text as unknown as {
+      setSelection?: (start: number, end: number) => void
+      getSelection?: () => unknown
+      hasSelection?: () => boolean
+    }
+    textView.setSelection?.(0, 5)
+    const nativeBefore = textView.getSelection?.()
+    const hadNativeSelection = typeof textView.hasSelection === "function" ? textView.hasSelection() : nativeBefore !== undefined
+    installMainContent(pane, { source: "commit", stableId: "ansi-plain", label: "Plain", plainText: rendered }, false)
+    await setup.flush()
+    expect(pane.text.plainText).toBe(rendered)
+    const hasAnsiColorAfterPlain = setup.captureSpans().lines.some((line) => line.spans.some((span) => span.fg.intent === "indexed"))
+    expect(hasAnsiColorAfterPlain).toBe(false)
+    if (hadNativeSelection && typeof textView.hasSelection === "function") expect(textView.hasSelection()).toBe(false)
+    if (nativeBefore !== undefined && typeof textView.getSelection === "function") expect(textView.getSelection()).toBeNull()
+
+    setup.renderer.destroy()
+  })
+
   test("starts a fresh range when a plain preview enters a document", async () => {
     const setup = await createTestRenderer({ width: 120, height: 40 })
     const model = {
