@@ -54,8 +54,12 @@ export function branchLocalAndRemoteDeleteConfirmation(branch: string, remote: s
     cancelKey: "escape",
   }
 }
+function quoteBranch(value: string): string {
+  return `'${value.replaceAll("'", "\\'")}'`
+}
+
 export function branchLocalDeleteRangeConfirmation(branches: readonly string[]): ConfirmationRequest {
-  const names = branches.map((branch) => `'${branch}'`).join(", ")
+  const names = branches.map((branch) => quoteBranch(branch)).join(", ")
   return {
     title: "Delete local branches",
     message: `Are you sure you want to delete the selected local branches: ${names}?`,
@@ -67,7 +71,7 @@ export function branchLocalDeleteRangeConfirmation(branches: readonly string[]):
 }
 
 export function branchForceDeleteRangeConfirmation(branches: readonly string[]): ConfirmationRequest {
-  const names = branches.map((branch) => `'${branch}'`).join(", ")
+  const names = branches.map((branch) => quoteBranch(branch)).join(", ")
   return {
     title: "Force delete branches",
     message: `${names} are not fully merged. Are you sure you want to delete them?`,
@@ -77,6 +81,7 @@ export function branchForceDeleteRangeConfirmation(branches: readonly string[]):
     cancelKey: "escape",
   }
 }
+
 
 type RemoteBranchDeleteTarget = {
   readonly branch: string
@@ -88,9 +93,9 @@ export function branchRemoteDeleteRangeConfirmation(
   remote?: string,
 ): ConfirmationRequest {
   const names = remote === undefined
-    ? branches.map((entry) => typeof entry === "string" ? `'${entry}'` : `'${entry.branch}' from '${entry.remote}'`).join(", ")
-    : branches.map((entry) => `'${typeof entry === "string" ? entry : entry.branch}'`).join(", ")
-  const source = remote === undefined ? "" : ` from '${remote}'`
+    ? branches.map((entry) => typeof entry === "string" ? quoteBranch(entry) : `${quoteBranch(entry.branch)} from ${quoteBranch(entry.remote)}`).join(", ")
+    : branches.map((entry) => quoteBranch(typeof entry === "string" ? entry : entry.branch)).join(", ")
+  const source = remote === undefined ? "" : ` from ${quoteBranch(remote)}`
   return {
     title: "Delete remote branches",
     message: `Are you sure you want to delete the selected remote branches ${names}${source}?`,
@@ -105,10 +110,10 @@ export function branchLocalAndRemoteDeleteRangeConfirmation(
   branches: readonly { readonly branch: string; readonly remote: string; readonly remoteBranch: string }[],
   forceRequired: boolean,
 ): ConfirmationRequest {
-  const names = branches.map(({ branch, remote, remoteBranch }) => `'${branch}' and '${remoteBranch}' from '${remote}'`).join(", ")
+  const names = branches.map(({ branch, remote, remoteBranch }) => `${quoteBranch(branch)} and ${quoteBranch(remoteBranch)} from ${quoteBranch(remote)}`).join(", ")
   return {
     title: "Delete local and remote branches",
-    message: `Are you sure you want to delete both ${names}?${forceRequired ? "\n\nAt least one selected branch is not fully merged. Are you sure you want to delete it?" : ""}`,
+    message: `Are you sure you want to delete ${names}?${forceRequired ? "\n\nAt least one selected branch is not fully merged. Are you sure you want to delete it?" : ""}`,
     confirmLabel: "Delete",
     cancelLabel: "Cancel",
     confirmKey: "d",
