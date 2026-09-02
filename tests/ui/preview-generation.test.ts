@@ -4,6 +4,7 @@ import { createTestRenderer } from "@opentui/core/testing"
 import { createMainPane, getMainDocument, installMainContent, setMainLoading } from "../../src/ui/panes/main-pane"
 import { parseDiff } from "../../src/domain/diff/parse"
 import type { CommitDetails } from "../../src/domain/commit"
+import type { MainPaneContent } from "../../src/ui/panes/main-pane"
 
 function deferred<T>() {
   let resolve!: (value: T) => void
