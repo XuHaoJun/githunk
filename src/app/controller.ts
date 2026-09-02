@@ -568,13 +568,17 @@ export class AppController {
     if (!this.ensureStashOperation()) return
     this.logAction(LOG_ACTIONS.dropStash)
     // stash@{n} indices shift after each drop, so stash refs must be dropped descending.
-    // OID refs are resolved by OID each time and are order-independent, but sorting stash
-    // refs descending keeps batch deletes deterministic when the caller supplies stash refs.
+    // OID refs are resolved by OID each time and are order-independent; only sort when
+    // every ref is a stash@{n} reference so mixed OID+stash batches keep caller order
+    // (preserving the partial-success contract of `refreshes stashes after a partial
+    // drop batch failure` which expects the first OID to be dropped before a later
+    // missing stash@{99} fails).
     const stashRefIndex = (ref: string): number => {
       const match = /^stash@\{(\d+)\}$/.exec(ref)
       return match === null ? -1 : Number(match[1])
     }
-    const ordered = [...refs].sort((left, right) => stashRefIndex(right) - stashRefIndex(left))
+    const allStashRefs = refs.every((ref) => /^stash@\{\d+\}$/.test(ref))
+    const ordered = allStashRefs ? [...refs].sort((left, right) => stashRefIndex(right) - stashRefIndex(left)) : [...refs]
     await this.runMutation(async () => {
       for (const ref of ordered) {
         await this.requireRunnerOperation((runner) => dropGitStash(runner, ref, options))

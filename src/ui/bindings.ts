@@ -378,6 +378,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["shift+up"], action: "range-select-up", description: "range up", contexts: ["branches"], displayKeys: "shift+up", available: branchRangeSelection },
   { keys: ["shift+down"], action: "range-select-down", description: "range down", contexts: ["commits", "stash"], displayKeys: "shift+down" },
   { keys: ["shift+down"], action: "range-select-down", description: "range down", contexts: ["branches"], displayKeys: "shift+down", available: branchRangeSelection },
+  { keys: ["="], action: "expand-files", description: "expand all", contexts: ["files"], available: onFilesTab, menuDescription: "expand every directory in the file tree" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["files"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["files"] },
   { keys: ["escape"], action: "commit-back", description: "back", contexts: ["files"], available: inCommit },
