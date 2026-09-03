@@ -1,5 +1,5 @@
 import type { DiffDisplayLineStyle, DiffDocument, DiffLine } from "./document"
-import { cellWidth } from "../../ui/cell-width"
+import { cellWidth } from "./cell-width"
 
 export const VIRTUAL_DIFF_LINE_THRESHOLD = 10_000
 
