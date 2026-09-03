@@ -6,7 +6,8 @@ import { filterItems } from "../../app/filter"
 import { loaderFrame } from "../loader"
 import { BRANCH_ITEM_OPERATION_FG } from "../theme"
 import type { ListRow } from "../list-view"
-import { createListState, renderListRows, setListRows, type ListState } from "../list-view"
+import { createListState, setListRows, type ListState } from "../list-view"
+import { installListText } from "./list-text"
 import type { PaneHandle } from "./common"
 
 /** remotes_controller.go:107. */
@@ -87,8 +88,7 @@ export function updateRemotesPane(pane: PaneHandle, model: AppModel, state: List
   const rows = remoteRows(model)
   const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No remotes" }] : undefined
   const next = setListRows(state, rows, displayRows)
-  const content = renderListRows(next, focused, 80)
-  pane.update(content)
+  installListText(pane.text, { state: next, width: 80, focused })
   pane.syncScrollbar()
   return next
 }
@@ -97,8 +97,7 @@ export function updateRemoteBranchesPane(pane: PaneHandle, model: AppModel, remo
   const rows = remoteBranchRows(model, remote)
   const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No branches" }] : undefined
   const next = setListRows(state, rows, displayRows)
-  const content = renderListRows(next, focused, 80)
-  pane.update(content)
+  installListText(pane.text, { state: next, width: 80, focused })
   pane.syncScrollbar()
   return next
 }

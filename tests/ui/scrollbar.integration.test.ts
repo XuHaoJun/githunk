@@ -112,7 +112,7 @@ describe("scrollbar and gesture capture", () => {
     await harness.pressKey("+")
     await harness.pressKey("4")
     const geometry = harness.paneTextGeometry("commits")!
-    const rows = view.commitsPane.text.content.chunks.map((chunk) => chunk.text).join("").split("\n")
+    const rows = view.commitsPane.text.plainText.split("\n")
     const bar = paneScrollbar(view.commitsPane.text)!
     expect(bar.visible).toBe(true)
     expect(rows.every((row) => [...row].length <= geometry.width - 1)).toBe(true)

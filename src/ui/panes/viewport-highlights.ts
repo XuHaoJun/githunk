@@ -51,9 +51,14 @@ export type ViewportHighlights<Content> = {
    */
   install(full: string, content: Content): void
   /**
+   * Repaints the band around the current viewport unconditionally, without
+   * touching the installed text. For callers whose paint content changed while
+   * the text stayed byte-identical (same rows, new colours or selection).
+   */
+  repaint(): void
+  /**
    * Drops every highlight and stops painting until the next `install`, for a caller handing the pane
-   * back to plain content or to a different painter. The replacement text is the caller's to write;
-   * this only makes sure these highlights cannot bleed into it.
+   * back to plain content or to a different painter.
    */
   release(): void
 }
@@ -105,9 +110,11 @@ export function createViewportHighlights<Content>(text: TextRenderable, spec: Vi
 
     // Lines already painted stay painted: a highlight costs ~46 µs to add, so scrolling by a row
     // must touch a line, not a screenful. Clearing the whole buffer is free by comparison, so a
-    // jump that leaves the painted band behind starts over.
+    // jump that leaves the painted band behind starts over. A forced repaint (same text, new
+    // colours or selection) must repaint the overlap too — the delta below would paint zero lines
+    // when the viewport hasn't moved.
     const previous = painted
-    if (previous === undefined || previous.to < from || previous.from > to) {
+    if (force || previous === undefined || previous.to < from || previous.from > to) {
       buffer.clearAllHighlights()
       for (let line = from; line <= to; line++) paintLine(line, content)
     } else {
@@ -136,6 +143,9 @@ export function createViewportHighlights<Content>(text: TextRenderable, spec: Vi
         painted = undefined
       }
       paint(changed)
+    },
+    repaint(): void {
+      paint(true)
     },
     release(): void {
       // Releasing twice must not clear anything the second time. `main-pane.ts:276-277` releases the

@@ -473,34 +473,59 @@ export function computeColumnLayout(rows: readonly ListRow[], width: number): Li
   return { indexes, widths }
 }
 
-function renderColumns(row: ListRow, layout: ListColumnLayout): TextChunk[] {
-  const chunks: TextChunk[] = []
+/** One styled run of a laid-out list row, in render order. */
+export type ListRowSegment = {
+  readonly text: string
+  readonly style?: ListColumn["style"]
+  readonly color?: ColorInput
+}
+
+/**
+ * Lays one row out into styled runs: separator spaces and cell padding are plain
+ * runs, column bodies keep their column/segment styling, and trailing whitespace
+ * runs are dropped. `renderColumns` (StyledText) and `./panes/list-text` (native
+ * highlights) both build from this, so the two can never disagree about row text.
+ */
+export function layoutListRowSegments(row: ListRow, layout: ListColumnLayout): readonly ListRowSegment[] {
+  const segments: ListRowSegment[] = []
   for (let i = 0; i < layout.indexes.length; i++) {
     const column = row.columns[layout.indexes[i]!]
     const cellWidth = layout.widths[i]!
     const isLast = i === layout.indexes.length - 1
-    if (i > 0) chunks.push(plainChunk(" "))
+    if (i > 0) segments.push({ text: " " })
     const text = column?.text ?? ""
     const truncated = truncateToWidth(text, cellWidth)
     if (truncated.length > 0) {
       if (column?.segments !== undefined && truncated === text) {
         for (const segment of column.segments) {
           if (segment.text.length === 0) continue
-          chunks.push(styleToChunk(segment.text, column.style, segment.color))
+          segments.push({
+            text: segment.text,
+            ...(column.style === undefined ? {} : { style: column.style }),
+            ...(segment.color === undefined ? {} : { color: segment.color }),
+          })
         }
       } else {
-        chunks.push(styleToChunk(truncated, column?.style, column?.color))
+        segments.push({
+          text: truncated,
+          ...(column?.style === undefined ? {} : { style: column.style }),
+          ...(column?.color === undefined ? {} : { color: column.color }),
+        })
       }
     }
     // The final column needs no trailing padding — nothing follows it to align.
     if (!isLast) {
       const pad = cellWidth - visualLength(truncated)
-      if (pad > 0) chunks.push(plainChunk(" ".repeat(pad)))
+      if (pad > 0) segments.push({ text: " ".repeat(pad) })
     }
   }
   // Drop the separator runs left dangling when trailing columns rendered empty.
-  while (chunks.length > 0 && chunks[chunks.length - 1]!.text.trim().length === 0) chunks.pop()
-  return chunks
+  while (segments.length > 0 && segments[segments.length - 1]!.text.trim().length === 0) segments.pop()
+  return segments
+}
+
+function renderColumns(row: ListRow, layout: ListColumnLayout): TextChunk[] {
+  return layoutListRowSegments(row, layout).map((segment) => styleToChunk(segment.text, segment.style, segment.color))
 }
 
 /**

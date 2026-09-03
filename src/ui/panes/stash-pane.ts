@@ -2,7 +2,8 @@ import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import { filterItems } from "../../app/filter"
 import { createPane, type PaneHandle } from "./common"
-import { createListState, renderListRows, setListRows, type ListRow, type ListState } from "../list-view"
+import { createListState, setListRows, type ListRow, type ListState } from "../list-view"
+import { installListText } from "./list-text"
 
 export function stashRows(model: AppModel, filter = ""): ListRow[] {
   const stashes = model.stashes ?? []
@@ -28,8 +29,7 @@ export function createStashPane(renderer: CliRenderer, model: AppModel): PaneHan
   const rows = stashRows(model)
   const displayRows = stashDisplayRows(model, rows)
   const state = createListState(rows, displayRows)
-  const content = renderListRows(state, false, 80)
-  pane.update(content)
+  installListText(pane.text, { state, width: 80, focused: false })
   return pane
 }
 
@@ -37,8 +37,7 @@ export function updateStashPane(pane: PaneHandle, model: AppModel, state: ListSt
   const rows = stashRows(model)
   const displayRows = stashDisplayRows(model, rows)
   const next = setListRows(state, rows, displayRows)
-  const content = renderListRows(next, focused, 80)
-  pane.update(content)
+  installListText(pane.text, { state: next, width: 80, focused })
   pane.syncScrollbar()
   return next
 }

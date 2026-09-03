@@ -2,7 +2,8 @@ import type { AppModel } from "../../app/model"
 import type { TagSummary } from "../../domain/tag"
 import { filterItems } from "../../app/filter"
 import type { ListRow } from "../list-view"
-import { createListState, renderListRows, setListRows, type ListState } from "../list-view"
+import { createListState, setListRows, type ListState } from "../list-view"
+import { installListText } from "./list-text"
 import type { PaneHandle } from "./common"
 
 /** tags_controller.go:107. */
@@ -60,8 +61,7 @@ export function updateTagsPane(pane: PaneHandle, model: AppModel, state: ListSta
   const rows = tagRows(model)
   const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No tags" }] : undefined
   const next = setListRows(state, rows, displayRows)
-  const content = renderListRows(next, focused, 80)
-  pane.update(content)
+  installListText(pane.text, { state: next, width: 80, focused })
   pane.syncScrollbar()
   return next
 }
