@@ -178,4 +178,32 @@ describe("main pane virtual diff viewport", () => {
       setup.renderer.destroy()
     }
   })
+
+  test("virtualizes only above exactly 10,000 parsed lines", async () => {
+    // patchText carries 5 header rows, so body N-5 parses to exactly N lines.
+    const atThreshold = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD - 5))
+    expect(atThreshold.lines.length).toBe(VIRTUAL_DIFF_LINE_THRESHOLD)
+    expect(isVirtualDiffDocument(atThreshold)).toBe(false)
+    const above = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD - 4))
+    expect(above.lines.length).toBe(VIRTUAL_DIFF_LINE_THRESHOLD + 1)
+    expect(isVirtualDiffDocument(above)).toBe(true)
+
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    try {
+      const pane = createMainPane(setup.renderer, model())
+      setup.renderer.root.add(pane.box)
+      installMainContent(pane, { ...content(atThreshold), stableId: "boundary-eager" }, false)
+      await setup.flush()
+      expect(virtualMainPaneFor(pane)?.isActive()).toBe(false)
+      expect(pane.text.lineCount).toBeGreaterThan(atThreshold.lines.length - 1)
+
+      installMainContent(pane, { ...content(above), stableId: "boundary-virtual" }, false)
+      await setup.flush()
+      expect(virtualMainPaneFor(pane)?.isActive()).toBe(true)
+      expect(pane.text.lineCount).toBeLessThanOrEqual(pane.text.height + pane.text.height * 2 + 10)
+      expect(pane.text.scrollHeight).toBe(above.lines.length)
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
 })
