@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { TextAttributes, type RGBA } from "@opentui/core"
+import { MouseButtons } from "@opentui/core/testing"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import type { TempRepository } from "../helpers/temp-repository"
 import type { DiffDocument } from "../../src/domain/diff/document"
@@ -262,12 +263,32 @@ describe("main pane keyboard line ranges", () => {
     await harness.pressKey("o", { ctrl: true })
     expect(copied).toEqual([expected])
   })
+  test("a non-selecting mouse down clears virtual pointer state instead of starting a range", async () => {
+    harness = await virtualChangedFileHarness()
+    const view = harness.app.view!
+    await selectFirstVirtualChange()
+    expect(getMainPointerSelection(view.mainPane)).toBeDefined()
+    const geometry = view.paneTextGeometry("main")!
+    // Right-button matches OpenTUI's button 0 && !ctrl selection gate: it must not create a raw
+    // range, and clears any prior one like the renderer's down-clear.
+    await harness.mockMouse.click(geometry.screenX + 2, geometry.screenY + 1, MouseButtons.RIGHT)
+    await harness.flush()
+    expect(getMainPointerSelection(view.mainPane)).toBeUndefined()
+    await selectFirstVirtualChange()
+    expect(getMainPointerSelection(view.mainPane)).toBeDefined()
+    await harness.mockMouse.click(geometry.screenX + 2, geometry.screenY + 1, MouseButtons.LEFT, { modifiers: { ctrl: true } })
+    await harness.flush()
+    expect(getMainPointerSelection(view.mainPane)).toBeUndefined()
+  })
 
   test("uses virtual raw indexes for a real stage mutation", async () => {
     harness = await virtualChangedFileHarness()
     const selected = await selectFirstVirtualChange()
     expect(selected.document.text.slice(selected.startUtf16, selected.endUtf16)).toContain("changed 0")
-    expect(harness.app.controller.state.reviewTarget.scope).toBe("unstaged")
+    expect(harness.app.controller.state.reviewTarget.kind).toBe("working-tree")
+    if (harness.app.controller.state.reviewTarget.kind === "working-tree") {
+      expect(harness.app.controller.state.reviewTarget.scope).toBe("unstaged")
+    }
     await harness.pressKey(" ")
     await harness.settle()
     const staged = (await harness.repository.git(["diff", "--cached", "--", "large.txt"])).stdout

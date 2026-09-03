@@ -951,6 +951,13 @@ export class RootView {
     }
   }
   cancelGesture(): void {
+    // Cancelling an in-progress main drag discards its partial virtual range, mirroring how
+    // OpenTUI clears renderer selection on a non-selecting down (chunk-bun-da1keqyp.js:9181-9183).
+    // A completed selection (gestureOwner already undefined after mouse-up) survives focus/Escape,
+    // matching eager native selection and the Task 3 focus-preservation contract.
+    if (this.gestureOwner?.kind === "main-selection") {
+      virtualMainPaneFor(this.panes.main)?.resetSelection()
+    }
     this.gestureOwner = undefined
     this.mainPointerAnchor = undefined
     this.activeSplitterDrag = undefined
@@ -3612,7 +3619,10 @@ export class RootView {
 
   private mainActionTarget(document: DiffDocument): MainCursorTarget | undefined {
     const pointer = getMainPointerSelection(this.panes.main)
-    if (pointer?.fileIndex !== undefined) {
+    // A bare click stores a valid but zero-length pointer range; using its file/hunk here while
+    // mainChangeSelection falls back to the keyboard cursor would split target and indexes across
+    // files (e.g. click untracked file B with cursor on file A). Only a non-empty pointer acts.
+    if (pointer?.fileIndex !== undefined && pointer.valid && pointer.endUtf16 > pointer.startUtf16) {
       return {
         fileIndex: pointer.fileIndex,
         ...(pointer.hunkIndex === undefined ? {} : { hunkIndex: pointer.hunkIndex }),
@@ -4408,7 +4418,12 @@ export class RootView {
       this.root.requestRender()
       return
     }
-    const pointerSelection = getMainPointerSelection(pane)
+    const rawPointerSelection = getMainPointerSelection(pane)
+    // Same non-empty gate as mainActionTarget/mainChangeSelection: a zero-length click must not
+    // block the keyboard/native fallback for text copy.
+    const pointerSelection = rawPointerSelection !== undefined && rawPointerSelection.valid && rawPointerSelection.endUtf16 > rawPointerSelection.startUtf16
+      ? rawPointerSelection
+      : undefined
     const keyboardSelection = getMainDiffLineSelection(pane)
     const nativeRange = pane.text.getSelection()
     let selection: DocumentSelection | undefined = mode === "hunk" || mode === "file"
@@ -5041,7 +5056,11 @@ export class RootView {
           this.lastSplitterPress = undefined
           if (this.focusManager.active !== "main") this.focusManager.focus("main")
           const virtual = virtualMainPaneFor(this.panes.main)
-          const point = virtual?.isActive() ? this.mainPointerCoordinates(event) : undefined
+          // OpenTUI only starts a selection for left-button without Ctrl
+          // (chunk-bun-da1keqyp.js:9089); a right/middle/Ctrl down must not create a virtual raw
+          // range, and clears any prior one like the renderer's down-clear (chunk-bun-da1keqyp.js:9181-9183).
+          const canSelect = event.button === 0 && !event.modifiers.ctrl
+          const point = virtual?.isActive() && canSelect ? this.mainPointerCoordinates(event) : undefined
           this.mainPointerAnchor = point
           if (virtual?.isActive()) {
             if (point === undefined) virtual.resetSelection()
@@ -5049,7 +5068,7 @@ export class RootView {
           }
           this.gestureOwner = { kind: "main-selection" }
           this.clearTransientMenus()
-          if (virtual?.isActive()) event.preventDefault()
+          if (virtual?.isActive() && canSelect) event.preventDefault()
           event.stopPropagation()
           return
         }
