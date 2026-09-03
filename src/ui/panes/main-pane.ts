@@ -461,7 +461,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
       virtual.install(doc, content.preamble ?? "")
       renderedTexts.delete(pane)
       virtual.clampScroll()
-      applyMainDiffLineVisualSelection(pane)
+      if (previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
       return
     }
     virtual?.deactivate()

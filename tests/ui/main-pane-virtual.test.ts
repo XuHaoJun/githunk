@@ -110,6 +110,8 @@ describe("main pane virtual diff viewport", () => {
       expect(nativeSelection?.start).toBe(expectedNativeStart)
       expect(nativeSelection?.end).toBeGreaterThan(nativeSelection?.start ?? 0)
       expect((pane.text as unknown as { textBufferView?: { getSelectedText?: () => string } }).textBufferView?.getSelectedText?.()).toContain("界")
+      installMainContent(pane, content(document), false)
+      expect(getMainPointerSelection(pane)?.startUtf16).toBe(pointerSelection?.startUtf16)
     } finally {
       setup.renderer.destroy()
     }
