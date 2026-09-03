@@ -4,7 +4,7 @@ import { createMainPane, getMainDiffLineSelection, getMainPointerSelection, inst
 import { parseDiff } from "../../src/domain/diff/parse"
 import { createDiffLineRangeState, toggleDiffLineRange } from "../../src/domain/diff/line-selection"
 import { VIRTUAL_DIFF_LINE_THRESHOLD } from "../../src/domain/diff/virtual"
-import { isVirtualDiffDocument } from "../../src/ui/panes/virtual-main-pane"
+import { isVirtualDiffDocument, virtualMainPaneFor } from "../../src/ui/panes/virtual-main-pane"
 import type { MainPaneContent } from "../../src/ui/panes/main-pane"
 import type { DiffDocument } from "../../src/domain/diff/document"
 import type { AppModel } from "../../src/app/model"
@@ -80,6 +80,29 @@ describe("main pane virtual diff viewport", () => {
       setMainDiffLineRangeState(pane, createDiffLineRangeState(document))
       expect(getMainDiffLineSelection(pane)).toBeUndefined()
       expect(getMainPointerSelection(pane)).toBeUndefined()
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+
+  test("maps middle-window pointer rows to raw document selections", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    try {
+      const pane = createMainPane(setup.renderer, model())
+      setup.renderer.root.add(pane.box)
+      const document = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD + 20))
+      installMainContent(pane, content(document), false)
+      await setup.flush()
+
+      const logicalRow = Math.floor(document.lines.length / 2)
+      pane.text.scrollY = logicalRow
+      await setup.flush()
+      expect(pane.text.plainText).toContain(`+line ${logicalRow - 5}`)
+
+      const virtual = virtualMainPaneFor(pane)
+      const pointerSelection = virtual?.setPointerSelection(0, 0, 0, 0)
+      expect(pointerSelection?.startUtf16).toBe(document.lines[logicalRow]?.startUtf16)
+      expect(getMainPointerSelection(pane)?.startUtf16).toBe(pointerSelection?.startUtf16)
     } finally {
       setup.renderer.destroy()
     }

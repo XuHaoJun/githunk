@@ -148,6 +148,14 @@ export function syncVerticalScrollbar(bar: ScrollBarRenderable, text: TextRender
   bar.scrollPosition = text.scrollY
 }
 
+/** Drops a geometry-owned viewport override when a pane returns to native text scrolling. */
+export function clearScrollbarViewportOverride(text: TextRenderable): void {
+  const bar = scrollbars.get(text)
+  if (bar === undefined) return
+  scrollbarViewportOverrides.delete(bar)
+  syncVerticalScrollbar(bar, text)
+}
+
 export function createPane(
   renderer: CliRenderer,
   id: FocusId,

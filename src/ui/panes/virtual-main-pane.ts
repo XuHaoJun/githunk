@@ -3,7 +3,7 @@ import type { DiffDocument } from "../../domain/diff/document"
 import { type DocumentSelection } from "../../domain/diff/selection"
 import { createVirtualDiffLayout, VIRTUAL_DIFF_LINE_THRESHOLD, type VirtualDiffLayout } from "../../domain/diff/virtual"
 import { cellWidth } from "../../domain/diff/cell-width"
-import type { PaneHandle } from "./common"
+import { clearScrollbarViewportOverride, type PaneHandle } from "./common"
 import { installDiffText, releaseDiffText } from "./diff-text"
 import { onPaneLifecyclePass } from "./pane-text"
 
@@ -87,7 +87,7 @@ function installAccessors(pane: PaneHandle, state: VirtualState, rerender: () =>
   for (const name of ACCESSORS) {
     const descriptor = state.originalDescriptors.get(name)
     if (descriptor === undefined) continue
-    Object.defineProperty(text, name, {
+    const nextDescriptor: PropertyDescriptor = {
       configurable: true,
       enumerable: descriptor.enumerable ?? false,
       get: () => {
@@ -101,27 +101,30 @@ function installAccessors(pane: PaneHandle, state: VirtualState, rerender: () =>
         const size = name === "maxScrollY" ? (layout?.totalRows ?? 0) : (layout?.contentWidth ?? 0)
         return Math.max(0, size - viewport)
       },
-      set: name === "scrollY" || name === "scrollX" ? (value: unknown) => {
-        if (!state.active) {
-          descriptor.set?.call(text, value)
-          return
-        }
-        const numeric = typeof value === "number" ? value : Number(value)
-        if (name === "scrollY") {
-          const max = Math.max(0, (state.layout?.totalRows ?? 0) - state.viewportHeight)
-          const next = Math.min(max, Math.floor(isFiniteNonNegative(numeric)))
-          if (state.scrollY === next) return
-          state.scrollY = next
-          rerender()
-        } else {
-          const max = Math.max(0, (state.layout?.contentWidth ?? 0) - state.viewportWidth)
-          const next = Math.min(max, Math.floor(isFiniteNonNegative(numeric)))
-          state.scrollX = next
-          descriptor.set?.call(text, next)
-          text.requestRender?.()
-        }
-      } : undefined,
-    })
+      ...(name === "scrollY" || name === "scrollX" ? {
+        set: (value: unknown): void => {
+          if (!state.active) {
+            descriptor.set?.call(text, value)
+            return
+          }
+          const numeric = typeof value === "number" ? value : Number(value)
+          if (name === "scrollY") {
+            const max = Math.max(0, (state.layout?.totalRows ?? 0) - state.viewportHeight)
+            const next = Math.min(max, Math.floor(isFiniteNonNegative(numeric)))
+            if (state.scrollY === next) return
+            state.scrollY = next
+            rerender()
+          } else {
+            const max = Math.max(0, (state.layout?.contentWidth ?? 0) - state.viewportWidth)
+            const next = Math.min(max, Math.floor(isFiniteNonNegative(numeric)))
+            state.scrollX = next
+            descriptor.set?.call(text, next)
+            text.requestRender?.()
+          }
+        },
+      } : {}),
+    }
+    Object.defineProperty(text, name, nextDescriptor)
   }
 }
 
@@ -156,17 +159,21 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     if (selection === undefined || layout === undefined || window === undefined) return undefined
     let start: number | undefined
     let end: number | undefined
+    let localOffset = 0
     for (let row = window[0]; row <= window[1]; row += 1) {
       const current = layout.rowAt(row)
       if (current === undefined) continue
+      const rowText = padDisplayRow(current.text, layout.contentWidth)
+      const rowStart = localOffset
+      localOffset += rowText.length + (row < window[1] ? 1 : 0)
+      if (current.lineIndex === undefined || current.rawStartUtf16 === undefined || current.rawEndUtf16 === undefined) continue
       const overlapStart = Math.max(selection.startUtf16, current.rawStartUtf16)
       const overlapEnd = Math.min(selection.endUtf16, current.rawEndUtf16)
       if (overlapStart >= overlapEnd) continue
-      const displayStart = current.displayStartUtf16 + current.gutterCols + (overlapStart - current.rawStartUtf16)
-      const displayEnd = current.displayStartUtf16 + current.gutterCols + (overlapEnd - current.rawStartUtf16)
-      const windowStart = layout.rowAt(window[0])?.displayStartUtf16 ?? 0
-      start = start === undefined ? displayStart - windowStart : Math.min(start, displayStart - windowStart)
-      end = end === undefined ? displayEnd - windowStart : Math.max(end, displayEnd - windowStart)
+      const displayStart = rowStart + current.gutterCols + (overlapStart - current.rawStartUtf16)
+      const displayEnd = rowStart + current.gutterCols + (overlapEnd - current.rawStartUtf16)
+      start = start === undefined ? displayStart : Math.min(start, displayStart)
+      end = end === undefined ? displayEnd : Math.max(end, displayEnd)
     }
     return start === undefined || end === undefined ? undefined : { start, end }
   }
@@ -189,6 +196,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     if (state.scrollX > maxX) state.scrollX = maxX
     const overscan = Math.max(VIRTUAL_MAIN_OVERSCAN_MIN, state.viewportHeight)
     const window = state.layout.window(state.scrollY, state.viewportHeight, overscan)
+    const localScrollY = state.scrollY - window[0]
     state.renderedWindow = window
     const rows: string[] = []
     const displays = [] as Array<{ readonly gutterCols: number; readonly style: "plain" | "addition" | "deletion" | "hunk-header" | "metadata" }>
@@ -210,9 +218,9 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       displays.push({ gutterCols: value.gutterCols, style: value.style })
     }
     const preamble = preambleRows.length === 0 ? "" : `${preambleRows.join("\n")}\n`
-    installDiffText(text, { preamble, body: rows.join("\n"), displayLines: displays, highlightScrollY: () => 0 })
+    installDiffText(text, { preamble, body: rows.join("\n"), displayLines: displays, highlightScrollY: () => localScrollY })
     const originalScrollY = state.originalDescriptors.get("scrollY")?.set
-    originalScrollY?.call(text, 0)
+    originalScrollY?.call(text, localScrollY)
     const originalScrollX = state.originalDescriptors.get("scrollX")?.set
     originalScrollX?.call(text, state.scrollX)
     paintSelection()
@@ -251,6 +259,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       state.renderedWindow = undefined
       releaseDiffText(text)
       restoreAccessors()
+      clearScrollbarViewportOverride(text)
       text.wrapMode = "char"
     },
     isActive: () => state.active,
