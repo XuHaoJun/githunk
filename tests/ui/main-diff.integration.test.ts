@@ -311,6 +311,51 @@ describe("main pane keyboard line ranges", () => {
     expect(remaining).not.toMatch(/^\+changed 1$/m)
   })
 
+  test("stages the correct lines from a scrolled virtual viewport", async () => {
+    harness = await virtualChangedFileHarness()
+    const view = harness.app.view!
+    const pane = view.mainPane
+    const document = getMainDocument(pane)
+    const virtual = virtualMainPaneFor(pane)
+    expect(document).toBeDefined()
+    expect(virtual?.isActive()).toBe(true)
+    const layout = virtual?.layout()
+    expect(layout).toBeDefined()
+    const startIndex = document!.lines.findIndex((line) => line.kind === "deletion")
+    const endIndex = document!.lines.findIndex((line, index) => index > startIndex && line.kind === "addition")
+    expect(startIndex).toBeGreaterThanOrEqual(0)
+    expect(endIndex).toBeGreaterThan(startIndex)
+    const startRow = (layout?.preambleRows ?? 0) + startIndex
+    const endRow = (layout?.preambleRows ?? 0) + endIndex
+    // Scroll just enough that visible rows diverge from logical rows while the
+    // first change stays in view: without the adapter's +scrollY translation the
+    // drag below would land two rows early on file headers.
+    const scrolledY = 2
+    expect(startRow).toBeGreaterThanOrEqual(scrolledY)
+    pane.text.scrollY = scrolledY
+    await harness.flush()
+    expect(pane.text.scrollY).toBe(scrolledY)
+    const geometry = view.paneTextGeometry("main")!
+    const visibleStart = startRow - scrolledY
+    const visibleEnd = endRow - scrolledY
+    expect(visibleEnd).toBeLessThan(geometry.height)
+    const start = layout!.rowAt(startRow)!
+    const endColumn = Math.min(geometry.width - 1, start.gutterCols + 24)
+    await harness.drag(
+      geometry.screenX + start.gutterCols,
+      geometry.screenY + visibleStart,
+      geometry.screenX + endColumn,
+      geometry.screenY + visibleEnd,
+    )
+    const selection = getMainPointerSelection(pane)
+    expect(selection?.startUtf16).toBe(document!.lines[startIndex]!.startUtf16)
+    expect(selection?.endUtf16).toBe(document!.lines[endIndex]!.endUtf16)
+    await harness.pressKey(" ")
+    await harness.settle()
+    const staged = (await harness.repository.git(["diff", "--cached", "--", "large.txt"])).stdout
+    expect(staged).toMatch(/^\+changed 0$/m)
+  })
+
 
   test("selects contiguous changed lines for staging and paints the visual range", async () => {
     harness = await changedFileHarness()
