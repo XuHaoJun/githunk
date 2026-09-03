@@ -28,6 +28,8 @@ export type DiffTextContent = {
   /** `renderDiff`'s `displayText`: the gutter-prefixed rows, one per document line. */
   readonly body: string
   readonly displayLines: readonly DiffDisplayLine[]
+  /** Overrides native scroll for bounded virtual buffers; eager panes use their native scroll. */
+  readonly highlightScrollY?: () => number
 }
 type DiffStatSpan = {
   /** UTF-16 offsets used to split the fallback chunk text. */
@@ -135,12 +137,11 @@ function statSpansForRow(value: string, spans: readonly DiffStatSpan[]): TextChu
 function preambleSpansForRow(value: string, spans: readonly DiffStatSpan[] | undefined): TextChunk[] {
   return spans === undefined ? [plainChunk(value)] : statSpansForRow(value, spans)
 }
-
-/** What one paint needs: the rows' styles, and where in the pane the first of them sits. */
 type DiffPaint = {
   readonly displayLines: readonly DiffDisplayLine[]
   readonly firstDiffRow: number
   readonly preambleSpans: ReadonlyMap<number, readonly DiffStatSpan[]>
+  readonly highlightScrollY?: () => number
 }
 
 const painters = new WeakMap<TextRenderable, ViewportHighlights<DiffPaint>>()
@@ -221,12 +222,14 @@ export function installDiffText(text: TextRenderable, content: DiffTextContent):
     displayLines: content.displayLines,
     firstDiffRow,
     preambleSpans: statSpansForPreamble(content.preamble),
+    ...(content.highlightScrollY === undefined ? {} : { highlightScrollY: content.highlightScrollY }),
   }
   let painter = painters.get(text)
   if (painter === undefined) {
     const styleIds = registerStyles(buffer)
     painter = createViewportHighlights<DiffPaint>(text, {
       buffer,
+      scrollY: (current) => current.highlightScrollY?.() ?? text.scrollY,
       paintLine: (row: number, current: DiffPaint): void => {
         const preambleSpans = current.preambleSpans.get(row)
         if (preambleSpans !== undefined) {

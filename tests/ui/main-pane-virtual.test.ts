@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createTestRenderer } from "@opentui/core/testing"
-import { createMainPane, getMainDiffLineSelection, installMainContent, setMainDiffLineRangeState } from "../../src/ui/panes/main-pane"
+import { createMainPane, getMainDiffLineSelection, getMainPointerSelection, installMainContent, setMainDiffLineRangeState } from "../../src/ui/panes/main-pane"
 import { parseDiff } from "../../src/domain/diff/parse"
 import { createDiffLineRangeState, toggleDiffLineRange } from "../../src/domain/diff/line-selection"
 import { VIRTUAL_DIFF_LINE_THRESHOLD } from "../../src/domain/diff/virtual"
@@ -13,8 +13,8 @@ function model(): AppModel {
   return { repositoryRoot: "", branch: undefined, headOid: undefined, selectedCommitOid: undefined, commits: [], branches: [], remotes: [], tags: [], stashes: [], files: [], activeTab: "files" } as unknown as AppModel
 }
 
-function patchText(lines: number): string {
-  const body = Array.from({ length: lines }, (_, index) => `+line ${index}`)
+function patchText(lines: number, lineWidth = 0): string {
+  const body = Array.from({ length: lines }, (_, index) => `+${"x".repeat(lineWidth)}line ${index}`)
   return [
     "diff --git a/large.txt b/large.txt",
     "index 1111111..2222222 100644",
@@ -36,7 +36,7 @@ describe("main pane virtual diff viewport", () => {
     try {
       const pane = createMainPane(setup.renderer, model())
       setup.renderer.root.add(pane.box)
-      const document = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD + 20))
+      const document = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD + 20, 100))
       installMainContent(pane, content(document), false)
       await setup.flush()
 
@@ -47,7 +47,11 @@ describe("main pane virtual diff viewport", () => {
       pane.text.scrollY = pane.text.maxScrollY
       await setup.flush()
       expect(pane.text.scrollY).toBe(pane.text.maxScrollY)
-      expect(pane.text.plainText).toContain(`+line ${VIRTUAL_DIFF_LINE_THRESHOLD + 19}`)
+      expect(pane.text.plainText).toContain(`+${"x".repeat(100)}line ${VIRTUAL_DIFF_LINE_THRESHOLD + 19}`)
+      expect(pane.text.maxScrollX).toBeGreaterThan(0)
+      pane.text.scrollX = pane.text.maxScrollX
+      await setup.flush()
+      expect(pane.text.scrollX).toBe(pane.text.maxScrollX)
     } finally {
       setup.renderer.destroy()
     }
@@ -73,6 +77,9 @@ describe("main pane virtual diff viewport", () => {
       await setup.flush()
       expect(getMainDiffLineSelection(pane)?.startUtf16).toBe(selection?.startUtf16)
       expect(getMainDiffLineSelection(pane)?.endUtf16).toBe(selection?.endUtf16)
+      setMainDiffLineRangeState(pane, createDiffLineRangeState(document))
+      expect(getMainDiffLineSelection(pane)).toBeUndefined()
+      expect(getMainPointerSelection(pane)).toBeUndefined()
     } finally {
       setup.renderer.destroy()
     }

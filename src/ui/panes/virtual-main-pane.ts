@@ -2,6 +2,7 @@ import type { TextRenderable } from "@opentui/core"
 import type { DiffDocument } from "../../domain/diff/document"
 import { type DocumentSelection } from "../../domain/diff/selection"
 import { createVirtualDiffLayout, VIRTUAL_DIFF_LINE_THRESHOLD, type VirtualDiffLayout } from "../../domain/diff/virtual"
+import { cellWidth } from "../../domain/diff/cell-width"
 import type { PaneHandle } from "./common"
 import { installDiffText, releaseDiffText } from "./diff-text"
 import { onPaneLifecyclePass } from "./pane-text"
@@ -16,15 +17,15 @@ export const VIRTUAL_MAIN_OVERSCAN_MIN = 10
 
 type VirtualState = {
   active: boolean
-  document?: DiffDocument
-  layout?: VirtualDiffLayout
+  document: DiffDocument | undefined
+  layout: VirtualDiffLayout | undefined
   preamble: string
   scrollY: number
   scrollX: number
   viewportHeight: number
   viewportWidth: number
-  rawSelection?: DocumentSelection
-  renderedWindow?: readonly [number, number]
+  rawSelection: DocumentSelection | undefined
+  renderedWindow: readonly [number, number] | undefined
   originalDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
   originalOwnDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
 }
@@ -76,6 +77,9 @@ function dimensions(text: TextRenderable): { readonly height: number; readonly w
     height: Math.max(1, Math.floor(isFiniteNonNegative(text.height))),
     width: Math.max(0, Math.floor(isFiniteNonNegative(text.width))),
   }
+}
+function padDisplayRow(value: string, width: number): string {
+  return `${value}${" ".repeat(Math.max(0, width - cellWidth(value)))}`
 }
 
 function installAccessors(pane: PaneHandle, state: VirtualState, rerender: () => void): void {
@@ -154,12 +158,12 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     let end: number | undefined
     for (let row = window[0]; row <= window[1]; row += 1) {
       const current = layout.rowAt(row)
-      if (current?.lineIndex === undefined || current.rawStartUtf16 === undefined || current.rawEndUtf16 === undefined) continue
+      if (current === undefined) continue
       const overlapStart = Math.max(selection.startUtf16, current.rawStartUtf16)
       const overlapEnd = Math.min(selection.endUtf16, current.rawEndUtf16)
       if (overlapStart >= overlapEnd) continue
-      const displayStart = current.displayStartUtf16 + (overlapStart - current.rawStartUtf16)
-      const displayEnd = current.displayStartUtf16 + (overlapEnd - current.rawStartUtf16)
+      const displayStart = current.displayStartUtf16 + current.gutterCols + (overlapStart - current.rawStartUtf16)
+      const displayEnd = current.displayStartUtf16 + current.gutterCols + (overlapEnd - current.rawStartUtf16)
       const windowStart = layout.rowAt(window[0])?.displayStartUtf16 ?? 0
       start = start === undefined ? displayStart - windowStart : Math.min(start, displayStart - windowStart)
       end = end === undefined ? displayEnd - windowStart : Math.max(end, displayEnd - windowStart)
@@ -181,30 +185,32 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     state.viewportWidth = current.width
     const max = Math.max(0, state.layout.totalRows - state.viewportHeight)
     if (state.scrollY > max) state.scrollY = max
+    const maxX = Math.max(0, state.layout.contentWidth - state.viewportWidth)
+    if (state.scrollX > maxX) state.scrollX = maxX
     const overscan = Math.max(VIRTUAL_MAIN_OVERSCAN_MIN, state.viewportHeight)
     const window = state.layout.window(state.scrollY, state.viewportHeight, overscan)
     state.renderedWindow = window
     const rows: string[] = []
     const displays = [] as Array<{ readonly gutterCols: number; readonly style: "plain" | "addition" | "deletion" | "hunk-header" | "metadata" }>
-    let preambleRows: string[] = []
+    const preambleRows: string[] = []
     const first = window[0]
     const last = window[1]
     if (last >= first && first < state.layout.preambleRows) {
       const preambleLast = Math.min(last, state.layout.preambleRows - 1)
       for (let row = first; row <= preambleLast; row += 1) {
         const value = state.layout.rowAt(row)
-        if (value !== undefined) preambleRows.push(value.text)
+        if (value !== undefined) preambleRows.push(padDisplayRow(value.text, state.layout.contentWidth))
       }
     }
     const bodyFirst = Math.max(first, state.layout.preambleRows)
     for (let row = bodyFirst; row <= last; row += 1) {
       const value = state.layout.rowAt(row)
       if (value === undefined || value.lineIndex === undefined) continue
-      rows.push(value.text)
+      rows.push(padDisplayRow(value.text, state.layout.contentWidth))
       displays.push({ gutterCols: value.gutterCols, style: value.style })
     }
     const preamble = preambleRows.length === 0 ? "" : `${preambleRows.join("\n")}\n`
-    installDiffText(text, { preamble, body: rows.join("\n"), displayLines: displays })
+    installDiffText(text, { preamble, body: rows.join("\n"), displayLines: displays, highlightScrollY: () => 0 })
     const originalScrollY = state.originalDescriptors.get("scrollY")?.set
     originalScrollY?.call(text, 0)
     const originalScrollX = state.originalDescriptors.get("scrollX")?.set
@@ -217,6 +223,10 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
   const rerender = (): void => renderWindow()
   const adapter: VirtualMainPane = {
     install(document, preamble) {
+      if (!state.active) {
+        state.scrollY = isFiniteNonNegative(Number(text.scrollY))
+        state.scrollX = isFiniteNonNegative(Number(text.scrollX))
+      }
       state.active = true
       state.document = document
       state.layout = createVirtualDiffLayout(document, preamble)
@@ -230,6 +240,10 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     },
     deactivate() {
       if (!state.active) return
+      const originalY = state.originalDescriptors.get("scrollY")?.set
+      const originalX = state.originalDescriptors.get("scrollX")?.set
+      originalY?.call(text, state.scrollY)
+      originalX?.call(text, state.scrollX)
       state.active = false
       state.document = undefined
       state.layout = undefined

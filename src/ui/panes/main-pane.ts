@@ -16,7 +16,6 @@ import { createVirtualMainPane, isVirtualDiffDocument, virtualMainPaneFor } from
 const documents = new WeakMap<PaneHandle, DiffDocument>()
 const cursorTargets = new WeakMap<PaneHandle, MainCursorTarget>()
 const lineRanges = new WeakMap<PaneHandle, DiffLineRangeState>()
-const selectionStates = new WeakMap<PaneHandle, DiffLineRangeState>()
 const installedContents = new WeakMap<PaneHandle, MainPaneContent>()
 const renderedTexts = new WeakMap<PaneHandle, string>()
 const paneTitles = new WeakMap<PaneHandle, string>()
@@ -160,8 +159,8 @@ export function mainDiffVisualRowRange(
   const preambleRows = (normalizedPreamble(content?.preamble ?? "").match(/\n/g) ?? []).length
   const firstSource = preambleRows + Math.max(0, startIndex)
   const lastSource = preambleRows + Math.max(startIndex, endIndex)
-  const lineInfo = pane.text as unknown as { readonly lineInfo?: { readonly lineSources?: readonly number[] } }
-  const sources = lineInfo.lineInfo?.lineSources
+  const lineInfo = (pane.text as unknown as { readonly lineInfo?: { readonly lineSources?: readonly number[] } }).lineInfo
+  const sources = lineInfo?.lineSources
   if (sources !== undefined && sources.length > 0) {
     const startRow = sources.findIndex((source) => source === firstSource)
     let endRow = -1
@@ -175,7 +174,7 @@ export function mainDiffVisualRowRange(
 
 export function getMainDiffLineSelection(pane: PaneHandle): MainDiffLineSelection | undefined {
   const document = documents.get(pane)
-  const state = lineRanges.get(pane) ?? selectionStates.get(pane)
+  const state = lineRanges.get(pane)
   if (document === undefined || state === undefined || state.rangeMode === "none") return undefined
   const range = diffLineSelectionRange(state)
   const virtual = virtualMainPaneFor(pane)
@@ -217,10 +216,14 @@ export function getMainPointerSelection(pane: PaneHandle): DocumentSelection | u
 }
 export function setMainDiffLineRangeState(pane: PaneHandle, state: DiffLineRangeState): void {
   lineRanges.set(pane, state)
-  selectionStates.set(pane, state)
+  const virtual = virtualMainPaneFor(pane)
+  if (state.rangeMode === "none") {
+    if (virtual?.isActive()) virtual.resetSelection()
+    else applyMainDiffLineVisualSelection(pane)
+    return
+  }
   const document = documents.get(pane)
   const range = diffLineSelectionRange(state)
-  const virtual = virtualMainPaneFor(pane)
   const start = document?.lines[range.startIndex]
   const end = document?.lines[range.endIndex]
   if (virtual?.isActive() && start !== undefined && end !== undefined) {
@@ -381,7 +384,6 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     }
     cursorTargets.delete(pane)
     lineRanges.delete(pane)
-    selectionStates.delete(pane)
   }
 
   if (tooSmall) {
@@ -447,7 +449,6 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
       ? previousRange
       : createDiffLineRangeState(doc)
     lineRanges.set(pane, nextRange)
-    selectionStates.set(pane, nextRange)
     if (shouldKeepTarget && initialTarget) {
       cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
     } else {
