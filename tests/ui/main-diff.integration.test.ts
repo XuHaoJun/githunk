@@ -215,6 +215,9 @@ describe("main pane keyboard line ranges", () => {
     expect(virtual?.isActive()).toBe(true)
     const layout = virtual?.layout()
     expect(pane.text.lineCount).toBeLessThanOrEqual(pane.text.height + pane.text.height * 2 + 10)
+    // The native window stays bounded while the logical document stays complete: scrollHeight
+    // covers every preamble row plus every parsed diff line, so no patch data is truncated.
+    expect(pane.text.scrollHeight).toBe((layout?.preambleRows ?? 0) + document!.lines.length)
     expect(paneScrollbar(pane.text)?.scrollSize).toBe(pane.text.scrollHeight)
     expect(layout).toBeDefined()
     const startIndex = document!.lines.findIndex((line) => line.kind === "deletion")
