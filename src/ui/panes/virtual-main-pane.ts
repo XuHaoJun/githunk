@@ -132,7 +132,7 @@ function installAccessors(pane: PaneHandle, state: VirtualState, rerender: () =>
             const next = Math.min(max, Math.floor(isFiniteNonNegative(numeric)))
             state.scrollX = next
             descriptor.set?.call(text, next)
-            text.requestRender?.()
+            pane.text.requestRender()
           }
         },
       } : {}),
@@ -143,8 +143,8 @@ function installAccessors(pane: PaneHandle, state: VirtualState, rerender: () =>
 
 function createAdapter(pane: PaneHandle): VirtualMainPane {
   const text = pane.text
-  const originalOwnDescriptors = new Map<AccessorName, AccessorDescriptor>(ACCESSORS.map((name) => [name, Object.getOwnPropertyDescriptor(text, name)]))
-  const originalDescriptors = new Map<AccessorName, AccessorDescriptor>(ACCESSORS.map((name) => [name, Object.getOwnPropertyDescriptor(text, name) ?? prototypeDescriptor(text, name)]))
+  const originalOwnDescriptors = new Map<AccessorName, AccessorDescriptor>(ACCESSORS.map((name) => [name, Object.getOwnPropertyDescriptor(text, name)] as const))
+  const originalDescriptors = new Map<AccessorName, AccessorDescriptor>(ACCESSORS.map((name) => [name, Object.getOwnPropertyDescriptor(text, name) ?? prototypeDescriptor(text, name)] as const))
   const state: VirtualState = {
     active: false,
     document: undefined,
@@ -189,7 +189,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       const overlapEnd = Math.min(selection.endUtf16, current.rawEndUtf16)
       if (overlapStart >= overlapEnd) continue
       const displayStart = rowStart + (overlapStart === current.rawStartUtf16 ? 0 : current.gutterCols + rawDisplayCells(line.raw, overlapStart - current.rawStartUtf16, false))
-      const displayEnd = rowStart + current.gutterCols + rawDisplayCells(line.raw, overlapEnd - current.rawStartUtf16, row < window[1])
+      const displayEnd = rowStart + current.gutterCols + rawDisplayCells(line.raw, overlapEnd - current.rawStartUtf16, overlapEnd > current.rawStartUtf16 + withoutLineEnding(line.raw).length)
       start = start === undefined ? displayStart : Math.min(start, displayStart)
       end = end === undefined ? displayEnd : Math.max(end, displayEnd)
     }
@@ -298,7 +298,11 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       if (!state.active || state.layout === undefined || state.document === undefined) return undefined
       const start = state.layout.rawOffsetAt(Math.max(0, Math.floor(state.scrollY + startRow)), Math.max(0, Math.floor(state.scrollX + startColumn)))
       const end = state.layout.rawOffsetAt(Math.max(0, Math.floor(state.scrollY + endRow)), Math.max(0, Math.floor(state.scrollX + endColumn)))
-      if (start === undefined || end === undefined) return undefined
+      if (start === undefined || end === undefined) {
+        state.rawSelection = undefined
+        paintSelection()
+        return undefined
+      }
       const selection = documentSelection(state.document, Math.min(start, end), Math.max(start, end))
       state.rawSelection = selection
       paintSelection()

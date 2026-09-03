@@ -131,6 +131,10 @@ describe("main pane virtual diff viewport", () => {
       expect(virtual?.layout()?.contentWidth).toBe(preamble.length)
       expect(pane.text.scrollWidth).toBe(preamble.length)
       expect(pane.text.maxScrollX).toBeGreaterThan(0)
+      const bodyRow = virtual?.layout()?.preambleRows ?? 0
+      expect(virtual?.setPointerSelection(bodyRow, 0, bodyRow, 0)).toBeDefined()
+      expect(virtual?.setPointerSelection(0, 0, 0, 0)).toBeUndefined()
+      expect(getMainPointerSelection(pane)).toBeUndefined()
     } finally {
       setup.renderer.destroy()
     }
