@@ -13,8 +13,8 @@ function model(): AppModel {
   return { repositoryRoot: "", branch: undefined, headOid: undefined, selectedCommitOid: undefined, commits: [], branches: [], remotes: [], tags: [], stashes: [], files: [], activeTab: "files" } as unknown as AppModel
 }
 
-function patchText(lines: number, lineWidth = 0): string {
-  const body = Array.from({ length: lines }, (_, index) => `+${"x".repeat(lineWidth)}line ${index}`)
+function patchText(lines: number, lineWidth = 0, wide = false): string {
+  const body = Array.from({ length: lines }, (_, index) => `+${wide ? "界" : ""}${"x".repeat(lineWidth)}line ${index}`)
   return [
     "diff --git a/large.txt b/large.txt",
     "index 1111111..2222222 100644",
@@ -90,18 +90,19 @@ describe("main pane virtual diff viewport", () => {
     try {
       const pane = createMainPane(setup.renderer, model())
       setup.renderer.root.add(pane.box)
-      const document = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD + 20))
+      const document = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD + 20, 0, true))
       installMainContent(pane, content(document), false)
       await setup.flush()
 
       const logicalRow = Math.floor(document.lines.length / 2)
       pane.text.scrollY = logicalRow
       await setup.flush()
-      expect(pane.text.plainText).toContain(`+line ${logicalRow - 5}`)
+      expect(pane.text.plainText).toContain(`+界line ${logicalRow - 5}`)
 
       const virtual = virtualMainPaneFor(pane)
-      const pointerSelection = virtual?.setPointerSelection(0, 0, 0, 0)
-      expect(pointerSelection?.startUtf16).toBe(document.lines[logicalRow]?.startUtf16)
+      const row = virtual?.layout()?.rowAt(logicalRow)
+      const pointerSelection = virtual?.setPointerSelection(0, (row?.gutterCols ?? 0) + 2, 0, (row?.gutterCols ?? 0) + 2)
+      expect(pointerSelection?.startUtf16).toBe((document.lines[logicalRow]?.startUtf16 ?? 0) + 2)
       expect(getMainPointerSelection(pane)?.startUtf16).toBe(pointerSelection?.startUtf16)
     } finally {
       setup.renderer.destroy()

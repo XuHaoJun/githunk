@@ -82,6 +82,19 @@ function padDisplayRow(value: string, width: number): string {
   return `${value}${" ".repeat(Math.max(0, width - cellWidth(value)))}`
 }
 
+function withoutLineEnding(raw: string): string {
+  if (raw.endsWith("\r\n")) return raw.slice(0, -2)
+  if (raw.endsWith("\n") || raw.endsWith("\r")) return raw.slice(0, -1)
+  return raw
+}
+
+function rawDisplayCells(raw: string, relativeUtf16: number, includeLineEnding: boolean): number {
+  const body = withoutLineEnding(raw)
+  const prefixLength = Math.min(body.length, Math.max(0, Math.floor(relativeUtf16)))
+  const cells = cellWidth(body.slice(0, prefixLength))
+  return cells + (includeLineEnding && prefixLength >= body.length && body.length < raw.length ? 1 : 0)
+}
+
 function installAccessors(pane: PaneHandle, state: VirtualState, rerender: () => void): void {
   const text = pane.text as unknown as Record<string, unknown>
   for (const name of ACCESSORS) {
@@ -167,15 +180,16 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     for (let row = window[0]; row <= window[1]; row += 1) {
       const current = layout.rowAt(row)
       if (current === undefined) continue
-      const rowText = padDisplayRow(current.text, layout.contentWidth)
       const rowStart = localOffset
-      localOffset += rowText.length + (row < window[1] ? 1 : 0)
+      localOffset += layout.contentWidth + (row < window[1] ? 1 : 0)
       if (current.lineIndex === undefined || current.rawStartUtf16 === undefined || current.rawEndUtf16 === undefined) continue
+      const line = state.document?.lines[current.lineIndex]
+      if (line === undefined) continue
       const overlapStart = Math.max(selection.startUtf16, current.rawStartUtf16)
       const overlapEnd = Math.min(selection.endUtf16, current.rawEndUtf16)
       if (overlapStart >= overlapEnd) continue
-      const displayStart = rowStart + current.gutterCols + (overlapStart - current.rawStartUtf16)
-      const displayEnd = rowStart + current.gutterCols + (overlapEnd - current.rawStartUtf16)
+      const displayStart = rowStart + current.gutterCols + rawDisplayCells(line.raw, overlapStart - current.rawStartUtf16, false)
+      const displayEnd = rowStart + current.gutterCols + rawDisplayCells(line.raw, overlapEnd - current.rawStartUtf16, row < window[1])
       start = start === undefined ? displayStart : Math.min(start, displayStart)
       end = end === undefined ? displayEnd : Math.max(end, displayEnd)
     }
