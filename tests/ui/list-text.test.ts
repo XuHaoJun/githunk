@@ -187,6 +187,31 @@ describe("list text painter", () => {
       pane.destroy()
     }
   })
+  test("repaints same-text colour changes without reinstalling", async () => {
+    const pane = await textWith()
+    try {
+      const state = createListState(rows(3))
+      const setTexts = countSetText(pane.text)
+      installListText(pane.text, { state, width: WIDTH, focused: false })
+      await pane.flush()
+      expect(setTexts()).toBe(1)
+      const before = pane.spans()
+      expect(before[1]!.some((span) => span.fg.intent === "indexed" && span.fg.slot === 2)).toBe(true)
+      const yellowRows = rows(3).map((row) => ({
+        ...row,
+        columns: row.columns.map((column, index) => (index === 0 ? { ...column, style: "yellow" as const } : column)),
+      }))
+      const recoloured = createListState(yellowRows)
+      installListText(pane.text, { state: recoloured, width: WIDTH, focused: false })
+      await pane.flush()
+      expect(setTexts()).toBe(1)
+      const after = pane.spans()
+      expect(after[1]!.some((span) => span.fg.intent === "indexed" && span.fg.slot === 3)).toBe(true)
+    } finally {
+      pane.destroy()
+    }
+  })
+
 
   test("release drops the selection paint", async () => {
     const pane = await textWith()

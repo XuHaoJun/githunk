@@ -110,9 +110,11 @@ export function createViewportHighlights<Content>(text: TextRenderable, spec: Vi
 
     // Lines already painted stay painted: a highlight costs ~46 µs to add, so scrolling by a row
     // must touch a line, not a screenful. Clearing the whole buffer is free by comparison, so a
-    // jump that leaves the painted band behind starts over.
+    // jump that leaves the painted band behind starts over. A forced repaint (same text, new
+    // colours or selection) must repaint the overlap too — the delta below would paint zero lines
+    // when the viewport hasn't moved.
     const previous = painted
-    if (previous === undefined || previous.to < from || previous.from > to) {
+    if (force || previous === undefined || previous.to < from || previous.from > to) {
       buffer.clearAllHighlights()
       for (let line = from; line <= to; line++) paintLine(line, content)
     } else {
