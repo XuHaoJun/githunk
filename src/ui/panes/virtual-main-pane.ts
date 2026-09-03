@@ -134,11 +134,15 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
   const originalDescriptors = new Map<AccessorName, AccessorDescriptor>(ACCESSORS.map((name) => [name, Object.getOwnPropertyDescriptor(text, name) ?? prototypeDescriptor(text, name)]))
   const state: VirtualState = {
     active: false,
+    document: undefined,
+    layout: undefined,
     preamble: "",
     scrollY: 0,
     scrollX: 0,
     viewportHeight: Math.max(1, Math.floor(text.height)),
     viewportWidth: Math.max(0, Math.floor(text.width)),
+    rawSelection: undefined,
+    renderedWindow: undefined,
     originalDescriptors,
     originalOwnDescriptors,
   }
