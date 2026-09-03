@@ -25,7 +25,7 @@ type VirtualState = {
   viewportHeight: number
   viewportWidth: number
   rawSelection: DocumentSelection | undefined
-  preambleSpans: ReadonlyMap<number, readonly DiffStatSpan[]>
+  renderedWindow: readonly [number, number] | undefined
   originalDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
   originalOwnDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
 }
