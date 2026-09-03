@@ -6,6 +6,7 @@ import { createPane, type PaneHandle } from "./common"
 import { commitGraphRows } from "../commit-graph"
 import { AUTHOR_COLUMN_WIDTH, authorColor, authorInitials } from "../author-style"
 import { createListState, renderListRows, selectListRow, type ListState, type ListRow } from "../list-view"
+import { installListText, releaseListText } from "./list-text"
 import { COMMITS_JUMP_KEY, COMMITS_TABS } from "./reflog-pane"
 import {
   COMMIT_HASH_DEFAULT_FG,
@@ -122,8 +123,7 @@ export function moveCommitsCursor(pane: PaneHandle, model: AppModel, direction: 
   const nextState = selectListRow(state, commits[nextIndex]!.oid)
   paneStates.set(pane, nextState)
   const width = 80
-  const content = renderListRows(nextState, true, width)
-  pane.update(content)
+  installListText(pane.text, { state: nextState, width, focused: true })
   return commits[nextIndex]
 }
 
@@ -133,6 +133,7 @@ export function updateCommitsPane(pane: PaneHandle, model: AppModel): void {
   if (commits.length === 0) {
     const empty = createListState([])
     paneStates.set(pane, empty)
+    releaseListText(pane.text)
     pane.update(model.loading ? "Loading…" : "No commits")
     return
   }
@@ -145,8 +146,7 @@ export function updateCommitsPane(pane: PaneHandle, model: AppModel): void {
     if (withPrev.selectedId === prevId) state = withPrev
   }
   paneStates.set(pane, state)
-  const content = renderListRows(state, false, 80)
-  pane.update(content)
+  installListText(pane.text, { state, width: 80, focused: false })
   pane.box.bottomTitle = undefined
 }
 

@@ -104,6 +104,7 @@ import {
   type ListState,
   type ListRow,
 } from "./list-view"
+import { installListText, releaseListText } from "./panes/list-text"
 import { MainPreviewGate } from "./main-preview"
 import type { CommitSummary } from "../domain/commit"
 // Review workspace screen ownership is managed by AppScreenController (src/app/screen-controller.ts).
@@ -1270,14 +1271,15 @@ export class RootView {
     const focused = this.focusManager.active === "branches"
     const activeView = this.activeListView("branches")
     if (activeView === undefined) {
+      releaseListText(pane.text)
       pane.update("")
       return
     }
     const { state } = activeView
     const win = this.geometry.windows.branches
     const width = sidePaneListWidth(win, state)
-    const content = renderListRows(state, focused, width, this.hoveredIdFor(activeView))
-    pane.update(content)
+    const hoveredId = this.hoveredIdFor(activeView)
+    installListText(pane.text, { state, width, focused, ...(hoveredId === undefined ? {} : { hoveredId }) })
     pane.syncScrollbar(sidePaneViewportHeight(win))
   }
 
@@ -1350,13 +1352,15 @@ export class RootView {
     pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
     const activeView = this.activeListView("files")
     if (activeView === undefined) {
+      releaseListText(pane.text)
       pane.update("")
       return
     }
     const { state } = activeView
     const win = this.geometry.windows.files
     const width = sidePaneListWidth(win, state)
-    pane.update(renderListRows(state, tabsInput.focused, width, this.hoveredIdFor(activeView)))
+    const hoveredId = this.hoveredIdFor(activeView)
+    installListText(pane.text, { state, width, focused: tabsInput.focused, ...(hoveredId === undefined ? {} : { hoveredId }) })
     pane.syncScrollbar(sidePaneViewportHeight(win))
   }
 
@@ -1372,6 +1376,7 @@ export class RootView {
     const pane = this.panes.stash
     const activeView = this.activeListView("stash")
     if (activeView === undefined) {
+      releaseListText(pane.text)
       pane.update("")
       return
     }
@@ -1379,8 +1384,8 @@ export class RootView {
     const focused = this.focusManager.active === "stash"
     const win = this.geometry.windows.stash
     const width = sidePaneListWidth(win, state)
-    const content = renderListRows(state, focused, width, this.hoveredIdFor(activeView))
-    pane.update(content)
+    const hoveredId = this.hoveredIdFor(activeView)
+    installListText(pane.text, { state, width, focused, ...(hoveredId === undefined ? {} : { hoveredId }) })
     pane.syncScrollbar(sidePaneViewportHeight(win))
   }
   private renderSidePanes(): void {
@@ -4135,14 +4140,15 @@ export class RootView {
     }
     const activeView = this.activeListView("commits")
     if (activeView === undefined) {
+      releaseListText(pane.text)
       pane.update("")
       return
     }
     const { state } = activeView
     const width = sidePaneListWidth(this.geometry.windows.commits, state)
     const focused = this.focusManager.active === "commits"
-    const content = renderListRows(state, focused, width, this.hoveredIdFor(activeView))
-    pane.update(content)
+    const hoveredId = this.hoveredIdFor(activeView)
+    installListText(pane.text, { state, width, focused, ...(hoveredId === undefined ? {} : { hoveredId }) })
     pane.syncScrollbar(sidePaneViewportHeight(this.geometry.windows.commits))
   }
 

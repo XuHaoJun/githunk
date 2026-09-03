@@ -9,7 +9,8 @@ import { pullRequestIcon } from "../pull-request-icon"
 import { BRANCH_RECENCY_CURRENT_FG, BRANCH_RECENCY_FG } from "../theme"
 import { createPane, type PaneHandle } from "./common"
 import type { ListColumn, ListRow } from "../list-view"
-import { createListState, renderListRows, selectListRow, setListRows, type ListState } from "../list-view"
+import { createListState, selectListRow, setListRows, type ListState } from "../list-view"
+import { installListText } from "./list-text"
 
 /**
  * What a local-branch row is drawn from beyond the model: the clock the recency and spinner are
@@ -100,8 +101,7 @@ export function createBranchesPane(renderer: CliRenderer, model: AppModel): Pane
   const rows = localBranchRows(model)
   const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No branches" }] : undefined
   const state = createListState(rows, displayRows)
-  const content = renderListRows(state, false, 80)
-  pane.update(content)
+  installListText(pane.text, { state, width: 80, focused: false })
   pane.syncScrollbar()
   return pane
 }
@@ -110,8 +110,7 @@ export function updateBranchesPane(pane: PaneHandle, model: AppModel, state: Lis
   const rows = localBranchRows(model, filter)
   const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No branches" }] : undefined
   const next = setListRows(state, rows, displayRows)
-  const content = renderListRows(next, focused, 80)
-  pane.update(content)
+  installListText(pane.text, { state: next, width: 80, focused })
   pane.syncScrollbar()
   return next
 }

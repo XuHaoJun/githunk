@@ -16,7 +16,7 @@ import type { ColorInput, TextRenderable } from "@opentui/core"
 
 export type PaneHighlight = { readonly start: number; readonly end: number; readonly styleId: number }
 
-export type PaneStyleDefinition = { readonly fg?: ColorInput; readonly bold?: boolean; readonly dim?: boolean }
+export type PaneStyleDefinition = { readonly fg?: ColorInput; readonly bg?: ColorInput; readonly bold?: boolean; readonly dim?: boolean }
 
 export type PaneTextBuffer = {
   /** Replaces the whole buffer. Drops any highlights, and does not touch the scroll offset. */
@@ -30,6 +30,12 @@ export type PaneTextBuffer = {
   clearAllHighlights(): void
   /** Interns a style and returns the id `addHighlight` refers to. */
   registerStyle(name: string, definition: PaneStyleDefinition): number
+  /**
+   * Re-reads buffer state into the rendered view. Required after `addHighlight`/
+   * `clearRow`/`clearAllHighlights` performed outside a render pass (paints that
+   * run inside `onPaneLifecyclePass` need none); `setText` already refreshes.
+   */
+  refresh(): void
 }
 
 type Internals = {
@@ -80,6 +86,9 @@ export function paneTextBuffer(text: TextRenderable): PaneTextBuffer | undefined
     },
     registerStyle(name: string, definition: PaneStyleDefinition): number {
       return internals._textBufferSyntaxStyle.registerStyle(name, definition)
+    },
+    refresh(): void {
+      internals.updateTextInfo()
     },
   }
 }

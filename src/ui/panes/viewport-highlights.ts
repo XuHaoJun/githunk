@@ -51,9 +51,14 @@ export type ViewportHighlights<Content> = {
    */
   install(full: string, content: Content): void
   /**
+   * Repaints the band around the current viewport unconditionally, without
+   * touching the installed text. For callers whose paint content changed while
+   * the text stayed byte-identical (same rows, new colours or selection).
+   */
+  repaint(): void
+  /**
    * Drops every highlight and stops painting until the next `install`, for a caller handing the pane
-   * back to plain content or to a different painter. The replacement text is the caller's to write;
-   * this only makes sure these highlights cannot bleed into it.
+   * back to plain content or to a different painter.
    */
   release(): void
 }
@@ -136,6 +141,9 @@ export function createViewportHighlights<Content>(text: TextRenderable, spec: Vi
         painted = undefined
       }
       paint(changed)
+    },
+    repaint(): void {
+      paint(true)
     },
     release(): void {
       // Releasing twice must not clear anything the second time. `main-pane.ts:276-277` releases the

@@ -12,7 +12,8 @@ import {
   type FileTreeRow,
   type FileTreeState,
 } from "../file-tree"
-import { createListState, renderListRows, type ListColumn, type ListColumnSegment, type ListRow } from "../list-view"
+import { createListState, type ListColumn, type ListColumnSegment, type ListRow } from "../list-view"
+import { installListText } from "./list-text"
 import { FILE_MIXED_FG, FILE_STAGED_FG, UNSTAGED_CHANGES_FG } from "../theme"
 
 /** Panel 2's tab labels and jump label, in lazygit's order (`{"files", "worktrees", "submodules"}` — pkg/config/user_config.go:872). */
@@ -153,7 +154,7 @@ export function createFilesPane(renderer: CliRenderer, model: AppModel): PaneHan
   const initialRows = filesTreeRows(createFilesTreeState(model), model)
   const displayRows = initialRows.length === 0 ? [{ kind: "message" as const, text: NO_CHANGED_FILES }] : undefined
   const state = createListState(initialRows, displayRows)
-  pane.update(renderListRows(state, false, 80))
+  installListText(pane.text, { state, width: 80, focused: false })
   return pane
 }
 
