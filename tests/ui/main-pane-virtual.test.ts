@@ -101,9 +101,34 @@ describe("main pane virtual diff viewport", () => {
 
       const virtual = virtualMainPaneFor(pane)
       const row = virtual?.layout()?.rowAt(logicalRow)
-      const pointerSelection = virtual?.setPointerSelection(0, (row?.gutterCols ?? 0) + 2, 0, (row?.gutterCols ?? 0) + 2)
-      expect(pointerSelection?.startUtf16).toBe((document.lines[logicalRow]?.startUtf16 ?? 0) + 2)
+      const pointerSelection = virtual?.setPointerSelection(0, row?.gutterCols ?? 0, 0, (row?.gutterCols ?? 0) + 3)
+      expect(pointerSelection?.startUtf16).toBe(document.lines[logicalRow]?.startUtf16)
       expect(getMainPointerSelection(pane)?.startUtf16).toBe(pointerSelection?.startUtf16)
+      const nativeSelection = (pane.text as unknown as { textBufferView?: { getSelection?: () => { readonly start: number; readonly end: number } | null; getSelectedText?: () => string } }).textBufferView?.getSelection?.()
+      const window = virtual?.layout()?.window(logicalRow, pane.text.height, Math.max(10, Math.floor(pane.text.height)))
+      const expectedNativeStart = (logicalRow - (window?.[0] ?? logicalRow)) * ((virtual?.layout()?.contentWidth ?? 0) + 1)
+      expect(nativeSelection?.start).toBe(expectedNativeStart)
+      expect(nativeSelection?.end).toBeGreaterThan(nativeSelection?.start ?? 0)
+      expect((pane.text as unknown as { textBufferView?: { getSelectedText?: () => string } }).textBufferView?.getSelectedText?.()).toContain("界")
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+
+  test("includes a long preamble in virtual horizontal metrics", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    try {
+      const pane = createMainPane(setup.renderer, model())
+      setup.renderer.root.add(pane.box)
+      const document = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD + 20))
+      const preamble = "p".repeat(200)
+      installMainContent(pane, { ...content(document), preamble }, false)
+      await setup.flush()
+
+      const virtual = virtualMainPaneFor(pane)
+      expect(virtual?.layout()?.contentWidth).toBe(preamble.length)
+      expect(pane.text.scrollWidth).toBe(preamble.length)
+      expect(pane.text.maxScrollX).toBeGreaterThan(0)
     } finally {
       setup.renderer.destroy()
     }

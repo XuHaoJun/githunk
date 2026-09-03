@@ -188,7 +188,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       const overlapStart = Math.max(selection.startUtf16, current.rawStartUtf16)
       const overlapEnd = Math.min(selection.endUtf16, current.rawEndUtf16)
       if (overlapStart >= overlapEnd) continue
-      const displayStart = rowStart + current.gutterCols + rawDisplayCells(line.raw, overlapStart - current.rawStartUtf16, false)
+      const displayStart = rowStart + (overlapStart === current.rawStartUtf16 ? 0 : current.gutterCols + rawDisplayCells(line.raw, overlapStart - current.rawStartUtf16, false))
       const displayEnd = rowStart + current.gutterCols + rawDisplayCells(line.raw, overlapEnd - current.rawStartUtf16, row < window[1])
       start = start === undefined ? displayStart : Math.min(start, displayStart)
       end = end === undefined ? displayEnd : Math.max(end, displayEnd)
