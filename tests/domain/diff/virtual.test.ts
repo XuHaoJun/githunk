@@ -42,7 +42,7 @@ describe("virtual diff layout", () => {
     const offsets = layout.displayOffsetsForLines(0, document.lines.length)
     const addition = document.lines[3]!
 
-    expect(offsets.rawStartUtf16).toBe(document.lines[0]?.startUtf16)
+    expect(offsets.rawStartUtf16).toBe(document.lines[0]!.startUtf16)
     expect(offsets.rawEndUtf16).toBe(addition.endUtf16)
     expect(offsets.displayStartUtf16).toBe("message\n".length)
     expect(offsets.displayEndUtf16 - offsets.displayStartUtf16).toBe(
