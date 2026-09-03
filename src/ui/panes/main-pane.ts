@@ -458,9 +458,10 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     const virtual = virtualMainPaneFor(pane)
     if (virtualDocument && virtual !== undefined) {
       releaseAnsiText(pane.text)
+      // install() already clamps and paints the bounded window via renderWindow;
+      // a second clampScroll() would repaint the same window twice per install.
       virtual.install(doc, content.preamble ?? "")
       renderedTexts.delete(pane)
-      virtual.clampScroll()
       if (previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
       return
     }
