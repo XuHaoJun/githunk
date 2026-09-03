@@ -4772,6 +4772,9 @@ export class RootView {
         bar.onMouseDown = undefined
         bar.onMouseDrag = undefined
         bar.onMouseUp = undefined
+        bar.slider.onMouseDown = undefined
+        bar.slider.onMouseDrag = undefined
+        bar.slider.onMouseUp = undefined
       }
     }
     this.renderer.off("resize", this.handleResize)
@@ -4798,18 +4801,44 @@ export class RootView {
       const typedPane = pane as PaneHandle
       const bar = paneScrollbar(typedPane.text)
       if (!bar) continue
-      bar.onMouseDown = (event: MouseEvent) => {
+      // OpenTUI 0.5.10 made the scrollbar mouse-opaque: hit-picking now targets the
+      // SliderRenderable child, whose built-in setupMouseHandling onMouseDown calls
+      // stopPropagation (upstream src/renderables/Slider.ts), so the event never bubbles
+      // through Renderable.processMouseEvent to bar.onMouseDown or the root.onMouse
+      // hitTestScrollbar fallback below. On 0.5.6 the bar/slider were transparent to
+      // picking and every scrollbar press arrived at root.onMouse directly (verified by
+      // pressing the same bar cell on both versions: 0.5.6 fires only root.onMouse,
+      // 0.5.10 fires only slider.onMouseDown). The widget-level handlers therefore
+      // replicate the root down/drag/up scrollbar branches exactly, so the gesture works
+      // whichever node the picker targets; the coordinate-based root fallback stays for
+      // presses that miss the widget entirely.
+      const beginScrollbarGesture = (event: MouseEvent): void => {
+        this.updateHoveredListRow(event.x, event.y)
         this.pendingClick = undefined
         this.lastSplitterPress = undefined
         this.gestureOwner = { kind: "scrollbar", paneId: typedPane.id }
+        this.scrollPaneByScrollbarPosition(typedPane.id, event.y)
         event.stopPropagation()
       }
-      bar.onMouseDrag = (event: MouseEvent) => {
-        if (this.gestureOwner?.kind === "scrollbar" && this.gestureOwner.paneId === typedPane.id) event.stopPropagation()
+      const continueScrollbarGesture = (event: MouseEvent): void => {
+        if (this.gestureOwner?.kind === "scrollbar" && this.gestureOwner.paneId === typedPane.id) {
+          this.scrollPaneByScrollbarPosition(typedPane.id, event.y)
+          event.stopPropagation()
+        }
       }
-      bar.onMouseUp = (event: MouseEvent) => {
-        if (this.gestureOwner?.kind === "scrollbar" && this.gestureOwner.paneId === typedPane.id) event.stopPropagation()
+      const endScrollbarGesture = (event: MouseEvent): void => {
+        if (this.gestureOwner?.kind === "scrollbar" && this.gestureOwner.paneId === typedPane.id) {
+          this.scrollPaneByScrollbarPosition(typedPane.id, event.y)
+          this.gestureOwner = undefined
+          event.stopPropagation()
+        }
       }
+      bar.onMouseDown = beginScrollbarGesture
+      bar.onMouseDrag = continueScrollbarGesture
+      bar.onMouseUp = endScrollbarGesture
+      bar.slider.onMouseDown = beginScrollbarGesture
+      bar.slider.onMouseDrag = continueScrollbarGesture
+      bar.slider.onMouseUp = endScrollbarGesture
     }
     this.root.onMouse = (event: MouseEvent) => {
       if (this.isBranchReviewActive?.()) return

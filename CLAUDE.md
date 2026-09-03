@@ -6,7 +6,7 @@ the right-hand pane without dragging in left-pane cells, per-file review progres
 mouse-draggable splitters. See `docs/githunk-prd-v0.1.md` (§1–3 for the product idea, §19 for the
 v0.2 scope: arbitrary compare base, sticky file/hunk header, side-by-side diff).
 
-Bun + TypeScript, one runtime dependency: `@opentui/core`, pinned to `0.5.6`.
+Bun + TypeScript, one runtime dependency: `@opentui/core` (version floats; `bun.lock` is the pin).
 
 ## Commands
 
@@ -87,7 +87,7 @@ patch offsets (handling wide chars, combining marks and wrapped rows) → `trans
 `ui/clipboard.ts`; delivery is never assumed to have worked (`docs/clipboard-compatibility-v0.1.md`).
 
 **Two OpenTUI performance rules, both load-bearing.** `panes/pane-text.ts` is the *only* place that
-touches OpenTUI internals: assigning `TextRenderable.content` costs chunks × lines in 0.5.6, so text
+touches OpenTUI internals: assigning `TextRenderable.content` costs chunks × lines, so text
 goes in unstyled via the buffer's `setText` and colour arrives as line-indexed highlights.
 `panes/diff-text.ts` then paints only the rows near the viewport.
 

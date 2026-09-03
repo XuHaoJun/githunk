@@ -127,8 +127,11 @@ export function attachVerticalScrollbar(box: BoxRenderable, text: TextRenderable
   const sync = (): void => syncVerticalScrollbar(bar, text)
   box.onSizeChange = sync
   text.onSizeChange = sync
-  // Keep slider's built-in pointer handlers: they drive onChange and thumb/track interaction.
-  // Arrow handlers are irrelevant (arrows invisible) and stay disabled.
+  // The slider's built-in pointer handlers are replaced by RootView.installMouseHandlers:
+  // githunk's own scrollbar mapping (scrollPaneByScrollbarPosition over bar.screenY/height)
+  // is the tested contract, and since OpenTUI 0.5.10 the slider intercepts presses that
+  // used to fall through to root.onMouse. Arrow handlers are irrelevant (arrows
+  // invisible) and stay disabled.
   bar.startArrow.onMouseDown = undefined
   bar.startArrow.onMouseUp = undefined
   bar.endArrow.onMouseDown = undefined
