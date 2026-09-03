@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { TextAttributes, type RGBA } from "@opentui/core"
+import { MouseButtons } from "@opentui/core/testing"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import type { TempRepository } from "../helpers/temp-repository"
-import { getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument } from "../../src/ui/panes/main-pane"
+import type { DiffDocument } from "../../src/domain/diff/document"
+import { getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainPointerSelection, virtualMainPaneFor } from "../../src/ui/panes/main-pane"
+import { VIRTUAL_DIFF_LINE_THRESHOLD } from "../../src/domain/diff/virtual"
+import { paneScrollbar } from "../../src/ui/panes/common"
 
 
 /** The main pane's spans on `row`, clipped to its own text window, in paint order. */
@@ -178,6 +182,179 @@ describe("main pane keyboard line ranges", () => {
     await harness!.pressKey("]")
     await harness!.settle()
   }
+  async function virtualChangedFileHarness(): Promise<ShellHarness> {
+    const created = await createShellHarness({
+      width: 140,
+      height: 30,
+      setup: async (repository: TempRepository) => {
+        const lineCount = 11_000
+        const original = Array.from({ length: lineCount }, (_, index) => `base ${index}`)
+        const changed = original.map((line, index) => index === 0 ? `changed ${index}` : line)
+        await repository.write("large.txt", `${original.join("\n")}\n`)
+        await repository.git(["add", "large.txt"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.git(["config", "diff.context", String(lineCount)])
+        await repository.write("large.txt", `${changed.join("\n")}\n`)
+      },
+    })
+    await created.pressKey("]")
+    await created.settle()
+    await created.pressKey("]")
+    await created.settle()
+    await created.pressKey("0")
+    return created
+  }
+
+  async function selectFirstVirtualChange(): Promise<{ readonly document: DiffDocument; readonly startUtf16: number; readonly endUtf16: number }> {
+    const view = harness!.app.view!
+    const pane = view.mainPane
+    const document = getMainDocument(pane)
+    const virtual = virtualMainPaneFor(pane)
+    expect(document).toBeDefined()
+    expect(document!.lines.length).toBeGreaterThan(VIRTUAL_DIFF_LINE_THRESHOLD)
+    expect(virtual?.isActive()).toBe(true)
+    const layout = virtual?.layout()
+    expect(pane.text.lineCount).toBeLessThanOrEqual(pane.text.height + pane.text.height * 2 + 10)
+    // The native window stays bounded while the logical document stays complete: scrollHeight
+    // covers every preamble row plus every parsed diff line, so no patch data is truncated.
+    expect(pane.text.scrollHeight).toBe((layout?.preambleRows ?? 0) + document!.lines.length)
+    expect(paneScrollbar(pane.text)?.scrollSize).toBe(pane.text.scrollHeight)
+    expect(layout).toBeDefined()
+    const startIndex = document!.lines.findIndex((line) => line.kind === "deletion")
+    const endIndex = document!.lines.findIndex((line, index) => index > startIndex && line.kind === "addition")
+    expect(startIndex).toBeGreaterThanOrEqual(0)
+    expect(endIndex).toBeGreaterThan(startIndex)
+    const startRow = (layout?.preambleRows ?? 0) + startIndex
+    const endRow = (layout?.preambleRows ?? 0) + endIndex
+    const start = layout!.rowAt(startRow)!
+    const geometry = view.paneTextGeometry("main")!
+    const endColumn = Math.min(geometry.width - 1, start.gutterCols + 24)
+    await harness!.drag(
+      geometry.screenX + start.gutterCols,
+      geometry.screenY + startRow,
+      geometry.screenX + endColumn,
+      geometry.screenY + endRow,
+    )
+    const selection = getMainPointerSelection(pane)
+    expect(selection?.startUtf16).toBe(document!.lines[startIndex]!.startUtf16)
+    expect(selection?.endUtf16).toBe(document!.lines[endIndex]!.endUtf16)
+    return { document: document!, startUtf16: selection!.startUtf16, endUtf16: selection!.endUtf16 }
+  }
+
+  test("routes a virtual mouse selection through exact raw copy and preserves it while scrolling", async () => {
+    harness = await virtualChangedFileHarness()
+    const view = harness.app.view!
+    const selected = await selectFirstVirtualChange()
+    const expected = selected.document.text.slice(selected.startUtf16, selected.endUtf16)
+    view.mainPane.text.scrollY = Math.floor(view.mainPane.text.maxScrollY / 2)
+    await harness.flush()
+    expect(getMainPointerSelection(view.mainPane)?.startUtf16).toBe(selected.startUtf16)
+    expect(getMainPointerSelection(view.mainPane)?.endUtf16).toBe(selected.endUtf16)
+    view.mainPane.text.scrollY = 0
+    await harness.flush()
+
+    const copied: string[] = []
+    const renderer = harness.renderer as unknown as {
+      isOsc52Supported: () => boolean
+      copyToClipboardOSC52: (text: string) => boolean
+    }
+    renderer.isOsc52Supported = () => true
+    renderer.copyToClipboardOSC52 = (text) => {
+      copied.push(text)
+      return true
+    }
+    await harness.pressKey("o", { ctrl: true })
+    expect(copied).toEqual([expected])
+  })
+  test("a non-selecting mouse down clears virtual pointer state instead of starting a range", async () => {
+    harness = await virtualChangedFileHarness()
+    const view = harness.app.view!
+    await selectFirstVirtualChange()
+    expect(getMainPointerSelection(view.mainPane)).toBeDefined()
+    const geometry = view.paneTextGeometry("main")!
+    // Right-button matches OpenTUI's button 0 && !ctrl selection gate: it must not create a raw
+    // range, and clears any prior one like the renderer's down-clear.
+    await harness.mockMouse.click(geometry.screenX + 2, geometry.screenY + 1, MouseButtons.RIGHT)
+    await harness.flush()
+    expect(getMainPointerSelection(view.mainPane)).toBeUndefined()
+    await selectFirstVirtualChange()
+    expect(getMainPointerSelection(view.mainPane)).toBeDefined()
+    await harness.mockMouse.click(geometry.screenX + 2, geometry.screenY + 1, MouseButtons.LEFT, { modifiers: { ctrl: true } })
+    await harness.flush()
+    expect(getMainPointerSelection(view.mainPane)).toBeUndefined()
+  })
+
+  test("uses virtual raw indexes for a real stage mutation", async () => {
+    harness = await virtualChangedFileHarness()
+    const selected = await selectFirstVirtualChange()
+    expect(selected.document.text.slice(selected.startUtf16, selected.endUtf16)).toContain("changed 0")
+    expect(harness.app.controller.state.reviewTarget.kind).toBe("working-tree")
+    if (harness.app.controller.state.reviewTarget.kind === "working-tree") {
+      expect(harness.app.controller.state.reviewTarget.scope).toBe("unstaged")
+    }
+    await harness.pressKey(" ")
+    await harness.settle()
+    const staged = (await harness.repository.git(["diff", "--cached", "--", "large.txt"])).stdout
+    expect(staged).toMatch(/^\+changed 0$/m)
+  })
+
+  test("uses virtual raw indexes for a real discard mutation", async () => {
+    harness = await virtualChangedFileHarness()
+    const selected = await selectFirstVirtualChange()
+    expect(selected.document.text.slice(selected.startUtf16, selected.endUtf16)).toContain("changed 0")
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Confirm discard")
+    await harness.pressKey("d")
+    await harness.settle()
+    const remaining = (await harness.repository.git(["diff", "--", "large.txt"])).stdout
+    expect(remaining).not.toMatch(/^\+changed 0$/m)
+    expect(remaining).not.toMatch(/^\+changed 1$/m)
+  })
+
+  test("stages the correct lines from a scrolled virtual viewport", async () => {
+    harness = await virtualChangedFileHarness()
+    const view = harness.app.view!
+    const pane = view.mainPane
+    const document = getMainDocument(pane)
+    const virtual = virtualMainPaneFor(pane)
+    expect(document).toBeDefined()
+    expect(virtual?.isActive()).toBe(true)
+    const layout = virtual?.layout()
+    expect(layout).toBeDefined()
+    const startIndex = document!.lines.findIndex((line) => line.kind === "deletion")
+    const endIndex = document!.lines.findIndex((line, index) => index > startIndex && line.kind === "addition")
+    expect(startIndex).toBeGreaterThanOrEqual(0)
+    expect(endIndex).toBeGreaterThan(startIndex)
+    const startRow = (layout?.preambleRows ?? 0) + startIndex
+    const endRow = (layout?.preambleRows ?? 0) + endIndex
+    // Scroll just enough that visible rows diverge from logical rows while the
+    // first change stays in view: without the adapter's +scrollY translation the
+    // drag below would land two rows early on file headers.
+    const scrolledY = 2
+    expect(startRow).toBeGreaterThanOrEqual(scrolledY)
+    pane.text.scrollY = scrolledY
+    await harness.flush()
+    expect(pane.text.scrollY).toBe(scrolledY)
+    const geometry = view.paneTextGeometry("main")!
+    const visibleStart = startRow - scrolledY
+    const visibleEnd = endRow - scrolledY
+    expect(visibleEnd).toBeLessThan(geometry.height)
+    const start = layout!.rowAt(startRow)!
+    const endColumn = Math.min(geometry.width - 1, start.gutterCols + 24)
+    await harness.drag(
+      geometry.screenX + start.gutterCols,
+      geometry.screenY + visibleStart,
+      geometry.screenX + endColumn,
+      geometry.screenY + visibleEnd,
+    )
+    const selection = getMainPointerSelection(pane)
+    expect(selection?.startUtf16).toBe(document!.lines[startIndex]!.startUtf16)
+    expect(selection?.endUtf16).toBe(document!.lines[endIndex]!.endUtf16)
+    await harness.pressKey(" ")
+    await harness.settle()
+    const staged = (await harness.repository.git(["diff", "--cached", "--", "large.txt"])).stdout
+    expect(staged).toMatch(/^\+changed 0$/m)
+  })
 
 
   test("selects contiguous changed lines for staging and paints the visual range", async () => {

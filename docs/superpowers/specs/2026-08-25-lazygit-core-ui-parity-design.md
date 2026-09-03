@@ -267,7 +267,7 @@ When an accepted preview changes source view or stable item ID, Main clears the 
 
 This slice matches lazygit's observable presentation: commit metadata, stat, then patch. It does not invent a large-patch fallback to a file list.
 
-The current `DiffDocument` requires a complete patch for exact UTF-16 selection offsets and copy semantics. Replacing it with a streaming document is therefore a separate large-diff performance sub-project, not a hidden behavior change in this slice. This slice must still suppress stale async previews and preserve responsive cursor state while a preview loads.
+The current `DiffDocument` still requires a complete patch for exact UTF-16 selection offsets and copy semantics — the raw patch is always retained in full and never truncated. Above `VIRTUAL_DIFF_LINE_THRESHOLD` (10,000 parsed diff lines) the main pane installs only a bounded application-level virtual row window (viewport height plus overscan, minimum 10 rows) into its `TextRenderable`, while scroll metrics, pointer/line selection, exact copy, and stage/discard keep addressing logical document rows. This mirrors lazygit's incremental main-view reading (`pkg/tasks/tasks.go:189-200` `ReadLines` via `pkg/gui/tasks_adapter.go:54`) at the application layer; it is not an OpenTUI-native virtual TextBuffer feature and never substitutes a file list. This slice must still suppress stale async previews and preserve responsive cursor state while a preview loads.
 
 ## 11. Refresh and Error Semantics
 

@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
-import { getMainDiffLineRangeState } from "../../src/ui/panes/main-pane"
+import type { TempRepository } from "../helpers/temp-repository"
+import { getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, virtualMainPaneFor } from "../../src/ui/panes/main-pane"
 import { diffLineSelectionRange } from "../../src/domain/diff/line-selection"
+import { VIRTUAL_DIFF_LINE_THRESHOLD } from "../../src/domain/diff/virtual"
+import { paneScrollbar } from "../../src/ui/panes/common"
 import { MAIN_SCROLL_HEIGHT } from "../../src/ui/root-view"
 
 /**
@@ -45,6 +48,126 @@ describe("main view scrolling", () => {
     await created.flush()
     return created
   }
+
+  /** A real patch above the virtualization threshold, with changed rows throughout the file. */
+  async function harnessWithVirtualDiff(): Promise<ShellHarness> {
+    const created = await createShellHarness({
+      width: 140,
+      height: 30,
+      setup: async (repository: TempRepository) => {
+        const lineCount = 7000
+        const original = Array.from({ length: lineCount }, (_, index) => `base ${index}`)
+        const changed = original.map((line, index) => index % 2 === 0 || index === lineCount - 1 ? `changed ${index}` : line)
+        await repository.write("large.txt", `${original.join("\n")}\n`)
+        await repository.git(["add", "large.txt"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("large.txt", `${changed.join("\n")}\n`)
+      },
+    })
+    await created.pressKey("0")
+    await created.flush()
+    return created
+  }
+
+  async function harnessWithVirtualCommit(): Promise<ShellHarness> {
+    const created = await createShellHarness({
+      width: 140,
+      height: 30,
+      setup: async (repository: TempRepository) => {
+        const lineCount = 7000
+        const original = Array.from({ length: lineCount }, (_, index) => `base ${index}`)
+        const changed = original.map((line, index) => index % 2 === 0 || index === lineCount - 1 ? `changed ${index}` : line)
+        await repository.write("large.txt", `${original.join("\n")}\n`)
+        await repository.git(["add", "large.txt"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("large.txt", `${changed.join("\n")}\n`)
+        await repository.git(["add", "large.txt"])
+        await repository.git(["commit", "-m", "large change"])
+      },
+    })
+    await created.pressKey("4")
+    await created.app.view!.whenPreviewSettled()
+    await created.flush()
+    return created
+  }
+
+  test("keeps large-diff navigation and scrollbar metrics logical while rendering bounded rows", async () => {
+    harness = await harnessWithVirtualDiff()
+    const view = harness.app.view!
+    const document = getMainDocument(view.mainPane)
+    const virtual = virtualMainPaneFor(view.mainPane)
+    expect(document).toBeDefined()
+    expect(document!.lines.length).toBeGreaterThan(VIRTUAL_DIFF_LINE_THRESHOLD)
+    expect(virtual?.isActive()).toBe(true)
+    expect(view.mainPane.text.lineCount).toBeLessThanOrEqual(view.mainPane.text.height + view.mainPane.text.height * 2 + 10)
+    const bar = paneScrollbar(view.mainPane.text)
+    expect(bar?.scrollSize).toBe(view.mainPane.text.scrollHeight)
+
+    const max = view.mainPane.text.maxScrollY
+    expect(max).toBeGreaterThan(1000)
+    const pageCount = Math.max(1, Math.floor(max / (view.mainPageDelta * 2)))
+    for (let page = 0; page < pageCount; page += 1) await harness.pressKey(".")
+    expect(view.mainScrollY).toBeGreaterThan(max / 3)
+    expect(view.mainScrollY).toBeLessThan(max)
+    expect(bar?.scrollPosition).toBe(view.mainScrollY)
+
+    await harness.pressKey(">")
+    await harness.flush()
+    expect(view.mainScrollY).toBe(max)
+    expect(view.mainPane.text.plainText).toContain("+changed 6999")
+    expect(harness.frame()).toContain("+changed 6999")
+    expect(bar?.scrollPosition).toBe(view.mainScrollY)
+  })
+
+  test("preserves virtual raw line indexes across shifted-arrow selection and focus changes", async () => {
+    harness = await harnessWithVirtualDiff()
+    const view = harness.app.view!
+    const document = getMainDocument(view.mainPane)!
+    await harness.pressKey("v")
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    const expected = getMainDiffLineSelection(view.mainPane)?.indexes
+    expect(expected?.length).toBe(2)
+    expect(expected?.every((index) => document.lines[index]?.kind === "deletion" || document.lines[index]?.kind === "addition")).toBe(true)
+
+    const beforeFocusScroll = Math.floor(view.mainPane.text.maxScrollY / 3)
+    view.mainPane.text.scrollY = beforeFocusScroll
+    await harness.flush()
+    await harness.pressKey("1")
+    await harness.pressKey("0")
+    await harness.flush()
+    expect(view.mainScrollY).toBe(beforeFocusScroll)
+    expect(getMainDiffLineSelection(view.mainPane)?.indexes).toEqual(expected)
+    expect(view.mainPane.text.lineCount).toBeLessThanOrEqual(view.mainPane.text.height + view.mainPane.text.height * 2 + 10)
+
+    await harness.pressKey("1")
+    for (let step = 0; step < 10; step += 1) await harness.pressKey("J")
+    for (let step = 0; step < 10; step += 1) await harness.pressKey("K")
+    await harness.pressKey("0")
+    expect(getMainDiffLineSelection(view.mainPane)?.indexes).toEqual(expected)
+  })
+
+  test("searches virtual commit lines by logical row with the preamble in target and denominator", async () => {
+    harness = await harnessWithVirtualCommit()
+    await harness.pressKey("0")
+    await harness.flush()
+    const view = harness.app.view!
+    const document = getMainDocument(view.mainPane)
+    const layout = virtualMainPaneFor(view.mainPane)?.layout()
+    expect(document).toBeDefined()
+    expect(layout?.preambleRows).toBeGreaterThan(0)
+    expect(document!.lines.length).toBeGreaterThan(VIRTUAL_DIFF_LINE_THRESHOLD)
+    const lineIndex = document!.lines.findIndex((line) => line.raw.includes("+changed 6998"))
+    expect(lineIndex).toBeGreaterThan(0)
+    const targetRow = layout!.preambleRows + lineIndex
+
+    await harness.pressKey("/")
+    await harness.typeText("changed 6998")
+    await harness.pressKey("RETURN")
+    await harness.pressKey("n")
+    expect(view.mainScrollY).toBe(Math.min(view.mainPane.text.maxScrollY, Math.max(0, targetRow - 2)))
+    expect(view.mainPane.box.bottomTitle).toContain(`(${targetRow + 1}/${layout!.totalRows})`)
+    expect(harness.frame()).toContain("+changed 6998")
+  })
 
   const scrollY = (harness: ShellHarness): number => harness.app.view!.mainScrollY
 

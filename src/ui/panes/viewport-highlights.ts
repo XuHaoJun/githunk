@@ -40,6 +40,8 @@ export type ViewportHighlightSpec<Content> = {
   readonly buffer: PaneTextBuffer
   /** Paints one logical line's highlights. A line with nothing to paint is a no-op. */
   readonly paintLine: (line: number, content: Content) => void
+  /** Optional logical scroll coordinate; virtual buffers paint from local row zero. */
+  readonly scrollY?: (content: Content) => number
 }
 
 export type ViewportHighlights<Content> = {
@@ -55,9 +57,8 @@ export type ViewportHighlights<Content> = {
    */
   release(): void
 }
-
 export function createViewportHighlights<Content>(text: TextRenderable, spec: ViewportHighlightSpec<Content>): ViewportHighlights<Content> {
-  const { buffer, paintLine } = spec
+  const { buffer, paintLine, scrollY: logicalScrollY } = spec
   /**
    * The content the next paint describes. Assigned by `install` before it sets `active`, and `paint`
    * returns while `!active`, so it is read only after it has been written — which is why the spec
@@ -81,7 +82,7 @@ export function createViewportHighlights<Content>(text: TextRenderable, spec: Vi
   const paint = (force: boolean): void => {
     if (!active) return
     const height = Math.max(1, Math.floor(text.height))
-    const scrollY = Math.max(0, Math.floor(text.scrollY))
+    const scrollY = Math.max(0, Math.floor(logicalScrollY?.(content) ?? text.scrollY))
     const width = Math.max(1, Math.floor(text.width))
     // The width belongs in this guard. Without it a width-only change — a horizontal splitter drag
     // at unchanged height and scroll offset — returned here before reaching the width check below,
