@@ -3419,13 +3419,13 @@ export class RootView {
       let next = -1
       for (let i = current + 1; i < view.rows.length; i++) {
         const row = view.rows[i]!
-        const text = `${row.columns[0]?.text ?? ""} ${row.columns[3]?.text ?? ""}`.toLowerCase()
+        const text = `${row.columns[0]?.text ?? ""} ${row.columns[2]?.text ?? ""}`.toLowerCase()
         if (text.includes(normalizedQuery)) { next = i; break }
       }
       if (next === -1) {
         for (let i = 0; i <= current; i++) {
           const row = view.rows[i]!
-          const text = `${row.columns[0]?.text ?? ""} ${row.columns[3]?.text ?? ""}`.toLowerCase()
+          const text = `${row.columns[0]?.text ?? ""} ${row.columns[2]?.text ?? ""}`.toLowerCase()
           if (text.includes(normalizedQuery)) { next = i; break }
         }
       }
@@ -3515,13 +3515,13 @@ export class RootView {
       let prev = -1
       for (let i = current - 1; i >= 0; i--) {
         const row = view.rows[i]!
-        const text = `${row.columns[0]?.text ?? ""} ${row.columns[3]?.text ?? ""}`.toLowerCase()
+        const text = `${row.columns[0]?.text ?? ""} ${row.columns[2]?.text ?? ""}`.toLowerCase()
         if (text.includes(normalizedQuery)) { prev = i; break }
       }
       if (prev === -1) {
         for (let i = view.rows.length - 1; i >= current; i--) {
           const row = view.rows[i]!
-          const text = `${row.columns[0]?.text ?? ""} ${row.columns[3]?.text ?? ""}`.toLowerCase()
+          const text = `${row.columns[0]?.text ?? ""} ${row.columns[2]?.text ?? ""}`.toLowerCase()
           if (text.includes(normalizedQuery)) { prev = i; break }
         }
       }
@@ -4106,7 +4106,7 @@ export class RootView {
     let commitsState = setListRows(panel.views.commits, rows, displayRows)
     if (commitsSearch.length > 0 && rows.length > 0) {
       const normalized = commitsSearch.toLowerCase()
-      const matchIndex = rows.findIndex((row) => (row.columns[3]?.text ?? "").toLowerCase().includes(normalized) || (row.columns[0]?.text ?? "").toLowerCase().includes(normalized))
+      const matchIndex = rows.findIndex((row) => (row.columns[2]?.text ?? "").toLowerCase().includes(normalized) || (row.columns[0]?.text ?? "").toLowerCase().includes(normalized))
       if (matchIndex >= 0) {
         const matchId = rows[matchIndex]!.id
         commitsState = selectListRow(commitsState, matchId)

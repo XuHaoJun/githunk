@@ -67,28 +67,50 @@ describe("commits pane rows", () => {
     expect(new Set(lines.map((line) => line.indexOf("\u25cb")))).toEqual(new Set([12]))
   })
 
-  test("pads the graph column so every subject starts at the same offset", () => {
-    const merged = [
-      mkCommit({ oid: "m00", parentOids: ["l00", "r00"], subject: "merge branch" }),
-      mkCommit({ oid: "r00", parentOids: ["b00"], subject: "right side" }),
-      mkCommit({ oid: "l00", parentOids: ["b00"], subject: "left side" }),
-      mkCommit({ oid: "b00", parentOids: [], subject: "base" }),
+  test("starts the subject right after its own graph lane instead of padding to the widest lane", () => {
+    const id = (s: string): string => `${s}0000000`
+    // Varying lane widths (lazygit's graph_test "room to move to the left"):
+    // 1:○  2:◎─╮  3:◎─│─╮  5:◎─│─│─╮  7:◎─│─│─│─╮ …
+    const seq: Array<readonly [string, readonly string[]]> = [
+      ["1", ["2"]],
+      ["2", ["3", "4"]],
+      ["3", ["5", "4"]],
+      ["5", ["7", "8"]],
+      ["7", ["4", "A"]],
+      ["4", ["B"]],
+      ["B", ["C"]],
+      ["C", ["D"]],
     ]
+    const merged = seq.map(([hash, parents], index) =>
+      mkCommit({
+        oid: id(hash) + index,
+        parentOids: parents.map((p) => {
+          const parentIndex = seq.findIndex(([h]) => h === p)
+          return parentIndex === -1 ? id(p) + "z" : id(p) + parentIndex
+        }),
+        subject: `subject-${hash}`,
+      }),
+    )
     const lines = renderCommitRows(merged, { focused: false, width: 80, now }).plainText.split("\n")
-    // The merge row needs three lanes, the root row one; padding keeps the subjects in one column.
-    expect(lines[0]).toContain("\u25ce\u2500\u256e")
-    const subjects = ["merge branch", "right side", "left side", "base"]
-    const offsets = new Set(lines.map((line, index) => line.indexOf(subjects[index]!)))
-    expect(offsets.size).toBe(1)
-    expect([...offsets][0]).toBeGreaterThan(0)
+    // The narrow lane must not pad out to the widest lane: single space, not a blank run.
+    expect(lines[0]).toContain("○ subject-1")
+    expect(lines[0]).not.toContain("○  ")
+    // Subjects ride right after their own lane, so offsets vary with lane width.
+    const offsets = lines.map((line, index) => line.indexOf(`subject-${seq[index]![0]}`))
+    expect(new Set(offsets).size).toBeGreaterThan(1)
+    // The trailing time still aligns the rows: every line ends with it.
+    expect(lines.every((line) => line.endsWith("1d"))).toBe(true)
   })
 
-  test("drops time then author before truncating subject at narrow width", () => {
+  test("truncates the subject before dropping the trailing time at narrow width", () => {
     const narrow = renderCommitRows(commits, { selectedId: commits[0]!.oid, focused: false, width: 30, now })
-    // At width 30, time/author should be dropped fully so subject appears even if truncated
-    expect(narrow.plainText).not.toContain("▸")
+    const lines = narrow.plainText.split("\n")
+    // Time survives narrow widths; the flex subject absorbs the squeeze instead.
+    expect(lines[0]).toContain("12h")
+    expect(lines[1]).toContain("5d")
     // Subject words still partially visible (first commit subject starts with "First")
-    expect(narrow.plainText).toContain("First")
+    expect(lines[0]).toContain("First")
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(30)
   })
 
   /**

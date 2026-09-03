@@ -405,8 +405,11 @@ function truncateToWidth(text: string, width: number): string {
  * every column is padded to the widest cell in that column so the ones after it line
  * up on every row, and columns that are blank on every row disappear entirely.
  *
- * Deciding this once per list — rather than per row — is what keeps a variable-width
- * cell (an author's initials, a graph lane) from shifting the rest of the row around.
+ * Deciding this once per list — rather than per row — is what keeps a fixed-width
+ * cell (an author's initials, a short hash) from shifting the rest of the row around.
+ * Variable-width content (a commit graph lane) lives inside the flex column with the
+ * subject, exactly as lazygit's `graphLine+name` last column does, so lanes never
+ * pad out to the widest lane.
  */
 export type ListColumnLayout = {
   /** Indices into each row's `columns`, in render order. */
@@ -496,14 +499,31 @@ export function layoutListRowSegments(row: ListRow, layout: ListColumnLayout): r
     const text = column?.text ?? ""
     const truncated = truncateToWidth(text, cellWidth)
     if (truncated.length > 0) {
-      if (column?.segments !== undefined && truncated === text) {
+      if (column?.segments !== undefined) {
+        // Slice the segment runs to the same prefix the plain truncation keeps,
+        // so a truncated flex column (graph+subject) keeps the graph's colours
+        // instead of collapsing to one uncoloured run.
+        let remaining = [...truncated].length
         for (const segment of column.segments) {
+          if (remaining <= 0) break
           if (segment.text.length === 0) continue
-          segments.push({
-            text: segment.text,
-            ...(column.style === undefined ? {} : { style: column.style }),
-            ...(segment.color === undefined ? {} : { color: segment.color }),
-          })
+          const chars = [...segment.text]
+          if (chars.length <= remaining) {
+            segments.push({
+              text: segment.text,
+              ...(column.style === undefined ? {} : { style: column.style }),
+              ...(segment.color === undefined ? {} : { color: segment.color }),
+            })
+            remaining -= chars.length
+          } else {
+            segments.push({
+              text: chars.slice(0, remaining).join(""),
+              ...(column.style === undefined ? {} : { style: column.style }),
+              ...(segment.color === undefined ? {} : { color: segment.color }),
+            })
+            remaining = 0
+            break
+          }
         }
       } else {
         segments.push({

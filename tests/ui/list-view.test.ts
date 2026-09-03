@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { RGBA, TextAttributes, type TextChunk } from "@opentui/core"
 import type { ListDisplayRow, ListRow } from "../../src/ui/list-view"
-import { clearListRangeSelection, computeColumnLayout, createListState, expandListRangeSelection, getListSelectionRange, hasMultipleListRowsSelected, isListRangeActive, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRangeSelection, setListRows, toggleListRangeSelection } from "../../src/ui/list-view"
+import { clearListRangeSelection, computeColumnLayout, createListState, expandListRangeSelection, getListSelectionRange, hasMultipleListRowsSelected, isListRangeActive, layoutListRowSegments, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRangeSelection, setListRows, toggleListRangeSelection } from "../../src/ui/list-view"
 import { FILE_STAGED_FG, REFLOG_HASH_FG, SELECTED_LINE_BG, DEFAULT_BACKGROUND } from "../../src/ui/theme"
 
 const rows = [
@@ -61,6 +61,28 @@ describe("list column layout", () => {
     const state = createListState([row("a", "M", "alpha", "n"), row("b", "", "beta-long", "note")])
     const lines = renderListRows(state, false, 40).chunks.map((c) => c.text).join("").split("\n")
     expect(lines).toEqual(["M alpha     n", "  beta-long note"])
+  })
+
+  test("keeps segment colours when the flex column truncates", () => {
+    const segmented = {
+      id: "a",
+      columns: [
+        { text: "ab", priority: 1 },
+        {
+          text: "○ hello",
+          priority: 2,
+          flex: true,
+          segments: [{ text: "○", color: "#ffffff" }, { text: " " }, { text: "hello" }],
+        },
+        { text: "1d", priority: 0 },
+      ],
+    }
+    // Fixed columns take 2 + 2 + 1 separator each side = 6, leaving 6 for the flex prefix "○ hell".
+    const layout = computeColumnLayout([segmented], 12)
+    expect(layout).toEqual({ indexes: [0, 1, 2], widths: [2, 6, 2] })
+    const segments = layoutListRowSegments(segmented, layout)
+    expect(segments.map((segment) => segment.text).join("")).toBe("ab ○ hell 1d")
+    expect(segments[2]).toEqual({ text: "○", color: "#ffffff" })
   })
 })
 

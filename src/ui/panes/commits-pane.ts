@@ -50,7 +50,15 @@ function commitHashColor(status: CommitStatus | undefined) {
 
 /**
  * Lazygit column order (`pkg/gui/presentation/commits.go:displayCommit`):
- * hash → author initials → graph → subject, with the relative time trailing.
+ * hash → author initials → graph+subject as one trailing column, with the
+ * relative time trailing (githunk extension — lazygit has no time column).
+ * The graph and subject share one flex column exactly because lazygit's
+ * `getPaddedDisplayStrings` (`pkg/utils/formatting.go:128-149`) pads every
+ * column except the last: `graphLine+mark+tag+name` is a single unpadded
+ * string, so a narrow lane never pads out to the widest lane's width. A
+ * separate graph column padded to the max lane is where the blank gap came
+ * from on complex graphs. The flex truncates the subject tail first; time
+ * (priority 0) is the last column ever shed, so it survives narrow widths.
  * The graph's pipe colour is the author colour, exactly as lazygit's
  * `loadPipesets` derives it, so a lane and its author read as one thing.
  */
@@ -61,19 +69,21 @@ export function buildCommitRows(commits: readonly CommitSummary[], now: Date, fi
     const shortHash = commit.oid.length >= 8 ? commit.oid.slice(0, 8) : commit.shortOid
     const initials = authorInitials(commit.authorName).padEnd(AUTHOR_COLUMN_WIDTH, " ")
     const relative = formatRelativeTime(commit.authoredAt, now)
+    const graphText = graph?.text ?? ""
+    const graphSegments = graph?.segments ?? []
+    const subjectSegments = commit.subject.length === 0 ? [] : [{ text: commit.subject } as const]
     return {
       id: commit.oid,
       columns: [
         { text: shortHash, priority: 1, color: commitHashColor(commit.status) },
-        { text: initials, priority: 3, color: authorColor(commit.authorName) },
-        { text: graph?.text ?? "", priority: 0, segments: graph?.segments ?? [] },
-        { text: commit.subject, priority: 2, flex: true },
-        { text: relative, priority: 4, style: "dim" as const },
+        { text: initials, priority: 2, color: authorColor(commit.authorName) },
+        { text: `${graphText}${commit.subject}`, priority: 2, flex: true, segments: [...graphSegments, ...subjectSegments] },
+        { text: relative, priority: 0, style: "dim" as const },
       ],
     }
   })
   if (filter.length === 0) return rows
-  return [...filterItems(filter, rows, (row) => `${row.columns[0]?.text ?? ""} ${row.columns[3]?.text ?? row.id}`)]
+  return [...filterItems(filter, rows, (row) => `${row.columns[0]?.text ?? ""} ${row.columns[2]?.text ?? row.id}`)]
 }
 
 export function renderCommitRows(
