@@ -61,7 +61,7 @@ import {
   type FileTreeState,
 } from "./file-tree"
 import { submoduleFullName } from "../domain/submodule"
-import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainDiffVisualRowRange, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainPointerSelection, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainDiffVisualRowRange, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, virtualMainPaneFor, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { PANE_SCROLLBAR_GUTTER, paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
@@ -298,6 +298,7 @@ export class RootView {
   private lastSplitterPress: { readonly axis: "vertical" | "horizontal"; readonly x: number; readonly y: number; readonly at: number } | undefined
   private activeSplitterDrag: SplitterAxis | undefined
   gestureOwner: GestureOwner | undefined
+  private mainPointerAnchor: { readonly row: number; readonly column: number } | undefined
   private pendingClick: { readonly viewId: string; readonly stableId: string; readonly x: number; readonly y: number; readonly at: number; readonly arrowToggled?: boolean } | undefined
   private hoveredListRow: HoveredListRow | undefined
 
@@ -637,6 +638,10 @@ export class RootView {
       this.syncPreviewForFocus(focus)
     }
     this.handleResize = () => {
+      if (this.gestureOwner?.kind === "main-selection") {
+        virtualMainPaneFor(this.panes.main)?.resetSelection()
+        this.cancelGesture()
+      }
       this.recomputeLayout()
     }
     this.handleKey = (key: KeyEvent) => {
@@ -691,6 +696,10 @@ export class RootView {
     // produce has a handler, so no runtime cross-check is needed here.
   }
   update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean } = {}): void {
+    if (this.gestureOwner?.kind === "main-selection") {
+      virtualMainPaneFor(this.panes.main)?.resetSelection()
+      this.cancelGesture()
+    }
     this.branchActionGeneration += 1
     this.invalidateBranchCommitsRequest()
     if (!options.preserveRemoteCheckout) {
@@ -943,6 +952,7 @@ export class RootView {
   }
   cancelGesture(): void {
     this.gestureOwner = undefined
+    this.mainPointerAnchor = undefined
     this.activeSplitterDrag = undefined
   }
   get activeBranchesTab(): "branches" | "remotes" | "tags" {
@@ -3425,10 +3435,37 @@ export class RootView {
     if (focus === "main") {
       const query = this.getFilterForKey(this.filterKey("main"))
       if (query.length === 0) return
-      const text = getMainRenderedText(this.panes.main) ?? getMainDocument(this.panes.main)?.text ?? ""
+      const document = getMainDocument(this.panes.main)
+      const virtual = virtualMainPaneFor(this.panes.main)
+      const normalizedQuery = query.toLowerCase()
+      if (document !== undefined && virtual?.isActive()) {
+        const layout = virtual.layout()
+        const preambleRows = layout?.preambleRows ?? 0
+        const totalRows = layout?.totalRows ?? preambleRows + document.lines.length
+        const currentLine = this.panes.main.text.scrollY - preambleRows
+        let nextLine = -1
+        const firstCandidate = Math.max(0, currentLine + 1)
+        for (let i = firstCandidate; i < document.lines.length; i += 1) {
+          if (document.lines[i]!.raw.toLowerCase().includes(normalizedQuery)) { nextLine = i; break }
+        }
+        if (nextLine === -1) {
+          for (let i = 0; i <= currentLine && i < document.lines.length; i += 1) {
+            if (document.lines[i]!.raw.toLowerCase().includes(normalizedQuery)) { nextLine = i; break }
+          }
+        }
+        if (nextLine !== -1) {
+          this.clearNonStickyMainRange()
+          const targetRow = preambleRows + nextLine
+          this.panes.main.text.scrollY = Math.max(0, targetRow - 2)
+          this.panes.main.syncScrollbar()
+          this.panes.main.box.bottomTitle = `Search: ${query} (${targetRow + 1}/${totalRows})`
+          this.root.requestRender()
+        }
+        return
+      }
+      const text = getMainRenderedText(this.panes.main) ?? document?.text ?? ""
       if (text.length === 0) return
       const normalizedText = text.toLowerCase()
-      const normalizedQuery = query.toLowerCase()
       const currentY = this.panes.main.text.scrollY
       const lines = text.split("\n")
       let currentLine = currentY
@@ -3446,6 +3483,7 @@ export class RootView {
         this.clearNonStickyMainRange()
         const targetY = Math.max(0, nextLine - 2)
         this.panes.main.text.scrollY = targetY
+        this.panes.main.syncScrollbar()
         this.panes.main.box.bottomTitle = `Search: ${query} (${nextLine + 1}/${lines.length})`
         this.root.requestRender()
       }
@@ -3493,11 +3531,37 @@ export class RootView {
     if (focus === "main") {
       const query = this.getFilterForKey(this.filterKey("main"))
       if (query.length === 0) return
-      const text = getMainRenderedText(this.panes.main) ?? getMainDocument(this.panes.main)?.text ?? ""
+      const document = getMainDocument(this.panes.main)
+      const virtual = virtualMainPaneFor(this.panes.main)
+      const normalizedQuery = query.toLowerCase()
+      if (document !== undefined && virtual?.isActive()) {
+        const layout = virtual.layout()
+        const preambleRows = layout?.preambleRows ?? 0
+        const totalRows = layout?.totalRows ?? preambleRows + document.lines.length
+        const currentLine = this.panes.main.text.scrollY - preambleRows
+        let previousLine = -1
+        for (let i = Math.min(document.lines.length - 1, currentLine - 1); i >= 0; i -= 1) {
+          if (document.lines[i]!.raw.toLowerCase().includes(normalizedQuery)) { previousLine = i; break }
+        }
+        if (previousLine === -1) {
+          for (let i = document.lines.length - 1; i >= currentLine && i >= 0; i -= 1) {
+            if (document.lines[i]!.raw.toLowerCase().includes(normalizedQuery)) { previousLine = i; break }
+          }
+        }
+        if (previousLine !== -1) {
+          this.clearNonStickyMainRange()
+          const targetRow = preambleRows + previousLine
+          this.panes.main.text.scrollY = Math.max(0, targetRow - 2)
+          this.panes.main.syncScrollbar()
+          this.panes.main.box.bottomTitle = `Search: ${query} (${targetRow + 1}/${totalRows})`
+          this.root.requestRender()
+        }
+        return
+      }
+      const text = getMainRenderedText(this.panes.main) ?? document?.text ?? ""
       if (text.length === 0) return
       const lines = text.split("\n")
       const currentY = this.panes.main.text.scrollY
-      const normalizedQuery = query.toLowerCase()
       let prevLine = -1
       for (let i = currentY - 1; i >= 0; i--) {
         if (lines[i]!.toLowerCase().includes(normalizedQuery)) { prevLine = i; break }
@@ -3511,13 +3575,13 @@ export class RootView {
         this.clearNonStickyMainRange()
         const targetY = Math.max(0, prevLine - 2)
         this.panes.main.text.scrollY = targetY
+        this.panes.main.syncScrollbar()
         this.panes.main.box.bottomTitle = `Search: ${query} (${prevLine + 1}/${lines.length})`
         this.root.requestRender()
       }
       return
     }
   }
-
   private actionCopyMenu(): void {
     this.copyMenuOpen = true
     const items = COPY_MENU_ITEMS.map((item, index) => ({
@@ -3547,6 +3611,13 @@ export class RootView {
   }
 
   private mainActionTarget(document: DiffDocument): MainCursorTarget | undefined {
+    const pointer = getMainPointerSelection(this.panes.main)
+    if (pointer?.fileIndex !== undefined) {
+      return {
+        fileIndex: pointer.fileIndex,
+        ...(pointer.hunkIndex === undefined ? {} : { hunkIndex: pointer.hunkIndex }),
+      }
+    }
     const selected = getMainDiffLineSelection(this.panes.main)
     const firstIndex = selected?.indexes[0]
     const line = firstIndex === undefined ? undefined : document.lines[firstIndex]
@@ -3558,10 +3629,47 @@ export class RootView {
     }
     return getMainCursorTarget(this.panes.main)
   }
+  /**
+   * Lazygit's `learn-projects/lazygit/pkg/gui/tasks_adapter.go:54-57` asks
+   * `learn-projects/lazygit/pkg/tasks/tasks.go:189-200` for an absolute `ReadLines` target as the viewport
+   * advances; this adapter keeps the raw document complete while painting only the bounded logical
+   */
+  private mainPointerCoordinates(event: MouseEvent): { readonly row: number; readonly column: number } | undefined {
+    const geometry = this.paneTextGeometry("main")
+    if (geometry === undefined) return undefined
+    const row = event.y - geometry.screenY
+    const column = event.x - geometry.screenX
+    if (!Number.isSafeInteger(row) || !Number.isSafeInteger(column) || row < 0 || row >= geometry.height || column < 0 || column >= geometry.width) return undefined
+    return { row, column }
+  }
+
+  private updateVirtualMainPointer(event: MouseEvent): void {
+    const virtual = virtualMainPaneFor(this.panes.main)
+    if (!virtual?.isActive()) return
+    const anchor = this.mainPointerAnchor
+    if (anchor === undefined) {
+      virtual.resetSelection()
+      return
+    }
+    const point = this.mainPointerCoordinates(event)
+    if (point === undefined) {
+      virtual.resetSelection()
+      return
+    }
+    virtual.setPointerSelection(anchor.row, anchor.column, point.row, point.column)
+  }
+
 
   private mainChangeSelection(): { readonly document: DiffDocument; readonly indexes: readonly number[] } | undefined {
     const document = getMainDocument(this.panes.main)
     if (!document) return undefined
+    const pointerSelection = getMainPointerSelection(this.panes.main)
+    if (pointerSelection?.valid && pointerSelection.endUtf16 > pointerSelection.startUtf16) {
+      return {
+        document,
+        indexes: changeLineIndexes(document, pointerSelection.startUtf16, pointerSelection.endUtf16),
+      }
+    }
     const keyboardSelection = getMainDiffLineSelection(this.panes.main)
     if (keyboardSelection !== undefined) {
       return {
@@ -4300,17 +4408,20 @@ export class RootView {
       this.root.requestRender()
       return
     }
+    const pointerSelection = getMainPointerSelection(pane)
     const keyboardSelection = getMainDiffLineSelection(pane)
     const nativeRange = pane.text.getSelection()
-    let selection: DocumentSelection | undefined = mode === "hunk" || mode === "file" || keyboardSelection === undefined
+    let selection: DocumentSelection | undefined = mode === "hunk" || mode === "file"
       ? undefined
-      : {
+      : pointerSelection ?? (keyboardSelection === undefined ? undefined : {
         valid: true as const,
         startUtf16: keyboardSelection.startUtf16,
         endUtf16: keyboardSelection.endUtf16,
         active: true as const,
-      }
-    if (selection === undefined && keyboardSelection === undefined && nativeRange) selection = selectionFromRenderable(document, nativeRange, pane.text.getSelectedText())
+      })
+    if (selection === undefined && pointerSelection === undefined && keyboardSelection === undefined && nativeRange) {
+      selection = selectionFromRenderable(document, nativeRange, pane.text.getSelectedText())
+    }
     if (!selection && (mode === "hunk" || mode === "file")) {
       const target = getMainCursorTarget(pane)
       if (target) {
@@ -4786,14 +4897,20 @@ export class RootView {
           return
         }
         if (owner.kind === "main-selection") {
+          const virtual = virtualMainPaneFor(this.panes.main)
           if (event.type === "drag") {
             this.pendingClick = undefined
             this.lastSplitterPress = undefined
+            if (virtual?.isActive()) this.updateVirtualMainPointer(event)
+            event.preventDefault()
             event.stopPropagation()
             return
           }
-          if (event.type === "up") {
+          if (event.type === "up" || (event.type as string) === "cancel") {
+            if (virtual?.isActive() && event.type === "up") this.updateVirtualMainPointer(event)
             this.gestureOwner = undefined
+            this.mainPointerAnchor = undefined
+            event.preventDefault()
             event.stopPropagation()
             return
           }
@@ -4922,9 +5039,17 @@ export class RootView {
         if (paneId === "main") {
           this.pendingClick = undefined
           this.lastSplitterPress = undefined
-          this.gestureOwner = { kind: "main-selection" }
           if (this.focusManager.active !== "main") this.focusManager.focus("main")
+          const virtual = virtualMainPaneFor(this.panes.main)
+          const point = virtual?.isActive() ? this.mainPointerCoordinates(event) : undefined
+          this.mainPointerAnchor = point
+          if (virtual?.isActive()) {
+            if (point === undefined) virtual.resetSelection()
+            else virtual.setPointerSelection(point.row, point.column, point.row, point.column)
+          }
+          this.gestureOwner = { kind: "main-selection" }
           this.clearTransientMenus()
+          if (virtual?.isActive()) event.preventDefault()
           event.stopPropagation()
           return
         }
