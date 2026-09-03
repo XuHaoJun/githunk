@@ -1,7 +1,7 @@
 import type { TextRenderable } from "@opentui/core"
 import type { DiffDocument } from "../../domain/diff/document"
 import { type DocumentSelection } from "../../domain/diff/selection"
-import { createVirtualDiffLayout, VIRTUAL_DIFF_LINE_THRESHOLD, type VirtualDiffLayout } from "../../domain/diff/virtual"
+import { createVirtualDiffLayout, VIRTUAL_DIFF_LINE_THRESHOLD, type VirtualDiffDisplayOffsets, type VirtualDiffLayout } from "../../domain/diff/virtual"
 import { cellWidth } from "../../domain/diff/cell-width"
 import { clearScrollbarViewportOverride, type PaneHandle } from "./common"
 import { installDiffText, releaseDiffText, statSpansForPreamble, type DiffStatSpan } from "./diff-text"
@@ -35,7 +35,7 @@ export type VirtualMainPane = {
   deactivate(): void
   isActive(): boolean
   layout(): VirtualDiffLayout | undefined
-  lineOffsets(startIndex: number, endIndex: number): { readonly startUtf16: number; readonly endUtf16: number; readonly displayStartUtf16: number; readonly displayEndUtf16: number } | undefined
+  lineOffsets(startIndex: number, endIndex: number): VirtualDiffDisplayOffsets | undefined
   visualRowRange(startIndex: number, endIndex: number): { readonly startRow: number; readonly endRow: number } | undefined
   setLineSelection(startUtf16: number, endUtf16: number): void
   setPointerSelection(startRow: number, startColumn: number, endRow: number, endColumn: number): DocumentSelection | undefined
