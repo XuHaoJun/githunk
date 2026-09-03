@@ -10,6 +10,7 @@ import { installAnsiText, releaseAnsiText } from "./ansi-text"
 import { installDiffText, releaseDiffText } from "./diff-text"
 import { SELECTED_LINE_BG } from "../theme"
 import { createVirtualMainPane, isVirtualDiffDocument, virtualMainPaneFor } from "./virtual-main-pane"
+export { virtualMainPaneFor } from "./virtual-main-pane"
 
 // Main generation has no patch threshold — all patches go through preview gate (Task 7)
 
