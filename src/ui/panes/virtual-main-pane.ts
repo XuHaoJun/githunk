@@ -4,7 +4,7 @@ import { type DocumentSelection } from "../../domain/diff/selection"
 import { createVirtualDiffLayout, VIRTUAL_DIFF_LINE_THRESHOLD, type VirtualDiffLayout } from "../../domain/diff/virtual"
 import { cellWidth } from "../../domain/diff/cell-width"
 import { clearScrollbarViewportOverride, type PaneHandle } from "./common"
-import { installDiffText, releaseDiffText } from "./diff-text"
+import { installDiffText, releaseDiffText, statSpansForPreamble, type DiffStatSpan } from "./diff-text"
 import { onPaneLifecyclePass } from "./pane-text"
 
 const ACCESSORS = ["scrollY", "scrollHeight", "maxScrollY", "scrollX", "scrollWidth", "maxScrollX"] as const
@@ -25,7 +25,7 @@ type VirtualState = {
   viewportHeight: number
   viewportWidth: number
   rawSelection: DocumentSelection | undefined
-  renderedWindow: readonly [number, number] | undefined
+  preambleSpans: ReadonlyMap<number, readonly DiffStatSpan[]>
   originalDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
   originalOwnDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
 }
@@ -156,6 +156,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     viewportWidth: Math.max(0, Math.floor(text.width)),
     rawSelection: undefined,
     renderedWindow: undefined,
+    preambleSpans: new Map(),
     originalDescriptors,
     originalOwnDescriptors,
   }
@@ -219,6 +220,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     const rows: string[] = []
     const displays = [] as Array<{ readonly gutterCols: number; readonly style: "plain" | "addition" | "deletion" | "hunk-header" | "metadata" }>
     const preambleRows: string[] = []
+    const preambleSpans = new Map<number, readonly DiffStatSpan[]>()
     const first = window[0]
     const last = window[1]
     if (last >= first && first < state.layout.preambleRows) {
@@ -226,6 +228,8 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       for (let row = first; row <= preambleLast; row += 1) {
         const value = state.layout.rowAt(row)
         if (value !== undefined) preambleRows.push(padDisplayRow(value.text, state.layout.contentWidth))
+        const spans = state.preambleSpans.get(row)
+        if (spans !== undefined) preambleSpans.set(row - first, spans)
       }
     }
     const bodyFirst = Math.max(first, state.layout.preambleRows)
@@ -236,7 +240,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       displays.push({ gutterCols: value.gutterCols, style: value.style })
     }
     const preamble = preambleRows.length === 0 ? "" : `${preambleRows.join("\n")}\n`
-    installDiffText(text, { preamble, body: rows.join("\n"), displayLines: displays, highlightScrollY: () => localScrollY })
+    installDiffText(text, { preamble, body: rows.join("\n"), displayLines: displays, highlightScrollY: () => localScrollY, preambleSpans })
     const originalScrollY = state.originalDescriptors.get("scrollY")?.set
     originalScrollY?.call(text, localScrollY)
     const originalScrollX = state.originalDescriptors.get("scrollX")?.set
@@ -257,6 +261,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       state.document = document
       state.layout = createVirtualDiffLayout(document, preamble)
       state.preamble = preamble
+      state.preambleSpans = statSpansForPreamble(preamble)
       const current = dimensions(text)
       state.viewportHeight = current.height
       state.viewportWidth = current.width
@@ -276,6 +281,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       state.rawSelection = undefined
       state.renderedWindow = undefined
       releaseDiffText(text)
+      state.preambleSpans = new Map()
       restoreAccessors()
       clearScrollbarViewportOverride(text)
       text.wrapMode = "char"

@@ -30,8 +30,10 @@ export type DiffTextContent = {
   readonly displayLines: readonly DiffDisplayLine[]
   /** Overrides native scroll for bounded virtual buffers; eager panes use their native scroll. */
   readonly highlightScrollY?: () => number
+  /** Optional stat spans precomputed against the full preamble and remapped to local rows. */
+  readonly preambleSpans?: ReadonlyMap<number, readonly DiffStatSpan[]>
 }
-type DiffStatSpan = {
+export type DiffStatSpan = {
   /** UTF-16 offsets used to split the fallback chunk text. */
   readonly start: number
   readonly end: number
@@ -50,7 +52,7 @@ type DiffStatSpan = {
  * avoiding matches against commit text.
  * Binary rows colour old/new byte counts red/green; bare `Bin` rows still keep the section contiguous.
  */
-function statSpansForPreamble(preamble: string): ReadonlyMap<number, readonly DiffStatSpan[]> {
+export function statSpansForPreamble(preamble: string): ReadonlyMap<number, readonly DiffStatSpan[]> {
   const grouped = new Map<number, DiffStatSpan[]>()
   const rows = preamble.split("\n")
   const summaryRow = rows.findLastIndex((value) => /^\s+\d+ files? changed(?:,.*)?\s*$/.test(value))
@@ -188,7 +190,7 @@ function styledChunk(style: DiffDisplayLineStyle, value: string): TextChunk {
  */
 function paintAsChunks(text: TextRenderable, content: DiffTextContent): void {
   const { text: full, firstDiffRow } = joined(content)
-  const preambleSpans = statSpansForPreamble(content.preamble)
+  const preambleSpans = content.preambleSpans ?? statSpansForPreamble(content.preamble)
   const rows = full.split("\n")
   const chunks: TextChunk[] = []
   for (let row = 0; row < rows.length; row++) {
@@ -221,7 +223,7 @@ export function installDiffText(text: TextRenderable, content: DiffTextContent):
   const paint: DiffPaint = {
     displayLines: content.displayLines,
     firstDiffRow,
-    preambleSpans: statSpansForPreamble(content.preamble),
+    preambleSpans: content.preambleSpans ?? statSpansForPreamble(content.preamble),
     ...(content.highlightScrollY === undefined ? {} : { highlightScrollY: content.highlightScrollY }),
   }
   let painter = painters.get(text)

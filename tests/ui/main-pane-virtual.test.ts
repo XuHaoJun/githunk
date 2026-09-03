@@ -140,6 +140,28 @@ describe("main pane virtual diff viewport", () => {
     }
   })
 
+  test("keeps stat highlights after the preamble separator scrolls out", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    try {
+      const pane = createMainPane(setup.renderer, model())
+      setup.renderer.root.add(pane.box)
+      const document = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD + 20))
+      const statRows = Array.from({ length: 100 }, (_, index) => ` file-${index}.txt | 1 +`)
+      const preamble = ["commit abc", "---", ...statRows, " 100 files changed, 100 insertions(+)"].join("\n")
+      installMainContent(pane, { ...content(document), preamble }, false)
+      await setup.flush()
+
+      pane.text.scrollY = 60
+      await setup.flush()
+      const frame = setup.captureSpans()
+      const statLine = frame.lines.find((line) => line.spans.some((span) => span.text.includes("file-60.txt")))
+      expect(statLine).toBeDefined()
+      expect(statLine!.spans.some((span) => span.fg.intent === "indexed")).toBe(true)
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+
   test("keeps the eager renderer for documents at or below the threshold", async () => {
     const setup = await createTestRenderer({ width: 120, height: 40 })
     try {
