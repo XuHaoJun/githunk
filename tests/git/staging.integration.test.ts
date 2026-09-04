@@ -1,3 +1,4 @@
+import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { parseDiff } from "../../src/domain/diff/parse"
 import { GitMutations } from "../../src/git/mutations"
@@ -225,6 +226,14 @@ describe("GitMutations", () => {
     const mutations = new GitMutations(runner)
     await mutations.discardFile("untracked.txt", "all")
     expect((await repo.git(["status", "--short"])).stdout).not.toContain("untracked.txt")
+  })
+  test("discards an untracked nested git repository", async () => {
+    await repo.write("nested/inner.txt", "inner\n")
+    await new GitRunner({ cwd: join(repo.path, "nested") }).run(["init", "--quiet"])
+    expect((await repo.git(["status", "--short"])).stdout).toContain("nested/")
+    const mutations = new GitMutations(runner)
+    await mutations.discardFile("nested/", "all")
+    expect((await repo.git(["status", "--short"])).stdout).not.toContain("nested")
   })
 
   test("separates discarding unstaged changes from all changes", async () => {

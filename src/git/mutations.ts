@@ -80,7 +80,13 @@ export class GitMutations {
         await this.runner.run(["restore", "--staged", "--", path], { acceptedExitCodes: [0, 1] })
       }
       await this.runner.run(["restore", "--", path], { acceptedExitCodes: [0, 1] })
-      await this.runner.run(["clean", "-f", "-d", "--", path])
+      // git clean refuses untracked nested git repositories (a directory with a
+      // .git subdirectory) unless given a second -f (git-clean docs, --force).
+      // lazygit deletes untracked files straight from disk instead
+      // (pkg/commands/git_commands/working_tree.go:175-177 via
+      // pkg/commands/oscommands/os.go:52,188-189 os.RemoveAll), so a single -f
+      // silently no-ops where lazygit discards.
+      await this.runner.run(["clean", "-ff", "-d", "--", path])
       await this.refresh()
     })
   }
@@ -91,7 +97,8 @@ export class GitMutations {
         await this.runner.run(["restore", "--staged", "--", path], { acceptedExitCodes: [0, 1] })
       }
       await this.runner.run(["restore", "--", path], { acceptedExitCodes: [0, 1] })
-      await this.runner.run(["clean", "-f", "-d", "--", path])
+      // Same second -f as discardFile above: single -f refuses nested git repos.
+      await this.runner.run(["clean", "-ff", "-d", "--", path])
     })
   }
 
