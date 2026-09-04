@@ -51,10 +51,11 @@ try {
 
   const packageDir = path.join(tempRoot, "tarballs")
   mkdirSync(packageDir, { recursive: true })
-  run(["npm", "pack", "--pack-destination", packageDir], smokePlatformDir)
-  const platformTarball = singleTarball(packageDir)
+  const platformPackDir = path.join(tempRoot, "tarballs", "platform")
+  mkdirSync(platformPackDir, { recursive: true })
+  run(["npm", "pack", "--pack-destination", platformPackDir], smokePlatformDir)
+  const platformTarball = singleTarball(platformPackDir)
 
-  // Point a temp copy of the staged meta package at the local platform tarball.
   const smokeMetaDir = path.join(tempRoot, "meta", "@xuhaojun", "githunk")
   cpSync(path.join(releaseRoot, "@xuhaojun", "githunk"), smokeMetaDir, { recursive: true })
   const smokeManifestPath = path.join(smokeMetaDir, "package.json")
@@ -66,8 +67,10 @@ try {
     [hostSpec.packageName]: `file:${platformTarball}`,
   }
   writeFileSync(smokeManifestPath, `${JSON.stringify(smokeManifest, null, 2)}\n`)
-  run(["npm", "pack", "--pack-destination", packageDir], smokeMetaDir)
-  const metaTarball = singleTarball(packageDir)
+  const metaPackDir = path.join(tempRoot, "tarballs", "meta")
+  mkdirSync(metaPackDir, { recursive: true })
+  run(["npm", "pack", "--pack-destination", metaPackDir], smokeMetaDir)
+  const metaTarball = singleTarball(metaPackDir)
 
   const installDir = path.join(tempRoot, "install")
   mkdirSync(installDir, { recursive: true })
