@@ -16,6 +16,7 @@
     "start": "bun run src/main.ts",
     "dev": "bun --watch src/main.ts",
     "build": "bun build src/cli.ts --target=node --format=esm --packages=external --outfile=dist/githunk.js --banner '#!/usr/bin/env node'",
+    "build:bin": "bun run ./scripts/build-bin.ts",
     "prepack": "bun run build",
     "pack:check": "npm pack --dry-run",
     "spike:selection": "bun run spikes/selection/src/main.ts",
