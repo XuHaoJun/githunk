@@ -28,6 +28,15 @@ cd path/to/repository
 githunk
 ```
 
+Or point it at a repository from anywhere:
+
+```sh
+githunk --path path/to/repository
+githunk path/to/repository
+```
+
+`githunk --help` prints all options; `githunk --version` prints the installed version.
+
 ## Development
 
 This repository uses Bun for development and for producing the Node.js bundle published to npm:

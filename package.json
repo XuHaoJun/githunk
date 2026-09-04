@@ -52,6 +52,7 @@
     "@opentui/core": "0.5.10",
     "@opentui/react": "0.5.10",
     "@pierre/diffs": "1.3.5",
+    "commander": "^15.0.0",
     "react": "19.2.8",
     "zod": "^4.4.3"
   },

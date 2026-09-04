@@ -1,3 +1,4 @@
+import { resolve } from "node:path"
 import { createCliRenderer, type TerminalCapabilities } from "@opentui/core"
 import { backgroundOptionsFromEnv, createApp } from "./app/create-app"
 import { configureTerminalPalette } from "./ui/theme"
@@ -18,8 +19,16 @@ export function shouldQueryTerminalPalette(
     && capabilities?.multiplexer !== "zellij"
 }
 
-export async function startApp(): Promise<number> {
-  const runner = new GitRunner()
+export type StartAppOptions = {
+  /** Directory to resolve the repository from. Defaults to the current working directory. */
+  readonly startDirectory?: string
+}
+
+export async function startApp(options: StartAppOptions = {}): Promise<number> {
+  const startDirectory = options.startDirectory === undefined
+    ? process.cwd()
+    : resolve(process.cwd(), options.startDirectory)
+  const runner = new GitRunner(startDirectory)
   let repositoryRoot: string
 
   try {
