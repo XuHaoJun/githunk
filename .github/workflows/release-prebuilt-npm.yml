@@ -1,0 +1,282 @@
+name: Release prebuilt npm packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the staged prebuilt packages to npm
+        required: true
+        default: false
+        type: boolean
+      npm_tag:
+        description: npm dist-tag to publish under (for example latest or beta)
+        required: true
+        default: latest
+        type: string
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-prebuilt-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-release-channel:
+    name: Resolve release channel
+    runs-on: ubuntu-latest
+    outputs:
+      npm_tag: ${{ steps.resolve.outputs.npm_tag }}
+      make_latest: ${{ steps.resolve.outputs.make_latest }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+  build-binaries:
+    name: Build ${{ matrix.package_name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package_name: "@xuhaojun/githunk-linux-arm64"
+            artifact_name: githunk-linux-arm64
+            runner: ubuntu-24.04-arm
+          - package_name: "@xuhaojun/githunk-linux-x64"
+            artifact_name: githunk-linux-x64
+            runner: ubuntu-latest
+          - package_name: "@xuhaojun/githunk-windows-x64"
+            artifact_name: githunk-windows-x64
+            runner: windows-latest
+          - package_name: "@xuhaojun/githunk-darwin-x64"
+            artifact_name: githunk-darwin-x64
+            runner: macos-15-intel
+          - package_name: "@xuhaojun/githunk-darwin-arm64"
+            artifact_name: githunk-darwin-arm64
+            runner: macos-14
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify tag matches package version
+        if: github.event_name == 'push'
+        run: bun run ./scripts/check-release-version.ts "${{ github.ref_name }}"
+
+      - name: Build host artifact
+        run: |
+          bun run build:bin
+          bun run ./scripts/build-prebuilt-artifact.ts --expect-package "${{ matrix.package_name }}"
+
+      # Bun's default x64 runtime is compiled for Haswell and raises SIGILL on older CPUs.
+      # Run the real artifact under an emulated pre-AVX CPU so a dropped baseline target
+      # fails the release instead of shipping a binary that cannot start.
+      - name: Verify the x64 artifact starts without AVX2
+        if: matrix.package_name == '@xuhaojun/githunk-linux-x64'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user-static
+          qemu-x86_64-static -cpu Nehalem dist/githunk --version
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/release/artifacts/${{ matrix.package_name }}
+          if-no-files-found: error
+
+  stage-release:
+    name: Stage prebuilt npm release
+    runs-on: ubuntu-latest
+    needs:
+      - build-binaries
+      - resolve-release-channel
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify tag matches package version
+        if: github.event_name == 'push'
+        run: bun run ./scripts/check-release-version.ts "${{ github.ref_name }}"
+
+      - name: Download platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: githunk-*
+          path: dist/release/artifacts
+          merge-multiple: false
+
+      - name: Show downloaded artifacts
+        run: find dist/release/artifacts -maxdepth 3 -type f | sort
+
+      - name: Build Node fallback bundle
+        run: bun run build
+
+      - name: Stage npm release directories
+        run: bun run stage:prebuilt:release
+
+      - name: Verify staged packages
+        run: bun run check:prebuilt-pack
+
+      - name: Smoke test staged install
+        run: bun run smoke:prebuilt-install
+
+      - name: Dry-run npm publish order
+        run: bun run publish:prebuilt:npm -- --dry-run --tag "${{ needs.resolve-release-channel.outputs.npm_tag }}"
+
+      - name: Upload staged npm release
+        uses: actions/upload-artifact@v4
+        with:
+          name: staged-prebuilt-npm-release
+          path: dist/release/npm
+          if-no-files-found: error
+
+  publish:
+    name: Publish prebuilt npm release
+    runs-on: ubuntu-latest
+    needs:
+      - stage-release
+      - resolve-release-channel
+    if: github.event_name == 'push' || inputs.publish == true
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Use npm with trusted publishing support
+        run: npm install -g npm@11.17.0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Download staged npm release
+        uses: actions/download-artifact@v4
+        with:
+          name: staged-prebuilt-npm-release
+          path: dist/release/npm
+
+      - name: Show staged packages
+        run: find dist/release/npm -maxdepth 4 -type f | sort
+
+      - name: Publish packages
+        run: bun run publish:prebuilt:npm -- --tag "${{ needs.resolve-release-channel.outputs.npm_tag }}"
+
+  create-github-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    needs:
+      - build-binaries
+      - publish
+      - resolve-release-channel
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Download platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: githunk-*
+          path: dist/release/artifacts
+          merge-multiple: false
+
+      - name: Archive release assets
+        run: |
+          mkdir -p dist/release/github
+          while IFS= read -r -d '' directory; do
+            binary="$directory/githunk"
+            if [ ! -f "$binary" ] && [ -f "$directory/githunk.exe" ]; then
+              binary="$directory/githunk.exe"
+            fi
+            if [ ! -f "$binary" ]; then
+              echo "Missing release binary in $directory" >&2
+              exit 1
+            fi
+            chmod 0755 "$binary"
+            tar -C "$(dirname "$directory")" -czf "dist/release/github/$(basename "$directory").tar.gz" "$(basename "$directory")"
+          done < <(find dist/release/artifacts -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+          find dist/release/github -maxdepth 1 -type f | sort
+
+      # One checksum manifest covering every archive, for future installer verification.
+      - name: Write release checksums
+        run: |
+          cd dist/release/github
+          sha256sum githunk-*.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attest release archives
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/release/github/*
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          MAKE_LATEST: ${{ needs.resolve-release-channel.outputs.make_latest }}
+        run: |
+          prerelease_args=()
+          case "$TAG_NAME" in
+            *-alpha*|*-beta*|*-rc*)
+              prerelease_args+=(--prerelease)
+              ;;
+          esac
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --latest="$MAKE_LATEST"
+            gh release upload "$TAG_NAME" dist/release/github/* --clobber
+          else
+            gh release create "$TAG_NAME" \
+              --title "$TAG_NAME" \
+              --generate-notes \
+              --latest="$MAKE_LATEST" \
+              "${prerelease_args[@]}" \
+              dist/release/github/*
+          fi
