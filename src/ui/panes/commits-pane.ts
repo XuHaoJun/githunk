@@ -17,6 +17,13 @@ import {
 
 const paneStates = new WeakMap<PaneHandle, ListState>()
 
+/**
+ * Cursor index past which the full history loads. lazygit's
+ * `COMMIT_THRESHOLD = 200` (pkg/gui/controllers/local_commits_controller.go:22):
+ * past this point the user is browsing deep enough that the 300-cap must go.
+ */
+export const COMMIT_THRESHOLD = 200
+
 export function formatRelativeTime(authoredAt: string, now: Date): string {
   const date = new Date(authoredAt)
   if (Number.isNaN(date.getTime())) return ""

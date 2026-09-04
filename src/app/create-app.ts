@@ -337,6 +337,14 @@ export function createApp(options: CreateAppOptions): App {
     },
     loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
     loadBranchCommits: options.loadBranchCommits ?? ((branch) => controller.loadBranchCommits(branch)),
+    onExpandCommits: async () => {
+      const expanded = await controller.expandCommits()
+      // Preserve an open filter/search prompt across the reload: the default
+      // update clears in-progress filtering (root-view `update`), which would
+      // drop the session the expansion was opened for.
+      if (expanded && (screenController?.shouldRenderRepository() ?? true)) view.update(controller.state, { preserveFilterInput: true })
+      return expanded
+    },
     loadCommitFileInspection: (oid, path) => controller.loadCommitFileInspection(oid, path),
     loadTagInspection: (tag) => controller.loadTagInspection(tag),
     loadRefLogInspection: (target) => controller.loadRefLogInspection(target),

@@ -35,7 +35,7 @@ import { localBranchRows } from "./panes/branches-pane"
 import { buildPanePlainTitle, buildPaneTabsStrip, paneTabAtOffset } from "./pane-tabs"
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
 import { tagRows } from "./panes/tags-pane"
-import { buildCommitRows, createCommitsPane } from "./panes/commits-pane"
+import { buildCommitRows, COMMIT_THRESHOLD, createCommitsPane } from "./panes/commits-pane"
 import { commitFileRows } from "./panes/commit-files-pane"
 import { COMMITS_JUMP_KEY, COMMITS_TABS, NO_REFLOG_HISTORY, reflogRows } from "./panes/reflog-pane"
 import type { RefLogTarget } from "../git/ref-log"
@@ -225,6 +225,8 @@ export type RootViewOptions = {
   readonly onSelectFile?: (path: string) => void
   readonly loadCommitInspection?: (oid: string) => Promise<CommitDetails>
   readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
+  /** Drops the 300-commit bound and reloads the full history; true when a reload happened. */
+  readonly onExpandCommits?: () => Promise<boolean>
   readonly loadCommitFileInspection?: (oid: string, path: string) => Promise<DiffDocument>
   readonly loadTagInspection?: (tag: TagSummary) => Promise<TagPreview>
   readonly loadRefLogInspection?: (target: RefLogTarget) => Promise<string>
@@ -376,6 +378,7 @@ export class RootView {
   private readonly onInspectStash: ((ref: string) => Promise<void>) | undefined
   private readonly onBrowseRemote: ((remote: string) => Promise<void>) | undefined
   private readonly loadBranchCommits: ((branch: string) => Promise<readonly CommitSummary[]>) | undefined
+  private readonly onExpandCommits: (() => Promise<boolean>) | undefined
   private readonly onInspectBranch: ((branch: string) => Promise<void>) | undefined
   private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>) | undefined
   private readonly onFilterBranches: (() => Promise<void>) | undefined
@@ -482,6 +485,7 @@ export class RootView {
     this.loadTagInspection = options.loadTagInspection
     this.loadRefLogInspection = options.loadRefLogInspection
     this.loadBranchCommits = options.loadBranchCommits
+    this.onExpandCommits = options.onExpandCommits
     this.onPreviewError = options.onPreviewError
     this.onCommitMessage = options.onCommitMessage
     this.onAmendMessage = options.onAmendMessage
@@ -696,14 +700,18 @@ export class RootView {
     // outside `ACTIONS`. Together those two checks guarantee every binding this registry can
     // produce has a handler, so no runtime cross-check is needed here.
   }
-  update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean } = {}): void {
+  update(model: AppModel, options: { readonly preserveRemoteCheckout?: boolean; readonly preserveFilterInput?: boolean } = {}): void {
     if (this.gestureOwner?.kind === "main-selection") {
       virtualMainPaneFor(this.panes.main)?.resetSelection()
       this.cancelGesture()
     }
     this.branchActionGeneration += 1
     this.invalidateBranchCommitsRequest()
-    if (!options.preserveRemoteCheckout) {
+    // A programmatic reload underneath an open filter/search prompt (commit
+    // expansion) must not end the session: the keystrokes that follow would
+    // fall through to normal dispatch. Mutations and branch switches still
+    // reset filtering, so this stays opt-in per caller.
+    if (!options.preserveRemoteCheckout && !options.preserveFilterInput) {
       this.branchFilterActive = false
       this.branchFilter = ""
       this.filterInput.clear()
@@ -1800,6 +1808,7 @@ export class RootView {
             this.renderCommitsPane()
             this.revealListRow("commits", this.panes.commits, nextView.selectedIndex)
             this.syncPreviewForFocus("commits")
+            this.maybeExpandCommits(nextView.selectedIndex)
           }
         }
         return
@@ -1955,22 +1964,75 @@ export class RootView {
       }
       return
     }
-    // Lists are short enough that repeating the single-step move is simpler
-    // and cannot disagree with it about clamping or selection side effects.
-    const direction = edge === "bottom" ? "next" : "previous"
-    const branchCount = this.branchesPanel.child !== undefined
-      ? this.branchesPanel.child.view.rows.length
-      : this.branchesPanel.views[this.branchesPanel.activeTab]?.rows.length ?? 0
-    const limit = Math.max(
-      this.model.files.length,
-      (this.model.worktrees ?? []).length,
-      (this.model.submodules ?? []).length,
-      (this.model.commits ?? []).length,
-      (this.model.stashes ?? []).length,
-      (this.model.reflog ?? []).length,
-      branchCount,
-    ) + 1
-    for (let moved = 0; moved < limit; moved += 1) this.actionMoveCursor(direction)
+    // Edge jumps select directly: repeating the single-step move costs one O(rows)
+    // install plus one preview load per row, which hangs on 27k-commit histories.
+    this.clearTransientMenus()
+    const paneId = this.focusManager.active
+    if (paneId !== "files" && paneId !== "branches" && paneId !== "commits" && paneId !== "stash") return
+    if (paneId === "commits" && edge === "bottom") {
+      this.jumpCommitsToBottom()
+      return
+    }
+    const active = this.activeListView(paneId)
+    if (active === undefined || active.state.rows.length === 0) return
+    const rows = active.state.rows
+    const targetId = (edge === "bottom" ? rows[rows.length - 1] : rows[0])!.id
+    const next = this.edgeSelection(active.state, targetId)
+    if (next === active.state) return
+    this.updateActiveListState(paneId, next)
+    this.renderListPane(paneId)
+    this.revealListRow(paneId, this.panes[paneId], next.selectedIndex)
+    this.syncListSelectionAfterChange(paneId)
+    this.root.requestRender()
+  }
+
+  /**
+   * Direct edge selection that preserves a sticky range's extension. Repeated
+   * single-step moves would keep extending a sticky range to the edge, while
+   * `selectListRow` clears ranges — so re-apply the live endpoints afterwards.
+   * A non-sticky range cancels on the first step, which is what `selectListRow`
+   * already does. The anchor must still resolve against the current rows,
+   * mirroring `moveListSelection`'s stale-anchor fall-through to clearing.
+   */
+  private edgeSelection(state: ListState, targetId: string): ListState {
+    const direct = selectListRow(state, targetId)
+    if (direct === state) return state
+    if (state.rangeMode !== "sticky" || state.rangeStartId === undefined) return direct
+    if (!state.rows.some((row) => row.id === state.rangeStartId)) return direct
+    return { ...direct, rangeMode: state.rangeMode, rangeStartId: state.rangeStartId }
+  }
+
+  /**
+   * `End` on commits first drops the 300-cap, then lands on the true oldest
+   * commit: one reload plus one O(1) selection, instead of one preview load
+   * and one full install per skipped row.
+   */
+  private jumpCommitsToBottom(): void {
+    void (async () => {
+      await this.onExpandCommits?.()
+      const active = this.activeListView("commits")
+      if (active === undefined || active.state.rows.length === 0) return
+      const rows = active.state.rows
+      const next = this.edgeSelection(active.state, rows[rows.length - 1]!.id)
+      if (next === active.state) return
+      this.updateActiveListState("commits", next)
+      this.renderListPane("commits")
+      this.revealListRow("commits", this.panes.commits, next.selectedIndex)
+      this.syncListSelectionAfterChange("commits")
+      this.root.requestRender()
+    })()
+  }
+
+  /**
+   * lazygit loads the rest once the cursor passes `COMMIT_THRESHOLD`
+   * (local_commits_controller.go:1790-1797). Fire-and-forget: the reload
+   * preserves the selection by stable id, so navigation continues uninterrupted.
+   */
+  private maybeExpandCommits(selectedIndex: number): void {
+    if (this.commitsPanel.activeTab !== "commits") return
+    if (this.commitsPanel.child !== undefined) return
+    if (selectedIndex <= COMMIT_THRESHOLD) return
+    void this.onExpandCommits?.()
   }
 
 
@@ -3401,6 +3463,12 @@ export class RootView {
     this.activeFilterKey = target.key
     const existing = this.getFilterForKey(target.key)
     if (existing.length > 0) this.filters.delete(target.key)
+    // lazygit loads the full history when the commits search opens
+    // (`openSearch`, local_commits_controller.go:1672-1680): matches may live
+    // past row 300. The reload's repaint preserves this prompt (see `update`).
+    if (target.key === this.filterKey("commits", "commits")) {
+      void this.onExpandCommits?.()
+    }
     this.filterInput.open("")
     this.refreshForFilterKey(target.key)
     this.renderForFilterKey(target.key)
