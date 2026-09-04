@@ -45,7 +45,7 @@ describe("published CLI package", () => {
     expect(bin?.githunk).toBe("bin/githunk.js")
     expect(publishConfig?.access).toBe("public")
     expect(engines?.node).toBe(">=26.1.0")
-    expect(manifest.files).toEqual(expect.arrayContaining(["bin", "dist", "README.md", "LICENSE"]))
+    expect(manifest.files).toEqual(expect.arrayContaining(["bin", "dist/githunk.js", "README.md", "LICENSE"]))
     expect(await readFile(join(root, "bin/githunk.js"), "utf8")).toContain("--experimental-ffi")
     expect(await readFile(join(root, "README.md"), "utf8")).toContain("npm install --global @xuhaojun/githunk")
     expect(await readFile(join(root, "LICENSE"), "utf8")).toContain("MIT License")
@@ -61,6 +61,13 @@ describe("published CLI package", () => {
     expect(smoke.stderr).toContain("githunk: not inside a Git repository")
     expect(smoke.stderr).toContain("fatal: not a git repository")
     expect(smoke.stderr).not.toContain("Bun is not defined")
+  })
+
+  test("keeps compiled binaries and release staging out of the root tarball", async () => {
+    const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as Record<string, unknown>
+    const files = manifest.files as readonly string[]
+    expect(files).toEqual(expect.arrayContaining(["bin", "dist/githunk.js", "README.md", "LICENSE"]))
+    expect(files).not.toContain("dist")
   })
 
   test("maps child termination signals to conventional exit codes", async () => {

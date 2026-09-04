@@ -8,7 +8,7 @@
   },
   "files": [
     "bin",
-    "dist",
+    "dist/githunk.js",
     "README.md",
     "LICENSE"
   ],
