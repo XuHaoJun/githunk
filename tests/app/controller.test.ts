@@ -822,3 +822,36 @@ describe("AppController", () => {
 
 })
 
+describe("commit history limit", () => {
+  test("loads a limited history first, then the full history after expand", async () => {
+    const seen: ({ readonly limit?: boolean } | undefined)[] = []
+    const commits = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        oid: `oid-${i}`,
+        shortOid: `short-${i}`,
+        parentOids: [],
+        authorName: "A",
+        authoredAt: "2026-01-01T00:00:00Z",
+        subject: `commit ${i}`,
+        body: "",
+      }))
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async (target) => snapshot(target.scope, target.scope),
+      loadCommits: (async (_range: string, _filter?: string, options?: { readonly limit?: boolean }) => {
+        seen.push(options)
+        return options?.limit ?? true ? commits(300) : commits(1000)
+      }) as never,
+    })
+    await controller.refresh()
+    expect(controller.state.commits?.length).toBe(300)
+    expect(seen[seen.length - 1]?.limit ?? true).toBe(true)
+    const expanded = await controller.expandCommits()
+    expect(expanded).toBe(true)
+    expect(controller.state.commits?.length).toBe(1000)
+    expect(seen[seen.length - 1]).toEqual({ limit: false })
+    const again = await controller.expandCommits()
+    expect(again).toBe(false)
+  })
+})
+

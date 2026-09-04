@@ -1,6 +1,6 @@
 import { GitRunner, GitCommandError } from "../git/runner"
 import { loadWorkingTree } from "../git/diff"
-import { listCommits, loadCommit, loadCommitFilePatch } from "../git/commits"
+import { listCommits, loadCommit, loadCommitFilePatch, type CommitListOptions } from "../git/commits"
 import type { CommitDetails, CommitSummary } from "../domain/commit"
 import { parseDiff } from "../domain/diff/parse"
 import type { DiffDocument, DiffFile } from "../domain/diff/document"
@@ -34,7 +34,7 @@ export type WorkingTreeLoader = (
   options?: { readonly background?: boolean },
 ) => Promise<WorkingTreeSnapshot>
 export type BranchListingLoader = () => Promise<BranchListing>
-export type CommitListLoader = (range: string, filter?: string) => Promise<readonly CommitSummary[]>
+export type CommitListLoader = (range: string, filter?: string, options?: CommitListOptions) => Promise<readonly CommitSummary[]>
 export type CommitLoader = (oid: string) => Promise<CommitDetails>
 export type CommitFilePatchLoader = (oid: string, path: string) => Promise<DiffDocument>
 export type TagListLoader = () => Promise<readonly TagSummary[]>
@@ -152,6 +152,12 @@ export class AppController {
   private readonly loadCommitDetails: CommitLoader
   private readonly loadCommitFile: CommitFilePatchLoader
   private generation = 0
+  /**
+   * Whether the commit history loads bounded. lazygit defaults its
+   * `limitCommits` to true (pkg/gui/context/local_commits_context.go:224-235)
+   * and only drops the bound once the cursor passes the threshold.
+   */
+  private limitCommits = true
   private pullRequestRefreshGeneration = 0
   private currentState: AppModel
   private reviewDatabase: ReviewDatabase = emptyWorkingTreeReviewDatabase()
@@ -185,8 +191,8 @@ export class AppController {
       ? () => listBranches(options)
       : options.loadBranches ?? options.branchesLoader ?? (runner !== undefined ? () => listBranches(runner) : async () => ({ detached: true, localBranches: [], remotes: [] }))
     this.loadCommitList = options instanceof GitRunner
-      ? (range, filter) => listCommits(options, range, filter)
-      : options.loadCommits ?? options.commitsLoader ?? (runner === undefined ? async () => [] : (range, filter) => listCommits(runner, range, filter))
+      ? (range, filter, listOptions) => listCommits(options, range, filter, listOptions)
+      : options.loadCommits ?? options.commitsLoader ?? (runner === undefined ? async () => [] : (range, filter, listOptions) => listCommits(runner, range, filter, listOptions))
     this.loadCommitDetails = options instanceof GitRunner
       ? (oid) => loadCommit(options, oid)
       : options.loadCommit ?? options.commitLoader ?? (runner === undefined ? async () => { throw new Error("Commit details require a GitRunner") } : (oid) => loadCommit(runner, oid))
@@ -501,6 +507,9 @@ export class AppController {
     await this.switchLocalBranch(branch)
   }
   async switchLocalBranch(branch: string): Promise<void> {
+    // A new branch restarts browsing from the tip: re-arm the bound, since lazygit
+    // re-limits whenever a reset flow reloads commits (pkg/gui/controllers/helpers/refs_helper.go:43-44).
+    this.limitCommits = true
     this.logAction(LOG_ACTIONS.checkoutBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => switchLocal(runner, branch)))
   }
@@ -900,7 +909,26 @@ export class AppController {
     return this.loadCommitDetails(oid)
   }
   async loadBranchCommits(branch: string): Promise<readonly CommitSummary[]> {
-    return this.loadCommitList(`refs/heads/${branch}`)
+    return this.loadCommitList(`refs/heads/${branch}`, undefined, { limit: this.limitCommits })
+  }
+
+  /**
+   * Drops the 300-commit bound and reloads the full history, keeping the
+   * current selection: the view preserves rows by stable id across the reload.
+   * Returns whether a reload happened. The flag flips synchronously so rapid
+   * repeated triggers cannot stack duplicate full reloads.
+   */
+  async expandCommits(): Promise<boolean> {
+    if (!this.limitCommits) return false
+    this.limitCommits = false
+    const history = await this.loadCommitHistory("HEAD")
+    this.currentState = {
+      ...this.currentState,
+      commits: history.commits,
+      ...this.commandLogSnapshot(),
+      ...(history.warning === undefined ? {} : { banner: history.warning }),
+    }
+    return true
   }
 
   async loadCommitFileInspection(oid: string, path: string): Promise<DiffDocument> {
@@ -1269,7 +1297,7 @@ export class AppController {
   }
   private async loadCommitHistory(range: string): Promise<{ readonly commits: readonly CommitSummary[]; readonly warning?: string }> {
     try {
-      return { commits: await this.loadCommitList(range) }
+      return { commits: await this.loadCommitList(range, undefined, { limit: this.limitCommits }) }
     } catch (error) {
       const warning = error instanceof GitCommandError
         ? (error.record.stderr || error.message)
