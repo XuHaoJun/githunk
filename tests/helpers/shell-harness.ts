@@ -75,6 +75,8 @@ export type ShellHarnessOptions = {
   /** Overrides the default (real editor-spawning) `editFile`, e.g. to observe the edit without spawning a process. */
   readonly onEditFile?: (path: string, line?: number) => Promise<void>
   readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
+  /** Overrides commit history, e.g. with synthetic rows larger than any git fixture. */
+  readonly loadCommits?: (range: string, filter?: string, options?: { readonly limit?: boolean }) => Promise<readonly CommitSummary[]>
   readonly onCheckBranchMerged?: (branch: string, upstream?: string) => Promise<boolean>
 }
 
@@ -168,6 +170,7 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     onQuit: () => { quitCalled = true },
     ...(options.onGeometryChange === undefined ? {} : { onGeometryChange: options.onGeometryChange }),
     ...(options.onEditFile === undefined ? {} : { onEditFile: options.onEditFile }),
+    ...(options.loadCommits === undefined ? {} : { loadCommits: options.loadCommits }),
     ...(options.loadBranchCommits === undefined ? {} : { loadBranchCommits: options.loadBranchCommits }),
     ...(options.onCheckBranchMerged === undefined ? {} : { onCheckBranchMerged: options.onCheckBranchMerged }),
   })

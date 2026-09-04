@@ -1,5 +1,5 @@
 import type { CliRenderer } from "@opentui/core"
-import { AppController, type PullRequestListLoader } from "./controller"
+import { AppController, type CommitListLoader, type PullRequestListLoader } from "./controller"
 import type { GitRunner } from "../git/runner"
 import type { CommitSummary } from "../domain/commit"
 import type { AppModel } from "../domain/repository"
@@ -35,6 +35,8 @@ export type CreateAppOptions = {
   readonly onEditFile?: (path: string, line?: number) => Promise<void>
   /** Optional read-only branch history seam for embedded callers and tests. */
   readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
+  /** Optional commit-history seam for embedded callers and tests. */
+  readonly loadCommits?: CommitListLoader
   /** Optional pull-request loader; the default `gh` loader is enabled with background refresh. */
   readonly loadPullRequests?: PullRequestListLoader
   /** Optional merge-state probe seam for UI race tests and embedded callers. */
@@ -117,6 +119,7 @@ export function createApp(options: CreateAppOptions): App {
     repositoryRoot: options.repositoryRoot,
     runner: options.runner,
     ...(pullRequestLoader === undefined ? {} : { loadPullRequests: pullRequestLoader }),
+    ...(options.loadCommits === undefined ? {} : { loadCommits: options.loadCommits }),
     onPullRequestsChanged: (state) => { renderPullRequests?.(state) },
   })
   const makeReviewController = (): ReviewWorkspaceController => {
