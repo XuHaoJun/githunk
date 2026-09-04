@@ -89,8 +89,8 @@ describe("commit history loaders", () => {
   })
 })
 
-describe("commit log ordering", () => {
-  test("requests topo-order so the graph renders as contiguous lanes", async () => {
+describe("commit log limit", () => {
+  test("limits the initial walk to 300 commits like lazygit", async () => {
     const calls: string[][] = []
     const runner = {
       run: async (args: readonly string[]) => {
@@ -99,7 +99,34 @@ describe("commit log ordering", () => {
       },
     }
     await listCommits(runner as never, "HEAD")
-    // Matches lazygit's default `git.log.order: topo-order`.
-    expect(calls[0]).toContain("--topo-order")
+    // lazygit's `ArgIf(opts.Limit, "-300")` (commit_loader.go:597).
+    expect(calls[0]).toContain("-300")
+  })
+
+  test("loads the full walk when explicitly unlimited", async () => {
+    const calls: string[][] = []
+    const runner = {
+      run: async (args: readonly string[]) => {
+        calls.push([...args])
+        return { exitCode: 0, stdout: "", stderr: "", record: {} as never }
+      },
+    }
+    await listCommits(runner as never, "HEAD", undefined, { limit: false })
+    expect(calls[0]).not.toContain("-300")
   })
 })
+
+ describe("commit log ordering", () => {
+   test("requests topo-order so the graph renders as contiguous lanes", async () => {
+     const calls: string[][] = []
+     const runner = {
+       run: async (args: readonly string[]) => {
+         calls.push([...args])
+         return { exitCode: 0, stdout: "", stderr: "", record: {} as never }
+       },
+     }
+     await listCommits(runner as never, "HEAD")
+     // Matches lazygit's default `git.log.order: topo-order`.
+     expect(calls[0]).toContain("--topo-order")
+   })
+ })

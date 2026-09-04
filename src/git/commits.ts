@@ -9,6 +9,16 @@ type CommandRunner = Pick<GitRunner, "run">
 /** Each commit is one NUL record; the seven fields are line-framed. */
 const LOG_FORMAT = "%H%n%h%n%P%n%an%n%aI%n%s%n%b"
 
+/**
+ * Initial commit-walk bound. lazygit limits the first load with `-300`
+ * (`getLogCmd`, pkg/commands/git_commands/commit_loader.go:581-606) and only
+ * loads the rest once the cursor passes the threshold; an unbounded walk on a
+ * 27k-commit repo materializes megabytes of rows on every view update.
+ */
+export const COMMITS_LIMIT = 300
+
+export type CommitListOptions = { readonly limit?: boolean }
+
 function parseSummary(record: string): CommitSummary | undefined {
   const fields = record.split("\n")
   if (fields.length < 7) return undefined
@@ -34,10 +44,12 @@ export function parseCommitLog(raw: string): readonly CommitSummary[] {
   return raw.split("\0").map(parseSummary).filter((summary): summary is CommitSummary => summary !== undefined)
 }
 
-export async function listCommits(runner: CommandRunner, range: string, filter?: string): Promise<readonly CommitSummary[]> {
+export async function listCommits(runner: CommandRunner, range: string, filter?: string, options?: CommitListOptions): Promise<readonly CommitSummary[]> {
   // `--topo-order` is lazygit's default `git.log.order`: it keeps a branch's commits
   // contiguous so the rendered graph reads as lanes rather than an interleaved tangle.
-  const args = ["log", "-z", "--topo-order", `--format=${LOG_FORMAT}`, range]
+  const args = ["log", "-z", "--topo-order", `--format=${LOG_FORMAT}`]
+  if (options?.limit ?? true) args.push(`-${COMMITS_LIMIT}`)
+  args.push(range)
   if (filter !== undefined && filter.length > 0) args.push("--", filter)
   // The log and the pushed/merged reachability queries run concurrently, as they do in lazygit's
   // `GetCommits` (pkg/commands/git_commands/commit_loader.go:85-124); the statuses are what colour
