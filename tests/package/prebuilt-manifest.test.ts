@@ -11,6 +11,7 @@ import {
   getPlatformPackageSpecForHost,
   listStagedPackageDirs,
   PLATFORM_PACKAGE_MATRIX,
+  sortStagedForPublish,
 } from "../../scripts/prebuilt-package-helpers"
 
 describe("prebuilt platform matrix", () => {
@@ -77,5 +78,18 @@ describe("prebuilt platform matrix", () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
+  })
+
+  test("orders the meta package last for publish", () => {
+    const dirs = [
+      "/r/@xuhaojun/githunk",
+      "/r/@xuhaojun/githunk-linux-x64",
+      "/r/@xuhaojun/githunk-darwin-arm64",
+    ]
+    expect(sortStagedForPublish(dirs, "@xuhaojun/githunk")).toEqual([
+      "/r/@xuhaojun/githunk-darwin-arm64",
+      "/r/@xuhaojun/githunk-linux-x64",
+      "/r/@xuhaojun/githunk",
+    ])
   })
 })

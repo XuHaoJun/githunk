@@ -186,3 +186,19 @@ export function listStagedPackageDirs(root: string): string[] {
   }
   return packages
 }
+
+/**
+ * Sort staged package directories for publishing: platform packages first in
+ * stable order, the meta package last. Compares basenames because scoped
+ * names stage as nested `@scope/<name>` paths.
+ */
+export function sortStagedForPublish(directories: readonly string[], rootPackageName: string): string[] {
+  const rootBase = path.basename(rootPackageName)
+  return [...directories].sort((left, right) => {
+    const leftBase = path.basename(left)
+    const rightBase = path.basename(right)
+    if (leftBase === rootBase) return 1
+    if (rightBase === rootBase) return -1
+    return left.localeCompare(right)
+  })
+}

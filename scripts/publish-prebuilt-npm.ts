@@ -2,7 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
-import { listStagedPackageDirs, releaseNpmDir } from "./prebuilt-package-helpers"
+import { listStagedPackageDirs, releaseNpmDir, sortStagedForPublish } from "./prebuilt-package-helpers"
 
 type PackageJson = {
   readonly name: string
@@ -77,13 +77,7 @@ if (!existsSync(releaseRoot)) {
 }
 
 const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")) as PackageJson
-const directories = listStagedPackageDirs(releaseRoot).sort((left, right) => {
-  const leftBase = path.basename(left)
-  const rightBase = path.basename(right)
-  if (leftBase === rootPackage.name) return 1
-  if (rightBase === rootPackage.name) return -1
-  return left.localeCompare(right)
-})
+const directories = sortStagedForPublish(listStagedPackageDirs(releaseRoot), rootPackage.name)
 
 if (directories.length === 0) {
   throw new Error(`No staged packages found in ${releaseRoot}`)
