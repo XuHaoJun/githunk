@@ -1,165 +1,152 @@
-## What this is
+## Project
 
-githunk is a **review-first Git TUI**: lazygit's layout, keybindings and everyday Git
-functionality, plus the things lazygit does not do — selecting and copying exact patch text out of
-the right-hand pane without dragging in left-pane cells, per-file review progress, and
-mouse-draggable splitters. See `docs/githunk-prd-v0.1.md` (§1–3 for the product idea, §19 for the
-v0.2 scope: arbitrary compare base, sticky file/hunk header, side-by-side diff).
+githunk is a review-first Git TUI: lazygit's layout, keybindings and everyday Git workflow,
+plus exact patch selection/copy, per-file review progress and draggable splitters.
+Bun + strict TypeScript + OpenTUI; Branch Review uses React. `package.json` defines commands
+and dependencies; `bun.lock` pins the dependency graph. Do not add runtime dependencies.
 
-Bun + TypeScript, one runtime dependency: `@opentui/core` (version floats; `bun.lock` is the pin).
+## Working rules
 
-## Commands
+- **lazygit is the parity specification.** Read the vendored Go source in
+  `learn-projects/lazygit` (`git submodule update --init` if absent). Cite the relevant
+  `file:line` in code comments and commit bodies, explaining why the behavior exists.
+  Examples: `pkg/gui/background.go:169-208`, `user_config.go:1002`.
+  Key reference: `learn-projects/lazygit/docs/keybindings/Keybindings_en.md`.
+- **Record parity changes** in `docs/lazygit-compatibility-v0.1.md`, the authoritative matrix:
+  `compatible` / `githunk review extension` / `not yet implemented` / `blocked`.
+  Its four review extensions are main-pane selection/copy, the lower-right review area,
+  draggable splitters and the command log's failed-command output block.
+- **Preserve strictness:** `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
+  `readonly` fields and `readonly T[]` parameters. Use the existing optional-field idiom
+  `...(x === undefined ? {} : { x })`; do not loosen compiler settings.
+- **Commits:** lowercase summaries with `feat:` / `fix:` / `refactor:` / `perf:` / `test:` /
+  `docs:` prefixes. Parity changes need the source citations and rationale above.
+- **Evidence bounds claims.** Keep `Automated`, `Manual smoke observed` and `Not tested`
+  distinct in release/clipboard documentation. Never upgrade a status without running it.
+- **Local evidence stays local.** `.superpowers/` is gitignored; never `git add -f` it.
+  Use `local://`, `artifact://` or the PR description for task evidence. Tracked specs/plans
+  belong under `docs/superpowers/` (no leading dot).
+
+## Commands and verification
 
 ```bash
-bun run check                       # tsc --noEmit && bun test — the gate; never commit red
+bun run check                       # gate: typecheck + project tests; never commit red
 bun run typecheck
-bun test
-bun test tests/ui/layout.test.ts    # one file
-bun test -t "computeLayout side"    # one describe/it by name
-bun run start                       # run the TUI in the current repository
-bun run dev                         # same, with --watch
-bun run spike:selection             # the disposable PRD §16 selection spike
+bun run test                        # excludes learn-projects/**
+bun test tests/ui/layout.test.ts     # focused file
+bun test -t "computeLayout side"     # focused test name
+bun run start                       # TUI in the current repository
+bun run dev                         # watch mode
 bun run build:bin                   # host standalone binary → dist/githunk
+bun run spike:selection             # disposable PRD §16 selection spike
 ```
 
-`*.integration.test.ts` and `tests/acceptance/*` spawn real `git` against temp repositories
-(`tests/helpers/temp-repository.ts`, `tests/helpers/shell-harness.ts` — the latter also drives a
-real `createTestRenderer` with mock keys/mouse and captures frames). They are slower and need `git`
-on PATH; plain `*.test.ts` files are pure unit tests over injected loaders. Branch Review acceptance is
-`tests/acceptance/branch-review-workspace.integration.test.ts` (coverage/reconciliation) and
-`tests/acceptance/branch-review-artifact.integration.test.ts` (feedback/artifact/transaction recovery).
+Integration tests and `tests/acceptance/*` use real Git/temp repositories and/or the OpenTUI
+renderer harness; inspect the test's helpers rather than assuming every `.test.ts` is pure.
+`tests/helpers/temp-repository.ts` supplies repositories; `tests/helpers/shell-harness.ts`
+drives `createTestRenderer`, mock keys/mouse and captured frames. Branch Review acceptance:
+- `tests/acceptance/branch-review-workspace.integration.test.ts`: coverage/reconciliation.
+- `tests/acceptance/branch-review-artifact.integration.test.ts`: feedback/artifacts/recovery.
 
-## Architecture
+## Architecture and entry points
 
-One-way data flow. Nothing in `src/domain` or `src/git` knows about the UI; the UI never spawns git.
+Repository data flows one way: `GitRunner` → Git loaders → `AppController` → immutable
+`AppModel` → `RootView.update(model)` → panes → OpenTUI. Domain/Git layers do not know the UI;
+the UI does not spawn Git.
 
-```
-GitRunner ──► src/git/*  ──► AppController ──► AppModel (immutable snapshot)
- (spawns)     (parsing)      (src/app)              │
-                                                    ▼
-                                        RootView.update(model) ──► panes ──► OpenTUI
-```
+| Area | Ownership / starting point |
+| --- | --- |
+| `src/domain/` | Pure types/functions. `AppModel` lives in `repository.ts`, re-exported by `src/app/model.ts`. `ReviewTarget`: `working-tree \| branch \| commit \| stash`. |
+| `src/git/` | Git operations through `GitRunner.run()`: `git --no-pager`, `LC_ALL=C`, command logging. `readOnly` sets `GIT_OPTIONAL_LOCKS=0`; `optionalLocks` allows foreground status to persist its stat-cache. |
+| `src/app/controller.ts` | Repository state; injectable loaders for tests; writes serialized through `MutationQueue`. |
+| `src/ui/root-view.ts` | Repository view state, focus, gestures and dispatch. Start at `handleAction`. |
+| `src/app/create-app.ts` | Wiring seam; preserve `try { … } finally { view.update(controller.state) }` around repository controller calls. Without a renderer, `createApp` is headless (no timers or `gh`). |
+| `src/app/screen-controller.ts` | `AppScreenController` switches repository/Branch Review screens and restores repository focus/selection. |
+| `src/ui/review-workspace/` | Branch Review controller and React UI (`ReactReviewHost`, `ReviewWorkspaceApp.tsx`). |
+| `src/review/` | Review core, Git document/projection loaders, highlighting and persistence. |
 
-- **`src/domain/`** — types and pure functions only (`AppModel` lives in `domain/repository.ts`;
-  `model.ts` just re-exports it). `ReviewTarget` is the central discriminated union:
-  `working-tree | branch | commit | stash`.
-- **`src/git/`** — everything that shells out. All of it goes through `GitRunner.run()`, which
-  spawns `git --no-pager`, pins `LC_ALL=C`, and appends a `CommandRecord` to the `CommandLog` that
-  backs the Command Log pane. `readOnly` sets `GIT_OPTIONAL_LOCKS=0`; `optionalLocks` is the one
-  documented exception (a *foreground* status is allowed to persist git's stat-cache).
-- **`src/app/controller.ts`** — the only mutable state holder. Every loader is injectable
-  (`loadCommits`, `loadBranches`, `inferBase`, …), which is how unit tests avoid git entirely.
-  Writes are serialised through `MutationQueue`.
-- **`src/ui/root-view.ts`** — ~3400 lines, deliberately the single owner of view state, focus,
-  gestures and dispatch. Read `handleAction` first; it is the exhaustive switch over `Action`.
-- **`src/app/create-app.ts`** — the wiring seam. Every controller call is wrapped in
-  `try { … } finally { view.update(controller.state) }`. A `renderer`-less `createApp` returns a
-  headless app (no timers, no `gh`) for tests.
+### Load-bearing UI contracts
 
-### Things worth knowing before editing
+- **Mutations:** UI-driven Git writes must use `runUiMutation`. Its `isMutating` state pauses
+  background Git; `onMutationSettled` runs in `finally` to reseed `RefsWatcher`, preventing
+  the app's own writes from appearing as external changes.
+- **Keys:** `GITHUNK_BINDINGS` in `src/ui/bindings.ts` maps context/key → `Action` and drives
+  hints and `?`. Add a binding and a `handleAction` case, not raw-key matching. Pass both
+  `model` and `ui` to resolution/dispatch: unavailable context bindings fall through to global.
+- **Layout:** `computeLayout(terminal, request)` in `src/ui/layout.ts` uses `boxlayout.ts`.
+  Missing `geometry.windows` entries are hidden. Splitters change `sidePanelRatio` / `logHeight`;
+  test geometry through `computeLayout`, not the view.
+- **Panes:** reuse `createPane` / `PaneHandle` (`src/ui/panes/common.ts`), stable row IDs in
+  `ListState` (`src/ui/list-view.ts`, column `priority` controls truncation), and `PanelState`
+  (`src/ui/panel-state.ts`) for tabs/drill-downs. Async repository main-pane content must use
+  `MainPreviewGate` (`src/ui/main-preview.ts`) to discard stale selection generations.
+- **Text performance:** keep pane buffer internals behind `src/ui/panes/pane-text.ts`.
+  Avoid bulk `TextRenderable.content` assignment (chunks × lines); use unstyled buffer
+  `setText` plus line-indexed highlights. `src/ui/panes/diff-text.ts` paints near the viewport.
 
-**`runUiMutation` is the choke point.** Every UI-driven git write goes through it. It sets
-`view.isMutating` (which pauses all background routines, lazygit's `backgroundRefreshesPaused`) and
-fires `onMutationSettled` in its `finally` (which re-seeds `RefsWatcher`'s baseline so githunk's own
-writes are not reported back as external changes). New mutations must use it.
+### Patch selection and copy
 
-**Keybindings are data.** `GITHUNK_BINDINGS` in `src/ui/bindings.ts` maps keys → `Action` per
-`BindingContext` (a `FocusId`, `"global"`, or `"modal"`); the same table drives the hints bar and the
-`?` menu. Resolution is availability-aware — an unavailable context binding falls through to the
-global binding for that key — so `resolve`/`dispatch` callers **must** pass both `model` and `ui`.
-Add a key by adding a binding plus a `case` in `handleAction`, never by pattern-matching raw keys.
+In `src/domain/diff/`: `parse.ts` → `DiffDocument` with raw `startUtf16`/`endUtf16` offsets →
+`render.ts` with `displayToRaw` / `segments` → `selection.ts` mapping native selection back to
+raw patch offsets → `transform.ts` copy modes (`text | added | removed | patch | hunk | file`).
+Preserve wide-character, combining-mark and wrapped-row handling. Copy is OSC52-only through
+`src/ui/clipboard.ts`; delivery is never assumed. See `docs/clipboard-compatibility-v0.1.md`.
 
-**Layout is a pure function.** `computeLayout(terminal, request)` in `src/ui/layout.ts` (over the
-`boxlayout.ts` engine) returns a `LayoutGeometry`; a window absent from `geometry.windows` is hidden.
-Splitter drags just feed it a new `sidePanelRatio` / `logHeight`. Test layout changes against
-`computeLayout` directly, not through the view.
+### Background work and persistence
 
-**Panes share machinery.** `createPane`/`PaneHandle` (`panes/common.ts`), `ListState` with stable
-row ids (`list-view.ts`, columns carry a `priority` for width-based truncation), and `PanelState`
-for the tabbed side windows plus their transient drill-down children (`panel-state.ts`).
-Async main-pane content must go through `MainPreviewGate` (`main-preview.ts`) — a monotonic
-generation counter that discards stale previews when the selection moved on.
-
-**The diff pipeline is the product.** `parse.ts` → `DiffDocument` (every line carries
-`startUtf16`/`endUtf16` into the raw patch) → `render.ts` builds the display text plus
-`displayToRaw` / `segments` maps → `selection.ts` maps OpenTUI's native selection *back* to raw
-patch offsets (handling wide chars, combining marks and wrapped rows) → `transform.ts` produces the
-`CopyMode` variants (`text | added | removed | patch | hunk | file`). Copy is OSC52-only via
-`ui/clipboard.ts`; delivery is never assumed to have worked (`docs/clipboard-compatibility-v0.1.md`).
-
-**Two OpenTUI performance rules, both load-bearing.** `panes/pane-text.ts` is the *only* place that
-touches OpenTUI internals: assigning `TextRenderable.content` costs chunks × lines, so text
-goes in unstyled via the buffer's `setText` and colour arrives as line-indexed highlights.
-`panes/diff-text.ts` then paints only the rows near the viewport.
-
-**Background routines** (`app/background.ts`) mirror lazygit's three: fetch (60s), working-tree
-refresh (10s), external-ref detection (2s, via `RefsWatcher` + `git/refs-snapshot.ts`). Off unless
-`createApp` is given `background.enabled`; tunable through `GITHUNK_BACKGROUND`,
+`src/app/background.ts` mirrors lazygit's fetch (60s), working-tree refresh (10s) and
+external-ref detection (2s; `RefsWatcher` + `src/git/refs-snapshot.ts`). Disabled unless
+`createApp` receives `background.enabled`. Environment controls: `GITHUNK_BACKGROUND`,
 `GITHUNK_AUTO_FETCH`, `GITHUNK_AUTO_REFRESH`, `GITHUNK_DETECT_EXTERNAL_CHANGES`,
 `GITHUNK_FETCH_INTERVAL`, `GITHUNK_REFRESH_INTERVAL`, `GITHUNK_EXTERNAL_CHANGE_INTERVAL`.
 
-**Persistence lives under `.git/`, never the worktree** — `.git/githunk/ui-state-v1.json` (pane
-geometry) and, for review progress, `.git/githunk/review-state-v2.json` (Branch Review, `version: 2`) plus immutable artifacts at `.git/githunk/reviews/<review-id>/<artifact-id>.json`, and `.git/githunk/working-tree-review-state-v1.json` (Working Tree/Stash, restricted and starting empty — no migration from the old combined `review-state-v1.json`). All are written atomically at mode `0600` by `storage/local-state-file.ts`, which refuses symlinked paths. `git status` must stay clean.
+State belongs under Git metadata, never in the worktree. `src/storage/local-state-file.ts`
+resolves the Git path, refuses symlinked paths and writes atomically with mode `0600`.
+Normal `.git/` layout:
+- `githunk/ui-state-v1.json`: pane geometry.
+- `githunk/review-state-v2.json`: Branch Review (`version: 2`).
+- `githunk/reviews/<review-id>/<artifact-id>.json`: immutable review artifacts.
+- `githunk/working-tree-review-state-v1.json`: restricted Working Tree/Stash progress;
+  starts empty, with no migration from the old combined `review-state-v1.json`.
 
-## Release
+Persistence must not dirty `git status`.
 
-Prebuilt `bun --compile` binaries per platform (hunk's shape in `learn-projects/hunk`):
-meta package `@xuhaojun/githunk` plus five optional platform packages
-(`@xuhaojun/githunk-{linux,darwin}-{x64,arm64}`, `@xuhaojun/githunk-windows-x64`).
-`bin/githunk.js` execs the installed platform binary when present and falls back to the
-Node bundle (`dist/githunk.js`, needs Node 26.1+) otherwise. `install.sh` puts the standalone
-binary into `$GITHUNK_INSTALL_DIR` / `$XDG_BIN_HOME` / `~/.local/bin`;
-`githunk update [version] [--check]` self-updates curl installs (npm installs go through npm).
+## Release (read when packaging/publishing)
+
+`.github/workflows/release-prebuilt-npm.yml` builds and publishes tagged releases.
+`@xuhaojun/githunk` has five optional platform packages:
+`@xuhaojun/githunk-{linux,darwin}-{x64,arm64}` and `@xuhaojun/githunk-windows-x64`.
+`bin/githunk.js` prefers the platform binary, falling back to `dist/githunk.js` (Node 26.1+).
+`install.sh` installs to `$GITHUNK_INSTALL_DIR` / `$XDG_BIN_HOME` / `~/.local/bin`;
+`githunk update [version] [--check]` updates curl installs; npm installs update through npm.
+
+Bump `package.json`, commit/push, then push the matching `v<version>` tag. Do not copy a
+hardcoded version from documentation. Packaging checks (require built/staged artifacts):
 
 ```bash
-# release: bump, push, tag — .github/workflows/release-prebuilt-npm.yml does the rest (~10 min)
-git commit -m "chore: bump 0.4.0" && git push origin main
-git tag v0.4.0 && git push origin v0.4.0
-bun run stage:prebuilt:release      # CI form; local single-platform: bun run ./scripts/stage-prebuilt-npm.ts
-bun run check:prebuilt-pack && bun run smoke:prebuilt-install
-bun run publish:prebuilt:npm -- --dry-run --tag latest
+bun run stage:prebuilt:release       # CI artifact root; local: bun run ./scripts/stage-prebuilt-npm.ts
+bun run check:prebuilt-pack
+bun run smoke:prebuilt-install
+bun run publish:prebuilt:npm -- --dry-run --tag latest  # use beta for prereleases
 ```
 
-Rules learned the hard way:
-- Tag must equal `package.json` version (`scripts/check-release-version.ts` fails fast).
-  Prerelease tags (`vX.Y.Z-beta.N`) publish to the `beta` dist-tag, never `latest`.
-- Never move a tag after anything published; npm versions are immutable — bump instead.
-  Retry via rerun-failed-jobs or `workflow_dispatch(publish=true)`.
-- The `npm` environment must carry NO deployment branch policy: tags cannot satisfy
-  branch rules and the publish job is rejected.
-- npm trusted-publisher Organization must be `XuHaoJun` (exact case — the OIDC owner claim
-  is case-sensitive); direct `npm publish` must be an allowed action.
-- GitHub artifact names reject `/`, so matrix uploads use unscoped `artifact_name`; scoped
-  names nest under `@scope/` dirs — always list/order staged packages through
-  `listStagedPackageDirs` / `sortStagedForPublish`, never a flat readdir.
-- x64 always compiles `-baseline` (the default runtime SIGILLs pre-Haswell CPUs; the workflow
-  proves it under QEMU-emulated Nehalem); linux splits musl vs glibc.
-- CLI version comes from a bundled `package.json` import (`src/cli/args.ts`) — never a
-  filesystem walk, which returns `0.0.0-dev` inside compiled binaries.
+Release traps to preserve:
+- Tags must match `package.json` (`scripts/check-release-version.ts`). Beta prereleases publish
+  to `beta`, never `latest`. Never move a published tag; npm versions are immutable. Bump, or
+  retry failed jobs / `workflow_dispatch(publish=true)` as appropriate.
+- The GitHub `npm` environment must have no deployment branch policy: tags cannot satisfy it.
+  npm trusted-publisher Organization must be exactly `XuHaoJun` (case-sensitive OIDC claim),
+  with direct `npm publish` allowed.
+- Artifact names cannot contain `/`: use unscoped `artifact_name`. Staged scoped packages nest
+  under `@scope/`; use `listStagedPackageDirs` / `sortStagedForPublish`, not flat `readdir`.
+- x64 builds must use `-baseline` to avoid SIGILL on pre-Haswell CPUs; CI checks under
+  QEMU Nehalem. Preserve Linux musl/glibc handling.
+- CLI version uses bundled `package.json` (`src/cli/args.ts`), never a filesystem walk:
+  compiled binaries otherwise report `0.0.0-dev`.
 
-## Working conventions
+## Further references
 
-**lazygit is the specification.** It is vendored as a submodule at `learn-projects/lazygit`
-(`git submodule update --init` if absent). When implementing parity behaviour, read the Go source
-and cite it — `pkg/gui/background.go:169-208`, `user_config.go:1002` — in the code comment *and* the
-commit message, the way the existing code and history do. Keybinding reference:
-`learn-projects/lazygit/docs/keybindings/Keybindings_en.md`.
-
-**Record parity status.** `docs/lazygit-compatibility-v0.1.md` holds the authoritative status matrix
-(`compatible` / `githunk review extension` / `not yet implemented` / `blocked`). Exactly four things
-are review extensions: main-pane selection/copy, the lower-right review area, draggable splitters,
-and the command log's failed-command output block. Update the matrix when a row's status changes.
-
-**Constraints.** No new runtime dependencies. `strict` TypeScript with `noUncheckedIndexedAccess`
-and `exactOptionalPropertyTypes` — hence the pervasive
-`...(x === undefined ? {} : { x })` spread idiom for optional fields; keep it rather than loosening
-the compiler. Prefer `readonly` fields and `readonly T[]` params.
-
-**Commits** use `feat:` / `fix:` / `refactor:` / `perf:` / `test:` / `docs:` prefixes with a
-lowercase summary, and bodies that explain *why lazygit does it that way*, with file:line citations.
-Match that depth.
-
-**Claims are evidence-bounded.** `docs/release-checklist-v0.1.md` and the clipboard matrix
-distinguish `Automated` / `Manual smoke observed` / `Not tested`. Do not upgrade a status without
-running the thing.
-**`.superpowers` is local-only (prefer A).** `.superpowers/` is gitignored (`.gitignore:2`) — never `git add -f` it. Task evidence stays local via `local://`/`artifact://` or PR description; only `docs/superpowers/` (no dot) is tracked for specs/plans.
+- `docs/githunk-prd-v0.1.md`: product (§1–3), selection spike (§16), v0.2 scope (§19).
+- `docs/lazygit-compatibility-v0.1.md`: authoritative parity status.
+- `docs/release-checklist-v0.1.md`: release verification/evidence.
+- `docs/clipboard-compatibility-v0.1.md`: terminal clipboard compatibility/evidence.
