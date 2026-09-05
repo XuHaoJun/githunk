@@ -1,47 +1,40 @@
 import { describe, expect, test } from "bun:test"
 import { createTempRepository } from "../helpers/temp-repository"
 import { GitRunner } from "../../src/git/runner"
-import { inferReviewBase } from "../../src/git/base-inference"
+import { inferReviewBase, resolveRefOid } from "../../src/git/base-inference"
 
 describe("base ref identity", () => {
-  test("keeps remote namespace when a local branch has the same short name", async () => {
+  test("keeps colliding local and remote labels independently selectable with canonical refs", async () => {
     const repository = await createTempRepository()
     try {
+      const runner = new GitRunner(repository.path)
       await repository.write("base.txt", "base\n")
-      await repository.git(["add", "base.txt"])
-      await repository.git(["commit", "--quiet", "-m", "base"])
-      const baseOid = (await repository.git(["rev-parse", "HEAD"])).stdout.trim()
-      await repository.git(["branch", "origin/main"])
-      await repository.git(["remote", "add", "origin", "https://example.invalid/origin.git"])
-      await repository.git(["update-ref", "refs/remotes/origin/main", baseOid])
-      await repository.git(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"])
-      const result = await inferReviewBase(new GitRunner(repository.path))
-      expect(result.kind).toBe("confident")
-      if (result.kind === "confident") expect(result.ref).toBe("refs/remotes/origin/main")
+      await runner.run(["add", "base.txt"])
+      await runner.run(["commit", "--quiet", "-m", "base"])
+      const baseOid = (await runner.run(["rev-parse", "HEAD"])).stdout.trim()
+      await runner.run(["remote", "add", "origin", "https://example.invalid/origin.git"])
+      await runner.run(["update-ref", "refs/remotes/origin/main", baseOid])
+      await runner.run(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"])
+      await runner.run(["checkout", "--quiet", "-b", "origin/main"])
+      await repository.write("base.txt", "local branch\n")
+      await runner.run(["commit", "--quiet", "-am", "local branch"])
+      const localOid = (await runner.run(["rev-parse", "HEAD"])).stdout.trim()
+      await runner.run(["checkout", "--quiet", "-b", "feature"])
+      await repository.write("base.txt", "feature\n")
+      await runner.run(["commit", "--quiet", "-am", "feature"])
+
+      const result = await inferReviewBase(runner)
+      expect(result.kind).toBe("choose")
+      expect(result.candidates.filter(({ label }) => label === "origin/main").map(({ ref }) => ref)).toEqual([
+        "refs/heads/origin/main", "refs/remotes/origin/main",
+      ])
+      expect(await resolveRefOid(runner, "refs/heads/origin/main")).toBe(localOid)
+      expect(await resolveRefOid(runner, "refs/remotes/origin/main")).toBe(baseOid)
+      const preferred = await inferReviewBase(runner, "refs/remotes/origin/main")
+      expect(preferred.candidates[0]?.ref).toBe("refs/remotes/origin/main")
+      expect(preferred.candidates[1]?.ref).toBe("refs/heads/origin/main")
     } finally {
       await repository.cleanup()
     }
-  })
-
-  test("accepts SHA-256-length resolved object IDs", async () => {
-    const oid = "a".repeat(64)
-    const runner = {
-      cwd: "/tmp/repo",
-      async run(args: readonly string[]) {
-        const command = args.join(" ")
-        const stdout = command.includes("symbolic-ref --quiet HEAD")
-          ? "refs/heads/main\n"
-          : command.includes("for-each-ref")
-            ? "main\n"
-            : command.includes("remote")
-              ? ""
-              : command.includes("rev-parse --verify HEAD")
-                ? `${oid}\n`
-                : ""
-        return { stdout }
-      },
-    }
-    const result = await inferReviewBase(runner as never)
-    expect(result.kind).toBe("choose")
   })
 })

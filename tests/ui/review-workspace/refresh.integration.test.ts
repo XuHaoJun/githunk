@@ -465,7 +465,7 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     } as unknown as ReviewStateStore
     const controller = new ReviewWorkspaceController({ runner, stateStore, loadDocument: async () => doc })
     await controller.open()
-    expect(loadCalls).toBe(2)
+    expect(controller.state).toBeUndefined()
     expect(controller.error?.kind).toBe("corrupt-state")
     expect(controller.error?.detail).toContain("review-state.corrupt")
   })

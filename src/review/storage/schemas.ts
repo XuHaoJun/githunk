@@ -22,7 +22,7 @@ export type PersistedReviewState = Readonly<{
 
 export type ReviewDatabaseV2 = Readonly<{
   version: 2
-  baseByHead: Readonly<Record<string, Readonly<{ baseRef: string }>>>
+  baseByHead: Readonly<Record<string, Readonly<{ baseRef: string; confirmed?: boolean }>>>
   reviews: Readonly<Record<string, PersistedReviewState>>
 }>
 
@@ -203,7 +203,7 @@ const persistedReviewStateSchema = z
   })
   .strict()
 
-const baseByHeadSchema = z.record(z.string(), z.object({ baseRef: z.string().min(1) }).strict()).superRefine((val, ctx) => {
+const baseByHeadSchema = z.record(z.string(), z.object({ baseRef: z.string().min(1), confirmed: z.boolean().optional() }).strict()).superRefine((val, ctx) => {
   for (const key of Object.keys(val)) {
     if (!isValidBaseByHeadKey(key)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: `invalid baseByHead key: ${key}`, path: [key] })
@@ -387,8 +387,10 @@ function toPersistedReviewState(raw: z.infer<typeof persistedReviewStateSchema>)
 function toDatabase(raw: z.infer<typeof reviewDatabaseV2Schema>): ReviewDatabaseV2 {
   const reviews: Record<string, PersistedReviewState> = {}
   for (const [k, v] of Object.entries(raw.reviews)) reviews[k] = toPersistedReviewState(v)
-  const baseByHead: Record<string, { baseRef: string }> = {}
-  for (const [k, v] of Object.entries(raw.baseByHead)) baseByHead[k] = { baseRef: v.baseRef }
+  const baseByHead: Record<string, { baseRef: string; confirmed?: boolean }> = {}
+  for (const [k, v] of Object.entries(raw.baseByHead)) {
+    baseByHead[k] = { baseRef: v.baseRef, ...(v.confirmed === undefined ? {} : { confirmed: v.confirmed }) }
+  }
   return { version: 2, baseByHead, reviews }
 }
 
