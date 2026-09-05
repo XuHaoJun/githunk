@@ -1,6 +1,6 @@
 {
   "name": "@xuhaojun/githunk",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A review-first Git TUI combining lazygit's everyday Git workflow with focused hunk review.",
   "type": "module",
   "bin": {
