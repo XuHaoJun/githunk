@@ -34,9 +34,20 @@ export type StickyDiffHeaderRequest = Readonly<{
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>
 }>
 
+/** First row of a section's own header: every section but the first leads with a divider. */
+function headerTopOf(sectionOffsets: readonly number[], index: number): number {
+  return (sectionOffsets[index] ?? 0) + (index > 0 ? 1 : 0)
+}
+
 function sectionIndexAt(sectionOffsets: readonly number[], fileCount: number, top: number): number {
+  // Hand off only once the incoming file's own header row has scrolled through
+  // the top, so its divider and header still read as the outgoing file and the
+  // real header is seen exactly once instead of flashing against a pinned copy.
+  // Matches hunk, which solved the same problem first:
+  // learn-projects/hunk/src/ui/lib/fileSectionLayout.ts:149-160 and
+  // learn-projects/hunk/src/ui/components/panes/DiffPane.tsx:962-966.
   let index = 0
-  while (index < fileCount - 1 && (sectionOffsets[index + 1] ?? 0) <= top) index += 1
+  while (index < fileCount - 1 && headerTopOf(sectionOffsets, index + 1) < top) index += 1
   return index
 }
 

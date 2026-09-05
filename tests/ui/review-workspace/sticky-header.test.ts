@@ -135,21 +135,28 @@ describe("Sticky diff header", () => {
     })
   })
 
-  test("crosses into the next file and accounts for its divider row", () => {
+  test("holds the outgoing file until the next file's header has scrolled past", () => {
     const first = makeFile({ key: "src/first.ts", path: "src/first.ts", contentId: "content-first" })
     const second = makeFile({ key: "src/second.ts", path: "src/second.ts", contentId: "content-second" })
     const state = makeState([first, second])
     const files = [toHunkReviewFile(first), toHunkReviewFile(second)]
     const offsets = sectionOffsets(files, state, "stack")
     const secondTop = offsets[1]!
+    const at = (scrollTop: number) => resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop, sectionOffsets: offsets })
 
-    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: secondTop - 1, sectionOffsets: offsets }))
-      .toMatchObject({ fileKey: first.key })
-    // The second section leads with a divider row, so its header is still pending here.
-    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: secondTop, sectionOffsets: offsets }))
-      .toEqual({ fileKey: second.key, filePath: second.path, hunkIndex: -1 })
-    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: secondTop + 3, sectionOffsets: offsets }))
-      .toMatchObject({ fileKey: second.key, hunkIndex: 0 })
+    expect(at(secondTop - 1)).toMatchObject({ fileKey: first.key })
+    // The divider row opening the second section still belongs to the first file.
+    expect(at(secondTop)).toMatchObject({ fileKey: first.key })
+    // So does the row where the second file's own header is visible in the stream:
+    // pinning it here would show the same header twice.
+    expect(at(secondTop + 1)).toMatchObject({ fileKey: first.key })
+    // Once that header has scrolled off, the pinned row takes it over.
+    expect(at(secondTop + 2)).toEqual({
+      fileKey: second.key,
+      filePath: second.path,
+      hunkIndex: 0,
+      hunkText: "@@ -10,1 +10,1 @@",
+    })
   })
 
   test("clamps a scroll position past the end of the stream to the last file", () => {
