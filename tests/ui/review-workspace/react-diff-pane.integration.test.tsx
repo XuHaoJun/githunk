@@ -159,6 +159,91 @@ describe("React review diff pane", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("scrolls the persistent viewport from the native scrollbar track", async () => {
+    const files = Array.from({ length: 20 }, (_, index) => makeFile(`src/bar-${index}.ts`, Array.from({ length: 10 }, () => "+const next = 2")))
+    const setup = await testRender(
+      <ReviewDiffPane
+        files={files.map((file) => toHunkReviewFile(file))}
+        state={makeState(files)}
+        layout="stack"
+        width={120}
+        height={10}
+        selectedFileKey={files[0]!.key}
+        selectedHunkIndex={0}
+      />,
+      { width: 120, height: 10, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const scrollBox = setup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
+        scrollTop: number
+        verticalScrollBar: { visible: boolean; screenX: number; screenY: number; height: number }
+      }
+      expect(scrollBox.verticalScrollBar.visible).toBe(true)
+      await act(async () => {
+        await setup.mockMouse.click(
+          scrollBox.verticalScrollBar.screenX,
+          scrollBox.verticalScrollBar.screenY + Math.floor(scrollBox.verticalScrollBar.height * 0.75),
+        )
+        await setup.renderOnce()
+        await Bun.sleep(0)
+        await setup.renderOnce()
+      })
+      expect(scrollBox.scrollTop).toBeGreaterThan(0)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("shows the diff scrollbar only after crossing the content boundary", async () => {
+    const exactFile = makeFile("src/exact.ts", ["-old", "+new"])
+    const exactSetup = await testRender(
+      <ReviewDiffPane
+        files={[toHunkReviewFile(exactFile)]}
+        state={makeState([exactFile])}
+        layout="stack"
+        width={120}
+        height={5}
+        selectedFileKey={exactFile.key}
+        selectedHunkIndex={0}
+      />,
+      { width: 120, height: 5 },
+    )
+    try {
+      await flush(exactSetup)
+      const scrollBox = exactSetup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
+        verticalScrollBar: { visible: boolean; scrollSize: number; viewportSize: number }
+      }
+      expect(scrollBox.verticalScrollBar.scrollSize).toBe(scrollBox.verticalScrollBar.viewportSize)
+      expect(scrollBox.verticalScrollBar.visible).toBe(false)
+    } finally {
+      await act(async () => exactSetup.renderer.destroy())
+    }
+
+    const overflowFile = makeFile("src/overflow.ts", ["-old", "+new", "+third"])
+    const overflowSetup = await testRender(
+      <ReviewDiffPane
+        files={[toHunkReviewFile(overflowFile)]}
+        state={makeState([overflowFile])}
+        layout="stack"
+        width={120}
+        height={5}
+        selectedFileKey={overflowFile.key}
+        selectedHunkIndex={0}
+      />,
+      { width: 120, height: 5 },
+    )
+    try {
+      await flush(overflowSetup)
+      const scrollBox = overflowSetup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
+        verticalScrollBar: { visible: boolean; scrollSize: number; viewportSize: number }
+      }
+      expect(scrollBox.verticalScrollBar.scrollSize).toBeGreaterThan(scrollBox.verticalScrollBar.viewportSize)
+      expect(scrollBox.verticalScrollBar.visible).toBe(true)
+    } finally {
+      await act(async () => overflowSetup.renderer.destroy())
+    }
+  })
   test("renders a divider between adjacent file sections", async () => {
     const files = [
       makeFile("src/first.ts", ["-const old = 1", "+const next = 2"]),

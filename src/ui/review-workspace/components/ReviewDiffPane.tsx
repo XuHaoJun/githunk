@@ -7,6 +7,7 @@ import type { HunkReviewFile } from "../hunk-review-model"
 import { ReviewDiffSection, hunkSectionRowCount, hunkSectionRowOffset } from "./ReviewDiffSection"
 import { ReviewStickyHeader } from "./ReviewStickyHeader"
 import { resolveStickyDiffHeader } from "../sticky-header"
+import { PANE_SCROLLBAR_GUTTER } from "../../panes/common"
 
 export type ReviewDiffPaneProps = Readonly<{
   files: readonly HunkReviewFile[]
@@ -121,6 +122,10 @@ export function ReviewDiffPane({
     () => sectionWindow(files, state, layout, scrollTop, viewportHeight, overscan, expandedSourceByGap),
     [expandedSourceByGap, files, layout, overscan, scrollTop, state.expandedGaps, state.feedback, viewportHeight],
   )
+  // The native bar overlays the right edge when visible; reserve its cell only for overflowing
+  // streams so short diffs retain their full width.
+  const scrollbarGutter = window.total > viewportHeight ? PANE_SCROLLBAR_GUTTER : 0
+  const renderWidth = Math.max(1, width - scrollbarGutter)
   useEffect(() => {
     if (!onVisibleFileKeysChange) return
     onVisibleFileKeysChange(files.slice(window.first, window.last + 1).map((file) => file.id))
@@ -292,7 +297,7 @@ export function ReviewDiffPane({
 
   return (
     <box id="review-diff-pane" style={{ width: "100%", height: "100%", flexDirection: "column" }}>
-      {sticky ? <ReviewStickyHeader sticky={sticky} width={width} /> : null}
+      {sticky ? <ReviewStickyHeader sticky={sticky} width={renderWidth} /> : null}
     <scrollbox
       id="review-diff-scrollbox"
       ref={scrollRef}
@@ -302,7 +307,8 @@ export function ReviewDiffPane({
       minHeight={0}
       scrollY={true}
       viewportCulling={true}
-      verticalScrollbarOptions={{ visible: false }}
+      contentOptions={{ minHeight: 0 }}
+      verticalScrollbarOptions={{ position: "absolute", top: 0, bottom: 0, right: 0, width: PANE_SCROLLBAR_GUTTER }}
       onMouseScroll={(event: MouseEvent) => {
         const direction = event.scroll?.direction
         const delta = Math.max(1, Math.floor(event.scroll?.delta ?? 1))
@@ -329,7 +335,7 @@ export function ReviewDiffPane({
                   file={file}
                   state={state}
                   layout={layout}
-                  width={width}
+                  width={renderWidth}
                   selectedHunkIndex={file.id === selectedFileKey ? selectedHunkIndex : -1}
                   showDivider={fileIndex > 0}
                   showLineNumbers={showLineNumbers}
