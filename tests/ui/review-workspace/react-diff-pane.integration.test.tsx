@@ -179,13 +179,112 @@ describe("React review diff pane", () => {
 
     try {
       await flush(setup)
-      const lines = setup.captureCharFrame().split("\n")
+      // Row 0 is the pinned sticky header, which repeats the first file's path.
+      const lines = setup.captureCharFrame().split("\n").slice(1)
       const firstHeader = lines.findIndex((line) => line.includes("src/first.ts"))
       const secondHeader = lines.findIndex((line) => line.includes("src/second.ts"))
       expect(firstHeader).toBeGreaterThanOrEqual(0)
       expect(secondHeader).toBeGreaterThan(firstHeader)
       expect(lines.slice(firstHeader + 1, secondHeader).some((line) => /^ *─+ *$/.test(line))).toBe(true)
       expect(lines.filter((line) => /^ *─+ *$/.test(line))).toHaveLength(1)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("pins the current file path above the stream", async () => {
+    const files = [
+      makeFile("src/first.ts", ["-const old = 1", "+const next = 2"]),
+      makeFile("src/second.ts", ["-const old = 3", "+const next = 4"]),
+    ]
+    const setup = await testRender(
+      <ReviewDiffPane
+        files={files.map((file) => toHunkReviewFile(file))}
+        state={makeState(files)}
+        layout="stack"
+        width={80}
+        height={20}
+        selectedFileKey={files[0]!.key}
+        selectedHunkIndex={0}
+      />,
+      { width: 80, height: 20, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      expect(setup.renderer.root.findDescendantById("review-sticky-header")).toBeDefined()
+      const lines = setup.captureCharFrame().split("\n")
+      expect(lines[0]).toContain("src/first.ts")
+      // At the top of the stream no hunk has scrolled past yet.
+      expect(lines[0]).not.toContain("@@")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("keeps the file and hunk visible after their headers scroll off the top", async () => {
+    const file = makeFile("src/large.ts", Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`))
+    const setup = await testRender(
+      <ReviewDiffPane
+        files={[toHunkReviewFile(file)]}
+        state={makeState([file])}
+        layout="stack"
+        width={80}
+        height={10}
+        selectedFileKey={file.key}
+        selectedHunkIndex={0}
+      />,
+      { width: 80, height: 10, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const scrollBox = setup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as { x: number; y: number; scrollTop: number }
+      for (let step = 0; step < 10; step += 1) {
+        await act(async () => {
+          await setup.mockMouse.scroll(scrollBox.x + 2, scrollBox.y + 2, "down")
+          await setup.renderOnce()
+          await Bun.sleep(0)
+          await setup.renderOnce()
+        })
+      }
+      await act(async () => {
+        await Bun.sleep(0)
+        await setup.renderOnce()
+      })
+
+      // Section rows are: 0 the file header, 1 the hunk header, then the body.
+      expect(scrollBox.scrollTop).toBeGreaterThan(1)
+      const lines = setup.captureCharFrame().split("\n")
+      expect(lines[0]).toContain("src/large.ts")
+      expect(lines[0]).toContain("@@ -1,0 +1,40 @@")
+      // Both headers have scrolled away, so the only occurrence left is pinned.
+      // This is jesseduffield/lazygit#5836.
+      expect(lines.filter((line) => line.includes("src/large.ts"))).toHaveLength(1)
+      expect(lines.slice(1).some((line) => line.includes("@@"))).toBe(false)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("omits the pinned header when the caller opts out", async () => {
+    const file = makeFile("src/example.ts", ["-const old = 1", "+const next = 2"])
+    const setup = await testRender(
+      <ReviewDiffPane
+        files={[toHunkReviewFile(file)]}
+        state={makeState([file])}
+        layout="stack"
+        width={80}
+        height={20}
+        showStickyHeader={false}
+        selectedFileKey={file.key}
+        selectedHunkIndex={0}
+      />,
+      { width: 80, height: 20, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      expect(setup.renderer.root.findDescendantById("review-sticky-header")).toBeUndefined()
     } finally {
       await act(async () => setup.renderer.destroy())
     }

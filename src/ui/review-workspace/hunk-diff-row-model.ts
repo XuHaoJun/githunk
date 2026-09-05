@@ -172,10 +172,13 @@ function highlightAt(
   return highlight?.[`${side}Lines`][index]
 }
 
-function hunkHeaderText(file: HunkReviewFile, index: number): string {
+export function hunkHeaderText(file: HunkReviewFile, index: number): string {
   const hunk = file.metadata.hunks[index]
   if (!hunk) return "@@"
-  return hunk.hunkSpecs ?? `@@ -${hunk.deletionStart},${hunk.deletionCount} +${hunk.additionStart},${hunk.additionCount} @@`
+  // `hunkSpecs` comes straight from the patch text and keeps its trailing
+  // newline; a header is a single row everywhere it is used, so strip it.
+  return hunk.hunkSpecs?.replace(/\r?\n$/u, "")
+    ?? `@@ -${hunk.deletionStart},${hunk.deletionCount} +${hunk.additionStart},${hunk.additionCount} @@`
 }
 
 export function hunkGapBefore(file: HunkReviewFile, hunkIndex: number): { gapId: string; lineCount: number; oldRange: [number, number]; newRange: [number, number] } | null {

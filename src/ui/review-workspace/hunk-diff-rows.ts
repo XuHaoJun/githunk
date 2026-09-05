@@ -2,6 +2,7 @@ export {
   buildHunkSplitRows,
   buildHunkStackRows,
   hunkGapBefore,
+  hunkHeaderText,
   hunkDiffAddresses,
   type HunkDiffAddress,
   type HunkDiffRow,

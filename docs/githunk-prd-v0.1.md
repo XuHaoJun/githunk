@@ -981,6 +981,11 @@ capturePayment()
 
 The user should not lose track of which file or hunk they are reviewing.
 
+Implemented for the Branch Review workspace stream: `resolveStickyDiffHeader`
+(`src/ui/review-workspace/sticky-header.ts`) maps the scroll position back through the
+section geometry the stream is already virtualized by, and `ReviewStickyHeader` pins the
+result above the scrollbox. The repository screen's Main pane is not covered.
+
 ---
 
 ## 19.3 Side-by-Side Diff

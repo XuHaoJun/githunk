@@ -5,6 +5,8 @@ import type { HighlightPayload } from "../../../review/git/highlight/highlight-p
 import type { HunkDiffAddress } from "../hunk-diff-row-model"
 import type { HunkReviewFile } from "../hunk-review-model"
 import { ReviewDiffSection, hunkSectionRowCount, hunkSectionRowOffset } from "./ReviewDiffSection"
+import { ReviewStickyHeader } from "./ReviewStickyHeader"
+import { resolveStickyDiffHeader } from "../sticky-header"
 
 export type ReviewDiffPaneProps = Readonly<{
   files: readonly HunkReviewFile[]
@@ -16,6 +18,7 @@ export type ReviewDiffPaneProps = Readonly<{
   selectedHunkIndex: number
   showLineNumbers?: boolean
   wrapLines?: boolean
+  showStickyHeader?: boolean
   overscan?: number
   highlightByFileKey?: ReadonlyMap<string, HighlightPayload>
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>
@@ -86,6 +89,7 @@ export function ReviewDiffPane({
   selectedHunkIndex,
   showLineNumbers = true,
   wrapLines = false,
+  showStickyHeader = true,
   overscan = Math.max(10, height * 2),
   highlightByFileKey,
   expandedSourceByGap,
@@ -104,14 +108,18 @@ export function ReviewDiffPane({
   const ownedScrollRef = useRef<ScrollBoxRenderable | null>(null)
   const scrollRef = externalScrollRef ?? ownedScrollRef
   const [scrollTop, setScrollTop] = useState(0)
+  // The pinned header consumes a row of the pane, so every viewport calculation
+  // below works from the remaining height rather than the pane height.
+  const stickyRows = showStickyHeader && files.length > 0 ? 1 : 0
+  const viewportHeight = Math.max(1, height - stickyRows)
   const previousFileRevealTokenRef = useRef(selectedFileRevealToken)
   const previousSelectionRef = useRef<{ fileKey: string | null; hunkIndex: number } | null>(null)
   const previousHunkRevealTokenRef = useRef<number | undefined>(undefined)
   const pendingSelectionRevealRequestRef = useRef<SelectionRevealRequest | null>(null)
   const pendingSelectionRevealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const window = useMemo(
-    () => sectionWindow(files, state, layout, scrollTop, height, overscan, expandedSourceByGap),
-    [expandedSourceByGap, files, height, layout, overscan, scrollTop, state.expandedGaps, state.feedback],
+    () => sectionWindow(files, state, layout, scrollTop, viewportHeight, overscan, expandedSourceByGap),
+    [expandedSourceByGap, files, layout, overscan, scrollTop, state.expandedGaps, state.feedback, viewportHeight],
   )
   useEffect(() => {
     if (!onVisibleFileKeysChange) return
@@ -150,12 +158,12 @@ export function ReviewDiffPane({
     if (state.reveal.scrollToFeedback) return
 
     const sectionTop = window.offsets[index] ?? 0
-    const target = Math.min(Math.max(0, sectionTop), Math.max(0, window.total - height))
+    const target = Math.min(Math.max(0, sectionTop), Math.max(0, window.total - viewportHeight))
     const scrollBox = scrollRef.current
     if (scrollBox) scrollBox.scrollTop = target
     setScrollTop(target)
     onViewportChange?.(target)
-  }, [files, height, onViewportChange, scrollRef, selectedFileKey, selectedFileRevealToken, state.reveal.scrollToFeedback, window])
+  }, [files, onViewportChange, scrollRef, selectedFileKey, selectedFileRevealToken, state.reveal.scrollToFeedback, viewportHeight, window])
 
   // Keep file-top and hunk reveals as ordered requests: a batched cross-file move can
   // change both, and the later hunk request must win.
@@ -234,11 +242,11 @@ export function ReviewDiffPane({
     const revealSelection = () => {
       const scrollBox = scrollRef.current
       if (!scrollBox) return
-      const viewportHeight = Math.max(1, Math.floor(scrollBox.viewport.height || height))
+      const measuredHeight = Math.max(1, Math.floor(scrollBox.viewport.height || viewportHeight))
       const currentTop = Math.max(0, Math.floor(scrollBox.scrollTop))
-      const currentEnd = currentTop + viewportHeight
+      const currentEnd = currentTop + measuredHeight
       if (target < currentTop || target + 1 > currentEnd) {
-        const nextTop = Math.min(Math.max(0, target), Math.max(0, window.total - viewportHeight))
+        const nextTop = Math.min(Math.max(0, target), Math.max(0, window.total - measuredHeight))
         scrollBox.scrollTop = nextTop
         setScrollTop(nextTop)
         onViewportChange?.(nextTop)
@@ -263,18 +271,35 @@ export function ReviewDiffPane({
       }
     }, delay))
     return clearPendingTimers
-  }, [expandedSourceByGap, files, height, layout, onViewportChange, selectedFileKey, selectedFileRevealToken, selectedHunkIndex, selectedHunkRevealToken, state])
+  }, [expandedSourceByGap, files, layout, onViewportChange, selectedFileKey, selectedFileRevealToken, selectedHunkIndex, selectedHunkRevealToken, state, viewportHeight])
+
+  const sticky = useMemo(
+    () => (stickyRows === 0
+      ? undefined
+      : resolveStickyDiffHeader({
+          files,
+          state,
+          layout,
+          scrollTop,
+          sectionOffsets: window.offsets,
+          ...(expandedSourceByGap ? { expandedSourceByGap } : {}),
+        })),
+    [expandedSourceByGap, files, layout, scrollTop, state, stickyRows, window.offsets],
+  )
 
   const leadingSpacer = window.offsets[window.first] ?? 0
   const trailingSpacer = window.total - (window.offsets[window.last + 1] ?? window.total)
 
   return (
+    <box id="review-diff-pane" style={{ width: "100%", height: "100%", flexDirection: "column" }}>
+      {sticky ? <ReviewStickyHeader sticky={sticky} width={width} /> : null}
     <scrollbox
       id="review-diff-scrollbox"
       ref={scrollRef}
       {...(focused === undefined ? {} : { focused })}
       width="100%"
-      height="100%"
+      flexGrow={1}
+      minHeight={0}
       scrollY={true}
       viewportCulling={true}
       verticalScrollbarOptions={{ visible: false }}
@@ -295,7 +320,7 @@ export function ReviewDiffPane({
               const sectionTop = window.offsets[fileIndex] ?? 0
               const sectionHeight = window.heights[fileIndex] ?? 0
               const rowStart = Math.max(0, Math.floor(scrollTop - sectionTop - overscan))
-              const rowEnd = Math.min(sectionHeight, Math.ceil(scrollTop + Math.max(1, height) + overscan - sectionTop))
+              const rowEnd = Math.min(sectionHeight, Math.ceil(scrollTop + viewportHeight + overscan - sectionTop))
               const highlight = highlightByFileKey?.get(file.id)
               const select = onSelectFile ? () => onSelectFile(file.id) : undefined
               return (
@@ -325,5 +350,6 @@ export function ReviewDiffPane({
         {trailingSpacer > 0 ? <box key="review-trailing-spacer" style={{ width: "100%", height: trailingSpacer }} /> : null}
       </box>
     </scrollbox>
+    </box>
   )
 }
