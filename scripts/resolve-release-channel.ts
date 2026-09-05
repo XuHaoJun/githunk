@@ -40,10 +40,11 @@ function readOptionalFlag(argv: readonly string[], name: string): string {
 
 if (import.meta.main) {
   const argv = process.argv.slice(2)
+  const requestedTag = readOptionalFlag(argv, "--requested-tag")
   const channel = resolveReleaseChannel({
     event: readFlag(argv, "--event"),
     ref: readFlag(argv, "--ref"),
-    requestedTag: readFlag(argv, "--requested-tag"),
+    requestedTag: requestedTag === "" ? "latest" : requestedTag,
     currentLatest: readOptionalFlag(argv, "--current-latest"),
   })
   console.log(JSON.stringify(channel))
