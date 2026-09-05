@@ -32,12 +32,19 @@ function readFlag(argv: readonly string[], name: string): string {
   return value
 }
 
+function readOptionalFlag(argv: readonly string[], name: string): string {
+  const index = argv.indexOf(name)
+  const value = index === -1 ? undefined : argv[index + 1]
+  return value ?? ""
+}
+
 if (import.meta.main) {
+  const argv = process.argv.slice(2)
   const channel = resolveReleaseChannel({
-    event: readFlag(process.argv.slice(2), "--event"),
-    ref: readFlag(process.argv.slice(2), "--ref"),
-    requestedTag: readFlag(process.argv.slice(2), "--requested-tag"),
-    currentLatest: readFlag(process.argv.slice(2), "--current-latest"),
+    event: readFlag(argv, "--event"),
+    ref: readFlag(argv, "--ref"),
+    requestedTag: readFlag(argv, "--requested-tag"),
+    currentLatest: readOptionalFlag(argv, "--current-latest"),
   })
   console.log(JSON.stringify(channel))
 }

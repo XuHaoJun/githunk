@@ -36,6 +36,21 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+
+      - name: Resolve npm dist-tag and GitHub latest status
+        id: resolve
+        env:
+          REQUESTED_NPM_TAG: ${{ inputs.npm_tag }}
+        run: |
+          resolution="$(bun ./scripts/resolve-release-channel.ts \
+            --event "$GITHUB_EVENT_NAME" \
+            --ref "$GITHUB_REF" \
+            --requested-tag "$REQUESTED_NPM_TAG" \
+            --current-latest "")"
+          npm_tag="$(printf '%s' "$resolution" | jq -r '.npmTag')"
+          make_latest="$(printf '%s' "$resolution" | jq -r '.makeLatest')"
+          echo "npm_tag=$npm_tag" >> "$GITHUB_OUTPUT"
+          echo "make_latest=$make_latest" >> "$GITHUB_OUTPUT"
   build-binaries:
     name: Build ${{ matrix.package_name }}
     runs-on: ${{ matrix.runner }}
