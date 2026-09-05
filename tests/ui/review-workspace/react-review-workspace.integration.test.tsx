@@ -110,6 +110,105 @@ describe("React review workspace", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("shows scrollbars when the file and diff panels overflow", async () => {
+    const files = Array.from({ length: 20 }, (_, fileIndex) => makeFile(
+      `src/scroll-${fileIndex}.ts`,
+      Array.from({ length: 8 }, (_, lineIndex) => `+const line${lineIndex} = ${fileIndex}`),
+    ))
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession(files)} />,
+      { width: 120, height: 12, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const sidebar = setup.renderer.root.findDescendantById("react-review-sidebar-scrollbox") as unknown as {
+        scrollTop: number
+        verticalScrollBar: { visible: boolean; screenX: number; screenY: number; height: number }
+      }
+      const diff = setup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
+        width: number
+        verticalScrollBar: { visible: boolean }
+      }
+      const firstSection = setup.renderer.root.findDescendantById("review-section:src/scroll-0.ts") as unknown as {
+        width: number
+      }
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("line0 = 0")
+      expect(frame).toContain("+1 -1")
+      expect(firstSection.width).toBe(diff.width - 1)
+      expect(sidebar.verticalScrollBar.visible).toBe(true)
+      await act(async () => {
+        await setup.mockMouse.click(
+          sidebar.verticalScrollBar.screenX,
+          sidebar.verticalScrollBar.screenY + Math.floor(sidebar.verticalScrollBar.height * 0.75),
+        )
+      })
+      await flush(setup)
+      expect(sidebar.scrollTop).toBeGreaterThan(0)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("hides scrollbars when the file and diff panels fit", async () => {
+    const files = [
+      makeFile("src/first.ts", ["-old", "+new"]),
+      makeFile("src/second.ts", ["-before", "+after"]),
+    ]
+    const setup = await testRender(
+      <ReviewWorkspaceApp session={makeSession(files)} />,
+      { width: 120, height: 30 },
+    )
+
+    try {
+      await flush(setup)
+      const sidebar = setup.renderer.root.findDescendantById("react-review-sidebar-scrollbox") as unknown as {
+        verticalScrollBar: { visible: boolean }
+      }
+      const diff = setup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
+        verticalScrollBar: { visible: boolean }
+      }
+      expect(sidebar.verticalScrollBar.visible).toBe(false)
+      expect(diff.verticalScrollBar.visible).toBe(false)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("shows the sidebar scrollbar only after crossing the viewport boundary", async () => {
+    const boundaryFiles = Array.from({ length: 5 }, (_, index) => makeFile(
+      `src/boundary-${index}.ts`,
+      ["-old", "+new"],
+    ))
+    const exactSetup = await testRender(
+      <ReviewWorkspaceApp session={makeSession(boundaryFiles.slice(0, 4))} />,
+      { width: 120, height: 12 },
+    )
+    try {
+      await flush(exactSetup)
+      const sidebar = exactSetup.renderer.root.findDescendantById("react-review-sidebar-scrollbox") as unknown as {
+        verticalScrollBar: { visible: boolean; scrollSize: number; viewportSize: number }
+      }
+      expect(sidebar.verticalScrollBar.scrollSize).toBe(sidebar.verticalScrollBar.viewportSize)
+      expect(sidebar.verticalScrollBar.visible).toBe(false)
+    } finally {
+      await act(async () => exactSetup.renderer.destroy())
+    }
+
+    const overflowSetup = await testRender(
+      <ReviewWorkspaceApp session={makeSession(boundaryFiles)} />,
+      { width: 120, height: 12 },
+    )
+    try {
+      await flush(overflowSetup)
+      const sidebar = overflowSetup.renderer.root.findDescendantById("react-review-sidebar-scrollbox") as unknown as {
+        verticalScrollBar: { visible: boolean; scrollSize: number; viewportSize: number }
+      }
+      expect(sidebar.verticalScrollBar.scrollSize).toBeGreaterThan(sidebar.verticalScrollBar.viewportSize)
+      expect(sidebar.verticalScrollBar.visible).toBe(true)
+    } finally {
+      await act(async () => overflowSetup.renderer.destroy())
+    }
+  })
   test("scrolls diff with j/k while stream focus starts active", async () => {
     const file = makeFile(
       "src/scroll.ts",

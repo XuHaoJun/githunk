@@ -19,6 +19,7 @@ import type { ReactReviewSession } from "./react-review-session"
 import { cellWidth } from "../cell-width"
 import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
 import { splitterGlyphs } from "../splitter"
+import { PANE_SCROLLBAR_GUTTER } from "../panes/common"
 export type ReviewWorkspaceAppProps = Readonly<{
   session: ReactReviewSession
 }>
@@ -304,7 +305,11 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const sidebarEntries = useMemo(() => state ? buildReviewSidebarEntries(state) : [], [state])
   const sidebarFileEntries = useMemo(() => sidebarEntries.filter((entry) => entry.kind === "file") as Extract<typeof sidebarEntries[number], { kind: "file" }>[], [sidebarEntries])
   const sidebarStatsWidth = useMemo(() => Math.max(0, ...sidebarFileEntries.map((entry) => sidebarEntryStatsWidth(entry))), [sidebarFileEntries])
-  const sidebarTextWidth = Math.max(8, sidebarWidth - 2)
+  // Match lazygit's right-edge overflow check (pkg/gocui/gui.go:1246-1287); the native bar is
+  // absolute, so reserve its one-cell gutter only while the sidebar overflows.
+  const sidebarScrollViewportHeight = Math.max(1, diffHeight - 1)
+  const sidebarScrollbarGutter = sidebarEntries.length > sidebarScrollViewportHeight ? PANE_SCROLLBAR_GUTTER : 0
+  const sidebarTextWidth = Math.max(8, sidebarWidth - 2 - sidebarScrollbarGutter)
   const expandedSourceByGap = useMemo(() => {
     const next = typeof controller.getExpandedSourceByGap === "function" ? controller.getExpandedSourceByGap() : new Map<string, readonly string[]>()
     const previous = expandedSourceRef.current
@@ -1211,7 +1216,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               flexGrow={1}
               scrollY={true}
               viewportCulling={true}
-              verticalScrollbarOptions={{ visible: false }}
+              contentOptions={{ minHeight: 0 }}
+              verticalScrollbarOptions={{ position: "absolute", top: 0, bottom: 0, right: 0, width: PANE_SCROLLBAR_GUTTER }}
               onMouseDown={() => setFocus("sidebar")}
             >
               <box style={{ width: "100%", flexDirection: "column" }}>

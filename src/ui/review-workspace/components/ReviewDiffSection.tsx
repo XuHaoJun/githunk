@@ -209,7 +209,7 @@ export function ReviewDiffSection({
   }
 
   return (
-    <box id={`review-section:${file.id}`} style={{ width: "100%", height: totalRows, flexShrink: 0, flexDirection: "column" }}>
+    <box id={`review-section:${file.id}`} style={{ width, height: totalRows, flexShrink: 0, flexDirection: "column" }}>
       {visibleStart > 0 ? <box key="review-section-leading-spacer" style={{ width: "100%", height: visibleStart }} /> : null}
       {showDivider && visibleStart <= 0 && visibleEnd > 0 ? (
         <box key="review-section-divider" id={`review-section-divider:${file.id}`} style={{ width: "100%", height: 1, flexShrink: 0, paddingLeft: 1, paddingRight: 1 }}>
