@@ -62,7 +62,15 @@ function padText(text: string, width: number): string {
   return text + " ".repeat(width - w)
 }
 
-function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "stream" | "sidebar" | "filter"): string {
+const PROJECTION_NOTICES: Readonly<Record<string, string>> = {
+  "no-previous-review": "Since last review needs a finished review to measure from",
+  "history-rewritten": "History was rewritten since the last review — showing the full range",
+  "already-projected": "A projection is already open",
+  stale: "The review moved on while loading — try again",
+  unavailable: "Not available right now",
+}
+
+function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "stream" | "sidebar" | "filter", notice?: string | null): string {
   const selected = state.selection.fileKey ?? "none"
   const entryFor = (id: string) => REVIEW_COMMANDS.find((candidate) => candidate.id === id)
   const keyFor = (id: string): string => {
@@ -96,7 +104,8 @@ function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "str
     command("review.help"),
     command("review.close"),
   ]
-  return `${hints.join(" | ")} | ${focus} — ${selected}`
+  const trailer = `${focus} — ${selected}`
+  return notice ? `${notice} | ${hints.join(" | ")} | ${trailer}` : `${hints.join(" | ")} | ${trailer}`
 }
 function feedbackDraftText(state: ReviewState): string {
   const draft = state.draft
@@ -243,6 +252,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const state = controller.state ?? publishedState
   const baseSelection = controller.baseSelection
   const [layoutMode, setLayoutMode] = useState<"auto" | "split" | "stack">("auto")
+  const [projectionNotice, setProjectionNotice] = useState<string | null>(null)
   const [sidebarWidthPreference, setSidebarWidthPreference] = useState(REVIEW_SIDEBAR_DEFAULT_WIDTH)
   const [resizeBarHovered, setResizeBarHovered] = useState(false)
   const [resizingSidebar, setResizingSidebar] = useState(false)
@@ -696,6 +706,24 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     if (controller.baseSelection) return false
     if (commandId === "review.chooseBase") {
       requestBaseSelection()
+      return true
+    }
+    if (commandId === "review.toggleSinceLastReview") {
+      // Exiting is synchronous: the aggregate document is already in hand.
+      if (controller.exitProjection()) {
+        setProjectionNotice(null)
+        session.invalidate()
+        return true
+      }
+      setProjectionNotice(null)
+      void controller.enterSinceLastReview().then((result) => {
+        if (result.ok) {
+          setProjectionNotice(result.fileCount === 0 ? "Nothing changed since the last review" : null)
+        } else {
+          setProjectionNotice(PROJECTION_NOTICES[result.reason] ?? result.message ?? "Could not open the projection")
+        }
+        session.invalidate()
+      })
       return true
     }
     const current = controller.state
@@ -1578,7 +1606,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         </box>
       ) : null}
       <box id="react-review-footer" style={{ width: "100%", height: 1, flexShrink: 0 }}>
-        <text content={reviewFooter(state, layout, focus)} wrapMode="none" truncate={true} />
+        <text content={reviewFooter(state, layout, focus, projectionNotice)} wrapMode="none" truncate={true} />
       </box>
       {basePicker}
     </box>

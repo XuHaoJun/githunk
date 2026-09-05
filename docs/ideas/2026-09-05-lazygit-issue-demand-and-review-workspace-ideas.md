@@ -60,11 +60,21 @@ different mechanism. So #1113 is satisfied twice over, by two unrelated code pat
 ## Verified gaps in the workspace
 
 1. **Projections are modelled but not reachable.** `ReviewProjection` supports `aggregate`,
-   `since-last-review` and `commit` (`src/review/core/types.ts:100-104`), and the command
-   catalog carries an `available: (state: Pick<ReviewState, "projection">)` gate
-   (`command-catalog.ts:11`) that no command currently uses. No command switches projection.
-   Per-commit review (lazygit #4767, closed as not planned) and "what did the agent change
-   since my last review" (PRD §22's loop) both exist in the model with no key bound to them.
+   `since-last-review` and `commit` (`src/review/core/types.ts:100-104`), the Git loaders exist
+   and are integration-tested against real repositories (`src/review/git/load-review-projection.ts`,
+   `tests/review/git/projections.integration.test.ts`), but nothing in `src/` called them and no
+   command switched projection. Per-commit review (lazygit #4767, closed as not planned) and
+   "what did the agent change since my last review" (PRD §22's loop) both existed in the model
+   with no key bound to them.
+
+   *Correction to an earlier revision of this line:* it claimed the catalog's
+   `available` gate was unused. It was not — `command-catalog.ts:156` gates the
+   mark-viewed command on `canMarkViewedInProjection`, which deliberately permits
+   marking viewed inside a `since-last-review` lens and refuses it inside a
+   `commit` one.
+
+   *Status:* the `since-last-review` half shipped (`s` in the workspace); the `commit` half
+   still needs a commit-list UI the sidebar does not have.
 2. **The workspace filter has no content dimension.** `/` matches file paths only
    (`reviewFileMatchesFilter`, `src/review/core/selectors.ts:80-100`) and `f` cycles review
    status (`all | unreviewed | changed | feedback`, `src/review/core/state.ts:33`). lazygit
@@ -81,10 +91,10 @@ different mechanism. So #1113 is satisfied twice over, by two unrelated code pat
 
 ## Candidate ordering
 
-1. Bind `commit` and `since-last-review` projections in the workspace. Highest leverage: not a
-   new capability, just exposing one that is already built. Touches the command catalog, the
-   `reviewHints` / `reviewHelp` `available` gate, and the viewed/feedback reconcile behaviour
-   across a projection switch — worth a written spec before code.
+1. ~~Bind `commit` and `since-last-review` projections in the workspace.~~ `since-last-review`
+   done; `commit` deferred behind a commit-list UI. The switch turned out to touch more than the
+   catalog: a projection swaps `ReviewState.document`, so the generation-refresh path had to drop
+   a stale lens, and the header label had to stop hardcoding `Aggregate`.
 2. Diff-content search in the workspace (lazygit #3279).
 3. Sticky file/hunk header in the stream (lazygit #5836, PRD §19.2).
 4. File export channel for finish review (lazygit #4894).

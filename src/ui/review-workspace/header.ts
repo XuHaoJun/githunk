@@ -78,7 +78,13 @@ export function reviewHeaderLines(state: ReviewState, width: number): readonly R
   const deletionsText = totalDeletions === null ? "—" : `−${totalDeletions}`
 
   // Line 1: head → base  •  commits · files · stats  •  projection
-  const projectionLabel = "Aggregate"
+  // The label is load-bearing: outside the aggregate the counts describe a
+  // narrower range and finishing a review is refused.
+  const projectionLabel = state.projection.kind === "since-last-review"
+    ? "Since last review"
+    : state.projection.kind === "commit"
+      ? `Commit ${state.projection.oid.slice(0, 7)}`
+      : "Aggregate"
 
   // Keep the base reachable even when the current branch name fills the terminal.
   const baseBudget = Math.min(cellWidth(baseLabel), Math.max(1, Math.floor(w / 2)))

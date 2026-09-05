@@ -10,6 +10,8 @@ import type { ReviewAction } from "../../review/core/actions"
 import type { ReviewIntent } from "../../review/core/intents"
 import { planReviewIntent } from "../../review/core/intents"
 import { loadReviewDocument } from "../../review/git/load-review-document"
+import { loadSinceLastReviewProjection, type SinceLastProjectionResult } from "../../review/git/load-review-projection"
+import { createReviewDocument } from "../../review/core/document"
 import { loadSourceContext, type SourceContextOutcome } from "../../review/git/load-source-context"
 import { ReviewStateStore, persistedFromReviewState } from "../../review/storage/review-state-store"
 import { ReviewArtifactStore, finishReviewTransaction } from "../../review/storage/review-artifact-store"
@@ -46,6 +48,7 @@ export type ReviewWorkspaceControllerOptions = {
   readonly stateStore?: ReviewStateStore
   readonly artifactStore?: ReviewArtifactStore
   readonly loadDocument?: (baseRef: string) => Promise<ReviewDocument>
+  readonly loadSinceLastReview?: (aggregate: ReviewDocument, fromHeadOid: string) => Promise<SinceLastProjectionResult>
   readonly loadSourceContextImpl?: (request: SourceContextRequest) => Promise<SourceContextOutcome>
   readonly now?: () => string
   readonly randomId?: () => string
@@ -58,6 +61,14 @@ export type ReviewBaseSelection = Readonly<{
   error?: string
 }>
 
+export type ProjectionSwitchResult =
+  | Readonly<{ ok: true; fileCount: number }>
+  | Readonly<{
+      ok: false
+      reason: "unavailable" | "already-projected" | "no-previous-review" | "history-rewritten" | "load-failed" | "stale"
+      message?: string
+    }>
+
 type Listener = (state: ReviewState | undefined) => void
 
 export class ReviewWorkspaceController {
@@ -65,6 +76,7 @@ export class ReviewWorkspaceController {
   private readonly stateStore: ReviewStateStore | undefined
   private readonly artifactStore: ReviewArtifactStore | undefined
   private readonly loadDocumentImpl: (baseRef: string) => Promise<ReviewDocument>
+  private readonly loadSinceLastReviewImpl: (aggregate: ReviewDocument, fromHeadOid: string) => Promise<SinceLastProjectionResult>
   private readonly loadSourceContextImpl: ((request: SourceContextRequest) => Promise<SourceContextOutcome>) | undefined
   private readonly nowImpl: () => string
   private readonly randomIdImpl: () => string
@@ -82,11 +94,15 @@ export class ReviewWorkspaceController {
   private sourceContextCache = new Map<string, readonly string[]>()
   private pendingGapRequests = new Map<string, number>()
   private gapRequestCounter = 0
+  /** The aggregate document a projection lens was opened from, kept so exiting restores it. */
+  private aggregateDocument: ReviewDocument | undefined
   constructor(options: ReviewWorkspaceControllerOptions) {
     this.runner = options.runner
     this.stateStore = options.stateStore
     this.artifactStore = options.artifactStore
     this.loadDocumentImpl = options.loadDocument ?? ((baseRef: string) => loadReviewDocument(options.runner, baseRef))
+    this.loadSinceLastReviewImpl = options.loadSinceLastReview
+      ?? ((aggregate: ReviewDocument, fromHeadOid: string) => loadSinceLastReviewProjection(options.runner, aggregate, fromHeadOid))
     this.loadSourceContextImpl = options.loadSourceContextImpl
     this.nowImpl = options.now ?? (() => new Date().toISOString())
     this.randomIdImpl = options.randomId ?? (() => {
@@ -244,12 +260,19 @@ export class ReviewWorkspaceController {
       // Reconcile off-screen exactly once, then atomically publish the
       // complete aggregate state for this generation.
       const currentState = this._state
-      const nextState = currentState === undefined
+      // A projection lens is computed against one generation. When the
+      // generation moves the lens is stale, so reconcile from an
+      // aggregate-shaped state and let the refresh drop it.
+      const reconcileFrom = currentState !== undefined && currentState.projection.kind !== "aggregate"
+        ? { ...currentState, projection: { kind: "aggregate" as const } }
+        : currentState
+      const nextState = reconcileFrom === undefined
         ? createInitialReviewState(doc)
-        : reconcileReviewState(currentState, doc)
+        : reconcileReviewState(reconcileFrom, doc)
       if (!ownsRequest()) return
       // Atomic swap: publish once.
       this._state = nextState
+      this.aggregateDocument = undefined
       this.activeReviewId = doc.identity.id
       this.activeGenerationId = doc.generation.id
       this._error = undefined
@@ -435,6 +458,60 @@ export class ReviewWorkspaceController {
     } catch {
       return false
     }
+  }
+
+  /**
+   * Open the "what changed since I last finished a review" lens.
+   *
+   * A projection renders a narrower file set over the same review generation,
+   * so viewed records and feedback stay with the aggregate, which remains the
+   * system of record: `validateFinishReview` refuses to submit from anywhere
+   * else, and `persistedFromReviewState` always writes the aggregate back.
+   */
+  async enterSinceLastReview(): Promise<ProjectionSwitchResult> {
+    const current = this._state
+    if (current === undefined || this._baseSelection !== undefined) return { ok: false, reason: "unavailable" }
+    if (current.projection.kind !== "aggregate") return { ok: false, reason: "already-projected" }
+    const fromHeadOid = current.lastSubmission?.headOid
+    if (fromHeadOid === undefined || fromHeadOid.trim() === "") return { ok: false, reason: "no-previous-review" }
+
+    const aggregate = current.document
+    let result: SinceLastProjectionResult
+    try {
+      result = await this.loadSinceLastReviewImpl(aggregate, fromHeadOid)
+    } catch (err) {
+      return { ok: false, reason: "load-failed", message: err instanceof Error ? err.message : String(err) }
+    }
+    if (result.kind === "history-rewritten") return { ok: false, reason: "history-rewritten", message: result.reason }
+
+    // Git ran off-screen; a refresh may have replaced the document meanwhile.
+    const latest = this._state
+    if (latest === undefined || latest.document !== aggregate || latest.projection.kind !== "aggregate") {
+      return { ok: false, reason: "stale" }
+    }
+
+    this.aggregateDocument = aggregate
+    this.dispatch({
+      type: "projection/apply",
+      projection: result.document.projection,
+      document: createReviewDocument({
+        identity: aggregate.identity,
+        generation: aggregate.generation,
+        commits: aggregate.commits,
+        files: result.document.files,
+      }),
+    })
+    return { ok: true, fileCount: result.document.files.length }
+  }
+
+  /** Return to the aggregate document the active lens was opened from. */
+  exitProjection(): boolean {
+    const current = this._state
+    const aggregate = this.aggregateDocument
+    if (current === undefined || aggregate === undefined || current.projection.kind === "aggregate") return false
+    this.aggregateDocument = undefined
+    this.dispatch({ type: "projection/apply", projection: { kind: "aggregate" }, document: aggregate })
+    return true
   }
 
   async flushDrafts(): Promise<void> {

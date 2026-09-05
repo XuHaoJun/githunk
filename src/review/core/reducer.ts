@@ -145,6 +145,28 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         revision: state.revision + 1,
       }
     }
+    case "projection/apply": {
+      // A projection is a different view of the same review, not a different
+      // review: viewed records, feedback and the submission marker are the
+      // aggregate's system of record and pass through untouched. Only the view
+      // state that addresses positions inside a specific file set is dropped.
+      const firstFile = action.document.files[0] ?? null
+      return {
+        ...state,
+        document: action.document,
+        projection: action.projection,
+        selection: { fileKey: firstFile?.key ?? null, hunkIndex: 0 },
+        lineSelection: null,
+        expandedGaps: [],
+        reveal: {
+          fileTopToken: state.reveal.fileTopToken + 1,
+          fileTopRequestToken: state.reveal.fileTopRequestToken + 1,
+          hunkToken: state.reveal.hunkToken + 1,
+          scrollToFeedback: false,
+        },
+        revision: state.revision + 1,
+      }
+    }
     case "projection/set": {
       if (projectionsEqual(state.projection, action.projection)) return state
       return {

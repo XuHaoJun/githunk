@@ -90,17 +90,19 @@ describe("reviewHeaderLines", () => {
     expect(text).toMatch(/Reviewed|viewed/i)
   })
 
-  test("always shows the active aggregate projection label", () => {
-    const labels = [
-      { kind: "aggregate" as const },
-      { kind: "since-last-review" as const, fromHeadOid: "a".repeat(40) },
-      { kind: "commit" as const, oid: "b".repeat(40) },
-    ].map((projection) => reviewHeaderLines(makeState({ projection }), 120).flatMap((line) => line.map((span) => span.text)).join(" "))
-    for (const text of labels) {
-      expect(text).toContain("Aggregate")
-      expect(text).not.toContain("Since Last")
-      expect(text).not.toContain("Commit")
-    }
+  test("names the active projection so narrowed counts are never read as the whole review", () => {
+    const label = (projection: ReviewState["projection"]) =>
+      reviewHeaderLines(makeState({ projection }), 120).flatMap((line) => line.map((span) => span.text)).join(" ")
+
+    expect(label({ kind: "aggregate" })).toContain("Aggregate")
+
+    const sinceLast = label({ kind: "since-last-review", fromHeadOid: "a".repeat(40) })
+    expect(sinceLast).toContain("Since last review")
+    expect(sinceLast).not.toContain("Aggregate")
+
+    const commit = label({ kind: "commit", oid: "b".repeat(40) })
+    expect(commit).toContain("Commit bbbbbbb")
+    expect(commit).not.toContain("Aggregate")
   })
 
   test("CJK-width header truncation respects cell width", () => {

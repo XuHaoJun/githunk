@@ -10,6 +10,7 @@ export type ReviewAction =
   | { type: "filter/set-query"; query: string }
   | { type: "filter/set-scope"; scope: "all" | "unreviewed" | "changed" | "feedback" }
   | { type: "projection/set"; projection: ReviewProjection }
+  | { type: "projection/apply"; projection: ReviewProjection; document: ReviewDocument }
   | { type: "gap/toggle"; fileKey: string; gapId: string }
   | { type: "viewed/mark"; fileKey: string; record: ViewedRecord }
   | { type: "viewed/unmark"; fileKey: string }

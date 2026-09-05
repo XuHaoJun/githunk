@@ -3,12 +3,15 @@ import { canMarkViewedInProjection } from "../../review/core/selectors"
 
 export type ReviewFocus = "sidebar" | "stream" | "filter" | "composer" | "any" | "global"
 
+/** The slice of review state a command's availability may depend on. */
+export type ReviewCommandState = Pick<ReviewState, "projection" | "lastSubmission">
+
 export type ReviewCommand = Readonly<{
   id: string
   title: string
   keys: readonly string[]
   focus: readonly ReviewFocus[]
-  available: (state: Pick<ReviewState, "projection">) => boolean
+  available: (state: ReviewCommandState) => boolean
   intent?: string
   hint?: string
 }>
@@ -244,6 +247,16 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     hint: "help",
   },
   {
+    id: "review.toggleSinceLastReview",
+    title: "Review only what changed since the last review",
+    keys: ["s"],
+    focus: ["any"],
+    // Meaningless without a finished review to measure from, and always
+    // offered while a lens is open so there is a way back to the aggregate.
+    available: (state) => state.projection.kind !== "aggregate" || state.lastSubmission !== null,
+    hint: "since",
+  },
+  {
     id: "review.chooseBase",
     title: "Change base branch",
     keys: ["B"],
@@ -290,7 +303,7 @@ export function resolveReviewCommand(key: string, focus?: ReviewFocus): ReviewCo
   return viaLower && commandSupportsFocus(viaLower, focus) ? viaLower : undefined
 }
 
-export function reviewHints(focus: ReviewFocus, state: Pick<ReviewState, "projection">): string {
+export function reviewHints(focus: ReviewFocus, state: ReviewCommandState): string {
   const available = REVIEW_COMMANDS.filter((c) => c.focus.includes(focus) || c.focus.includes("any"))
     .filter((c) => c.available(state))
   // Build a short hint list prioritized for this focus
@@ -315,7 +328,7 @@ export function reviewHints(focus: ReviewFocus, state: Pick<ReviewState, "projec
   return parts.slice(0, 6).join(" | ")
 }
 
-export function reviewHelp(focus: ReviewFocus, state: Pick<ReviewState, "projection">): string {
+export function reviewHelp(focus: ReviewFocus, state: ReviewCommandState): string {
   const available = REVIEW_COMMANDS.filter((c) => c.available(state))
     .filter((c) => c.focus.includes(focus) || c.focus.includes("any") || c.focus.includes("global"))
     .filter((c) => c.keys.length > 0)
