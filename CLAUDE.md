@@ -19,6 +19,7 @@ bun test -t "computeLayout side"    # one describe/it by name
 bun run start                       # run the TUI in the current repository
 bun run dev                         # same, with --watch
 bun run spike:selection             # the disposable PRD §16 selection spike
+bun run build:bin                   # host standalone binary → dist/githunk
 ```
 
 `*.integration.test.ts` and `tests/acceptance/*` spawn real `git` against temp repositories
@@ -99,6 +100,43 @@ refresh (10s), external-ref detection (2s, via `RefsWatcher` + `git/refs-snapsho
 
 **Persistence lives under `.git/`, never the worktree** — `.git/githunk/ui-state-v1.json` (pane
 geometry) and, for review progress, `.git/githunk/review-state-v2.json` (Branch Review, `version: 2`) plus immutable artifacts at `.git/githunk/reviews/<review-id>/<artifact-id>.json`, and `.git/githunk/working-tree-review-state-v1.json` (Working Tree/Stash, restricted and starting empty — no migration from the old combined `review-state-v1.json`). All are written atomically at mode `0600` by `storage/local-state-file.ts`, which refuses symlinked paths. `git status` must stay clean.
+
+## Release
+
+Prebuilt `bun --compile` binaries per platform (hunk's shape in `learn-projects/hunk`):
+meta package `@xuhaojun/githunk` plus five optional platform packages
+(`@xuhaojun/githunk-{linux,darwin}-{x64,arm64}`, `@xuhaojun/githunk-windows-x64`).
+`bin/githunk.js` execs the installed platform binary when present and falls back to the
+Node bundle (`dist/githunk.js`, needs Node 26.1+) otherwise. `install.sh` puts the standalone
+binary into `$GITHUNK_INSTALL_DIR` / `$XDG_BIN_HOME` / `~/.local/bin`;
+`githunk update [version] [--check]` self-updates curl installs (npm installs go through npm).
+
+```bash
+# release: bump, push, tag — .github/workflows/release-prebuilt-npm.yml does the rest (~10 min)
+git commit -m "chore: bump 0.4.0" && git push origin main
+git tag v0.4.0 && git push origin v0.4.0
+bun run stage:prebuilt:release      # CI form; local single-platform: bun run ./scripts/stage-prebuilt-npm.ts
+bun run check:prebuilt-pack && bun run smoke:prebuilt-install
+bun run publish:prebuilt:npm -- --dry-run --tag latest
+```
+
+Rules learned the hard way:
+- Tag must equal `package.json` version (`scripts/check-release-version.ts` fails fast).
+  Prerelease tags (`vX.Y.Z-beta.N`) publish to the `beta` dist-tag, never `latest`.
+- Never move a tag after anything published; npm versions are immutable — bump instead.
+  Retry via rerun-failed-jobs or `workflow_dispatch(publish=true)`.
+- The `npm` environment must carry NO deployment branch policy: tags cannot satisfy
+  branch rules and the publish job is rejected.
+- npm trusted-publisher Organization must be `XuHaoJun` (exact case — the OIDC owner claim
+  is case-sensitive); direct `npm publish` must be an allowed action.
+- GitHub artifact names reject `/`, so matrix uploads use unscoped `artifact_name`; scoped
+  names nest under `@scope/` dirs — always list/order staged packages through
+  `listStagedPackageDirs` / `sortStagedForPublish`, never a flat readdir.
+- x64 always compiles `-baseline` (the default runtime SIGILLs pre-Haswell CPUs; the workflow
+  proves it under QEMU-emulated Nehalem); linux splits musl vs glibc.
+- CLI version comes from a bundled `package.json` import (`src/cli/args.ts`) — never a
+  filesystem walk, which returns `0.0.0-dev` inside compiled binaries.
+
 ## Working conventions
 
 **lazygit is the specification.** It is vendored as a submodule at `learn-projects/lazygit`
