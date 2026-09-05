@@ -13,8 +13,9 @@ import { loadReviewDocument } from "../../review/git/load-review-document"
 import { loadSourceContext, type SourceContextOutcome } from "../../review/git/load-source-context"
 import { ReviewStateStore, persistedFromReviewState } from "../../review/storage/review-state-store"
 import { ReviewArtifactStore, finishReviewTransaction } from "../../review/storage/review-artifact-store"
-import { currentBranchRef, inferReviewBase, resolveRefOid, reviewBaseCandidates } from "../../git/base-inference"
+import { currentBranchRef, inferReviewBase, resolveRefOid, type ReviewBaseCandidate } from "../../git/base-inference"
 import { emptyReviewDatabaseV2 } from "../../review/storage/schemas"
+import { sha256Tuple } from "../../review/core/identity"
 import { MutationQueue } from "../../app/mutation-queue"
 import type { ReviewDecision } from "../../review/core/artifact"
 import { buildReviewArtifact, validateFinishReview } from "../../review/core/artifact"
@@ -50,6 +51,13 @@ export type ReviewWorkspaceControllerOptions = {
   readonly randomId?: () => string
 }
 
+export type ReviewBaseSelection = Readonly<{
+  candidates: readonly ReviewBaseCandidate[]
+  loading: boolean
+  selecting: boolean
+  error?: string
+}>
+
 type Listener = (state: ReviewState | undefined) => void
 
 export class ReviewWorkspaceController {
@@ -69,6 +77,8 @@ export class ReviewWorkspaceController {
   private activeReviewId: string | undefined
   private activeGenerationId: string | undefined
   private baseRef: string | undefined
+  private _baseSelection: ReviewBaseSelection | undefined
+  private baseSelectionRequestId = 0
   private sourceContextCache = new Map<string, readonly string[]>()
   private pendingGapRequests = new Map<string, number>()
   private gapRequestCounter = 0
@@ -107,6 +117,71 @@ export class ReviewWorkspaceController {
     return this.baseRef
   }
 
+  get baseSelection(): ReviewBaseSelection | undefined {
+    return this._baseSelection
+  }
+
+  async requestBaseSelection(): Promise<void> {
+    if (this.destroyed || this._baseSelection?.selecting) return
+    const token = ++this.baseSelectionRequestId
+    // A pending refresh must not replace the review while its base is being chosen.
+    this.requestId++
+    this._baseSelection = { candidates: [], loading: true, selecting: false }
+    this.publish()
+    try {
+      const remembered = this.baseRef === undefined ? await this.rememberedBase() : undefined
+      const inferred = await inferReviewBase(this.runner, this.baseRef ?? remembered?.baseRef)
+      if (this.destroyed || token !== this.baseSelectionRequestId) return
+      this._baseSelection = { candidates: inferred.candidates, loading: false, selecting: false }
+    } catch (err) {
+      if (this.destroyed || token !== this.baseSelectionRequestId) return
+      this._baseSelection = {
+        candidates: [], loading: false, selecting: false,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+    this.publish()
+  }
+
+  cancelBaseSelection(): void {
+    if (this._baseSelection?.selecting) return
+    this.baseSelectionRequestId++
+    this._baseSelection = undefined
+    this.publish()
+  }
+
+  async chooseBase(ref: string): Promise<boolean> {
+    const picker = this._baseSelection
+    if (this.destroyed || !picker || picker.loading || picker.selecting ||
+      !picker.candidates.some(candidate => candidate.ref === ref)) return false
+    const token = ++this.baseSelectionRequestId
+    this.requestId++
+    this._baseSelection = { candidates: picker.candidates, loading: false, selecting: true }
+    this.publish()
+    return this.reviewOperationQueue.run(async () => {
+      if (this.destroyed || token !== this.baseSelectionRequestId) return false
+      try {
+        // Flush the old review before changing identity; pending drafts belong to it.
+        if (this._state !== undefined) await this.persistState()
+        await this.stateStore?.flush()
+        if (this.destroyed || token !== this.baseSelectionRequestId) return false
+        await this.open(ref)
+        if (this.destroyed || token !== this.baseSelectionRequestId) return false
+        this._baseSelection = undefined
+        this.publish()
+        return true
+      } catch (err) {
+        if (this.destroyed || token !== this.baseSelectionRequestId) return false
+        this._baseSelection = {
+          candidates: picker.candidates, loading: false, selecting: false,
+          error: err instanceof Error ? err.message : String(err),
+        }
+        this.publish()
+        return false
+      }
+    })
+  }
+
 
   clearError(): void {
     if (this._error === undefined) return
@@ -116,7 +191,7 @@ export class ReviewWorkspaceController {
 
   get refreshGeneration(): () => Promise<void> {
     return async () => {
-      if (this.baseRef === undefined || this.destroyed) return
+      if (this.baseRef === undefined || this.destroyed || this._baseSelection !== undefined) return
       const token = ++this.requestId
       const capturedGeneration = this.activeGenerationId
       const capturedReviewId = this.activeReviewId
@@ -190,16 +265,33 @@ export class ReviewWorkspaceController {
       this.publish()
     }
   }
-  async open(baseRef?: string): Promise<ReviewState> {
+  async open(baseRef: string): Promise<ReviewState>
+  async open(baseRef?: string): Promise<ReviewState | undefined>
+  async open(baseRef?: string): Promise<ReviewState | undefined> {
     if (this.destroyed) throw new Error("controller destroyed")
     const token = ++this.requestId
     let resolvedBase = baseRef
-    let corruptError: ReviewWorkspaceError | undefined
+    // An explicit base supersedes an open picker. chooseBase drives its own
+    // selecting state and never takes this path; without the guard a stale
+    // modal would linger over the new review with dispatch blocked.
+    if (resolvedBase !== undefined && this._baseSelection !== undefined && !this._baseSelection.selecting) {
+      this.baseSelectionRequestId++
+      this._baseSelection = undefined
+      this.publish()
+    }
+    let corruptError: ReviewWorkspaceError | undefined =
+      this._error?.kind === "corrupt-state" || this._error?.kind === "storage" ? this._error : undefined
     if (resolvedBase === undefined) {
       try {
-        resolvedBase = await this.resolveBase()
-        // resolveBase may have quarantined state while finding the base. Keep
-        // that warning when the normal open path loads the database below.
+        const remembered = await this.rememberedBase()
+        if (remembered?.confirmed === true &&
+          (await resolveRefOid(this.runner, remembered.baseRef)) !== undefined) {
+          resolvedBase = remembered.baseRef
+        } else {
+          await this.requestBaseSelection()
+          return undefined
+        }
+        // Base lookup may quarantine state. Preserve its warning after document load.
         const warning = this.stateStore?.quarantineWarning
         if (warning) {
           const pathMatch = warning.match(/moved to (\S+)/)
@@ -214,6 +306,7 @@ export class ReviewWorkspaceController {
       }
     }
     if (this.destroyed || token !== this.requestId) throw new Error("open cancelled")
+    if (resolvedBase === undefined) throw new Error("base selection required")
 
     let doc: ReviewDocument
     try {
@@ -241,7 +334,24 @@ export class ReviewWorkspaceController {
         const qPath = pathMatch?.[1] ?? warning
         corruptError = createCorruptStateError(qPath, warning)
       }
-      const persisted = db.reviews[doc.identity.id]
+      let persisted = db.reviews[doc.identity.id]
+      // Earlier releases stored short refs, including automatically guessed bases.
+      // Restore only when Git resolves the old name to this exact namespace.
+      if (persisted === undefined) {
+        const headKey = doc.identity.headRef ?? `detached:${doc.identity.detachedHeadOid}`
+        const previousBase = db.baseByHead[headKey]?.baseRef
+        if (previousBase && previousBase !== resolvedBase && !previousBase.startsWith("refs/")) {
+          const previousId = sha256Tuple(["branch-review-v2", headKey, previousBase])
+          const previous = db.reviews[previousId]
+          if (previous !== undefined) {
+            const canonical = await this.runner.run(
+              ["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", previousBase],
+              { readOnly: true, acceptedExitCodes: [0, 1, 128] },
+            )
+            if (canonical.stdout.trim() === resolvedBase) persisted = previous
+          }
+        }
+      }
       if (persisted !== undefined) {
         const initial = createInitialReviewState(doc)
         const reconstructed: ReviewState = {
@@ -296,7 +406,7 @@ export class ReviewWorkspaceController {
 
   dispatch(action: ReviewAction): void {
     const current = this._state
-    if (current === undefined) return
+    if (current === undefined || this._baseSelection !== undefined) return
     const next = reduceReviewState(current, action)
     if (next === current) return
     this._state = next
@@ -317,7 +427,7 @@ export class ReviewWorkspaceController {
 
   dispatchIntent(intent: ReviewIntent): boolean {
     const current = this._state
-    if (current === undefined) return false
+    if (current === undefined || this._baseSelection !== undefined) return false
     try {
       const action = planReviewIntent(current, intent)
       this.dispatch(action)
@@ -564,6 +674,8 @@ export class ReviewWorkspaceController {
     this.destroyed = true
     this.listeners.clear()
     this.requestId++
+    this.baseSelectionRequestId++
+    this._baseSelection = undefined
     this.pendingGapRequests.clear()
     this.sourceContextCache.clear()
     if (this.activeReviewId && this.stateStore) {
@@ -594,7 +706,7 @@ export class ReviewWorkspaceController {
         const submissionInProgress = db.reviews[reviewId]?.submissionInProgress ?? null
         return {
           ...db,
-          baseByHead: { ...db.baseByHead, [headKey]: { baseRef: snapshot.document.identity.baseRef } },
+          baseByHead: { ...db.baseByHead, [headKey]: { baseRef: snapshot.document.identity.baseRef, confirmed: true } },
           reviews: { ...db.reviews, [reviewId]: { ...persisted, submissionInProgress } },
         }
       })
@@ -608,38 +720,24 @@ export class ReviewWorkspaceController {
     }
   }
 
-  private async resolveBase(): Promise<string> {
+  private async rememberedBase(): Promise<Readonly<{ baseRef: string; confirmed?: boolean }> | undefined> {
     const headRef = await currentBranchRef(this.runner)
     const detachedOid = headRef === undefined ? await resolveRefOid(this.runner, "HEAD") : undefined
     const headKey = headRef ?? (detachedOid ? `detached:${detachedOid}` : undefined)
-    if (headKey !== undefined && this.stateStore) {
-      try {
-        const db = await this.stateStore.load()
-        // Surface corrupt-state warning if present during base resolution as well
-        const warning = this.stateStore.quarantineWarning
-        if (warning) {
-          const pathMatch = warning.match(/moved to (\S+)/)
-          const qPath = pathMatch?.[1] ?? warning
-          this._error = createCorruptStateError(qPath, warning)
-          this.publish()
-        }
-        const remembered = db.baseByHead[headKey]?.baseRef
-        if (remembered && (await resolveRefOid(this.runner, remembered)) !== undefined) {
-          return remembered
-        }
-      } catch {}
-    }
+    if (headKey === undefined || this.stateStore === undefined) return undefined
     try {
-      const inferred = await inferReviewBase(this.runner)
-      if (inferred.kind === "confident") return inferred.ref
-      const candidates = inferred.kind === "choose" ? inferred.candidates : await reviewBaseCandidates(this.runner)
-      if (candidates.length > 0) return candidates[0] as string
+      const db = await this.stateStore.load()
+      const warning = this.stateStore.quarantineWarning
+      if (warning) {
+        const qPath = warning.match(/moved to (\S+)/)?.[1] ?? warning
+        this._error = createCorruptStateError(qPath, warning)
+        this.publish()
+      }
+      return db.baseByHead[headKey]
     } catch (err) {
-      // Classify as git or invalid-base
-      throw classifyLoadError(err)
+      this._error = createStorageError(err instanceof Error ? err.message : String(err))
+      this.publish()
+      return undefined
     }
-    // Fallback for test seam where git repo is fake and loader is injected
-    // Do not throw here; let the injected loader decide. Return a default that will be passed to loadDocument
-    return "refs/heads/main"
   }
 }

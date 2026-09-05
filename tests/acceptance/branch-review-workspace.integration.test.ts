@@ -40,7 +40,7 @@ async function seedBase(repository: TempRepository, headRef: string, baseRef: st
   const targetDir = join(absoluteGitDir, "githunk")
   await mkdir(targetDir, { recursive: true })
   const targetFile = join(targetDir, "review-state-v2.json")
-  const payload = JSON.stringify({ version: 2, baseByHead: { [headRef]: { baseRef } }, reviews: {} })
+  const payload = JSON.stringify({ version: 2, baseByHead: { [headRef]: { baseRef, confirmed: true } }, reviews: {} })
   await writeFile(targetFile, payload, "utf8")
   try { await Bun.file(targetFile).text() } catch {}
 }

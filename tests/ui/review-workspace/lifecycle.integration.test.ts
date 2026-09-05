@@ -46,8 +46,8 @@ describe("review workspace lifecycle integration", () => {
         loadDocument: async () => { throw new Error("load failed") },
       },
     } as unknown as Parameters<typeof createApp>[0])
-    const screen = (app as unknown as { screenController: { active: { kind: string; controller?: unknown }; openBranchReview: () => Promise<void> } }).screenController
-    await expect(screen.openBranchReview()).rejects.toThrow("load failed")
+    const screen = (app as unknown as { screenController: { active: { kind: string; controller?: unknown }; openBranchReview: (baseRef?: string) => Promise<void> } }).screenController
+    await expect(screen.openBranchReview("refs/heads/main")).rejects.toThrow("load failed")
     expect(screen.active.kind).toBe("repository")
     app.destroy()
   })

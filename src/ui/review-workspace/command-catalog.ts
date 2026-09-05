@@ -244,6 +244,14 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     hint: "help",
   },
   {
+    id: "review.chooseBase",
+    title: "Change base branch",
+    keys: ["B"],
+    focus: ["any"],
+    available: always,
+    hint: "base",
+  },
+  {
     id: "review.close",
     title: "Close overlay or workspace",
     keys: ["escape", "b"],
@@ -262,7 +270,7 @@ for (const cmd of REVIEW_COMMANDS) {
     if (!keyToCommand.has(k)) keyToCommand.set(k, cmd)
     // also store lower for case-insensitive fallback for arrows etc.
     const lower = k.toLowerCase()
-    if (lower !== k && !keyToCommand.has(lower)) keyToCommand.set(lower, cmd)
+    if (k.length > 1 && lower !== k && !keyToCommand.has(lower)) keyToCommand.set(lower, cmd)
   }
 }
 
@@ -316,6 +324,7 @@ export function reviewHelp(focus: ReviewFocus, state: Pick<ReviewState, "project
     "review.focusFiles": 1,
     "review.toggleFocus": 2,
     "review.layoutCycle": 3,
+    "review.chooseBase": 4,
   }
   const ordered = [...available].sort((a, b) => (panelPriority[a.id] ?? 99) - (panelPriority[b.id] ?? 99))
   const lines = ordered.map((c) => `${c.keys.map((key) => key === "tab" ? "Tab" : key).join("/")} ${c.title}`)

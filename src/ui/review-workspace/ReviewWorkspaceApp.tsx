@@ -1,5 +1,4 @@
-import type { InputRenderable, KeyEvent, MouseEvent, ScrollBoxRenderable, TextChunk, TextareaRenderable } from "@opentui/core"
-import { StyledText, parseColor } from "@opentui/core"
+import type { InputRenderable, KeyEvent, MouseEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { ReviewWorkspaceController } from "./controller"
@@ -9,6 +8,7 @@ import { REVIEW_COMMANDS, resolveReviewCommand, reviewHelp } from "./command-cat
 import { buildReviewSidebarEntries, getFileStateIcon, REVIEW_SIDEBAR_THEME, sidebarEntryStats, sidebarEntryStatsWidth } from "./review-sidebar"
 import { toHunkReviewFiles } from "./hunk-review-model"
 import { ReviewDiffPane } from "./components/ReviewDiffPane"
+import { ReviewBasePicker } from "./components/ReviewBasePicker"
 import { useReviewHighlights } from "./hooks/useReviewHighlights"
 import { planReviewIntent } from "../../review/core/intents"
 import { createFileAnchor, createLineSelection, createRangeAnchor, sideLinesForHunk } from "../../review/core/anchors"
@@ -40,29 +40,6 @@ const COLORS = {
   feedback: "#c397d8",
 } as const
 
-const colorCache = new Map<string, ReturnType<typeof parseColor>>()
-
-function textChunk(text: string, style: keyof typeof COLORS): TextChunk {
-  let fg = colorCache.get(COLORS[style])
-  if (!fg) {
-    fg = parseColor(COLORS[style])
-    colorCache.set(COLORS[style], fg)
-  }
-  return { __isChunk: true, text, fg }
-}
-
-function headerText(state: ReviewState, width: number, error?: { title: string; detail: string }): StyledText {
-  const lines = [...reviewHeaderLines(state, width)]
-  if (error) lines.push([{ text: `! ${error.title}: ${error.detail}`, style: "dim" }])
-  const chunks: TextChunk[] = []
-  for (const [index, line] of lines.entries()) {
-    if (index > 0) chunks.push(textChunk("\n", "plain"))
-    for (const span of line) {
-      chunks.push(textChunk(span.text, span.style === "strong" ? "strong" : span.style === "dim" ? "dim" : "plain"))
-    }
-  }
-  return new StyledText(chunks)
-}
 
 function fitText(text: string, width: number, overflowMarker = "."): string {
   if (cellWidth(text) <= width) return text
@@ -100,6 +77,7 @@ function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "str
     command("review.focusFiles", true),
     command("review.toggleFocus", true),
     `${command("review.layoutCycle", true)}(${layout})`,
+    command("review.chooseBase"),
     pair("review.moveDown", "review.moveUp"),
     pair("review.nextHunk", "review.prevHunk"),
     pair("review.nextFile", "review.prevFile"),
@@ -244,8 +222,26 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const active = session.active
   const onClose = session.onClose
   const finishDialog = session.finishDialog
-  const [publishedState, setPublishedState] = useState<ReviewState | undefined>(() => controller.state)
+  const [publishedState] = useState<ReviewState | undefined>(() => controller.state)
+  // ReactReviewHost already forwards every controller publish in production.
+  // This covers hostless rendering (tests, direct App use) and is scoped to
+  // picker-relevant transitions so routine review publishes do not schedule
+  // duplicate renders on top of the host's own forwarding.
+  useEffect(() => {
+    let lastSelection = controller.baseSelection
+    let hadState = controller.state !== undefined
+    return controller.subscribe(() => {
+      const nextSelection = controller.baseSelection
+      const hasState = controller.state !== undefined
+      if (nextSelection !== lastSelection || hasState !== hadState) {
+        lastSelection = nextSelection
+        hadState = hasState
+        session.invalidate()
+      }
+    })
+  }, [controller, session])
   const state = controller.state ?? publishedState
+  const baseSelection = controller.baseSelection
   const [layoutMode, setLayoutMode] = useState<"auto" | "split" | "stack">("auto")
   const [sidebarWidthPreference, setSidebarWidthPreference] = useState(REVIEW_SIDEBAR_DEFAULT_WIDTH)
   const [resizeBarHovered, setResizeBarHovered] = useState(false)
@@ -274,6 +270,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const replacementRef = useRef<TextareaRenderable | null>(null)
   const finishSummaryRef = useRef<TextareaRenderable | null>(null)
   const finishSubmitRef = useRef(false)
+  const localReviewIdentityRef = useRef(state?.document.identity.id)
   const expandedSourceRef = useRef<ReadonlyMap<string, readonly string[]>>(new Map())
   const dimensions = { width: Math.max(1, terminal.width), height: Math.max(1, terminal.height) }
   const maxSidebarWidth = Math.max(
@@ -374,8 +371,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     setResizingSidebar(false)
     setResizeBarHovered(false)
   }, [])
-  useLayoutEffect(() => {
-    if (active) return
+  const resetLocalReviewUi = useCallback(() => {
     setRangeStart(null)
     setPendingRangeAnchor(null)
     setSelectedFeedbackId(null)
@@ -389,7 +385,28 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     setHelpOpen(false)
     setFocus("stream")
     resetSidebarResize()
-  }, [active, resetSidebarResize])
+    setVisibleFileKeys([])
+    localRangeIdentityRef.current = null
+    if (diffScrollRef.current) diffScrollRef.current.scrollTop = 0
+    session.setViewportStart(0)
+    finishDialog.close()
+  }, [finishDialog, resetSidebarResize, session])
+  useLayoutEffect(() => {
+    if (!active) resetLocalReviewUi()
+  }, [active, resetLocalReviewUi])
+  useLayoutEffect(() => {
+    const identity = state?.document.identity.id
+    if (identity === localReviewIdentityRef.current) return
+    localReviewIdentityRef.current = identity
+    resetLocalReviewUi()
+  }, [resetLocalReviewUi, state?.document.identity.id])
+  useLayoutEffect(() => {
+    if (!baseSelection) return
+    filterInputRef.current?.blur()
+    composerBodyRef.current?.blur()
+    replacementRef.current?.blur()
+    resetSidebarResize()
+  }, [baseSelection !== undefined, resetSidebarResize])
   useLayoutEffect(() => {
     if (sidebarWidth > 0) return
     resetSidebarResize()
@@ -399,7 +416,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     if (sidebarWidth === 0 && focus !== "stream") setFocus("stream")
   }, [focus, sidebarWidth])
   useLayoutEffect(() => {
-    if (!state?.draft) return
+    if (!state?.draft || baseSelection) return
     if (composerFocus === "body") {
       composerBodyRef.current?.focus()
       replacementRef.current?.blur()
@@ -410,7 +427,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       composerBodyRef.current?.blur()
       replacementRef.current?.blur()
     }
-  }, [composerFocus, state?.draft])
+  }, [baseSelection !== undefined, composerFocus, state?.draft])
   useEffect(() => {
     const pending = pendingRangeAnchor
     const start = rangeStart
@@ -664,7 +681,23 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       session.invalidate()
     } catch {}
   }, [controller, rangeStart, session])
+  const requestBaseSelection = useCallback(() => {
+    if (controller.baseSelection || finishDialog.isOpen() || helpOpen) return
+    void controller.requestBaseSelection()
+  }, [controller, finishDialog, helpOpen])
+  const cancelBaseSelection = useCallback(() => {
+    if (controller.baseSelection?.loading || controller.baseSelection?.selecting) return
+    controller.cancelBaseSelection()
+    if (!controller.state) onClose()
+  }, [controller, onClose])
+  const chooseBase = useCallback((ref: string) => { void controller.chooseBase(ref) }, [controller])
+  const retryBaseSelection = useCallback(() => { void controller.requestBaseSelection() }, [controller])
   const executeCommand = useCallback((commandId: string, payload?: unknown): boolean => {
+    if (controller.baseSelection) return false
+    if (commandId === "review.chooseBase") {
+      requestBaseSelection()
+      return true
+    }
     const current = controller.state
     if (commandId === "review.focusDiff") {
       setFocus("stream")
@@ -901,10 +934,17 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       return true
     }
     return false
-  }, [controller, deleteFeedback, diffWidth, editFeedback, finishDialog, focus, onClose, pendingRangeAnchor, rangeStart, reanchorFeedback, selectedFeedbackId, selectFeedback, selectDiffAddress, session, sidebarWidth, toggleGap])
+  }, [controller, deleteFeedback, diffWidth, editFeedback, finishDialog, focus, onClose, pendingRangeAnchor, rangeStart, reanchorFeedback, requestBaseSelection, selectedFeedbackId, selectFeedback, selectDiffAddress, session, sidebarWidth, toggleGap])
 
   const handleKey = useCallback((event: KeyEvent) => {
     if (!active) return
+    if (baseSelection || controller.baseSelection) {
+      if (keyName(event) === "escape") {
+        consume(event)
+        cancelBaseSelection()
+      }
+      return
+    }
     const name = keyName(event)
     const current = controller.state
 
@@ -1036,13 +1076,18 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     const command = resolveReviewCommand(normalized, focus)
     if (!command || (current && !command.available(current))) return
     if (executeCommand(command.id)) consume(event)
-  }, [active, composerControlIndex, composerFocus, controller, executeCommand, finishDialog, focus, helpOpen, onClose, pendingDeleteFeedbackId, pendingRangeAnchor, rangeStart, reanchorFeedbackId, saveDraft, session, submitFinish])
+  }, [active, baseSelection, cancelBaseSelection, composerControlIndex, composerFocus, controller, executeCommand, finishDialog, focus, helpOpen, onClose, pendingDeleteFeedbackId, pendingRangeAnchor, rangeStart, reanchorFeedbackId, saveDraft, session, submitFinish])
   useKeyboard(handleKey)
+
+  const basePicker = baseSelection ? (
+    <ReviewBasePicker selection={baseSelection} width={dimensions.width} height={dimensions.height} active={active} {...(controller.error ? { warning: `! ${controller.error.title}: ${controller.error.detail}` } : {})} onChoose={chooseBase} onCancel={cancelBaseSelection} onRetry={retryBaseSelection} />
+  ) : null
 
   if (!state) {
     return (
-      <box id="react-review-workspace" visible={active} style={{ width: "100%", height: "100%" }}>
-        <text content="Loading branch review…" />
+      <box id="react-review-workspace" visible={active} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
+        <text content="Choose a base branch to start reviewing." />
+        {basePicker}
       </box>
     )
   }
@@ -1072,8 +1117,21 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
 
   return (
     <box id="react-review-workspace" visible={active} onMouse={handleSidebarResizeMouse} style={{ position: "relative", width: "100%", height: "100%", flexDirection: "column", overflow: "hidden" }}>
-      <box id="react-review-header" style={{ width: "100%", height: 3, flexShrink: 0 }}>
-        <text content={headerText(state, dimensions.width, controller.error)} wrapMode="none" truncate={true} />
+      <box id="react-review-header" style={{ width: "100%", height: 3, flexShrink: 0, flexDirection: "column" }}>
+        {reviewHeaderLines(state, dimensions.width).map((line, lineIndex) => (
+          <box key={lineIndex} style={{ width: "100%", height: 1, flexShrink: 0, flexDirection: "row" }}>
+            {line.map((span, spanIndex) => span.action === "choose-base" ? (
+              <box key={spanIndex} id="review-base-selector" style={{ width: cellWidth(span.text), height: 1, flexShrink: 0 }} onMouseUp={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                requestBaseSelection()
+              }}>
+                <text content={span.text} fg={COLORS.strong} selectable={false} wrapMode="none" truncate={true} />
+              </box>
+            ) : <text key={spanIndex} content={span.text} fg={span.style === "dim" ? COLORS.dim : COLORS.strong} wrapMode="none" truncate={true} />)}
+          </box>
+        ))}
+        {controller.error ? <text content={`! ${controller.error.title}: ${controller.error.detail}`} fg={COLORS.dim} wrapMode="none" truncate={true} /> : null}
       </box>
       <box id="react-review-body" style={{ width: "100%", flexGrow: 1, flexDirection: "row", overflow: "hidden" }}>
         {sidebarWidth > 0 ? (<>
@@ -1093,7 +1151,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
                 width={Math.max(4, sidebarWidth - 4)}
                 value={state.filter.query}
                 placeholder="filter files"
-                focused={focus === "filter"}
+                focused={focus === "filter" && !baseSelection}
                 onMouseUp={() => {
                   if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
                   setFocus("filter")
@@ -1120,7 +1178,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             </box>
             <scrollbox
               id="react-review-sidebar-scrollbox"
-              focused={focus === "sidebar"}
+              focused={focus === "sidebar" && !baseSelection}
               width="100%"
               flexGrow={1}
               scrollY={true}
@@ -1236,12 +1294,13 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           onMouseDown={() => setFocus("stream")}
         >
           <ReviewDiffPane
+            key={state.document.identity.id}
             files={files}
             state={state}
             layout={layout}
             width={diffWidth}
             height={diffHeight}
-            focused={focus === "stream"}
+            focused={focus === "stream" && !baseSelection}
             scrollRef={diffScrollRef}
             selectedFileKey={state.selection.fileKey}
             selectedHunkIndex={state.selection.hunkIndex}
@@ -1377,12 +1436,13 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             </box>
           </box>
           <textarea
+            key={state.document.identity.id}
             id="review-feedback-body"
             ref={composerBodyRef}
             width="100%"
             height={2}
             initialValue={state.draft.body}
-            focused={composerFocus === "body"}
+            focused={composerFocus === "body" && !baseSelection}
             keyBindings={[{ name: "escape", action: "submit" }]}
             onSubmit={() => {
               const latest = controller.state
@@ -1419,12 +1479,13 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           {canShowReplacementDraft(state) ? (
             <>
               <textarea
+                key={state.document.identity.id}
                 id="review-feedback-replacement"
                 ref={replacementRef}
                 width="100%"
                 height={2}
                 initialValue={state.draft.replacement ?? ""}
-                focused={composerFocus === "replacement"}
+                focused={composerFocus === "replacement" && !baseSelection}
                 wrapMode="char"
                 placeholder="Replacement text"
                 onContentChange={() => {
@@ -1445,7 +1506,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       {helpOpen ? (
         <box
           id="review-help-dialog"
-          style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: Math.min(26, Math.max(14, dimensions.height - 4)), zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
+          style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: Math.min(27, Math.max(14, dimensions.height - 3)), zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
         >
           <text content={`Review commands\n${reviewHelp(focus, state)}\nEsc close this help`} wrapMode="none" truncate={true} />
         </box>
@@ -1519,6 +1580,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       <box id="react-review-footer" style={{ width: "100%", height: 1, flexShrink: 0 }}>
         <text content={reviewFooter(state, layout, focus)} wrapMode="none" truncate={true} />
       </box>
+      {basePicker}
     </box>
   )
 }

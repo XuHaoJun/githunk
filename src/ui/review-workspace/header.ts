@@ -5,6 +5,7 @@ import { cellWidth } from "../cell-width"
 export type ReviewHeaderSpan = Readonly<{
   text: string
   style: "plain" | "dim" | "strong" | "addition" | "deletion"
+  action?: "choose-base"
 }>
 
 export type ReviewHeaderLine = readonly ReviewHeaderSpan[]
@@ -79,8 +80,14 @@ export function reviewHeaderLines(state: ReviewState, width: number): readonly R
   // Line 1: head → base  •  commits · files · stats  •  projection
   const projectionLabel = "Aggregate"
 
-  const line1Raw = `${headLabel} → ${baseLabel}  ·  ${commits} commits · ${files} files · ${additionsText} ${deletionsText}  [${projectionLabel}]`
-  const line1 = truncateCell(line1Raw, w)
+  // Keep the base reachable even when the current branch name fills the terminal.
+  const baseBudget = Math.min(cellWidth(baseLabel), Math.max(1, Math.floor(w / 2)))
+  const headPrefix = w > baseBudget + 3
+    ? `${truncateCell(headLabel, w - baseBudget - 3)} → `
+    : ""
+  const baseText = truncateCell(baseLabel, Math.max(0, w - cellWidth(headPrefix)))
+  const suffix = `  ·  ${commits} commits · ${files} files · ${additionsText} ${deletionsText}  [${projectionLabel}]`
+  const suffixText = truncateCell(suffix, Math.max(0, w - cellWidth(headPrefix) - cellWidth(baseText)))
 
   // Line 2: Reviewed 11/18 · 2 changed · 4 pending
   // reviewProgress gives viewed, changed, unreviewed, pending, total
@@ -96,7 +103,11 @@ export function reviewHeaderLines(state: ReviewState, width: number): readonly R
   // We keep header to 2 lines; tests expect at least 2.
   // But to satisfy spec "header shows warnings", we could add third line if needed — not required for basic.
 
-  const line1Spans: ReviewHeaderLine = [{ text: line1, style: "strong" }]
+  const line1Spans: ReviewHeaderLine = [
+    { text: headPrefix, style: "strong" },
+    { text: baseText, style: "strong", action: "choose-base" },
+    { text: suffixText, style: "strong" },
+  ]
   const line2Spans: ReviewHeaderLine = [{ text: line2, style: "dim" }]
 
   return [line1Spans, line2Spans]

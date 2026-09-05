@@ -75,7 +75,7 @@ describe("review workspace real surface", () => {
     try {
       const screen = app.screenController!
       await act(async () => {
-        await screen.openBranchReview()
+        await screen.openBranchReview("refs/heads/main")
       })
       await setup.flush()
       expect(screen.active.kind).toBe("branch-review")
@@ -112,7 +112,7 @@ describe("review workspace real surface", () => {
     try {
       const screen = app.screenController!
       await act(async () => {
-        await screen.openBranchReview()
+        await screen.openBranchReview("refs/heads/main")
       })
       await setup.flush()
       if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
@@ -150,7 +150,7 @@ describe("review workspace real surface", () => {
     try {
       const screen = app.screenController!
       await act(async () => {
-        await screen.openBranchReview()
+        await screen.openBranchReview("refs/heads/main")
       })
       await setup.flush()
       if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
@@ -188,7 +188,7 @@ describe("review workspace real surface", () => {
     try {
       const screen = app.screenController!
       await act(async () => {
-        await screen.openBranchReview()
+        await screen.openBranchReview("refs/heads/main")
       })
       await setup.flush()
       if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
@@ -235,7 +235,7 @@ describe("review workspace real surface", () => {
     try {
       const screen = app.screenController!
       await act(async () => {
-        await screen.openBranchReview()
+        await screen.openBranchReview("refs/heads/main")
       })
       await setup.flush()
       if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
@@ -271,7 +271,7 @@ describe("review workspace real surface", () => {
     try {
       const screen = app.screenController!
       await act(async () => {
-        await screen.openBranchReview()
+        await screen.openBranchReview("refs/heads/main")
       })
       await setup.flush()
       if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
@@ -354,7 +354,7 @@ describe("review workspace real surface", () => {
     try {
       const screen = app.screenController!
       await act(async () => {
-        await screen.openBranchReview()
+        await screen.openBranchReview("refs/heads/main")
       })
       await setup.flush()
       if (screen.active.kind !== "branch-review") throw new Error("expected Branch Review screen")
@@ -407,7 +407,7 @@ describe("review workspace real surface", () => {
     try {
       const screen = app.screenController!
       await act(async () => {
-        await screen.openBranchReview()
+        await screen.openBranchReview("refs/heads/main")
       })
       await setup.flush()
       expect(screen.active.kind).toBe("branch-review")
