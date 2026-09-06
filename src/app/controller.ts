@@ -1,4 +1,5 @@
-import { GitRunner, GitCommandError } from "../git/runner"
+import { GitRunner } from "../git/runner"
+import { describeGitError } from "../git/error-message"
 import { loadWorkingTree } from "../git/diff"
 import { listCommits, loadCommit, loadCommitFilePatch, type CommitListOptions } from "../git/commits"
 import type { CommitDetails, CommitSummary } from "../domain/commit"
@@ -48,32 +49,67 @@ type BranchMutationOptions = {
 }
 
 
-export type AppControllerOptions = {
+/** The Git-backed reads a controller performs; tests replace any subset. */
+export type AppLoaders = {
+  readonly load: WorkingTreeLoader
+  readonly loadBranches: BranchListingLoader
+  readonly loadCommits: CommitListLoader
+  readonly loadCommit: CommitLoader
+  readonly loadCommitFilePatch: CommitFilePatchLoader
+  readonly loadStashes: () => Promise<readonly StashEntry[]>
+  readonly loadTags: TagListLoader
+  readonly loadReflog: ReflogListLoader
+  readonly loadWorktrees: WorktreeListLoader
+  readonly loadSubmodules: SubmoduleListLoader
+}
+
+const LOADER_KEYS = ["load", "loadBranches", "loadCommits", "loadCommit", "loadCommitFilePatch", "loadStashes", "loadTags", "loadReflog", "loadWorktrees", "loadSubmodules"] as const satisfies readonly (keyof AppLoaders)[]
+
+/**
+ * Every loader reads through `runner`. Without one (headless unit tests) the listings are empty
+ * and the reads that cannot be faked throw, exactly as before.
+ */
+function defaultLoaders(runner: GitRunner | undefined): AppLoaders {
+  if (runner === undefined) {
+    return {
+      load: async () => { throw new Error("AppController requires a GitRunner or loader") },
+      loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
+      loadCommits: async () => [],
+      loadCommit: async () => { throw new Error("Commit details require a GitRunner") },
+      loadCommitFilePatch: async () => { throw new Error("Commit file patches require a GitRunner") },
+      loadStashes: async () => [],
+      loadTags: async () => [],
+      loadReflog: async () => [],
+      loadWorktrees: async () => [],
+      loadSubmodules: async () => [],
+    }
+  }
+  return {
+    load: (target, snapshotOptions) => loadWorkingTree(runner, target.scope, snapshotOptions ?? {}),
+    loadBranches: () => listBranches(runner),
+    loadCommits: (range, filter, listOptions) => listCommits(runner, range, filter, listOptions),
+    loadCommit: (oid) => loadCommit(runner, oid),
+    loadCommitFilePatch: (oid, path) => loadCommitFilePatch(runner, oid, path),
+    loadStashes: () => listStashes(runner),
+    loadTags: () => listTags(runner),
+    loadReflog: () => listReflog(runner),
+    loadWorktrees: () => listWorktrees(runner),
+    loadSubmodules: () => listSubmodules(runner),
+  }
+}
+
+/** The loaders an options bag actually sets, without `undefined` entries (`exactOptionalPropertyTypes`). */
+function providedLoaders(options: AppControllerOptions): Partial<AppLoaders> {
+  const provided: Record<string, unknown> = {}
+  for (const key of LOADER_KEYS) {
+    if (options[key] !== undefined) provided[key] = options[key]
+  }
+  return provided as Partial<AppLoaders>
+}
+
+export type AppControllerOptions = Partial<AppLoaders> & {
   readonly repositoryRoot?: string
   readonly runner?: GitRunner
-  readonly load?: WorkingTreeLoader
-  readonly loader?: WorkingTreeLoader
-  readonly loadCommits?: CommitListLoader
-  readonly commitsLoader?: CommitListLoader
-  readonly loadCommit?: CommitLoader
-  readonly commitLoader?: CommitLoader
-  readonly loadCommitFilePatch?: CommitFilePatchLoader
-  readonly loadBranches?: BranchListingLoader
-  readonly branchesLoader?: BranchListingLoader
-  readonly commitFilePatchLoader?: CommitFilePatchLoader
-  readonly loadStashes?: () => Promise<readonly StashEntry[]>
-  readonly loadTags?: TagListLoader
-  // alias for symmetry with branchesLoader; prefer loadTags
-  readonly tagsLoader?: TagListLoader
-  readonly loadReflog?: ReflogListLoader
-  // alias for symmetry with tagsLoader; prefer loadReflog
-  readonly reflogLoader?: ReflogListLoader
-  readonly loadWorktrees?: WorktreeListLoader
-  // alias for symmetry with tagsLoader; prefer loadWorktrees
-  readonly worktreesLoader?: WorktreeListLoader
-  readonly loadSubmodules?: SubmoduleListLoader
-  // alias for symmetry with tagsLoader; prefer loadSubmodules
-  readonly submodulesLoader?: SubmoduleListLoader
   /**
    * Repaints the branches panel after an asynchronous pull-request result arrives. If the query
    * fails, the last successful result remains visible rather than disappearing transiently.
@@ -166,9 +202,12 @@ export class AppController {
 
   constructor(options: AppControllerOptions | GitRunner, loader?: WorkingTreeLoader) {
     const runner = options instanceof GitRunner ? options : options.runner
-    const load = options instanceof GitRunner ? loader : options.load ?? options.loader
+    const provided: Partial<AppLoaders> = options instanceof GitRunner
+      ? (loader === undefined ? {} : { load: loader })
+      : providedLoaders(options)
+    const loaders: AppLoaders = { ...defaultLoaders(runner), ...provided }
     const repositoryRoot = options instanceof GitRunner ? options.cwd : options.repositoryRoot ?? runner?.cwd
-    const shouldUseDefaultReviewStore = load === undefined
+    const shouldUseDefaultReviewStore = provided.load === undefined
     this.reviewStore = options instanceof GitRunner
       ? shouldUseDefaultReviewStore ? new WorkingTreeReviewStore({ repositoryRoot, runner }) : undefined
       : options.reviewStore ?? (!shouldUseDefaultReviewStore || runner === undefined || repositoryRoot === undefined ? undefined : new WorkingTreeReviewStore({ repositoryRoot, runner }))
@@ -183,48 +222,20 @@ export class AppController {
       : options instanceof GitRunner
         ? new CommitMutations(runner)
         : options.commitMutations ?? new CommitMutations(runner)
-    this.loadSnapshot = load ?? ((target, snapshotOptions) => {
-      if (runner === undefined) throw new Error("AppController requires a GitRunner or loader")
-      return loadWorkingTree(runner, target.scope, snapshotOptions ?? {})
-    })
-    this.loadBranchesListing = options instanceof GitRunner
-      ? () => listBranches(options)
-      : options.loadBranches ?? options.branchesLoader ?? (runner !== undefined ? () => listBranches(runner) : async () => ({ detached: true, localBranches: [], remotes: [] }))
-    this.loadCommitList = options instanceof GitRunner
-      ? (range, filter, listOptions) => listCommits(options, range, filter, listOptions)
-      : options.loadCommits ?? options.commitsLoader ?? (runner === undefined ? async () => [] : (range, filter, listOptions) => listCommits(runner, range, filter, listOptions))
-    this.loadCommitDetails = options instanceof GitRunner
-      ? (oid) => loadCommit(options, oid)
-      : options.loadCommit ?? options.commitLoader ?? (runner === undefined ? async () => { throw new Error("Commit details require a GitRunner") } : (oid) => loadCommit(runner, oid))
-    this.loadCommitFile = options instanceof GitRunner
-      ? (oid, path) => loadCommitFilePatch(options, oid, path)
-      : options.loadCommitFilePatch ?? options.commitFilePatchLoader ?? (runner === undefined ? async () => { throw new Error("Commit file patches require a GitRunner") } : (oid, path) => loadCommitFilePatch(runner, oid, path))
-    this.loadStashesListing = options instanceof GitRunner
-      ? () => listStashes(options)
-      : options.loadStashes ?? (runner === undefined ? async () => [] : () => listStashes(runner))
-    this.loadTagsListing = options instanceof GitRunner
-      ? () => listTags(options)
-      : options.loadTags ??
-        options.tagsLoader ??
-        (runner !== undefined ? () => listTags(runner) : async () => [] as readonly TagSummary[])
-    this.loadReflogListing = options instanceof GitRunner
-      ? () => listReflog(options)
-      : options.loadReflog ??
-        options.reflogLoader ??
-        (runner !== undefined ? () => listReflog(runner) : async () => [] as readonly ReflogEntry[])
-    this.loadWorktreesListing = options instanceof GitRunner
-      ? () => listWorktrees(options)
-      : options.loadWorktrees ??
-        options.worktreesLoader ??
-        (runner !== undefined ? () => listWorktrees(runner) : async () => [] as readonly Worktree[])
+    this.loadSnapshot = loaders.load
+    this.loadBranchesListing = loaders.loadBranches
+    this.loadCommitList = loaders.loadCommits
+    this.loadCommitDetails = loaders.loadCommit
+    this.loadCommitFile = loaders.loadCommitFilePatch
+    this.loadStashesListing = loaders.loadStashes
+    this.loadTagsListing = loaders.loadTags
+    this.loadReflogListing = loaders.loadReflog
+    this.loadWorktreesListing = loaders.loadWorktrees
+    this.loadSubmodulesListing = loaders.loadSubmodules
     this.loadPullRequestList = options instanceof GitRunner ? undefined : options.loadPullRequests
     this.onPullRequestsChanged = options instanceof GitRunner ? undefined : options.onPullRequestsChanged
-    this.loadSubmodulesListing = options instanceof GitRunner
-      ? () => listSubmodules(options)
-      : options.loadSubmodules ??
-        options.submodulesLoader ??
-        (runner !== undefined ? () => listSubmodules(runner) : async () => [] as readonly SubmoduleConfig[])
     const target: ReviewTarget = { kind: "working-tree", scope: "all" }
+    // Not setState: the constructor establishes the initial model without a prior state.
     this.currentState = {
       repositoryRoot: repositoryRoot ?? "",
       branch: "",
@@ -254,6 +265,35 @@ export class AppController {
     if (log === undefined) return { commandLog: this.currentState.commandLog }
     return { commandLog: log.lines(), commandLogAutoscrollArms: log.autoscrollArms() }
   }
+  /**
+   * The one way the model changes after construction: the current state, minus `omit`, plus
+   * `patch`, always carrying a fresh command-log snapshot. `omit` exists because
+   * `exactOptionalPropertyTypes` forbids clearing an optional key by assigning `undefined`.
+   */
+  private setState(patch: Partial<AppModel>, omit: readonly (keyof AppModel)[] = []): void {
+    const base: Record<string, unknown> = { ...this.currentState }
+    for (const key of omit) delete base[key]
+    this.currentState = { ...(base as AppModel), ...patch, ...this.commandLogSnapshot() }
+  }
+
+  /**
+   * One auxiliary listing of a full refresh. Auxiliary data (branches, stashes, tags, the
+   * reflog, worktrees, submodules) is optional: a fresh repo, `core.logAllRefUpdates=false`, an
+   * expired reflog, a bare or partially initialised worktree list all legitimately produce nothing,
+   * so a failure only raises a banner and never aborts the refresh.
+   */
+  private async loadAuxiliary<T>(
+    load: () => Promise<T>,
+    apply: (value: T) => Partial<AppModel>,
+  ): Promise<{ readonly patch: Partial<AppModel> } | { readonly warning: string }> {
+    try {
+      return { patch: apply(await load()) }
+    } catch (error) {
+      return { warning: describeGitError(error) }
+    }
+  }
+
+
 
   /**
    * The last pull requests fetched, kept so a branch refresh can re-key them against the new branch
@@ -265,10 +305,9 @@ export class AppController {
   private rebuildPullRequests(): void {
     if (this.pullRequestList.length === 0) return
     const listing = this.currentState.branches
-    this.currentState = {
-      ...this.currentState,
+    this.setState({
       pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? []),
-    }
+    })
   }
 
   /**
@@ -287,7 +326,7 @@ export class AppController {
       // fails. A transient network failure must not erase a useful dot or prevent the next refresh
       // from re-keying it against a changed branch list.
       if (requestGeneration !== this.pullRequestRefreshGeneration) return
-      this.currentState = { ...this.currentState, ...this.commandLogSnapshot() }
+      this.setState({})
       return
     }
     // A slower request may have started first but returned after a newer refresh. Its result is no
@@ -295,11 +334,9 @@ export class AppController {
     if (requestGeneration !== this.pullRequestRefreshGeneration) return
     this.pullRequestList = pullRequests
     const listing = this.currentState.branches
-    this.currentState = {
-      ...this.currentState,
+    this.setState({
       pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? []),
-      ...this.commandLogSnapshot(),
-    }
+    })
     this.onPullRequestsChanged?.(this.currentState)
   }
 
@@ -309,137 +346,24 @@ export class AppController {
     // branch pane when the result arrives.
     void this.refreshPullRequests()
     const generation = ++this.generation
-    const branchesPromise = this.loadBranchesListing().then(
-      (value) => ({ status: "fulfilled" as const, value }),
-      (reason) => ({ status: "rejected" as const, reason }),
-    )
-    const stashesPromise = this.loadStashesListing().then(
-      (value) => ({ status: "fulfilled" as const, value }),
-      (reason) => ({ status: "rejected" as const, reason }),
-    )
-    const tagsPromise = this.loadTagsListing().then(
-      (value) => ({ status: "fulfilled" as const, value }),
-      (reason) => ({ status: "rejected" as const, reason }),
-    )
-    const reflogPromise = this.loadReflogListing().then(
-      (value) => ({ status: "fulfilled" as const, value }),
-      (reason) => ({ status: "rejected" as const, reason }),
-    )
-    const worktreesPromise = this.loadWorktreesListing().then(
-      (value) => ({ status: "fulfilled" as const, value }),
-      (reason) => ({ status: "rejected" as const, reason }),
-    )
-    const submodulesPromise = this.loadSubmodulesListing().then(
-      (value) => ({ status: "fulfilled" as const, value }),
-      (reason) => ({ status: "rejected" as const, reason }),
-    )
-    const [branchesResult, stashesResult, tagsResult, reflogResult, worktreesResult, submodulesResult] = await Promise.all([branchesPromise, stashesPromise, tagsPromise, reflogPromise, worktreesPromise, submodulesPromise])
+    // Load order is also banner order: when more than one listing fails, the later one's message
+    // is what the user sees (the test "last one in load order sets the banner" pins this).
+    const outcomes = await Promise.all([
+      this.loadAuxiliary(this.loadBranchesListing, (branches) => ({ branches })),
+      this.loadAuxiliary(this.loadStashesListing, (stashes) => ({ stashes })),
+      this.loadAuxiliary(this.loadTagsListing, (tags) => ({ tags })),
+      this.loadAuxiliary(this.loadReflogListing, (reflog) => ({ reflog })),
+      this.loadAuxiliary(this.loadWorktreesListing, (worktrees) => ({ worktrees })),
+      this.loadAuxiliary(this.loadSubmodulesListing, (submodules) => ({ submodules })),
+    ])
     if (generation !== this.generation) return
-    let branchWarning: string | undefined
-    let stashWarning: string | undefined
-    let tagWarning: string | undefined
-    let reflogWarning: string | undefined
-    let worktreeWarning: string | undefined
-    let submoduleWarning: string | undefined
-    if (branchesResult.status === "fulfilled") {
-      this.currentState = {
-        ...this.currentState,
-        branches: branchesResult.value,
-        ...this.commandLogSnapshot(),
-      }
-    } else {
-      const error = branchesResult.reason
-      branchWarning =
-        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
-      this.currentState = {
-        ...this.currentState,
-        banner: branchWarning,
-        ...this.commandLogSnapshot(),
-      }
-    }
-    if (stashesResult.status === "fulfilled") {
-      this.currentState = {
-        ...this.currentState,
-        stashes: stashesResult.value,
-        ...this.commandLogSnapshot(),
-      }
-    } else {
-      const error = stashesResult.reason
-      stashWarning =
-        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
-      this.currentState = {
-        ...this.currentState,
-        banner: stashWarning,
-        ...this.commandLogSnapshot(),
-      }
-    }
-    if (tagsResult.status === "fulfilled") {
-      this.currentState = {
-        ...this.currentState,
-        tags: tagsResult.value,
-        ...this.commandLogSnapshot(),
-      }
-    } else {
-      const error = tagsResult.reason
-      tagWarning =
-        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
-      this.currentState = {
-        ...this.currentState,
-        banner: tagWarning,
-        ...this.commandLogSnapshot(),
-      }
-    }
-    // A reflog is optional data (a fresh repo, `core.logAllRefUpdates=false` or an expired
-    // reflog all leave it empty), so a failure only raises a banner — never aborts the refresh.
-    if (reflogResult.status === "fulfilled") {
-      this.currentState = {
-        ...this.currentState,
-        reflog: reflogResult.value,
-        ...this.commandLogSnapshot(),
-      }
-    } else {
-      const error = reflogResult.reason
-      reflogWarning =
-        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
-      this.currentState = {
-        ...this.currentState,
-        banner: reflogWarning,
-        ...this.commandLogSnapshot(),
-      }
-    }
-    // Worktrees and submodules are optional data too — a repository can have neither, and
-    // `git worktree list` can fail outright in a bare or partially initialised repo — so a
-    // failure only raises a banner, exactly as the reflog does.
-    if (worktreesResult.status === "fulfilled") {
-      this.currentState = {
-        ...this.currentState,
-        worktrees: worktreesResult.value,
-        ...this.commandLogSnapshot(),
-      }
-    } else {
-      const error = worktreesResult.reason
-      worktreeWarning =
-        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
-      this.currentState = {
-        ...this.currentState,
-        banner: worktreeWarning,
-        ...this.commandLogSnapshot(),
-      }
-    }
-    if (submodulesResult.status === "fulfilled") {
-      this.currentState = {
-        ...this.currentState,
-        submodules: submodulesResult.value,
-        ...this.commandLogSnapshot(),
-      }
-    } else {
-      const error = submodulesResult.reason
-      submoduleWarning =
-        error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
-      this.currentState = {
-        ...this.currentState,
-        banner: submoduleWarning,
-        ...this.commandLogSnapshot(),
+    let lastWarning: string | undefined
+    for (const outcome of outcomes) {
+      if ("patch" in outcome) {
+        this.setState(outcome.patch)
+      } else {
+        lastWarning = outcome.warning
+        this.setState({ banner: outcome.warning })
       }
     }
     const target = this.currentState.reviewTarget
@@ -448,24 +372,9 @@ export class AppController {
     } else if (target.kind === "stash") {
       await this.refreshStashTarget(target.ref)
     }
-    if (branchWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: branchWarning, ...this.commandLogSnapshot() }
-    }
-    if (stashWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: stashWarning, ...this.commandLogSnapshot() }
-    }
-    if (tagWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: tagWarning, ...this.commandLogSnapshot() }
-    }
-    if (reflogWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: reflogWarning, ...this.commandLogSnapshot() }
-    }
-    if (worktreeWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: worktreeWarning, ...this.commandLogSnapshot() }
-    }
-    if (submoduleWarning !== undefined) {
-      this.currentState = { ...this.currentState, banner: submoduleWarning, ...this.commandLogSnapshot() }
-    }
+    // The target refresh may have replaced the banner; an auxiliary failure still wins.
+    if (lastWarning !== undefined) this.setState({ banner: lastWarning })
+
     // The branch list just changed, so the cached pull requests need re-keying against it.
     this.rebuildPullRequests()
   }
@@ -484,22 +393,12 @@ export class AppController {
   async refreshBranches(): Promise<string | undefined> {
     try {
       const branches = await this.loadBranchesListing()
-      this.currentState = {
-        ...this.currentState,
-        branches,
-        ...this.commandLogSnapshot(),
-      }
+      this.setState({ branches })
       this.rebuildPullRequests()
       return undefined
     } catch (error) {
-      const banner = error instanceof GitCommandError
-        ? (error.record.stderr || error.message)
-        : error instanceof Error ? error.message : String(error)
-      this.currentState = {
-        ...this.currentState,
-        banner,
-        ...this.commandLogSnapshot(),
-      }
+      const banner = describeGitError(error)
+      this.setState({ banner })
       return banner
     }
   }
@@ -557,7 +456,10 @@ export class AppController {
       await this.requireRunnerOperation((runner) => popGitStash(runner, ref))
       if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
         this.priorStashStateForRefresh = this.currentState
-        this.currentState = { ...this.currentState, reviewTarget: { kind: "working-tree", scope: "all" }, title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch) }
+        this.setState({
+          reviewTarget: { kind: "working-tree", scope: "all" },
+          title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch),
+        })
       }
     })
   }
@@ -568,7 +470,10 @@ export class AppController {
       await this.requireRunnerOperation((runner) => dropGitStash(runner, ref, options))
       if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
         this.priorStashStateForRefresh = this.currentState
-        this.currentState = { ...this.currentState, reviewTarget: { kind: "working-tree", scope: "all" }, title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch) }
+        this.setState({
+          reviewTarget: { kind: "working-tree", scope: "all" },
+          title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch),
+        })
       }
     })
   }
@@ -593,7 +498,10 @@ export class AppController {
         await this.requireRunnerOperation((runner) => dropGitStash(runner, ref, options))
         if (this.currentState.reviewTarget.kind === "stash" && this.currentState.reviewTarget.ref === ref) {
           this.priorStashStateForRefresh = this.currentState
-          this.currentState = { ...this.currentState, reviewTarget: { kind: "working-tree", scope: "all" }, title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch) }
+          this.setState({
+            reviewTarget: { kind: "working-tree", scope: "all" },
+            title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch),
+          })
         }
       }
     }, true)
@@ -619,13 +527,13 @@ export class AppController {
       try {
         const result = await this.requireRunnerOperation((runner) => pullSync(runner, options))
         if (result.kind === "upstream-required") {
-          this.currentState = { ...this.currentState, upstreamChoice: result, ...this.commandLogSnapshot() }
+          this.setState({ upstreamChoice: result })
           return
         }
         await this.refresh()
       } catch (error) {
-        const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
-        this.currentState = { ...this.currentState, banner, ...this.commandLogSnapshot() }
+        const banner = describeGitError(error)
+        this.setState({ banner })
         throw error
       }
     })
@@ -653,14 +561,14 @@ export class AppController {
       try {
         const result = await this.requireRunnerOperation((runner) => pushSync(runner, options))
         if (result.kind === "upstream-required") {
-          this.currentState = { ...this.currentState, upstreamChoice: result, ...this.commandLogSnapshot() }
+          this.setState({ upstreamChoice: result })
           return result
         }
         await this.refresh()
         return result
       } catch (error) {
-        const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
-        this.currentState = { ...this.currentState, banner, ...this.commandLogSnapshot() }
+        const banner = describeGitError(error)
+        this.setState({ banner })
         throw error
       }
     })
@@ -741,14 +649,8 @@ export class AppController {
         try {
           await this.browseRemote(remote)
         } catch {
-          const banner = mutationError instanceof GitCommandError
-            ? (mutationError.record.stderr || mutationError.message)
-            : mutationError instanceof Error ? mutationError.message : String(mutationError)
-          this.currentState = {
-            ...this.currentState,
-            banner,
-            ...this.commandLogSnapshot(),
-          }
+          const banner = describeGitError(mutationError)
+          this.setState({ banner })
         }
       }
       throw mutationError
@@ -819,19 +721,15 @@ export class AppController {
         const branches = await this.requireRunnerOperation((runner) => listRemoteBranches(runner, remote))
         const listing = this.currentState.branches
         if (listing === undefined) return
-        this.currentState = {
-          ...this.currentState,
+        this.setState({
           branches: {
             ...listing,
             remotes: listing.remotes.map((candidate) => candidate.name === remote ? { ...candidate, branches } : candidate),
           },
-          ...this.commandLogSnapshot(),
-        }
+        })
       } catch (error) {
-        const banner = error instanceof GitCommandError
-          ? (error.record.stderr || error.message)
-          : error instanceof Error ? error.message : String(error)
-        this.currentState = { ...this.currentState, banner, ...this.commandLogSnapshot() }
+        const banner = describeGitError(error)
+        this.setState({ banner })
         throw error
       }
     })
@@ -839,13 +737,10 @@ export class AppController {
   async inspectBranch(branchRef: string): Promise<void> {
     await this.mutationQueue.run(async () => {
       const history = await this.loadCommitHistory(branchRef)
-      const { banner: _previousBanner, ...previousState } = this.currentState
-      this.currentState = {
-        ...previousState,
+      this.setState({
         commits: history.commits,
         ...(history.warning === undefined ? {} : { banner: history.warning }),
-        ...this.commandLogSnapshot(),
-      }
+      }, ["banner"])
     })
   }
 
@@ -867,19 +762,13 @@ export class AppController {
         const result = await operation()
         if (result !== undefined && result !== null && typeof result === "object" && "kind" in result && result.kind === "mismatch") {
           const mismatch = result as unknown as { readonly message: string }
-          this.currentState = {
-            ...this.currentState,
-            banner: mismatch.message,
-            ...this.commandLogSnapshot(),
-          }
+          this.setState({ banner: mismatch.message })
           return result
         }
         await this.refresh()
         return result
       } catch (error) {
-        const banner = error instanceof GitCommandError
-          ? (error.record.stderr || error.message)
-          : error instanceof Error ? error.message : String(error)
+        const banner = describeGitError(error)
         if (options.refreshOnFailure) {
           try {
             await this.refresh()
@@ -887,11 +776,7 @@ export class AppController {
             // Preserve the original mutation error.
           }
         }
-        this.currentState = {
-          ...this.currentState,
-          banner,
-          ...this.commandLogSnapshot(),
-        }
+        this.setState({ banner })
         throw error
       }
     })
@@ -901,8 +786,7 @@ export class AppController {
   }
 
   async cancelUpstreamChoice(): Promise<void> {
-    const { upstreamChoice: _choice, ...state } = this.currentState
-    this.currentState = state
+    this.setState({}, ["upstreamChoice"])
   }
 
   async loadCommitInspection(oid: string): Promise<CommitDetails> {
@@ -922,12 +806,10 @@ export class AppController {
     if (!this.limitCommits) return false
     this.limitCommits = false
     const history = await this.loadCommitHistory("HEAD")
-    this.currentState = {
-      ...this.currentState,
+    this.setState({
       commits: history.commits,
-      ...this.commandLogSnapshot(),
       ...(history.warning === undefined ? {} : { banner: history.warning }),
-    }
+    })
     return true
   }
 
@@ -951,16 +833,8 @@ export class AppController {
   }
 
   recordInspectionError(error: unknown): void {
-    const banner = error instanceof GitCommandError
-      ? error.record.stderr || error.message
-      : error instanceof Error
-        ? error.message
-        : String(error)
-    this.currentState = {
-      ...this.currentState,
-      banner,
-      ...this.commandLogSnapshot(),
-    }
+    const banner = describeGitError(error)
+    this.setState({ banner })
   }
 
 
@@ -969,14 +843,13 @@ export class AppController {
   selectFile(path: string): void {
     const status = ownValue(this.currentState.reviewStatuses, path)
     if (status === undefined || status === "not-reviewed" || status === "reviewing") {
-      this.currentState = {
-        ...this.currentState,
+      this.setState({
         selectionId: path,
         focusId: path,
         reviewStatuses: { ...(this.currentState.reviewStatuses ?? {}), [path]: "reviewing" },
-      }
+      })
     } else {
-      this.currentState = { ...this.currentState, selectionId: path, focusId: path }
+      this.setState({ selectionId: path, focusId: path })
     }
   }
 
@@ -991,7 +864,7 @@ export class AppController {
 
   async markFileReviewed(path: string): Promise<void> {
     if (this.currentState.reviewTarget.kind === "commit") {
-      this.currentState = { ...this.currentState, banner: "Commit drill-down is read-only" }
+      this.setState({ banner: "Commit drill-down is read-only" })
       return
     }
     const file = this.currentState.files.find((candidate) => candidate.path === path)
@@ -1018,11 +891,10 @@ export class AppController {
     this.reviewDatabase = database
     await this.reviewStore?.save(database)
     const reviewStatuses = { ...(this.currentState.reviewStatuses ?? {}), [path]: "reviewed" as const }
-    this.currentState = {
-      ...this.currentState,
+    this.setState({
       reviewStatuses,
       reviewSummary: this.reviewSummaryFor(reviewStatuses, this.currentState.files, this.currentState.reviewSummary?.commits ?? 0),
-    }
+    })
   }
   async commit(message: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
@@ -1123,14 +995,8 @@ export class AppController {
           if (this.currentState.banner !== undefined) throw new Error(this.currentState.banner)
         }
       } catch (error) {
-        const banner = error instanceof GitCommandError
-          ? (error.record.stderr || error.message)
-          : error instanceof Error ? error.message : String(error)
-        this.currentState = {
-          ...this.currentState,
-          banner,
-          ...this.commandLogSnapshot(),
-        }
+        const banner = describeGitError(error)
+        this.setState({ banner })
         throw error
       }
     })
@@ -1138,12 +1004,12 @@ export class AppController {
   private ensureWorkingTreeMutation(): boolean {
     if (this.currentState.reviewTarget.kind === "working-tree") return true
     const message = this.currentState.reviewTarget.kind === "stash" ? "Stash Review is read-only" : "Commit drill-down is read-only"
-    this.currentState = { ...this.currentState, banner: message }
+    this.setState({ banner: message })
     return false
   }
   private ensureStashOperation(): boolean {
     if (this.currentState.reviewTarget.kind === "working-tree" || this.currentState.reviewTarget.kind === "stash") return true
-    this.currentState = { ...this.currentState, banner: "Commit drill-down is read-only" }
+    this.setState({ banner: "Commit drill-down is read-only" })
     return false
   }
 
@@ -1186,14 +1052,8 @@ export class AppController {
         }
         await this.refresh()
       } catch (error) {
-        const banner = error instanceof GitCommandError
-          ? (error.record.stderr || error.message)
-          : error instanceof Error ? error.message : String(error)
-        this.currentState = {
-          ...this.currentState,
-          banner,
-          ...this.commandLogSnapshot(),
-        }
+        const banner = describeGitError(error)
+        this.setState({ banner })
         throw error
       }
     })
@@ -1299,9 +1159,7 @@ export class AppController {
     try {
       return { commits: await this.loadCommitList(range, undefined, { limit: this.limitCommits }) }
     } catch (error) {
-      const warning = error instanceof GitCommandError
-        ? (error.record.stderr || error.message)
-        : error instanceof Error ? error.message : String(error)
+      const warning = describeGitError(error)
       return { commits: this.currentState.commits ?? [], warning }
     }
   }
@@ -1328,16 +1186,7 @@ export class AppController {
       const selectionId = cursor.selectionId !== undefined && snapshot.files.some((file) => file.path === cursor.selectionId) ? cursor.selectionId : undefined
       const focusId = cursor.focusId !== undefined && snapshot.files.some((file) => file.path === cursor.focusId) ? cursor.focusId : undefined
       const warning = history.warning ?? review.warning
-      const {
-        upstream: _previousUpstream,
-        upstreamChoice: _previousUpstreamChoice,
-        banner: _previousBanner,
-        selectionId: _previousSelectionId,
-        focusId: _previousFocusId,
-        ...nextState
-      } = this.currentState
-      this.currentState = {
-        ...nextState,
+      this.setState({
         ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
         ...(warning === undefined ? {} : { banner: warning }),
         ...(focusId === undefined ? {} : { focusId }),
@@ -1351,20 +1200,13 @@ export class AppController {
         reviewSummary,
         commits: history.commits,
         loading: false,
-        ...this.commandLogSnapshot(),
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
-      }
+      }, ["upstream", "upstreamChoice", "banner", "selectionId", "focusId"])
       this.priorStashStateForRefresh = undefined
     } catch (error) {
       if (generation !== this.generation) return
-      const banner = error instanceof GitCommandError
-        ? (error.record.stderr || error.message)
-        : error instanceof Error ? error.message : String(error)
-      this.currentState = {
-        ...previousState,
-        banner,
-        ...this.commandLogSnapshot(),
-      }
+      const banner = describeGitError(error)
+      this.setState({ ...previousState, banner })
       this.priorStashStateForRefresh = undefined
     }
   }
@@ -1379,12 +1221,7 @@ export class AppController {
       const review = await this.reviewForSnapshot(target, files, [patch])
       const reviewStatuses = this.preserveReviewingStatuses(review.statuses, target, files, review.sections, this.currentState)
       const reviewSummary = this.reviewSummaryFor(reviewStatuses, files)
-      const {
-        banner: _previousBanner,
-        ...previousState
-      } = this.currentState
-      this.currentState = {
-        ...previousState,
+      this.setState({
         reviewTarget: target,
         files,
         patches: [patch],
@@ -1393,16 +1230,15 @@ export class AppController {
         reviewSummary,
         loading: false,
         title: titleFor(target, this.currentState.branch),
-        ...this.commandLogSnapshot(),
         ...(review.warning === undefined ? {} : { banner: review.warning }),
-      }
+      }, ["banner"])
     } catch (error) {
-      const banner = error instanceof GitCommandError ? (error.record.stderr || error.message) : error instanceof Error ? error.message : String(error)
-      this.currentState = { ...this.currentState, banner, ...this.commandLogSnapshot() }
+      const banner = describeGitError(error)
+      this.setState({ banner })
     }
   }
 
   private publishIfCurrent(generation: number, update: Pick<AppModel, "loading">): void {
-    if (generation === this.generation) this.currentState = { ...this.currentState, ...update }
+    if (generation === this.generation) this.setState(update)
   }
 }

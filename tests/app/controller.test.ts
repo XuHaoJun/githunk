@@ -303,6 +303,22 @@ describe("AppController", () => {
     expect(other.state.submodules).toBeUndefined()
   })
 
+  test("when several auxiliary listings fail the last one in load order sets the banner", async () => {
+    const controller = new AppController({
+      load: async (target) => snapshot(target.scope, ""),
+      loadBranches: async () => { throw new Error("branches failed") },
+      loadStashes: async () => [],
+      loadTags: async () => [],
+      loadReflog: async () => [],
+      loadWorktrees: async () => [],
+      loadSubmodules: async () => { throw new Error("submodules failed") },
+    })
+    await controller.refresh()
+    expect(controller.state.banner).toBe("submodules failed")
+    expect(controller.state.branches).toBeUndefined()
+    expect(controller.state.submodules).toBeUndefined()
+  })
+
   test("refresh publishes the real tag list", async () => {
     const tags = [{ name: "v1", ref: "refs/tags/v1", kind: "lightweight", objectOid: "a", targetOid: "a", subject: "release" }] as const
     const controller = new AppController({
