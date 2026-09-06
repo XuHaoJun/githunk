@@ -8,6 +8,7 @@ import { createReviewDocument, createReviewHunk } from "../../../src/review/core
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { reduceReviewState } from "../../../src/review/core/reducer"
+import { planReviewIntent } from "../../../src/review/core/intents"
 import type { ReviewFile } from "../../../src/review/core/types"
 import type { GitRunner } from "../../../src/git/runner"
 
@@ -30,6 +31,16 @@ function makeSession(files: readonly ReviewFile[]) {
     get state() { return state }, error: undefined,
     subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener) },
     dispatch(action: Parameters<typeof reduceReviewState>[1]) { state = reduceReviewState(state, action); for (const listener of listeners) listener() },
+    dispatchIntent(intent: Parameters<ReviewWorkspaceController["dispatchIntent"]>[0]): boolean {
+      try {
+        const action = planReviewIntent(state, intent)
+        state = reduceReviewState(state, action)
+        for (const listener of listeners) listener()
+        return true
+      } catch {
+        return false
+      }
+    },
     getExpandedSourceByGap: () => new Map(), expandGap: async () => undefined,
   } as unknown as ReviewWorkspaceController
   return { session: new ReactReviewSession(controller, () => undefined), controller }

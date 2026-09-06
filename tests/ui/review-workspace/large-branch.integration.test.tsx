@@ -19,6 +19,7 @@ function controllerForState(state: SurfaceController["state"]): SurfaceControlle
     error: undefined,
     subscribe: () => () => undefined,
     dispatch: () => undefined,
+    dispatchIntent: () => false,
     expandGap: async () => undefined,
     getExpandedSourceByGap: () => new Map(),
   } as unknown as SurfaceController

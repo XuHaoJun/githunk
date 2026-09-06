@@ -6,6 +6,7 @@ import type { ReviewFile } from "../../../src/review/core/types"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { reduceReviewState } from "../../../src/review/core/reducer"
+import { planReviewIntent } from "../../../src/review/core/intents"
 import type { ReviewWorkspaceController } from "../../../src/ui/review-workspace/controller"
 import { ReviewWorkspaceApp } from "../../../src/ui/review-workspace/ReviewWorkspaceApp"
 import { ReactReviewSession } from "../../../src/ui/review-workspace/react-review-session"
@@ -43,6 +44,15 @@ function makeSession(files: readonly ReviewFile[]): { session: ReactReviewSessio
     dispatch(action: Parameters<typeof reduceReviewState>[1]) {
       state = reduceReviewState(state, action)
       for (const listener of listeners) listener()
+    },
+    dispatchIntent(intent: Parameters<ReviewWorkspaceController["dispatchIntent"]>[0]): boolean {
+      try {
+        state = reduceReviewState(state, planReviewIntent(state, intent))
+        for (const listener of listeners) listener()
+        return true
+      } catch {
+        return false
+      }
     },
     getExpandedSourceByGap: () => new Map(),
     expandGap: async () => undefined,

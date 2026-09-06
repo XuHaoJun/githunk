@@ -51,6 +51,7 @@ function makeController(files: readonly ReviewFile[], feedbackKeys: string[] = [
     getSnapshot: () => state,
     subscribe: () => () => undefined,
     dispatch: () => undefined,
+    dispatchIntent: () => false,
     getExpandedSourceByGap: () => new Map(),
     ensureExpandedGapSource: async () => undefined,
     expandGap: async () => undefined,

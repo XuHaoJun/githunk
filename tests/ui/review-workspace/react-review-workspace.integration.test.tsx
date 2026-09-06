@@ -5,6 +5,7 @@ import { createReviewDocument, createReviewHunk } from "../../../src/review/core
 import type { ReviewFile } from "../../../src/review/core/types"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { reduceReviewState } from "../../../src/review/core/reducer"
+import { planReviewIntent } from "../../../src/review/core/intents"
 import { createFileAnchor, createRangeAnchor } from "../../../src/review/core/anchors"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { ReviewWorkspaceApp } from "../../../src/ui/review-workspace/ReviewWorkspaceApp"
@@ -34,11 +35,25 @@ function makeController(files: readonly ReviewFile[]): ReviewWorkspaceController
   const identity = createReviewIdentity({ headRef: "refs/heads/feature", headOid: "a".repeat(40), baseRef: "refs/heads/main" })
   const generation = createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "c".repeat(40), headOid: "a".repeat(40) })
   const state = createInitialReviewState(createReviewDocument({ identity, generation, commits: [], files }))
-  return {
+  const listeners = new Set<() => void>()
+  const controller = {
     state,
     error: undefined,
-    subscribe: () => () => undefined,
-  } as unknown as ReviewWorkspaceController
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    dispatchIntent(intent: Parameters<ReviewWorkspaceController["dispatchIntent"]>[0]): boolean {
+      try {
+        controller.state = reduceReviewState(controller.state, planReviewIntent(controller.state, intent))
+        for (const listener of listeners) listener()
+        return true
+      } catch {
+        return false
+      }
+    },
+  }
+  return controller as unknown as ReviewWorkspaceController
 }
 function makeSession(files: readonly ReviewFile[], onClose: () => void = () => undefined): ReactReviewSession {
   return new ReactReviewSession(makeController(files), onClose)
@@ -71,6 +86,15 @@ function makeInteractiveSession(
     dispatch(action: Parameters<typeof reduceReviewState>[1]) {
       state = reduceReviewState(state, action)
       for (const listener of listeners) listener(state)
+    },
+    dispatchIntent(intent: Parameters<ReviewWorkspaceController["dispatchIntent"]>[0]): boolean {
+      try {
+        state = reduceReviewState(state, planReviewIntent(state, intent))
+        for (const listener of listeners) listener(state)
+        return true
+      } catch {
+        return false
+      }
     },
     getExpandedSourceByGap: () => new Map(),
     expandGap: async () => undefined,

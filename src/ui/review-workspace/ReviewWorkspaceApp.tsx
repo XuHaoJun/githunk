@@ -2,7 +2,7 @@ import type { InputRenderable, KeyEvent, MouseEvent, ScrollBoxRenderable, Textar
 import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { ReviewWorkspaceController } from "./controller"
-import type { ReviewState } from "../../review/core/state"
+import type { ReviewState, ReviewLineSelection } from "../../review/core/state"
 import { reviewHeaderLines } from "./header"
 import { REVIEW_COMMANDS, resolveReviewCommand, reviewHelp } from "./command-catalog"
 import { buildReviewSidebarEntries, getFileStateIcon, REVIEW_SIDEBAR_THEME, sidebarEntryStats, sidebarEntryStatsWidth } from "./review-sidebar"
@@ -10,7 +10,7 @@ import { toHunkReviewFiles } from "./hunk-review-model"
 import { ReviewDiffPane } from "./components/ReviewDiffPane"
 import { ReviewBasePicker } from "./components/ReviewBasePicker"
 import { useReviewHighlights } from "./hooks/useReviewHighlights"
-import { planReviewIntent } from "../../review/core/intents"
+import type { ReviewIntent } from "../../review/core/intents"
 import { createFileAnchor, createLineSelection, createRangeAnchor, sideLinesForHunk } from "../../review/core/anchors"
 import type { ReviewAnchor } from "../../review/core/types"
 import { coverageForFile, sortedReviewFeedback, visibleReviewFiles } from "../../review/core/selectors"
@@ -211,7 +211,7 @@ function fallbackSelectionIntent(
   state: ReviewState,
   unit: "file" | "hunk",
   direction: "next" | "previous",
-): Parameters<typeof planReviewIntent>[1] | undefined {
+): ReviewIntent | undefined {
   const visible = visibleReviewFiles(state)
   if (visible.some((file) => file.key === state.selection.fileKey)) return undefined
   const target = direction === "next" ? visible[0] : visible[visible.length - 1]
@@ -499,32 +499,30 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       session.invalidate()
       return
     }
-    try {
-      if (editingFeedbackId) {
-        const existing = current.feedback.find((feedback) => feedback.id === editingFeedbackId)
-        if (!existing) {
-          setEditingFeedbackId(null)
-          return
-        }
-        const patch: { body?: string; severity?: "comment" | "blocking"; replacement?: string } = {}
-        if (draft.body !== existing.body) patch.body = draft.body
-        if (draft.severity !== existing.severity) patch.severity = draft.severity
-        if (draft.replacement !== undefined && draft.replacement !== existing.replacement) patch.replacement = draft.replacement
-        if (Object.keys(patch).length > 0) {
-          controller.dispatch(planReviewIntent(current, { type: "feedback/edit", id: existing.id, ...patch, updatedAt: new Date().toISOString() }))
-        }
-        const latest = controller.state
-        if (latest?.draft) controller.dispatch(planReviewIntent(latest, { type: "feedback/cancel-draft" }))
+    if (editingFeedbackId) {
+      const existing = current.feedback.find((feedback) => feedback.id === editingFeedbackId)
+      if (!existing) {
         setEditingFeedbackId(null)
-      } else {
-        controller.dispatch(planReviewIntent(current, { type: "feedback/create", id: draftId(), createdAt: new Date().toISOString() }))
+        return
       }
-      pendingDeleteFeedbackRef.current = null
-      setPendingDeleteFeedbackId(null)
-      setComposerFocus("body")
-      setFeedbackMessage(null)
-      session.invalidate()
-    } catch {}
+      const patch: { body?: string; severity?: "comment" | "blocking"; replacement?: string } = {}
+      if (draft.body !== existing.body) patch.body = draft.body
+      if (draft.severity !== existing.severity) patch.severity = draft.severity
+      if (draft.replacement !== undefined && draft.replacement !== existing.replacement) patch.replacement = draft.replacement
+      if (Object.keys(patch).length > 0) {
+        const accepted = controller.dispatchIntent({ type: "feedback/edit", id: existing.id, ...patch, updatedAt: new Date().toISOString() })
+        if (!accepted) return
+      }
+      if (controller.state?.draft) controller.dispatchIntent({ type: "feedback/cancel-draft" })
+      setEditingFeedbackId(null)
+    } else {
+      controller.dispatchIntent({ type: "feedback/create", id: draftId(), createdAt: new Date().toISOString() })
+    }
+    pendingDeleteFeedbackRef.current = null
+    setPendingDeleteFeedbackId(null)
+    setComposerFocus("body")
+    setFeedbackMessage(null)
+    session.invalidate()
   }, [controller, editingFeedbackId, session])
 
   const deleteFeedback = useCallback((feedbackId: string) => {
@@ -537,13 +535,11 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       session.invalidate()
       return
     }
-    try {
-      controller.dispatch(planReviewIntent(current, { type: "feedback/delete", id: feedbackId }))
-      pendingDeleteFeedbackRef.current = null
-      setPendingDeleteFeedbackId(null)
-      if (selectedFeedbackId === feedbackId) setSelectedFeedbackId(null)
-      session.invalidate()
-    } catch {}
+    controller.dispatchIntent({ type: "feedback/delete", id: feedbackId })
+    pendingDeleteFeedbackRef.current = null
+    setPendingDeleteFeedbackId(null)
+    if (selectedFeedbackId === feedbackId) setSelectedFeedbackId(null)
+    session.invalidate()
   }, [controller, selectedFeedbackId, session])
 
   const reanchorFeedback = useCallback((feedbackId: string) => {
@@ -600,41 +596,37 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       session.invalidate()
       return
     }
-    try {
-      controller.dispatch(planReviewIntent(current, { type: "feedback/reanchor", id: feedbackId, anchor, updatedAt: new Date().toISOString() }))
+    if (controller.dispatchIntent({ type: "feedback/reanchor", id: feedbackId, anchor, updatedAt: new Date().toISOString() })) {
       setReanchorFeedbackId(null)
       setFeedbackMessage(null)
       setPendingRangeAnchor(null)
       pendingDeleteFeedbackRef.current = null
       setPendingDeleteFeedbackId(null)
-      session.invalidate()
-    } catch {
+    } else {
       setReanchorFeedbackId(feedbackId)
       setFeedbackMessage("The selected source is not a valid anchor for this feedback.")
-      session.invalidate()
     }
+    session.invalidate()
   }, [controller, pendingRangeAnchor, session])
 
   const editFeedback = useCallback((feedbackId: string) => {
     const current = controller.state
     const feedback = current?.feedback.find((entry) => entry.id === feedbackId)
     if (!current || !feedback) return
-    try {
-      controller.dispatch(planReviewIntent(current, {
-        type: "feedback/start-draft",
-        anchor: feedback.anchor,
-        kind: feedback.kind,
-        severity: feedback.severity,
-        body: feedback.body,
-        ...(feedback.replacement !== undefined ? { replacement: feedback.replacement } : {}),
-      }))
-      setEditingFeedbackId(feedbackId)
-      setSelectedFeedbackId(feedbackId)
-      setComposerFocus("body")
-      setComposerControlIndex(0)
-      setFeedbackMessage(null)
-      session.invalidate()
-    } catch {}
+    controller.dispatchIntent({
+      type: "feedback/start-draft",
+      anchor: feedback.anchor,
+      kind: feedback.kind,
+      severity: feedback.severity,
+      body: feedback.body,
+      ...(feedback.replacement !== undefined ? { replacement: feedback.replacement } : {}),
+    })
+    setEditingFeedbackId(feedbackId)
+    setSelectedFeedbackId(feedbackId)
+    setComposerFocus("body")
+    setComposerControlIndex(0)
+    setFeedbackMessage(null)
+    session.invalidate()
   }, [controller, session])
   const selectFeedback = useCallback((feedbackId: string) => {
     if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
@@ -648,15 +640,12 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     setPendingDeleteFeedbackId(null)
     const file = current.document.files.find((candidate) => candidate.key === feedback.anchor.fileKey)
     if (!file) return
-    try {
-      controller.dispatch(planReviewIntent(current, { type: "selection/select-file", fileKey: file.key }))
-      if (feedback.anchor.kind === "range") {
-        const latest = controller.state
-        if (latest) controller.dispatch(planReviewIntent(latest, { type: "selection/viewport-anchor", fileKey: file.key, hunkIndex: feedback.anchor.ownerHunkIndex, reveal: "hunk" }))
-      }
-      setFocus("stream")
-      session.invalidate()
-    } catch {}
+    controller.dispatchIntent({ type: "selection/select-file", fileKey: file.key })
+    if (feedback.anchor.kind === "range") {
+      controller.dispatchIntent({ type: "selection/viewport-anchor", fileKey: file.key, hunkIndex: feedback.anchor.ownerHunkIndex, reveal: "hunk" })
+    }
+    setFocus("stream")
+    session.invalidate()
   }, [controller, session])
   const selectDiffAddress = useCallback((address: HunkDiffAddress) => {
     if (resizingSidebarRef.current || resizeReleaseSuppressionRef.current) return
@@ -664,37 +653,40 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     if (!current) return
     const file = current.document.files.find((candidate) => candidate.key === address.fileKey)
     if (!file) return
+    let selection: ReviewLineSelection
     try {
-      const selection = createLineSelection(file, {
+      selection = createLineSelection(file, {
         hunkIndex: address.hunkIndex,
         side: address.side,
         line: address.line,
       })
-      controller.dispatch(planReviewIntent(current, { type: "selection/set-line", selection }))
-      setFocus("stream")
-      const previousRange = rangeStart
-      if (!previousRange
-        || previousRange.fileKey !== address.fileKey
-        || previousRange.hunkIndex !== address.hunkIndex
-        || previousRange.side !== address.side) {
+    } catch {
+      return
+    }
+    controller.dispatchIntent({ type: "selection/set-line", selection })
+    setFocus("stream")
+    const previousRange = rangeStart
+    if (!previousRange
+      || previousRange.fileKey !== address.fileKey
+      || previousRange.hunkIndex !== address.hunkIndex
+      || previousRange.side !== address.side) {
+      setRangeStart(address)
+      setPendingRangeAnchor(null)
+    } else {
+      try {
+        setPendingRangeAnchor(createRangeAnchor(file, {
+          side: address.side,
+          startLine: Math.min(previousRange.line, address.line),
+          endLine: Math.max(previousRange.line, address.line),
+        }))
+        setRangeStart(null)
+      } catch {
         setRangeStart(address)
         setPendingRangeAnchor(null)
-      } else {
-        try {
-          setPendingRangeAnchor(createRangeAnchor(file, {
-            side: address.side,
-            startLine: Math.min(previousRange.line, address.line),
-            endLine: Math.max(previousRange.line, address.line),
-          }))
-          setRangeStart(null)
-        } catch {
-          setRangeStart(address)
-          setPendingRangeAnchor(null)
-        }
       }
-      setFeedbackMessage(null)
-      session.invalidate()
-    } catch {}
+    }
+    setFeedbackMessage(null)
+    session.invalidate()
   }, [controller, rangeStart, session])
   const requestBaseSelection = useCallback(() => {
     if (controller.baseSelection || finishDialog.isOpen() || helpOpen) return
@@ -775,7 +767,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     if (commandId === "review.moveDown" || commandId === "review.moveUp") {
       const direction = commandId === "review.moveDown" ? "next" : "previous"
       if (focus === "sidebar") {
-        try { controller.dispatch(planReviewIntent(current, { type: "selection/move", unit: "file", direction })) } catch {}
+        controller.dispatchIntent({ type: "selection/move", unit: "file", direction })
         setRangeStart(null)
         setPendingRangeAnchor(null)
       } else {
@@ -788,15 +780,13 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           if (address && file) {
             try {
               const lineSelection = createLineSelection(file, address)
-              controller.dispatch(planReviewIntent(current, { type: "selection/set-line", selection: lineSelection }))
+              controller.dispatchIntent({ type: "selection/set-line", selection: lineSelection })
               setRangeStart(null)
               setPendingRangeAnchor(null)
             } catch {}
           }
         } else {
-          try {
-            controller.dispatch(planReviewIntent(current, { type: "selection/move-line", direction }))
-          } catch {}
+          controller.dispatchIntent({ type: "selection/move-line", direction })
           // Semantic j/k moves stay within the active side/hunk. Keep the
           // first endpoint so a subsequent v can complete the range.
           setPendingRangeAnchor(null)
@@ -813,15 +803,13 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     }
     const movement = navigation[commandId]
     if (movement) {
-      try {
-        const before = current.selection
-        controller.dispatch(planReviewIntent(current, { type: "selection/move", unit: movement.unit, direction: movement.direction }))
-        const after = controller.state
-        if (after?.selection.fileKey === before.fileKey && after.selection.hunkIndex === before.hunkIndex) {
-          const fallback = fallbackSelectionIntent(current, movement.unit, movement.direction)
-          if (fallback && controller.state) controller.dispatch(planReviewIntent(controller.state, fallback))
-        }
-      } catch {}
+      const before = current.selection
+      controller.dispatchIntent({ type: "selection/move", unit: movement.unit, direction: movement.direction })
+      const after = controller.state
+      if (after?.selection.fileKey === before.fileKey && after.selection.hunkIndex === before.hunkIndex) {
+        const fallback = fallbackSelectionIntent(current, movement.unit, movement.direction)
+        if (fallback) controller.dispatchIntent(fallback)
+      }
       setRangeStart(null)
       setPendingRangeAnchor(null)
       return true
@@ -829,7 +817,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     if (commandId === "review.nextUnreviewed" || commandId === "review.prevUnreviewed") {
       const target = nextUnreviewedFile(current, commandId === "review.nextUnreviewed" ? "next" : "previous")
       if (target) {
-        try { controller.dispatch(planReviewIntent(current, { type: "selection/select-file", fileKey: target })) } catch {}
+        controller.dispatchIntent({ type: "selection/select-file", fileKey: target })
       }
       setRangeStart(null)
       setPendingRangeAnchor(null)
@@ -839,7 +827,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       const target = feedbackTarget(current, commandId === "review.nextFeedback" ? "next" : "previous", selectedFeedbackId)
       if (target) {
         setSelectedFeedbackId(target.feedbackId)
-        try { controller.dispatch(planReviewIntent(current, { type: "selection/viewport-anchor", fileKey: target.fileKey, hunkIndex: target.hunkIndex, reveal: "hunk" })) } catch {}
+        controller.dispatchIntent({ type: "selection/viewport-anchor", fileKey: target.fileKey, hunkIndex: target.hunkIndex, reveal: "hunk" })
       }
       setRangeStart(null)
       setPendingRangeAnchor(null)
@@ -848,7 +836,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     if (commandId === "review.markViewed") {
       const fileKey = current.selection.fileKey
       if (fileKey) {
-        try { controller.dispatch(planReviewIntent(current, { type: "viewed/mark", fileKey, viewedAt: new Date().toISOString() })) } catch {}
+        controller.dispatchIntent({ type: "viewed/mark", fileKey, viewedAt: new Date().toISOString() })
       }
       return true
     }
@@ -899,25 +887,23 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             })
           } catch {}
         }
-        try {
-          controller.dispatch(planReviewIntent(current, {
-            type: "feedback/start-draft",
-            anchor,
-            kind: "note",
-            severity: "comment",
-            body: "",
-          }))
-          setEditingFeedbackId(null)
-          setComposerFocus("body")
-          setComposerControlIndex(0)
-          pendingDeleteFeedbackRef.current = null
-          setPendingDeleteFeedbackId(null)
-          setFeedbackMessage(null)
-          if (anchor.kind === "range") {
-            setPendingRangeAnchor(null)
-            setRangeStart(null)
-          }
-        } catch {}
+        controller.dispatchIntent({
+          type: "feedback/start-draft",
+          anchor,
+          kind: "note",
+          severity: "comment",
+          body: "",
+        })
+        setEditingFeedbackId(null)
+        setComposerFocus("body")
+        setComposerControlIndex(0)
+        pendingDeleteFeedbackRef.current = null
+        setPendingDeleteFeedbackId(null)
+        setFeedbackMessage(null)
+        if (anchor.kind === "range") {
+          setPendingRangeAnchor(null)
+          setRangeStart(null)
+        }
       }
       return true
     }
@@ -944,7 +930,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       const scopes = ["all", "unreviewed", "changed", "feedback"] as const
       const index = scopes.indexOf(current.filter.scope)
       const scope = scopes[(index + 1) % scopes.length] ?? "all"
-      try { controller.dispatch(planReviewIntent(current, { type: "filter/set-scope", scope })) } catch {}
+      controller.dispatchIntent({ type: "filter/set-scope", scope })
       return true
     }
     if (commandId === "review.finishReview") {
@@ -984,7 +970,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     // Modal input owns these keys; they must not fall through to workspace commands.
     if (name === "escape") {
       if (current?.draft) {
-        try { controller.dispatch(planReviewIntent(current, { type: "feedback/cancel-draft" })) } catch {}
+        controller.dispatchIntent({ type: "feedback/cancel-draft" })
         setEditingFeedbackId(null)
         setComposerFocus("body")
         setComposerControlIndex(0)
@@ -1012,7 +998,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       }
       if (focus === "filter") {
         if (current && current.filter.query.length > 0) {
-          try { controller.dispatch(planReviewIntent(current, { type: "filter/set-query", query: "" })) } catch {}
+          controller.dispatchIntent({ type: "filter/set-query", query: "" })
           session.invalidate()
         } else {
           filterInputRef.current?.blur()
@@ -1131,15 +1117,11 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       setRangeStart(null)
       setPendingRangeAnchor(null)
     if (!current) return
-    try {
-      controller.dispatch(planReviewIntent(current, { type: "selection/select-file", fileKey }))
-      setSelectedFeedbackId(null)
-      pendingDeleteFeedbackRef.current = null
-      setPendingDeleteFeedbackId(null)
-      setFocus(nextFocus)
-    } catch {
-      // A stale click can race a generation refresh; the next published state rebinds the row.
-    }
+    controller.dispatchIntent({ type: "selection/select-file", fileKey })
+    setSelectedFeedbackId(null)
+    pendingDeleteFeedbackRef.current = null
+    setPendingDeleteFeedbackId(null)
+    setFocus(nextFocus)
   }
   const suggestionAllowed = state.draft !== null
     && state.draft.anchor.kind === "range"
@@ -1190,7 +1172,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
                   setFocus("filter")
                 }}
                 onInput={(query) => {
-                  try { controller.dispatch(planReviewIntent(state, { type: "filter/set-query", query })) } catch {}
+                  controller.dispatchIntent({ type: "filter/set-query", query })
                 }}
                 onSubmit={() => {
                   filterInputRef.current?.blur()
@@ -1199,7 +1181,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
                 onKeyDown={(event) => {
                   if (keyName(event) !== "escape") return
                   if (state.filter.query.length > 0) {
-                    try { controller.dispatch(planReviewIntent(state, { type: "filter/set-query", query: "" })) } catch {}
+                    controller.dispatchIntent({ type: "filter/set-query", query: "" })
                     session.invalidate()
                   } else {
                     filterInputRef.current?.blur()
@@ -1398,10 +1380,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               setComposerControlIndex(0)
               const latest = controller.state
               if (!latest?.draft) return
-              try {
-                controller.dispatch(planReviewIntent(latest, { type: "feedback/update-draft", kind: "note" }))
-                session.invalidate()
-              } catch {}
+              controller.dispatchIntent({ type: "feedback/update-draft", kind: "note" })
+              session.invalidate()
             }}>
               <text content={state.draft.kind === "note" ? "[Note]" : " Note "} />
             </box>
@@ -1411,11 +1391,9 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               setComposerControlIndex(1)
               const latest = controller.state
               if (!latest?.draft || !suggestionAllowed) return
-              try {
-                controller.dispatch(planReviewIntent(latest, { type: "feedback/update-draft", kind: "suggestion" }))
-                setFeedbackMessage(null)
-                session.invalidate()
-              } catch {}
+              controller.dispatchIntent({ type: "feedback/update-draft", kind: "suggestion" })
+              setFeedbackMessage(null)
+              session.invalidate()
             }}>
               <text content={state.draft.kind === "suggestion" ? "[Suggestion]" : " Suggestion "} />
             </box>
@@ -1425,10 +1403,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               setComposerControlIndex(2)
               const latest = controller.state
               if (!latest?.draft) return
-              try {
-                controller.dispatch(planReviewIntent(latest, { type: "feedback/update-draft", severity: "comment" }))
-                session.invalidate()
-              } catch {}
+              controller.dispatchIntent({ type: "feedback/update-draft", severity: "comment" })
+              session.invalidate()
             }}>
               <text content={state.draft.severity === "comment" ? "[Comment]" : " Comment "} />
             </box>
@@ -1438,10 +1414,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               setComposerControlIndex(3)
               const latest = controller.state
               if (!latest?.draft) return
-              try {
-                controller.dispatch(planReviewIntent(latest, { type: "feedback/update-draft", severity: "blocking" }))
-                session.invalidate()
-              } catch {}
+              controller.dispatchIntent({ type: "feedback/update-draft", severity: "blocking" })
+              session.invalidate()
             }}>
               <text content={state.draft.severity === "blocking" ? "[Blocking]" : " Blocking "} />
             </box>
@@ -1459,12 +1433,10 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               setComposerControlIndex(5)
               const latest = controller.state
               if (!latest?.draft) return
-              try {
-                controller.dispatch(planReviewIntent(latest, { type: "feedback/cancel-draft" }))
-                setEditingFeedbackId(null)
-                setComposerFocus("body")
-                session.invalidate()
-              } catch {}
+              controller.dispatchIntent({ type: "feedback/cancel-draft" })
+              setEditingFeedbackId(null)
+              setComposerFocus("body")
+              session.invalidate()
             }}>
               <text content=" [Cancel] " />
             </box>
@@ -1481,7 +1453,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             onSubmit={() => {
               const latest = controller.state
               if (latest?.draft) {
-                try { controller.dispatch(planReviewIntent(latest, { type: "feedback/cancel-draft" })) } catch {}
+                controller.dispatchIntent({ type: "feedback/cancel-draft" })
                 setEditingFeedbackId(null)
                 setComposerFocus("body")
                 setComposerControlIndex(0)
@@ -1492,7 +1464,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               const name = keyName(event)
               const latest = controller.state
               if (name === "escape" && latest?.draft) {
-                try { controller.dispatch(planReviewIntent(latest, { type: "feedback/cancel-draft" })) } catch {}
+                controller.dispatchIntent({ type: "feedback/cancel-draft" })
                 setEditingFeedbackId(null)
                 setComposerFocus("body")
                 setComposerControlIndex(0)
@@ -1507,7 +1479,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               const body = composerBodyRef.current?.plainText ?? ""
               const latest = controller.state
               if (!latest?.draft || latest.draft.body === body) return
-              try { controller.dispatch(planReviewIntent(latest, { type: "feedback/update-draft", body })) } catch {}
+              controller.dispatchIntent({ type: "feedback/update-draft", body })
             }}
           />
           {canShowReplacementDraft(state) ? (
@@ -1526,10 +1498,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
                   const replacement = replacementRef.current?.plainText ?? ""
                   const latest = controller.state
                   if (!latest?.draft || latest.draft.replacement === replacement) return
-                  try {
-                    controller.dispatch(planReviewIntent(latest, { type: "feedback/update-draft", replacement }))
-                    session.invalidate()
-                  } catch {}
+                  controller.dispatchIntent({ type: "feedback/update-draft", replacement })
+                  session.invalidate()
                 }}
               />
               {replacementInvalid ? <text id="review-feedback-replacement-error" content="Invalid replacement: enter non-whitespace text." wrapMode="none" truncate={true} /> : null}
