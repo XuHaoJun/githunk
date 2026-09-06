@@ -107,6 +107,7 @@ import {
 import { installListText, releaseListText } from "./panes/list-text"
 import { MainPreviewGate } from "./main-preview"
 import type { CommitSummary } from "../domain/commit"
+import type { RootViewPorts } from "./root-view-ports"
 // Review workspace screen ownership is managed by AppScreenController (src/app/screen-controller.ts).
 // This view remains the repository workspace; it is hidden (not destroyed) when the review screen is active,
 // and its focus/selection is remembered for restoration on Escape.
@@ -204,64 +205,7 @@ export type RootViewOptions = {
   readonly sidePanelRatio?: number
   readonly logHeight?: number
   readonly logVisible?: boolean
-  readonly onGeometryChange?: (state: PersistedUiState) => void
-  /**
-   * Fired whenever a git operation this view started has settled, however it settled. The single
-   * choke point for "githunk just touched the repository": the refs watcher re-seeds its baseline
-   * here, so githunk's own commits and checkouts are never mistaken for external ones.
-   */
-  readonly onMutationSettled?: () => void
-  readonly onStageFile?: (path: string) => Promise<void>
-  readonly onStageFiles?: (paths: readonly string[], stage: boolean) => Promise<void>
-  readonly onUnstageFile?: (path: string) => Promise<void>
-  readonly onDiscardFile?: (path: string, mode: DiscardFileMode) => Promise<void>
-  readonly onDiscardFiles?: (paths: readonly string[], mode: DiscardFileMode) => Promise<void>
-  readonly onToggleAllFiles?: () => Promise<void>
-  readonly onScopeChange?: (scope: WorkingTreeScope) => Promise<void>
-  readonly onOpenBranchReview?: () => Promise<void>
-  readonly isBranchReviewActive?: () => boolean
-  readonly onApplySelection?: (document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>
-  readonly onDiscardSelection?: (document: DiffDocument, indexes: readonly number[]) => Promise<void>
-  readonly onSelectFile?: (path: string) => void
-  readonly loadCommitInspection?: (oid: string) => Promise<CommitDetails>
-  readonly loadBranchCommits?: (branch: string) => Promise<readonly CommitSummary[]>
-  /** Drops the 300-commit bound and reloads the full history; true when a reload happened. */
-  readonly onExpandCommits?: () => Promise<boolean>
-  readonly loadCommitFileInspection?: (oid: string, path: string) => Promise<DiffDocument>
-  readonly loadTagInspection?: (tag: TagSummary) => Promise<TagPreview>
-  readonly loadRefLogInspection?: (target: RefLogTarget) => Promise<string>
-  readonly onPreviewError?: (error: unknown) => void
-  readonly onMarkFocusedFileReviewed?: (path?: string) => Promise<void>
-  readonly onCommitMessage?: (message: string) => Promise<void>
-  readonly onAmendMessage?: (message: string) => Promise<void>
-  readonly onCurrentCommitMessage?: () => Promise<string>
-  readonly onCreateBranch?: (startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>
-  readonly onCreateBranchWithAutostash?: (startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>
-  readonly onRefresh?: () => Promise<void>
-  readonly onSwitchLocalBranch?: (branch: string) => Promise<void>
-  readonly onDeleteBranch?: (request: BranchDeleteRequest) => Promise<void>
-  readonly onDeleteBranches?: (requests: readonly BranchDeleteRequest[]) => Promise<void>
-  readonly onCheckBranchMerged?: (branch: string, upstream?: string) => Promise<boolean>
-  readonly onDeleteBranchFromWorktree?: (path: string, action: "remove" | "detach", request: BranchDeleteRequest, forceWorktree?: boolean) => Promise<void>
-  readonly onFetchRemote?: (remote: string) => Promise<void>
-  readonly onRenameBranch?: (branch: string, newName?: string) => Promise<void>
-  readonly onFetch?: () => Promise<void>
-  readonly onPull?: () => Promise<void>
-  readonly onPush?: () => Promise<void>
-  readonly onChooseUpstream?: (remote: string, branch: string) => Promise<void>
-  readonly onCancelUpstream?: () => Promise<void>
-  readonly onPopStash?: (ref: string) => Promise<void>
-  readonly onCreateStash?: (message: string, includeUntracked: boolean) => Promise<void>
-  readonly onApplyStash?: (ref: string) => Promise<void>
-  readonly onDropStash?: (ref: string) => Promise<void>
-  readonly onDropStashes?: (refs: readonly string[]) => Promise<void>
-  readonly onInspectStash?: (ref: string) => Promise<void>
-  readonly onBrowseRemote?: (remote: string) => Promise<void>
-  readonly onInspectBranch?: (branch: string) => Promise<void>
-  readonly onCheckoutRemoteTracking?: (selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>
-  readonly onFilterBranches?: () => Promise<void>
-  readonly onEditFile?: (path: string, line?: number) => Promise<void>
-  readonly onQuit?: () => void
+  readonly ports: RootViewPorts
 }
 /** Renders a `ConfirmationRequest`'s `confirmKey`/`cancelKey` (e.g. "enter") for display (e.g. "Enter"). */
 
@@ -316,73 +260,7 @@ export class RootView {
   private readonly hintsBar: HintsBarHandle
   private readonly keybindingMenu: KeybindingMenuHandle
   private readonly actionMenu: ActionMenuHandle
-  private readonly onStageFile: ((path: string) => Promise<void>) | undefined
-  private readonly onStageFiles: ((paths: readonly string[], stage: boolean) => Promise<void>) | undefined
-  private readonly onUnstageFile: ((path: string) => Promise<void>) | undefined
-  private readonly onDiscardFile: ((path: string, mode: DiscardFileMode) => Promise<void>) | undefined
-  private readonly onDiscardFiles: ((paths: readonly string[], mode: DiscardFileMode) => Promise<void>) | undefined
-  private readonly onToggleAllFiles: (() => Promise<void>) | undefined
-  private readonly onScopeChange: ((scope: WorkingTreeScope) => Promise<void>) | undefined
-  private readonly onOpenBranchReview: (() => Promise<void>) | undefined
-  private readonly isBranchReviewActive: (() => boolean) | undefined
-  private readonly onApplySelection: ((document: DiffDocument, indexes: readonly number[], reverse: boolean) => Promise<void>) | undefined
-  private readonly onDiscardSelection: ((document: DiffDocument, indexes: readonly number[]) => Promise<void>) | undefined
-  private readonly onSelectFile: ((path: string) => void) | undefined
-  private readonly loadCommitInspection: ((oid: string) => Promise<CommitDetails>) | undefined
-  private readonly loadCommitFileInspection: ((oid: string, path: string) => Promise<DiffDocument>) | undefined
-  private readonly loadTagInspection: ((tag: TagSummary) => Promise<TagPreview>) | undefined
-  private readonly loadRefLogInspection: ((target: RefLogTarget) => Promise<string>) | undefined
-  /**
-   * List row id → the operation currently running against it, lazygit's
-   * `State().SetItemOperation` / `ClearItemOperation` (pkg/gui/controllers/helpers/
-   * inline_status_helper.go:99-138). Held by the view, not the model: it describes what the UI is
-   * doing, and it must survive the model replacement a mid-operation refresh performs.
-   */
-  private readonly itemOperations = new Map<string, ItemOperation>()
-  /**
-   * Repaints the panels carrying an inline status, at the spinner's own rate. lazygit runs exactly
-   * this ticker for the duration of an operation (inline_status_helper.go:109-121), and stops it
-   * when the last one finishes so an idle app draws nothing.
-   */
-  private spinnerTimer: ReturnType<typeof setInterval> | undefined
-  private readonly onPreviewError: ((error: unknown) => void) | undefined
-  private readonly onCommitMessage: ((message: string) => Promise<void>) | undefined
-  private readonly onAmendMessage: ((message: string) => Promise<void>) | undefined
-  private readonly onCurrentCommitMessage: (() => Promise<string>) | undefined
-  private readonly commitMessagePanel: CommitMessagePanelHandle
-  private readonly promptPopup: PromptPopupHandle
-  private commitDialog: CommitDialog | undefined
-  /** Arms the second-press stage-everything confirmation of withEnsureCommittableFiles. */
-  private pendingStageAllCommit: boolean = false
-  private readonly onMarkFocusedFileReviewed: ((path?: string) => Promise<void>) | undefined
-  private readonly onRefresh: (() => Promise<void>) | undefined
-  private readonly onSwitchLocalBranch: ((branch: string) => Promise<void>) | undefined
-  private readonly onCreateBranch: ((startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>) | undefined
-  private readonly onCreateBranchWithAutostash: ((startPoint?: string, branchName?: string, options?: CreateBranchOptions) => Promise<void>) | undefined
-  private readonly onDeleteBranch: ((request: BranchDeleteRequest) => Promise<void>) | undefined
-  private readonly onDeleteBranches: ((requests: readonly BranchDeleteRequest[]) => Promise<void>) | undefined
-  private readonly onCheckBranchMerged: ((branch: string, upstream?: string) => Promise<boolean>) | undefined
-  private readonly onDeleteBranchFromWorktree: ((path: string, action: "remove" | "detach", request: BranchDeleteRequest, forceWorktree?: boolean) => Promise<void>) | undefined
-  private readonly onFetchRemote: ((remote: string) => Promise<void>) | undefined
-  private readonly onRenameBranch: ((branch: string, newName?: string) => Promise<void>) | undefined
-  private readonly onFetch: (() => Promise<void>) | undefined
-  private readonly onPull: (() => Promise<void>) | undefined
-  private readonly onPush: (() => Promise<void>) | undefined
-  private readonly onChooseUpstream: ((remote: string, branch: string) => Promise<void>) | undefined
-  private readonly onCancelUpstream: (() => Promise<void>) | undefined
-  private readonly onCreateStash: ((message: string, includeUntracked: boolean) => Promise<void>) | undefined
-  private readonly onApplyStash: ((ref: string) => Promise<void>) | undefined
-  private readonly onPopStash: ((ref: string) => Promise<void>) | undefined
-  private readonly onDropStash: ((ref: string) => Promise<void>) | undefined
-  private readonly onDropStashes: ((refs: readonly string[]) => Promise<void>) | undefined
-  private readonly onInspectStash: ((ref: string) => Promise<void>) | undefined
-  private readonly onBrowseRemote: ((remote: string) => Promise<void>) | undefined
-  private readonly loadBranchCommits: ((branch: string) => Promise<readonly CommitSummary[]>) | undefined
-  private readonly onExpandCommits: (() => Promise<boolean>) | undefined
-  private readonly onInspectBranch: ((branch: string) => Promise<void>) | undefined
-  private readonly onCheckoutRemoteTracking: ((selection: RemoteBranchSelection, confirmedMismatch?: boolean) => Promise<CheckoutRemoteTrackingResult | undefined>) | undefined
-  private readonly onFilterBranches: (() => Promise<void>) | undefined
-  private readonly onEditFile: ((path: string, line?: number) => Promise<void>) | undefined
+  private readonly ports: RootViewPorts
   private copyMenuOpen = false
   private menuOpen = false
   private upstreamCursorIndex = 0
@@ -399,6 +277,13 @@ export class RootView {
   private branchFilter = ""
   private branchFilterActive = false
   private branchCommitsRequest = 0
+  private readonly commitMessagePanel: CommitMessagePanelHandle
+  private readonly promptPopup: PromptPopupHandle
+  private commitDialog: CommitDialog | undefined
+  /** Arms the second-press stage-everything confirmation of withEnsureCommittableFiles. */
+  private pendingStageAllCommit: boolean = false
+  private readonly itemOperations = new Map<string, ItemOperation>()
+  private spinnerTimer: ReturnType<typeof setInterval> | undefined
   private branchActionGeneration = 0
   // Generic "/" filter/search state for every other panel (lazygit's per-context filter).
   // Branches keep their own `branchFilter`/`branchFilterActive` for minimal churn; all other
@@ -425,72 +310,18 @@ export class RootView {
   private previewInflight: Promise<void> = Promise.resolve()
   private branchCommitsInflight: Promise<void> = Promise.resolve()
   private readonly registry = createRegistry()
-  private readonly onQuit: (() => void) | undefined
-  private readonly onGeometryChange: ((state: PersistedUiState) => void) | undefined
-  private readonly onMutationSettled: (() => void) | undefined
   private readonly filterInput = new FilterInput()
   private readonly handleResize: () => void
   private readonly handleKey: (key: KeyEvent) => void
   private destroyed = false
 
-  constructor(renderer: CliRenderer, model: AppModel, options: RootViewOptions = {}) {
+  constructor(renderer: CliRenderer, model: AppModel, options: RootViewOptions) {
     const clipboardPort: ClipboardPort = {
       isOsc52Supported: () => renderer.isOsc52Supported(),
       copyToClipboardOSC52: (text) => renderer.copyToClipboardOSC52(text),
     }
     this.clipboard = new ClipboardService(clipboardPort)
-    this.onStageFile = options.onStageFile
-    this.onStageFiles = options.onStageFiles
-    this.onApplyStash = options.onApplyStash
-    this.onScopeChange = options.onScopeChange
-    this.onOpenBranchReview = options.onOpenBranchReview
-    this.isBranchReviewActive = options.isBranchReviewActive
-    this.onQuit = options.onQuit
-    this.onGeometryChange = options.onGeometryChange
-    this.onMutationSettled = options.onMutationSettled
-    this.onUnstageFile = options.onUnstageFile
-    this.onDiscardFile = options.onDiscardFile
-    this.onDiscardFiles = options.onDiscardFiles
-    this.onToggleAllFiles = options.onToggleAllFiles
-    this.onApplySelection = options.onApplySelection
-    this.onDiscardSelection = options.onDiscardSelection
-    this.onSelectFile = options.onSelectFile
-    this.onRefresh = options.onRefresh
-    this.onFetchRemote = options.onFetchRemote
-    this.onFetch = options.onFetch
-    this.onPull = options.onPull
-    this.onCreateStash = options.onCreateStash
-    this.onPush = options.onPush
-    this.onChooseUpstream = options.onChooseUpstream
-    this.onCancelUpstream = options.onCancelUpstream
-    this.onPopStash = options.onPopStash
-    this.onDropStash = options.onDropStash
-    this.onDropStashes = options.onDropStashes
-    this.onInspectStash = options.onInspectStash
-    this.onSwitchLocalBranch = options.onSwitchLocalBranch
-    this.onCreateBranch = options.onCreateBranch
-    this.onCreateBranchWithAutostash = options.onCreateBranchWithAutostash
-    this.onDeleteBranch = options.onDeleteBranch
-    this.onDeleteBranches = options.onDeleteBranches
-    this.onCheckBranchMerged = options.onCheckBranchMerged
-    this.onDeleteBranchFromWorktree = options.onDeleteBranchFromWorktree
-    this.onRenameBranch = options.onRenameBranch
-    this.onBrowseRemote = options.onBrowseRemote
-    this.onInspectBranch = options.onInspectBranch
-    this.onCheckoutRemoteTracking = options.onCheckoutRemoteTracking
-    this.onFilterBranches = options.onFilterBranches
-    this.onEditFile = options.onEditFile
-    this.loadCommitInspection = options.loadCommitInspection
-    this.loadCommitFileInspection = options.loadCommitFileInspection
-    this.loadTagInspection = options.loadTagInspection
-    this.loadRefLogInspection = options.loadRefLogInspection
-    this.loadBranchCommits = options.loadBranchCommits
-    this.onExpandCommits = options.onExpandCommits
-    this.onPreviewError = options.onPreviewError
-    this.onCommitMessage = options.onCommitMessage
-    this.onAmendMessage = options.onAmendMessage
-    this.onCurrentCommitMessage = options.onCurrentCommitMessage
-    this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed
+    this.ports = options.ports
     this.renderer = renderer
     this.model = model
     // Shown unless the caller says otherwise, matching `Gui.ShowCommandLog: true`
@@ -589,7 +420,7 @@ export class RootView {
         this.root.requestRender()
       },
       reportError: (error) => {
-        this.onPreviewError?.(error)
+        this.ports.host.onPreviewError(error)
         this.mainLoading = false
         setMainLoading(this.panes.main, false, this.geometry.tooSmall)
         this.root.requestRender()
@@ -650,7 +481,7 @@ export class RootView {
       this.recomputeLayout()
     }
     this.handleKey = (key: KeyEvent) => {
-      if (this.isBranchReviewActive?.()) return
+      if (this.ports.host.isBranchReviewActive()) return
       const normalized = normalizeKey(key)
       const routedKey = {
         ...key,
@@ -724,7 +555,7 @@ export class RootView {
         key: String(index + 1),
         label: `${candidate.remote}/${candidate.branch}`,
         onPress: () => {
-          if (this.onChooseUpstream !== undefined) this.runUiMutation(() => this.onChooseUpstream!(candidate.remote, candidate.branch))
+          this.runUiMutation(() => this.ports.commands.onChooseUpstream(candidate.remote, candidate.branch))
         },
       }))
       this.actionMenu.openMenu(
@@ -1405,7 +1236,7 @@ export class RootView {
 
   private handleAction(action: Action, key: KeyEvent): void {
     switch (action) {
-      case "quit": this.onQuit?.(); return
+      case "quit": this.ports.host.onQuit(); return
       case "focus-main": this.focusManager.focus("main"); return
       case "focus-status": this.focusManager.focus("status"); return
       case "focus-files": this.focusManager.focus("files"); return
@@ -1504,8 +1335,8 @@ export class RootView {
       if (this.actionMenu.handleKey(key.name)) {
         this.recomputeLayout()
         if (wasCopyMenu && !this.actionMenu.isOpen()) this.copyMenuOpen = false
-        if (wasUpstream && !this.actionMenu.isOpen() && key.name === "escape" && this.onCancelUpstream !== undefined) {
-          this.runUiMutation(() => this.onCancelUpstream!())
+        if (wasUpstream && !this.actionMenu.isOpen() && key.name === "escape") {
+          this.runUiMutation(() => this.ports.commands.onCancelUpstream())
         }
         if (wasPendingMismatch && !this.actionMenu.isOpen()) {
           if (key.name === "escape") this.actionBack()
@@ -1572,15 +1403,14 @@ export class RootView {
     if (this.model.upstreamChoice !== undefined) {
       if (this.mutationInFlight) return
       if (key.name === "escape") {
-        if (this.onCancelUpstream !== undefined) this.runUiMutation(() => this.onCancelUpstream!())
+        this.runUiMutation(() => this.ports.commands.onCancelUpstream())
         return
       }
-      if (this.onChooseUpstream === undefined) return
       const count = this.model.upstreamChoice.candidates.length
       const numeric = Number(key.name) - 1
       if (Number.isInteger(numeric) && numeric >= 0 && numeric < count) {
         const choice = this.model.upstreamChoice.candidates[numeric]!
-        this.runUiMutation(() => this.onChooseUpstream!(choice.remote, choice.branch))
+        this.runUiMutation(() => this.ports.commands.onChooseUpstream(choice.remote, choice.branch))
         return
       }
       if (count > 0 && (key.name === "j" || key.name === "down" || key.name === "k" || key.name === "up")) {
@@ -1589,7 +1419,7 @@ export class RootView {
       }
       if (count > 0 && key.name === "enter") {
         const choice = this.model.upstreamChoice.candidates[this.upstreamCursorIndex]!
-        this.runUiMutation(() => this.onChooseUpstream!(choice.remote, choice.branch))
+        this.runUiMutation(() => this.ports.commands.onChooseUpstream(choice.remote, choice.branch))
       }
       return
     }
@@ -1684,7 +1514,7 @@ export class RootView {
     this.panes.files.box.bottomTitle = row?.path ?? "No files"
     // A directory is not a review target: telling the controller about it would file a
     // review status under a path that is not a file.
-    if (row?.kind === "file") this.onSelectFile?.(row.path)
+    if (row?.kind === "file") this.ports.commands.onSelectFile(row.path)
     this.mainGate.installSynchronous(this.presentFilesContent(this.model))
   }
 
@@ -1757,7 +1587,7 @@ export class RootView {
         this.panes.files.box.bottomTitle = row?.path ?? "No files"
         // A directory is not a review target: telling the controller about it would file a
         // review status under a path that is not a file.
-        if (row?.kind === "file") this.onSelectFile?.(row.path)
+        if (row?.kind === "file") this.ports.commands.onSelectFile(row.path)
         this.mainGate.installSynchronous(this.presentFilesContent(this.model))
         this.root.requestRender()
         return
@@ -2009,7 +1839,7 @@ export class RootView {
    */
   private jumpCommitsToBottom(): void {
     void (async () => {
-      await this.onExpandCommits?.()
+      await this.ports.commands.onExpandCommits()
       const active = this.activeListView("commits")
       if (active === undefined || active.state.rows.length === 0) return
       const rows = active.state.rows
@@ -2032,7 +1862,7 @@ export class RootView {
     if (this.commitsPanel.activeTab !== "commits") return
     if (this.commitsPanel.child !== undefined) return
     if (selectedIndex <= COMMIT_THRESHOLD) return
-    void this.onExpandCommits?.()
+    void this.ports.commands.onExpandCommits()
   }
 
 
@@ -2063,7 +1893,7 @@ export class RootView {
   private actionOpenFile(): void {
     if (this.mutationInFlight) return
     const row = this.selectedFileRow()
-    if (row?.kind === "file") this.onSelectFile?.(row.path)
+    if (row?.kind === "file") this.ports.commands.onSelectFile(row.path)
     this.focusManager.focus("main")
   }
 
@@ -2082,14 +1912,13 @@ export class RootView {
         this.root.requestRender()
         return
       }
-      if (this.onStageFiles === undefined) return
       const stage = resolved.files.some(fileHasUnstagedChanges)
       const files = resolved.files.filter(stage ? fileHasUnstagedChanges : fileHasStagedChanges)
       const paths = files.map((file) => file.path)
       if (paths.length === 0) return
       this.collapseActiveListRange("files")
       this.fileRangeRefreshSelectionId = firstRow.id
-      this.runUiMutation(() => this.onStageFiles?.(paths, stage))
+      this.runUiMutation(() => this.ports.commands.onStageFiles(paths, stage))
       return
     }
     const row = this.selectedFileRow()
@@ -2099,14 +1928,14 @@ export class RootView {
       // otherwise unstage. git resolves a directory pathspec across the subtree itself, so the
       // single-path callbacks carry it unchanged.
       const stage = someFileInNode(row.node, fileHasUnstagedChanges)
-      const operation = stage ? this.onStageFile : this.onUnstageFile
+      const operation = stage ? this.ports.commands.onStageFile : this.ports.commands.onUnstageFile
       if (operation !== undefined) this.runUiMutation(() => operation(row.path))
       return
     }
     const file = row.payload
     if (file === undefined) return
     const staged = !file.untracked && file.worktreeStatus === "." && file.indexStatus !== "."
-    const operation = staged ? this.onUnstageFile : this.onStageFile
+    const operation = staged ? this.ports.commands.onUnstageFile : this.ports.commands.onStageFile
     if (operation !== undefined) this.runUiMutation(() => operation(file.path))
   }
 
@@ -2114,7 +1943,6 @@ export class RootView {
     if (this.mutationInFlight) return
     const active = this.activeListView("files")
     if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
-      if (this.onDiscardFiles === undefined) return
       const rows = this.selectedFileRowsForRange()
       if (rows === undefined) return
       const range = getListSelectionRange(active.state)
@@ -2139,7 +1967,7 @@ export class RootView {
           onPress: () => {
             this.collapseActiveListRange("files")
             this.fileRangeRefreshSelectionId = firstRow.id
-            this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "all"))
+            this.runUiMutation(() => this.ports.commands.onDiscardFiles(resolved.paths, "all"))
           },
         },
         {
@@ -2148,7 +1976,7 @@ export class RootView {
           onPress: () => {
             this.collapseActiveListRange("files")
             this.fileRangeRefreshSelectionId = firstRow.id
-            this.runUiMutation(() => this.onDiscardFiles?.(resolved.paths, "unstaged"))
+            this.runUiMutation(() => this.ports.commands.onDiscardFiles(resolved.paths, "unstaged"))
           },
           ...(unstagedReason === undefined ? {} : { disabledReason: unstagedReason }),
         },
@@ -2157,7 +1985,7 @@ export class RootView {
       return
     }
     const row = this.selectedFileRow()
-    if (row === undefined || this.onDiscardFile === undefined) return
+    if (row === undefined) return
     const path = row.path
     const hasStaged = row.kind === "directory"
       ? someFileInNode(row.node, fileHasStagedChanges)
@@ -2172,12 +2000,12 @@ export class RootView {
       {
         key: "x",
         label: "Discard all changes",
-        onPress: () => this.runUiMutation(() => this.onDiscardFile?.(path, "all")),
+        onPress: () => this.runUiMutation(() => this.ports.commands.onDiscardFile(path, "all")),
       },
       {
         key: "u",
         label: "Discard unstaged changes",
-        onPress: () => this.runUiMutation(() => this.onDiscardFile?.(path, "unstaged")),
+        onPress: () => this.runUiMutation(() => this.ports.commands.onDiscardFile(path, "unstaged")),
         ...(unstagedReason === undefined ? {} : { disabledReason: unstagedReason }),
       },
     ])
@@ -2189,13 +2017,11 @@ export class RootView {
       this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
       return
     }
-    if (this.onToggleAllFiles === undefined) return
-    this.runUiMutation(() => this.onToggleAllFiles!())
+    this.runUiMutation(() => this.ports.commands.onToggleAllFiles())
   }
 
   private actionMarkReviewed(): void {
     if (this.mutationInFlight) return
-    if (this.onMarkFocusedFileReviewed === undefined) return
     const row = this.selectedFileRow()
     // Review progress is githunk's own, per-file, and the controller only takes one path (and
     // falls back to the first changed file when the path is not one), so a directory row cannot
@@ -2209,7 +2035,7 @@ export class RootView {
     const reviewPath = focusedPath !== undefined && this.model.files.some((candidate) => candidate.path === focusedPath)
       ? focusedPath
       : file?.path
-    this.runUiMutation(() => this.onMarkFocusedFileReviewed!(reviewPath))
+    this.runUiMutation(() => this.ports.commands.onMarkFocusedFileReviewed(reviewPath))
   }
   /**
    * Opens the selected file in an external editor, mirroring lazygit's
@@ -2223,12 +2049,6 @@ export class RootView {
    */
   private async actionEditFile(): Promise<void> {
     if (this.mutationInFlight) return
-    if (this.onEditFile === undefined) {
-      const focus = this.focusManager.active
-      const box = focus === "files" ? this.panes.files.box : focus === "main" ? this.panes.main.box : focus === "commits" ? this.panes.commits.box : this.panes.main.box
-      box.bottomTitle = "Edit not available in this context"
-      return
-    }
     const focus = this.focusManager.active
     if (focus === "files") {
       if (this.filesPanel.activeTab !== "files") {
@@ -2249,14 +2069,14 @@ export class RootView {
       this.clearTransientMenus()
       this.panes.files.box.bottomTitle = `Opening ${path}…`
       try {
-        await this.onEditFile(path)
+        await this.ports.commands.onEditFile(path)
         this.panes.files.box.bottomTitle = undefined
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         this.panes.files.box.bottomTitle = message
       } finally {
         this.mutationInFlight = false
-        this.onMutationSettled?.()
+        this.ports.host.onMutationSettled()
         this.root.requestRender()
       }
       return
@@ -2298,14 +2118,14 @@ export class RootView {
       this.clearTransientMenus()
       this.panes.main.box.bottomTitle = `Opening ${filePath}${line !== undefined ? `:${line}` : ""}…`
       try {
-        await this.onEditFile(filePath, line)
+        await this.ports.commands.onEditFile(filePath, line)
         this.panes.main.box.bottomTitle = undefined
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         this.panes.main.box.bottomTitle = message
       } finally {
         this.mutationInFlight = false
-        this.onMutationSettled?.()
+        this.ports.host.onMutationSettled()
         this.root.requestRender()
       }
       return
@@ -2329,14 +2149,14 @@ export class RootView {
       this.clearTransientMenus()
       this.panes.commits.box.bottomTitle = `Opening ${filePath}…`
       try {
-        await this.onEditFile(filePath)
+        await this.ports.commands.onEditFile(filePath)
         this.panes.commits.box.bottomTitle = undefined
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         this.panes.commits.box.bottomTitle = message
       } finally {
         this.mutationInFlight = false
-        this.onMutationSettled?.()
+        this.ports.host.onMutationSettled()
         this.root.requestRender()
       }
       return
@@ -2345,7 +2165,6 @@ export class RootView {
   }
   private actionStageSelection(): void {
     if (this.mutationInFlight) return
-    if (this.onApplySelection === undefined) return
     if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "all") {
       this.panes.main.box.bottomTitle = "Line actions disabled in All scope; press ] to choose staged or unstaged"
       return
@@ -2366,7 +2185,7 @@ export class RootView {
       this.panes.main.box.bottomTitle = "No changed lines selected"
     } else {
       const reverse = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged"
-      this.runUiMutation(() => this.onApplySelection!(selected.document, selected.indexes, reverse))
+      this.runUiMutation(() => this.ports.commands.onApplySelection(selected.document, selected.indexes, reverse))
     }
   }
 
@@ -2395,19 +2214,14 @@ export class RootView {
         this.root.requestRender()
         return
       }
-      if (this.onDiscardFiles === undefined) {
-        this.panes.main.box.bottomTitle = "Line actions disabled: batch discard is unavailable"
-        this.root.requestRender()
-        return
-      }
       this.openConfirmation(
         discardConfirmation(paths.join(", "), true),
-        () => this.runUiMutation(() => this.onDiscardFiles?.(paths, "all")),
+        () => this.runUiMutation(() => this.ports.commands.onDiscardFiles(paths, "all")),
       )
       return
     }
-    if (modelFile?.untracked && this.onDiscardFile !== undefined) {
-      this.openConfirmation(discardConfirmation(path, true), () => this.runUiMutation(() => this.onDiscardFile?.(path, "all")))
+    if (modelFile?.untracked) {
+      this.openConfirmation(discardConfirmation(path, true), () => this.runUiMutation(() => this.ports.commands.onDiscardFile(path, "all")))
       return
     }
     const availability = modelFile?.conflicted
@@ -2423,11 +2237,10 @@ export class RootView {
       this.panes.main.box.bottomTitle = "No changed lines selected"
       return
     }
-    if (this.onDiscardSelection === undefined) return
     const label = paths.join(", ")
     this.openConfirmation(
       discardConfirmation(label || path),
-      () => this.runUiMutation(() => this.onDiscardSelection!(selected.document, selected.indexes)),
+      () => this.runUiMutation(() => this.ports.commands.onDiscardSelection(selected.document, selected.indexes)),
     )
   }
 
@@ -2530,7 +2343,7 @@ export class RootView {
     if (panel.child !== undefined) {
       const state = panel.child.view
       const id = state.selectedId
-      if (id !== undefined && id.startsWith("remote-branch:") && this.onCheckoutRemoteTracking !== undefined) {
+      if (id !== undefined && id.startsWith("remote-branch:")) {
         const ref = id.slice("remote-branch:".length)
         if (panel.child.value.kind !== "remote-branches") return
         const remote = panel.child.value.remote
@@ -2542,15 +2355,15 @@ export class RootView {
     const view = panel.views[panel.activeTab]
     const id = view?.selectedId
     if (id === undefined) return
-    if (id.startsWith("local:") && this.onSwitchLocalBranch !== undefined) {
+    if (id.startsWith("local:")) {
       const name = id.slice("local:".length)
       // refs_helper.go:73 attributes a checkout to the branch being checked out.
-      this.runUiMutation(() => this.onSwitchLocalBranch!(name), { rowId: id, operation: "checking-out" })
+      this.runUiMutation(() => this.ports.commands.onSwitchLocalBranch(name), { rowId: id, operation: "checking-out" })
     }
   }
 
   private actionBranchCreate(): void {
-    if (this.mutationInFlight || this.onCreateBranch === undefined) return
+    if (this.mutationInFlight) return
     const panel = this.branchesPanel
     let startPoint: string | undefined
     let suggestedBranchName = ""
@@ -2646,18 +2459,18 @@ export class RootView {
         names.push(remoteBranch)
         requests.push({ mode: "remote", branch: remoteBranch, remote, remoteBranch, force: false })
       }
-      if (requests.length !== rows.length || requests.length < 2 || this.onDeleteBranches === undefined) return
+      if (requests.length !== rows.length || requests.length < 2) return
       this.openConfirmation(
         branchRemoteDeleteRangeConfirmation(names, remote),
         () => {
           this.collapseActiveListRange("branches")
-          this.runUiMutation(() => this.onDeleteBranches?.(requests))
+          this.runUiMutation(() => this.ports.commands.onDeleteBranches(requests))
         },
       )
       return
     }
     const targets = this.branchDeleteTargetsFromRange(active)
-    if (targets === undefined || this.onDeleteBranches === undefined) return
+    if (targets === undefined) return
     const names = targets.map(({ branch }) => branch.name)
     const localReason = this.branchBatchBlockReason(targets, "local")
     const upstreamReason = this.branchBatchBlockReason(targets, "remote")
@@ -2686,7 +2499,7 @@ export class RootView {
   }
 
   private beginBranchDeleteBatch(targets: readonly BranchDeleteTarget[], mode: BranchDeleteRequest["mode"]): void {
-    if (this.mutationInFlight || this.onDeleteBranches === undefined) return
+    if (this.mutationInFlight) return
     const reason = this.branchBatchBlockReason(targets, mode)
     if (reason !== undefined) {
       this.panes.branches.box.bottomTitle = reason
@@ -2709,12 +2522,12 @@ export class RootView {
         branchRemoteDeleteRangeConfirmation(remoteTargets),
         () => {
           this.collapseActiveListRange("branches")
-          this.runUiMutation(() => this.onDeleteBranches?.(requests))
+          this.runUiMutation(() => this.ports.commands.onDeleteBranches(requests))
         },
       )
       return
     }
-    const checkMerged = this.onCheckBranchMerged
+    const checkMerged = this.ports.queries.onCheckBranchMerged
     if (checkMerged === undefined) {
       const forced = this.branchDeleteRequests(targets, mode, true)
       if (mode === "local") {
@@ -2722,7 +2535,7 @@ export class RootView {
           branchForceDeleteRangeConfirmation(targets.map(({ branch }) => branch.name)),
           () => {
             this.collapseActiveListRange("branches")
-            this.runUiMutation(() => this.onDeleteBranches?.(forced))
+            this.runUiMutation(() => this.ports.commands.onDeleteBranches(forced))
           },
         )
       } else {
@@ -2731,7 +2544,7 @@ export class RootView {
           branchLocalAndRemoteDeleteRangeConfirmation(pairTargets, true),
           () => {
             this.collapseActiveListRange("branches")
-            this.runUiMutation(() => this.onDeleteBranches?.(forced))
+            this.runUiMutation(() => this.ports.commands.onDeleteBranches(forced))
           },
         )
       }
@@ -2754,13 +2567,13 @@ export class RootView {
       if (mode === "local" && forceRequired) {
         this.openConfirmation(branchForceDeleteRangeConfirmation(targets.map(({ branch }) => branch.name)), () => {
           this.collapseActiveListRange("branches")
-          this.runUiMutation(() => this.onDeleteBranches?.(forced))
+          this.runUiMutation(() => this.ports.commands.onDeleteBranches(forced))
         })
         return
       }
       if (mode === "local") {
         this.collapseActiveListRange("branches")
-        this.runUiMutation(() => this.onDeleteBranches?.(forced))
+        this.runUiMutation(() => this.ports.commands.onDeleteBranches(forced))
         return
       }
       const pairTargets = targets.flatMap(({ branch, upstream }) => upstream === undefined ? [] : [{ branch: branch.name, remote: upstream.remote, remoteBranch: upstream.branch }])
@@ -2768,7 +2581,7 @@ export class RootView {
         branchLocalAndRemoteDeleteRangeConfirmation(pairTargets, forceRequired),
         () => {
           this.collapseActiveListRange("branches")
-          this.runUiMutation(() => this.onDeleteBranches?.(forced))
+          this.runUiMutation(() => this.ports.commands.onDeleteBranches(forced))
         },
       )
     }).catch((error: unknown) => {
@@ -2790,7 +2603,6 @@ export class RootView {
       this.actionBranchDeleteRange(active)
       return
     }
-    if (this.onDeleteBranch === undefined) return
     const panel = this.branchesPanel
     if (panel.child?.value.kind === "remote-branches") {
       const id = panel.child.view.selectedId
@@ -2864,7 +2676,7 @@ export class RootView {
   }
 
   private openBranchDeleteConfirmation(request: BranchDeleteRequest, confirmation: ConfirmationRequest): void {
-    this.openConfirmation(confirmation, () => this.runUiMutation(() => this.onDeleteBranch?.(request)))
+    this.openConfirmation(confirmation, () => this.runUiMutation(() => this.ports.commands.onDeleteBranch(request)))
   }
 
   private branchActionIsCurrent(generation: number, selectedId: string | undefined): boolean {
@@ -2883,20 +2695,15 @@ export class RootView {
     }
     const worktree = (this.model.worktrees ?? []).find((candidate) => candidate.branch === branch.name && !candidate.isCurrent)
     if (worktree !== undefined) {
-      if (this.onDeleteBranchFromWorktree === undefined) {
-        this.panes.main.box.bottomTitle = `Branch ${branch.name} is checked out by worktree ${worktree.name}`
-        this.root.requestRender()
-        return
-      }
       this.openWorktreeDeleteMenu(branch, worktree, request)
       return
     }
     const requestGeneration = this.branchActionGeneration
     const requestSelectedId = this.branchesPanel.views.branches?.selectedId
-    const checkMerged = this.onCheckBranchMerged
+    const checkMerged = this.ports.queries.onCheckBranchMerged
     if (checkMerged === undefined) {
       if (request.mode === "local") {
-        this.runUiMutation(() => this.onDeleteBranch?.({ ...request, force: true }))
+        this.runUiMutation(() => this.ports.commands.onDeleteBranch({ ...request, force: true }))
       } else if (request.remote !== undefined && request.remoteBranch !== undefined) {
         this.openBranchDeleteConfirmation(
           { ...request, force: true },
@@ -2915,7 +2722,7 @@ export class RootView {
         return
       }
       if (request.mode === "local" && merged) {
-        this.runUiMutation(() => this.onDeleteBranch?.({ ...request, force: true }))
+        this.runUiMutation(() => this.ports.commands.onDeleteBranch({ ...request, force: true }))
         return
       }
       if (request.mode === "local") {
@@ -2961,17 +2768,17 @@ export class RootView {
     request: BranchDeleteRequest,
     forceWorktree: boolean,
   ): void {
-    const operation = this.onDeleteBranchFromWorktree
+    const operation = this.ports.commands.onDeleteBranchFromWorktree
     if (operation === undefined || this.mutationInFlight) return
     this.mutationInFlight = true
     this.clearTransientMenus()
     this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
     void operation(worktree.path, action, { ...request, force: true }, forceWorktree).then(() => {
       this.mutationInFlight = false
-      this.onMutationSettled?.()
+      this.ports.host.onMutationSettled()
     }).catch((error: unknown) => {
       this.mutationInFlight = false
-      this.onMutationSettled?.()
+      this.ports.host.onMutationSettled()
       if (action === "remove" && !forceWorktree && worktreeRemovalRequiresForce(error)) {
         this.openConfirmation(worktreeForceRemoveConfirmation(worktree.name), () =>
           this.runWorktreeBranchDelete(worktree, action, request, true))
@@ -2993,7 +2800,7 @@ export class RootView {
     }
     const requestGeneration = this.branchActionGeneration
     const requestSelectedId = this.branchesPanel.views.branches?.selectedId
-    const checkMerged = this.onCheckBranchMerged
+    const checkMerged = this.ports.queries.onCheckBranchMerged
     if (checkMerged === undefined) {
       execute()
       return
@@ -3031,7 +2838,7 @@ export class RootView {
     if (panel.child !== undefined) return
     if (panel.activeTab !== "branches") return
     const id = panel.views.branches?.selectedId
-    if (id === undefined || !id.startsWith("local:") || this.onRenameBranch === undefined) return
+    if (id === undefined || !id.startsWith("local:")) return
     const name = id.slice("local:".length)
     const branch = this.model.branches?.localBranches.find((candidate) => candidate.name === name)
     if (branch === undefined) return
@@ -3052,14 +2859,13 @@ export class RootView {
     if (panel.child !== undefined) return
     if (panel.activeTab !== "remotes") return
     const id = panel.views.remotes?.selectedId
-    if (id === undefined || !id.startsWith("remote:") || this.onFetchRemote === undefined) return
+    if (id === undefined || !id.startsWith("remote:")) return
     const name = id.slice("remote:".length)
     // remotes_controller.go:365 attributes a remote fetch to the remote's own row.
-    this.runUiMutation(() => this.onFetchRemote!(name), { rowId: id, operation: "fetching" })
+    this.runUiMutation(() => this.ports.commands.onFetchRemote(name), { rowId: id, operation: "fetching" })
   }
 
   private requestLocalBranchCommits(branch: string, entering: boolean): void {
-    if (this.loadBranchCommits === undefined) return
     const expectedId = `local:${branch}`
     const request = ++this.branchCommitsRequest
     const isCurrent = (): boolean => {
@@ -3073,7 +2879,7 @@ export class RootView {
       }
       return child?.parentTab === "branches" && child.value.kind === "local-commits" && child.value.branch === branch
     }
-    const load = this.loadBranchCommits(branch)
+    const load = this.ports.queries.loadBranchCommits(branch)
     const requestPromise = load
       .then(async (commits) => {
         if (!isCurrent()) return
@@ -3125,7 +2931,7 @@ export class RootView {
         } else {
           this.invalidateRemoteCheckout()
           this.panes.branches.box.bottomTitle = undefined
-          if (this.onInspectBranch !== undefined) this.runUiMutation(() => this.onInspectBranch!(ref))
+          this.runUiMutation(() => this.ports.commands.onInspectBranch(ref))
         }
       }
       return
@@ -3147,8 +2953,8 @@ export class RootView {
       // Pushing the child context activates it, and activation renders to main
       // (pkg/gui/context.go `Activate` -> HandleFocus).
       this.syncPreviewForFocus("branches")
-      if (this.onBrowseRemote !== undefined) {
-        this.runUiMutation(() => this.onBrowseRemote!(remote))
+      {
+        this.runUiMutation(() => this.ports.commands.onBrowseRemote(remote))
       }
     } else if (id.startsWith("tag:")) {
       // Tag preview wiring deferred to Task 5; no-op here preserves navigation-only contract
@@ -3163,9 +2969,9 @@ export class RootView {
     // context (pkg/gui/controllers.go:240-249).
     if (this.commitsPanel.activeTab !== "commits") return
     const selectedId = this.commitsPanel.views.commits?.selectedId
-    if (selectedId === undefined || this.loadCommitInspection === undefined) return
+    if (selectedId === undefined) return
     const oid = selectedId
-    this.previewInflight = this.loadCommitInspection(oid).then((details) => {
+    this.previewInflight = this.ports.queries.loadCommitInspection(oid).then((details) => {
       const fileRows = commitFileRows(details)
       if (fileRows.length === 0) {
         const emptyView = createListState([], [{ kind: "message", text: "No files" }])
@@ -3182,7 +2988,7 @@ export class RootView {
       this.syncPreviewForFocus("commits")
       this.root.requestRender()
     }).catch((error: unknown) => {
-      this.onPreviewError?.(error)
+      this.ports.host.onPreviewError(error)
       this.root.requestRender()
     })
   }
@@ -3193,8 +2999,8 @@ export class RootView {
       const oid = this.commitsPanel.child.value.oid
       this.commitsPanel = leavePanelChild(this.commitsPanel)
       this.renderCommitsPane()
-      if (this.loadCommitInspection !== undefined) {
-        const load = (): Promise<CommitDetails> => this.loadCommitInspection!(oid)
+      {
+        const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(oid)
         const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
         const promise = this.mainGate.request("commit", oid, load, present)
         this.previewInflight = promise.catch(() => {})
@@ -3221,8 +3027,8 @@ export class RootView {
       const oid = this.commitsPanel.child.value.oid
       this.commitsPanel = leavePanelChild(this.commitsPanel)
       this.renderCommitsPane()
-      if (this.loadCommitInspection !== undefined) {
-        const load = (): Promise<CommitDetails> => this.loadCommitInspection!(oid)
+      {
+        const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(oid)
         const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
         const promise = this.mainGate.request("commit", oid, load, present)
         this.previewInflight = promise.catch(() => {})
@@ -3278,7 +3084,7 @@ export class RootView {
   }
 
   private actionStashCreate(): void {
-    if (this.mutationInFlight || this.onCreateStash === undefined) return
+    if (this.mutationInFlight) return
     this.stashIncludeUntracked = false
     this.openCommitDialog("")
   }
@@ -3286,22 +3092,21 @@ export class RootView {
   private actionStashApply(): void {
     if (this.mutationInFlight) return
     const selected = selectedStashEntryFromState(this.stashState, this.model)
-    if (selected === undefined || this.onApplyStash === undefined) return
-    this.openConfirmation(stashApplyConfirmation(selected.ref), () => this.runUiMutation(() => this.onApplyStash?.(selected.oid)))
+    if (selected === undefined) return
+    this.openConfirmation(stashApplyConfirmation(selected.ref), () => this.runUiMutation(() => this.ports.commands.onApplyStash(selected.oid)))
   }
 
   private actionStashPop(): void {
     if (this.mutationInFlight) return
     const selected = selectedStashEntryFromState(this.stashState, this.model)
-    if (selected === undefined || this.onPopStash === undefined) return
-    this.openConfirmation(stashPopConfirmation(selected.ref), () => this.runUiMutation(() => this.onPopStash?.(selected.oid)))
+    if (selected === undefined) return
+    this.openConfirmation(stashPopConfirmation(selected.ref), () => this.runUiMutation(() => this.ports.commands.onPopStash(selected.oid)))
   }
 
   private actionStashDrop(): void {
     if (this.mutationInFlight) return
     const active = this.activeListView("stash")
     if (active !== undefined && hasMultipleListRowsSelected(active.state)) {
-      if (this.onDropStashes === undefined) return
       const range = getListSelectionRange(active.state)
       const selectedRows = active.state.rows.slice(range.startIndex, range.endIndex + 1)
       const entries = selectedRows
@@ -3316,31 +3121,31 @@ export class RootView {
         stashRangeDropConfirmation(labels),
         () => {
           this.collapseActiveListRange("stash")
-          this.runUiMutation(() => this.onDropStashes?.(refs))
+          this.runUiMutation(() => this.ports.commands.onDropStashes(refs))
         },
       )
       return
     }
     const selected = selectedStashEntryFromState(this.stashState, this.model)
-    if (selected === undefined || this.onDropStash === undefined) return
-    this.openConfirmation(stashDropConfirmation(selected.ref), () => this.runUiMutation(() => this.onDropStash?.(selected.oid)))
+    if (selected === undefined) return
+    this.openConfirmation(stashDropConfirmation(selected.ref), () => this.runUiMutation(() => this.ports.commands.onDropStash(selected.oid)))
   }
 
   private actionStashInspect(): void {
     if (this.mutationInFlight) return
     const selected = selectedStashEntryFromState(this.stashState, this.model)
-    if (selected === undefined || this.onInspectStash === undefined) return
-    this.runUiMutation(() => this.onInspectStash!(selected.oid))
+    if (selected === undefined) return
+    this.runUiMutation(() => this.ports.commands.onInspectStash(selected.oid))
   }
 
   private actionCommit(): void {
-    if (this.mutationInFlight || this.onCommitMessage === undefined) return
+    if (this.mutationInFlight) return
     if (!this.commitAttemptAvailable()) return
     this.withEnsureCommittableFiles(() => this.openCommitMessagePanel("commit", ""))
   }
 
   private actionAmend(): void {
-    if (this.mutationInFlight || this.onAmendMessage === undefined || this.onCurrentCommitMessage === undefined) return
+    if (this.mutationInFlight) return
     if (!this.commitAttemptAvailable()) return
     this.withEnsureCommittableFiles(() => this.openAmendDialog())
   }
@@ -3385,9 +3190,8 @@ export class RootView {
       return
     }
     this.pendingStageAllCommit = false
-    if (this.onToggleAllFiles === undefined) return
     this.runUiMutation(async () => {
-      await this.onToggleAllFiles!()
+      await this.ports.commands.onToggleAllFiles()
       await retry()
     })
   }
@@ -3397,17 +3201,16 @@ export class RootView {
       this.panes.main.box.bottomTitle = "Mutation in progress; wait for refresh"
       return
     }
-    if (this.onScopeChange === undefined) return
     if (this.model.reviewTarget.kind !== "working-tree") return
     this.invalidateRemoteCheckout()
     const index = SCOPE_ORDER.indexOf(this.model.reviewTarget.scope)
     const nextIndex = direction === "next" ? (index + 1) % SCOPE_ORDER.length : (index - 1 + SCOPE_ORDER.length) % SCOPE_ORDER.length
-    this.runUiMutation(() => this.onScopeChange!(SCOPE_ORDER[nextIndex]!))
+    this.runUiMutation(() => this.ports.commands.onScopeChange(SCOPE_ORDER[nextIndex]!))
   }
 
   private actionFetch(): void {
-    if (this.mutationInFlight || this.onFetch === undefined) return
-    this.runUiMutation(() => this.onFetch!())
+    if (this.mutationInFlight) return
+    this.runUiMutation(() => this.ports.commands.onFetch())
   }
 
   /**
@@ -3420,27 +3223,26 @@ export class RootView {
   }
 
   private actionPull(): void {
-    if (this.mutationInFlight || this.onPull === undefined) return
+    if (this.mutationInFlight) return
     const rowId = this.currentBranchRowId()
-    this.runUiMutation(() => this.onPull!(), rowId === undefined ? undefined : { rowId, operation: "pulling" })
+    this.runUiMutation(() => this.ports.commands.onPull(), rowId === undefined ? undefined : { rowId, operation: "pulling" })
   }
 
   private actionPush(): void {
-    if (this.mutationInFlight || this.onPush === undefined) return
+    if (this.mutationInFlight) return
     const rowId = this.currentBranchRowId()
-    this.runUiMutation(() => this.onPush!(), rowId === undefined ? undefined : { rowId, operation: "pushing" })
+    this.runUiMutation(() => this.ports.commands.onPush(), rowId === undefined ? undefined : { rowId, operation: "pushing" })
   }
 
   private actionRefresh(): void {
-    if (this.onRefresh === undefined) return
     this.invalidateRemoteCheckout()
     this.panes.branches.box.bottomTitle = undefined
-    this.runUiMutation(() => this.onRefresh!())
+    this.runUiMutation(() => this.ports.commands.onRefresh())
   }
 
   private actionOpenBranchReview(): void {
-    if (this.mutationInFlight || this.onOpenBranchReview === undefined) return
-    this.runUiMutation(() => this.onOpenBranchReview!())
+    if (this.mutationInFlight) return
+    this.runUiMutation(() => this.ports.commands.onOpenBranchReview())
   }
 
   private actionFilter(): void {
@@ -3467,7 +3269,7 @@ export class RootView {
     // (`openSearch`, local_commits_controller.go:1672-1680): matches may live
     // past row 300. The reload's repaint preserves this prompt (see `update`).
     if (target.key === this.filterKey("commits", "commits")) {
-      void this.onExpandCommits?.()
+      void this.ports.commands.onExpandCommits()
     }
     this.filterInput.open("")
     this.refreshForFilterKey(target.key)
@@ -3802,15 +3604,14 @@ export class RootView {
       let operation: (() => Promise<void>) | undefined
       let autostashOperation: (() => Promise<void>) | undefined
       if (context.mode === "branch-create") {
-        if (this.onCreateBranch === undefined) return true
         branchName = sanitizeBranchName(message)
         const options = { track: context.suggestedBranchName.length > 0 && branchName === context.suggestedBranchName }
-        operation = () => this.onCreateBranch!(context.startPoint, branchName, options)
-        if (this.onCreateBranchWithAutostash !== undefined) {
-          autostashOperation = () => this.onCreateBranchWithAutostash!(context.startPoint, branchName, options)
+        operation = () => this.ports.commands.onCreateBranch(context.startPoint, branchName, options)
+        {
+          autostashOperation = () => this.ports.commands.onCreateBranchWithAutostash(context.startPoint, branchName, options)
         }
-      } else if (this.onRenameBranch !== undefined) {
-        operation = () => this.onRenameBranch!(context.branch, message)
+      } else {
+        operation = () => this.ports.commands.onRenameBranch(context.branch, message)
       }
       if (operation === undefined) return true
       const isBranchCreate = context.mode === "branch-create"
@@ -3844,9 +3645,8 @@ export class RootView {
       return true
     }
     if (result.result?.kind === "confirmed") {
-      if (this.onCreateStash === undefined) return true
       this.mutationInFlight = true
-      void this.onCreateStash(result.result.message, this.stashIncludeUntracked).then(() => {
+      void this.ports.commands.onCreateStash(result.result.message, this.stashIncludeUntracked).then(() => {
         if (this.commitDialog === dialog) {
           this.commitDialog = undefined
           this.promptPopup.close()
@@ -3884,7 +3684,7 @@ export class RootView {
   }
 
   private runRemoteCheckout(selection: RemoteBranchSelection, confirmedMismatch: boolean): void {
-    if (this.onCheckoutRemoteTracking === undefined || this.mutationInFlight) return
+    if (this.mutationInFlight) return
     const requestGeneration = ++this.remoteCheckoutGeneration
     const requestFocus = this.focusManager.active
     const requestActiveTab = this.branchesPanel.activeTab
@@ -3906,7 +3706,7 @@ export class RootView {
         JSON.stringify(this.model.reviewTarget) !== requestTarget) return false
       return requestSelectedId === `remote-branch:${selection.ref}`
     }
-    void this.onCheckoutRemoteTracking(selection, confirmedMismatch).then((result) => {
+    void this.ports.commands.onCheckoutRemoteTracking(selection, confirmedMismatch).then((result) => {
       if (!isCurrent()) return
       if (result?.kind === "mismatch") {
         this.pendingRemoteMismatch = { selection, message: result.message }
@@ -3958,11 +3758,10 @@ export class RootView {
   }
 
   private async openAmendDialog(): Promise<void> {
-    if (this.onCurrentCommitMessage === undefined) return
     const ownsMutation = !this.mutationInFlight
     if (ownsMutation) this.mutationInFlight = true
     try {
-      const message = await this.onCurrentCommitMessage()
+      const message = await this.ports.queries.onCurrentCommitMessage()
       this.openCommitMessagePanel("amend", message)
     } catch (error: unknown) {
       this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
@@ -3989,7 +3788,7 @@ export class RootView {
       return
     }
 
-    const operation = this.commitMessagePanel.mode === "amend" ? this.onAmendMessage : this.onCommitMessage
+    const operation = this.commitMessagePanel.mode === "amend" ? this.ports.commands.onAmendMessage : this.ports.commands.onCommitMessage
     if (operation === undefined) {
       this.commitMessagePanel.setError("Commit operation is unavailable")
       this.root.requestRender()
@@ -4064,10 +3863,10 @@ export class RootView {
     void operation().then(() => {
       this.mutationInFlight = false
       this.finishBranchCreate(branchName)
-      this.onMutationSettled?.()
+      this.ports.host.onMutationSettled()
     }).catch((error: unknown) => {
       this.mutationInFlight = false
-      this.onMutationSettled?.()
+      this.ports.host.onMutationSettled()
       if (autostashOperation !== undefined && branchCheckoutRequiresStash(error)) {
         this.openConfirmation(branchAutostashConfirmation(), () => this.runBranchCreate(autostashOperation, undefined, branchName, true))
         return
@@ -4128,7 +3927,7 @@ export class RootView {
       this.clearTransientMenus()
       if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
       this.fileRangeRefreshSelectionId = undefined
-      this.onMutationSettled?.()
+      this.ports.host.onMutationSettled()
     })
   }
 
@@ -4295,13 +4094,7 @@ export class RootView {
    */
   private requestRefLog(source: RefLogTarget["kind"], name: string, label: string, preamble?: string): void {
     const preambleField = preamble === undefined ? {} : { preamble }
-    if (this.loadRefLogInspection === undefined) {
-      // No git behind the view (unit harnesses): the ref is still named, so the pane says what it
-      // is showing rather than going blank.
-      this.mainGate.installSynchronous({ source, stableId: name, label, ...preambleField, plainText: `${preamble ?? ""}${name}` })
-      return
-    }
-    const load = (): Promise<string> => this.loadRefLogInspection!({ kind: source, name })
+    const load = (): Promise<string> => this.ports.queries.loadRefLogInspection({ kind: source, name })
     const present = (raw: string): MainPaneContent => ({ source, stableId: name, label, ...preambleField, ansi: parseAnsi(raw) })
     this.previewInflight = this.mainGate.request(source, name, load, present).catch(() => {})
   }
@@ -4324,9 +4117,9 @@ export class RootView {
         }
         const filePath = selectedId.split("\u0000")[0]!
         const oid = child.value.oid
-        if (this.loadCommitFileInspection !== undefined) {
+        {
           const stableId = `${oid}\0${selectedId}`
-          const load = (): Promise<DiffDocument> => this.loadCommitFileInspection!(oid, filePath)
+          const load = (): Promise<DiffDocument> => this.ports.queries.loadCommitFileInspection(oid, filePath)
           const present = (doc: DiffDocument): MainPaneContent => this.presentCommitFileContent(oid, selectedId, doc)
           const promise = this.mainGate.request("commit-file", stableId, load, present)
           this.previewInflight = promise.catch(() => {})
@@ -4342,8 +4135,8 @@ export class RootView {
           this.mainGate.installSynchronous({ source: "reflog", stableId: "reflog-empty", label: "Reflog", plainText: NO_REFLOG_HISTORY })
           return
         }
-        if (this.loadCommitInspection !== undefined) {
-          const load = (): Promise<CommitDetails> => this.loadCommitInspection!(entry.oid)
+        {
+          const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(entry.oid)
           const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
           const promise = this.mainGate.request("commit", entry.oid, load, present)
           this.previewInflight = promise.catch(() => {})
@@ -4356,8 +4149,8 @@ export class RootView {
         return
       }
       const oid = state.selectedId
-      if (this.loadCommitInspection !== undefined) {
-        const load = (): Promise<CommitDetails> => this.loadCommitInspection!(oid)
+      {
+        const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(oid)
         const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
         const promise = this.mainGate.request("commit", oid, load, present)
         this.previewInflight = promise.catch(() => {})
@@ -4397,11 +4190,7 @@ export class RootView {
             this.mainGate.installSynchronous({ source: "commit", stableId: "local-commits-empty", label: "Commit", plainText: "No commits" })
             return
           }
-          if (this.loadCommitInspection === undefined) {
-            this.mainGate.installSynchronous({ source: "commit", stableId: selectedId, label: selectedId, plainText: selectedId })
-            return
-          }
-          const load = (): Promise<CommitDetails> => this.loadCommitInspection!(selectedId)
+          const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(selectedId)
           const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
           const promise = this.mainGate.request("commit", selectedId, load, present)
           this.previewInflight = promise.catch(() => {})
@@ -4769,7 +4558,7 @@ export class RootView {
         if (active === "files") {
           const row = this.selectedFileRow()
           this.panes.files.box.bottomTitle = row?.path ?? stableId
-          if (row?.kind === "file") this.onSelectFile?.(row.path)
+          if (row?.kind === "file") this.ports.commands.onSelectFile(row.path)
           this.mainGate.installSynchronous(this.presentFilesContent(this.model))
         } else {
           this.syncPreviewForFocus("files")
@@ -4909,7 +4698,7 @@ export class RootView {
       bar.slider.onMouseUp = endScrollbarGesture
     }
     this.root.onMouse = (event: MouseEvent) => {
-      if (this.isBranchReviewActive?.()) return
+      if (this.ports.host.isBranchReviewActive()) return
       const eventType = event.type as string
       if (eventType === "out") {
         if (this.gestureOwner === undefined) this.setHoveredListRow(undefined)
@@ -5310,7 +5099,7 @@ export class RootView {
   }
 
   private notifyGeometry(): void {
-    this.onGeometryChange?.({
+    this.ports.host.onGeometryChange({
       sidePanelRatio: this.sidePanelRatio,
       commandLogHeight: this.logHeight,
       commandLogVisible: this.focusManager.logVisible,

@@ -186,7 +186,7 @@ export function createApp(options: CreateAppOptions): App {
           onExternalChange: async () => {
             if (destroyed) return
             await controller.refreshFiles()
-            if (!destroyed && (screenController?.shouldRenderRepository() ?? true)) view.update(controller.state)
+            if (!destroyed) syncView()
           },
           isBusy: () => refreshInFlight || view.isMutating,
         })
@@ -233,7 +233,7 @@ export function createApp(options: CreateAppOptions): App {
       }
     }
     await controller.refresh()
-    if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
+    syncView()
     await refsWatcher.resync()
   })
   // Coalesced review generation refresh: at most one in-flight, one queued.
@@ -269,214 +269,159 @@ export function createApp(options: CreateAppOptions): App {
    * `onMutationSettled` re-seeds it; created unconditionally (it is inert until polled) so that
    * hook needs no branch.
    */
+  const shouldRender = (): boolean => screenController?.shouldRenderRepository() ?? true
+  /** Repaints the repository screen from the controller's model, unless Branch Review owns the screen. */
+  const syncView = (): void => { if (shouldRender()) view.update(controller.state) }
+  /**
+   * Runs a controller call and repaints however it settles. Every UI-driven controller call goes
+   * through here so the `try { … } finally { view.update(controller.state) }` contract lives in
+   * one place.
+   */
+  const ui = <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      try { return await fn(...args) } finally { syncView() }
+    }
+  /** `ui`, but a no-op while Branch Review owns the screen: the repository view cannot act then. */
+  const repositoryUi = <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A): Promise<void> => {
+      if (!shouldRender()) return
+      await ui(fn)(...args)
+    }
+  const isBusy = (): boolean => {
+    if (!shouldRender()) return false
+    return refreshInFlight || view.isMutating
+  }
   refsWatcher = new RefsWatcher({
     snapshot: () => loadRefsSnapshot(options.runner),
     onExternalChange: async () => {
-      const isReviewActive = !(screenController?.shouldRenderRepository() ?? true)
-      if (isReviewActive) {
+      if (!shouldRender()) {
         // Hidden repository refresh without repainting the review screen
         void controller.refresh().catch(() => undefined)
         await scheduleCoalescedReviewRefresh()
         return
       }
       await controller.refresh()
-      if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
+      syncView()
     },
-    isBusy: () => {
-      const isReviewActive = !(screenController?.shouldRenderRepository() ?? true)
-      if (isReviewActive) return false
-      const isMutating = (view as unknown as { isMutating?: boolean } | undefined)?.isMutating === true
-      return refreshInFlight || isMutating
-    },
+    isBusy,
   })
   view = new RootView(renderer, controller.state, {
-    onStageFile: async (path) => {
-      try { await controller.stageFile(path) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
+    ports: {
+      commands: {
+        onStageFile: repositoryUi((path) => controller.stageFile(path)),
+        onStageFiles: repositoryUi((paths, stage) => stage ? controller.stageFiles(paths) : controller.unstageFiles(paths)),
+        onUnstageFile: repositoryUi((path) => controller.unstageFile(path)),
+        onDiscardFile: repositoryUi((path, mode) => controller.discardFile(path, mode)),
+        onDiscardFiles: repositoryUi((paths, mode) => controller.discardFiles(paths, mode)),
+        onToggleAllFiles: repositoryUi(() => controller.toggleAllFiles()),
+        onScopeChange: repositoryUi((scope) => controller.setWorkingTreeScope(scope)),
+        onOpenBranchReview: async () => {
+          if (!shouldRender()) return
+          try { await screenController.openBranchReview() } catch (error) {
+            syncView()
+            throw error
+          }
+        },
+        onApplySelection: repositoryUi((document, indexes, reverse) => controller.applySelection(document, indexes, { reverse, wholeFile: false })),
+        onDiscardSelection: repositoryUi((document, indexes) => controller.discardSelection(document, indexes, { wholeFile: false })),
+        onSelectFile: (path) => {
+          if (!shouldRender()) return
+          controller.selectFile(path)
+          syncView()
+        },
+        onExpandCommits: async () => {
+          const expanded = await controller.expandCommits()
+          // Preserve an open filter/search prompt across the reload: the default
+          // update clears in-progress filtering (root-view `update`), which would
+          // drop the session the expansion was opened for.
+          if (expanded && shouldRender()) view.update(controller.state, { preserveFilterInput: true })
+          return expanded
+        },
+        onMarkFocusedFileReviewed: repositoryUi((path) => controller.markFocusedFileReviewed(path)),
+        onCommitMessage: repositoryUi((message) => controller.commit(message)),
+        onAmendMessage: repositoryUi((message) => controller.amend(message)),
+        onCreateBranch: repositoryUi(async (startPoint, branchName, createOptions) => {
+          if (branchName === undefined) return
+          await controller.createBranch(branchName, startPoint, createOptions)
+        }),
+        onCreateBranchWithAutostash: repositoryUi(async (startPoint, branchName, createOptions) => {
+          if (branchName === undefined) return
+          await controller.createBranchWithAutostash(branchName, startPoint, createOptions)
+        }),
+        onRefresh: ui(() => controller.refresh()),
+        onSwitchLocalBranch: repositoryUi((branch) => controller.switchLocalBranch(branch)),
+        onDeleteBranch: repositoryUi(async (request) => {
+          if (request.mode === "local") {
+            await controller.deleteBranch(request.branch, { force: request.force, confirmed: request.force })
+          } else if (request.mode === "remote") {
+            if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
+            await controller.deleteRemoteBranch(request.remote, request.remoteBranch)
+          } else {
+            if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("local and remote deletion requires an upstream")
+            await controller.deleteLocalAndRemoteBranch(request.branch, request.remote, request.remoteBranch, { force: request.force, confirmed: request.force })
+          }
+        }),
+        onDeleteBranches: repositoryUi((requests) => controller.deleteBranches(requests)),
+        onDeleteBranchFromWorktree: ui((path, action, request, forceWorktree) => controller.deleteBranchFromWorktree(path, action, request, forceWorktree)),
+        onFetchRemote: ui((remote) => controller.fetchRemote(remote)),
+        onRenameBranch: repositoryUi(async (branch, newName) => {
+          if (newName === undefined) return
+          await controller.renameBranch(branch, newName)
+        }),
+        onFetch: ui(() => controller.fetch()),
+        onPull: ui(() => controller.pull()),
+        onPush: ui(async () => { await controller.push() }),
+        onChooseUpstream: ui((remote, branch) => controller.chooseUpstream(remote, branch)),
+        onCancelUpstream: ui(() => controller.cancelUpstreamChoice()),
+        onPopStash: ui((ref) => controller.popStash(ref)),
+        onCreateStash: ui((message, includeUntracked) => controller.createStash(message, { includeUntracked })),
+        onApplyStash: ui((ref) => controller.applyStash(ref)),
+        onDropStash: ui((ref) => controller.dropStash(ref, { confirmed: true })),
+        onDropStashes: ui((refs) => controller.dropStashes(refs, { confirmed: true })),
+        onInspectStash: ui((ref) => controller.inspectStash(ref)),
+        onBrowseRemote: ui((remote) => controller.browseRemote(remote)),
+        onInspectBranch: ui((branchRef) => controller.inspectBranch(branchRef)),
+        onCheckoutRemoteTracking: async (selection, confirmedMismatch) => {
+          if (!shouldRender()) return undefined
+          try {
+            const result = await controller.checkoutRemoteTracking(selection, confirmedMismatch === true ? { confirmedMismatch: true } : undefined)
+            if (shouldRender()) view.update(controller.state, { preserveRemoteCheckout: result?.kind === "mismatch" })
+            return result
+          } catch (error) {
+            syncView()
+            throw error
+          }
+        },
+        onEditFile: async (path, line) => {
+          // `LogAction(Tr.Actions.OpenFile)` (pkg/gui/controllers/helpers/files_helper.go:78). Logged
+          // at the wiring, not inside the default `editFile` above, so it fires whether the default or
+          // an injected `options.onEditFile` runs.
+          options.runner.log.logAction(LOG_ACTIONS.openFile)
+          await editFile(path, line)
+        },
+      },
+      queries: {
+        loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
+        loadBranchCommits: options.loadBranchCommits ?? ((branch) => controller.loadBranchCommits(branch)),
+        loadCommitFileInspection: (oid, path) => controller.loadCommitFileInspection(oid, path),
+        loadTagInspection: (tag) => controller.loadTagInspection(tag),
+        loadRefLogInspection: (target) => controller.loadRefLogInspection(target),
+        onCurrentCommitMessage: ui(() => controller.currentCommitMessage()),
+        onCheckBranchMerged: options.onCheckBranchMerged ?? ((branch, upstream) => controller.branchIsMerged(branch, upstream)),
+      },
+      host: {
+        onQuit: () => options.onQuit?.(),
+        onGeometryChange: (state) => {
+          latestGeometry = state
+          options.onGeometryChange?.(state)
+        },
+        // Whatever githunk just did to the repository is now the baseline for ref polling. Index events
+        // remain queued because the watcher cannot attribute a concurrent index write safely.
+        onMutationSettled: () => { void refsWatcher.resync() },
+        onPreviewError: (error) => controller.recordInspectionError(error),
+        isBranchReviewActive: () => screenController?.active.kind === "branch-review",
+      },
     },
-    onStageFiles: async (paths, stage) => {
-      try {
-        if (stage) await controller.stageFiles(paths)
-        else await controller.unstageFiles(paths)
-      } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onUnstageFile: async (path) => {
-      try { await controller.unstageFile(path) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onDiscardFile: async (path, mode) => {
-      try { await controller.discardFile(path, mode) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onDiscardFiles: async (paths, mode) => {
-      try { await controller.discardFiles(paths, mode) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onToggleAllFiles: async () => {
-      try { await controller.toggleAllFiles() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onScopeChange: async (scope) => {
-      try { await controller.setWorkingTreeScope(scope) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onOpenBranchReview: async () => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try { await screenController.openBranchReview() } catch (error) {
-        if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
-        throw error
-      }
-    },
-    isBranchReviewActive: () => screenController?.active.kind === "branch-review",
-    onApplySelection: async (document, indexes, reverse) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try { await controller.applySelection(document, indexes, { reverse, wholeFile: false }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onDiscardSelection: async (document, indexes) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try { await controller.discardSelection(document, indexes, { wholeFile: false }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onSelectFile: (path) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      controller.selectFile(path)
-      if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
-    },
-    loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
-    loadBranchCommits: options.loadBranchCommits ?? ((branch) => controller.loadBranchCommits(branch)),
-    onExpandCommits: async () => {
-      const expanded = await controller.expandCommits()
-      // Preserve an open filter/search prompt across the reload: the default
-      // update clears in-progress filtering (root-view `update`), which would
-      // drop the session the expansion was opened for.
-      if (expanded && (screenController?.shouldRenderRepository() ?? true)) view.update(controller.state, { preserveFilterInput: true })
-      return expanded
-    },
-    loadCommitFileInspection: (oid, path) => controller.loadCommitFileInspection(oid, path),
-    loadTagInspection: (tag) => controller.loadTagInspection(tag),
-    loadRefLogInspection: (target) => controller.loadRefLogInspection(target),
-    onPreviewError: (error) => controller.recordInspectionError(error),
-    onCommitMessage: async (message) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try { await controller.commit(message) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onAmendMessage: async (message) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try { await controller.amend(message) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onCurrentCommitMessage: async () => {
-      try { return await controller.currentCommitMessage() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onMarkFocusedFileReviewed: async (path) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try { await controller.markFocusedFileReviewed(path) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onRefresh: async () => {
-      try { await controller.refresh() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onSwitchLocalBranch: async (branch) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try { await controller.switchLocalBranch(branch) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onCreateBranch: async (startPoint, branchName, options) => {
-      if (branchName === undefined) return
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try { await controller.createBranch(branchName, startPoint, options) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onCreateBranchWithAutostash: async (startPoint, branchName, options) => {
-      if (branchName === undefined) return
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try { await controller.createBranchWithAutostash(branchName, startPoint, options) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onDeleteBranch: async (request) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try {
-        if (request.mode === "local") {
-          await controller.deleteBranch(request.branch, { force: request.force, confirmed: request.force })
-        } else if (request.mode === "remote") {
-          if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
-          await controller.deleteRemoteBranch(request.remote, request.remoteBranch)
-        } else {
-          if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("local and remote deletion requires an upstream")
-          await controller.deleteLocalAndRemoteBranch(request.branch, request.remote, request.remoteBranch, { force: request.force, confirmed: request.force })
-        }
-      } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onDeleteBranches: async (requests) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try { await controller.deleteBranches(requests) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onCheckBranchMerged: options.onCheckBranchMerged ?? ((branch, upstream) => controller.branchIsMerged(branch, upstream)),
-    onDeleteBranchFromWorktree: async (path, action, request, forceWorktree) => {
-      try { await controller.deleteBranchFromWorktree(path, action, request, forceWorktree) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onRenameBranch: async (branch, newName) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      if (newName === undefined) return
-      try { await controller.renameBranch(branch, newName) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onFetchRemote: async (remote) => {
-      try { await controller.fetchRemote(remote) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onFetch: async () => {
-      try { await controller.fetch() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onPull: async () => {
-      try { await controller.pull() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onPush: async () => {
-      try { await controller.push() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onCreateStash: async (message, includeUntracked) => {
-      try { await controller.createStash(message, { includeUntracked }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onApplyStash: async (ref) => {
-      try { await controller.applyStash(ref) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onPopStash: async (ref) => {
-      try { await controller.popStash(ref) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onDropStash: async (ref) => {
-      try { await controller.dropStash(ref, { confirmed: true }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onDropStashes: async (refs) => {
-      try { await controller.dropStashes(refs, { confirmed: true }) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onInspectStash: async (ref) => {
-      try { await controller.inspectStash(ref) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onChooseUpstream: async (remote, branch) => {
-      try { await controller.chooseUpstream(remote, branch) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onCancelUpstream: async () => {
-      try { await controller.cancelUpstreamChoice() } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onBrowseRemote: async (remote) => {
-      try { await controller.browseRemote(remote) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onInspectBranch: async (branchRef) => {
-      try { await controller.inspectBranch(branchRef) } finally { if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state) }
-    },
-    onCheckoutRemoteTracking: async (selection, confirmedMismatch) => {
-      if (!(screenController?.shouldRenderRepository() ?? true)) return
-      try {
-        const result = await controller.checkoutRemoteTracking(selection, confirmedMismatch === true ? { confirmedMismatch: true } : undefined)
-        if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state, { preserveRemoteCheckout: result?.kind === "mismatch" })
-        return result
-      } catch (error) {
-        if (screenController?.shouldRenderRepository() ?? true) view.update(controller.state)
-        throw error
-      }
-    },
-    onFilterBranches: async () => undefined,
-    onEditFile: async (path, line) => {
-      // `LogAction(Tr.Actions.OpenFile)` (pkg/gui/controllers/helpers/files_helper.go:78). Logged
-      // at the wiring, not inside the default `editFile` above, so it fires whether the default or
-      // an injected `options.onEditFile` runs.
-      options.runner.log.logAction(LOG_ACTIONS.openFile)
-      await editFile(path, line)
-    },
-    onQuit: () => options.onQuit?.(),
-    onGeometryChange: (state) => {
-      latestGeometry = state
-      options.onGeometryChange?.(state)
-    },
-    // Whatever githunk just did to the repository is now the baseline for ref polling. Index events
-    // remain queued because the watcher cannot attribute a concurrent index write safely.
-    onMutationSettled: () => { void refsWatcher.resync() },
   })
 
   screenController = new AppScreenController({
@@ -502,12 +447,12 @@ export function createApp(options: CreateAppOptions): App {
           // lazygit's background fetch is DontLog() while its foreground one is not
           // (pkg/commands/git_commands/sync.go:65-84).
           await controller.fetch(undefined, { background: true })
-          if (screenController.shouldRenderRepository()) view.update(controller.state)
+          syncView()
           await refsWatcher.resync()
         },
         refresh: async () => {
           await controller.refreshFiles()
-          if (screenController.shouldRenderRepository()) view.update(controller.state)
+          syncView()
         },
         detectExternalChanges: () => refsWatcher.check().then(() => undefined),
         ...(backgroundOptions.autoFetch === undefined ? {} : { autoFetch: backgroundOptions.autoFetch }),
@@ -519,12 +464,7 @@ export function createApp(options: CreateAppOptions): App {
         // Everything the UI drives goes through `runUiMutation`, so this is lazygit's
         // `backgroundRefreshesPaused()` for githunk: no background git while the user's own runs.
         // Branch Review reconciliation must not be paused by busy/composer – it preserves draft.
-        isBusy: () => {
-          const isReviewActive = !(screenController?.shouldRenderRepository() ?? true)
-          if (isReviewActive) return false
-          const isMutating = (view as unknown as { isMutating?: boolean } | undefined)?.isMutating === true
-          return refreshInFlight || isMutating
-        },
+        isBusy,
         // A background fetch fails whenever the network does. The command log already carries the
         // failure; a banner would fight with whatever the user is reading.
         onError: () => undefined,
@@ -545,7 +485,7 @@ export function createApp(options: CreateAppOptions): App {
       try {
         await ensureIndexWatcher()
         await controller.refresh()
-        if (screenController.shouldRenderRepository()) view.update(controller.state)
+        syncView()
         await refsWatcher.resync()
       } finally {
         refreshInFlight = false
