@@ -77,6 +77,58 @@ describe("background auto-fetch", () => {
     // And the branch row says so, in lazygit's arrow form.
     expect(setup.captureCharFrame()).toContain("↓1")
   }, 20_000)
+  test("regaining terminal focus fetches remote branch changes", async () => {
+    repository = await createTempRepository()
+    await repository.write("a.txt", "one\n")
+    await repository.git(["add", "a.txt"])
+    await repository.git(["commit", "-m", "first commit"])
+    bare = await createTempRepository()
+    await bare.git(["config", "core.bare", "true"])
+    await repository.git(["remote", "add", "origin", bare.path])
+    await repository.git(["push", "-u", "origin", "HEAD"])
+
+    const setup = await createTestRenderer({ width: 120, height: 40, useMouse: true })
+    renderer = setup.renderer
+    let now = 0
+    app = createApp({
+      repositoryRoot: repository.path,
+      runner: new GitRunner(repository.path),
+      renderer: setup.renderer,
+      background: {
+        enabled: true,
+        autoFetch: true,
+        autoRefresh: false,
+        autoDetectExternalChanges: false,
+        fetchIntervalMs: 60_000,
+        now: () => now,
+      },
+    })
+    await app.refresh()
+    await setup.flush()
+    // Wait for the startup background fetch before changing the remote; otherwise focus can
+    // correctly coalesce behind that in-flight fetch and the test would race its own setup.
+    await app.controller.mutationQueue.run(async () => undefined)
+
+    const currentName = app.controller.state.branches!.localBranches.find((branch) => branch.isCurrent)!.name
+    const behind = (): string | undefined =>
+      app!.controller.state.branches!.localBranches.find((branch) => branch.name === currentName)?.behindForPull
+    expect(behind()).toBe("0")
+
+    other = await createTempRepository()
+    await other.git(["remote", "add", "origin", bare.path])
+    await other.git(["fetch", "origin"])
+    await other.git(["checkout", "-B", currentName, `origin/${currentName}`, "--quiet"])
+    await other.write("a.txt", "two\n")
+    await other.git(["add", "a.txt"])
+    await other.git(["commit", "-m", "second commit"])
+    await other.git(["push", "origin", currentName])
+    expect(behind()).toBe("0")
+    now = 60_000
+    setup.renderer.emit("focus")
+    await app.controller.mutationQueue.run(async () => undefined)
+    await setup.flush()
+    expect(behind()).toBe("1")
+  }, 20_000)
 
   test("a commit made outside the app shows up on its own, with no keypress", async () => {
     // lazygit's `git.autoDetectExternalChanges`: poll a refs fingerprint and refresh when it moves

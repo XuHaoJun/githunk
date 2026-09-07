@@ -51,6 +51,8 @@ export type BackgroundRefresherOptions = {
   /** Reported rather than thrown: a background routine must never take the app down. */
   readonly onError?: (error: unknown, routine: RoutineName) => void
   readonly timers?: Timers
+  /** Injectable clock for deterministic focus-trigger tests. */
+  readonly now?: () => number
 }
 
 export const DEFAULT_FETCH_INTERVAL_MS = 60_000
@@ -71,8 +73,10 @@ export class BackgroundRefresher {
   private readonly timers: Timers
   private readonly routines: Routine[] = []
   private readonly onError: ((error: unknown, routine: RoutineName) => void) | undefined
+  private readonly now: () => number
   private started = false
   private stopped = false
+  private lastFetchAt: number | undefined
   /**
    * A count, not a flag: lazygit's `pauseRefreshesCount` is one too, because the scopes that pause
    * refreshes can overlap (background.go:22-28).
@@ -82,9 +86,10 @@ export class BackgroundRefresher {
   constructor(private readonly options: BackgroundRefresherOptions) {
     this.timers = options.timers ?? {
       setTimeout: (callback, ms) => setTimeout(callback, ms),
-      clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
     }
     this.onError = options.onError
+    this.now = options.now ?? (() => Date.now())
     if (options.autoFetch !== false) {
       this.routines.push({
         name: "fetch",
@@ -121,15 +126,40 @@ export class BackgroundRefresher {
   /**
    * lazygit fetches once at startup because `goEvery` begins by waiting out the interval
    * (background.go:135-137) — so an app opened on a stale repo does not sit stale for a minute.
-   * The caller drives that first fetch itself rather than having it fire from a constructor.
+   * `start` owns that first fetch, then schedules the normal interval.
    */
   start(): void {
     if (this.started || this.stopped) return
     this.started = true
-    for (const routine of this.routines) this.schedule(routine)
+    const fetchRoutine = this.routines.find((routine) => routine.name === "fetch")
+    for (const routine of this.routines) {
+      if (routine === fetchRoutine) continue
+      this.schedule(routine)
+    }
+    // lazygit performs one immediate startup fetch before entering goEvery
+    // (pkg/gui/background.go:141-146); the remaining routines wait for their first interval.
+    if (fetchRoutine !== undefined) void this.tick(fetchRoutine)
+  }
+  /**
+   * Mirrors lazygit's `triggerImmediateFetch` (background.go:269-281): focus can request a fetch,
+   * but only after the configured interval has elapsed since the last attempt.
+   */
+  triggerFetchIfDue(): boolean {
+    if (!this.started || this.stopped || this.paused || this.options.isBusy?.() === true) return false
+    const routine = this.routines.find((candidate) => candidate.name === "fetch")
+    if (routine === undefined || routine.running) return false
+    const now = this.now()
+    if (this.lastFetchAt !== undefined && now < this.lastFetchAt + routine.intervalMs) return false
+    if (routine.handle !== undefined) {
+      this.timers.clearTimeout(routine.handle)
+      routine.handle = undefined
+    }
+    void this.tick(routine)
+    return true
   }
 
   stop(): void {
+    if (this.stopped) return
     this.stopped = true
     this.started = false
     for (const routine of this.routines) {
@@ -167,6 +197,7 @@ export class BackgroundRefresher {
     // finishes, and the next tick comes around on its own.
     if (!this.paused && this.options.isBusy?.() !== true && !routine.running) {
       routine.running = true
+      if (routine.name === "fetch") this.lastFetchAt = this.now()
       try {
         await routine.run()
       } catch (error) {

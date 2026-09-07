@@ -66,6 +66,8 @@ export type BackgroundOptions = {
   readonly fetchIntervalMs?: number
   readonly refreshIntervalMs?: number
   readonly externalChangeIntervalMs?: number
+  /** Test seam for the focus-trigger interval gate. */
+  readonly now?: () => number
 }
 
 export type App = {
@@ -462,6 +464,7 @@ export function createApp(options: CreateAppOptions): App {
         ...(backgroundOptions.fetchIntervalMs === undefined ? {} : { fetchIntervalMs: backgroundOptions.fetchIntervalMs }),
         ...(backgroundOptions.refreshIntervalMs === undefined ? {} : { refreshIntervalMs: backgroundOptions.refreshIntervalMs }),
         ...(backgroundOptions.externalChangeIntervalMs === undefined ? {} : { externalChangeIntervalMs: backgroundOptions.externalChangeIntervalMs }),
+        ...(backgroundOptions.now === undefined ? {} : { now: backgroundOptions.now }),
         // Everything the UI drives goes through `runUiMutation`, so this is lazygit's
         // `backgroundRefreshesPaused()` for githunk: no background git while the user's own runs.
         // Branch Review reconciliation must not be paused by busy/composer – it preserves draft.
@@ -471,6 +474,14 @@ export function createApp(options: CreateAppOptions): App {
         onError: () => undefined,
       })
     : undefined
+
+  /**
+   * lazygit triggers an overdue background fetch when a repository becomes active again
+   * (`pkg/gui/gui.go:332-339`); OpenTUI's terminal focus event is the equivalent signal when the
+   * user returns to this TUI.
+   */
+  const onTerminalFocus = (): void => { background?.triggerFetchIfDue() }
+  if (background !== undefined) renderer.on("focus", onTerminalFocus)
 
   return {
     controller,
@@ -500,7 +511,10 @@ export function createApp(options: CreateAppOptions): App {
     destroy: async () => {
       destroyed = true
       indexWatcher?.stop()
-      background?.stop()
+      if (background !== undefined) {
+        renderer.off("focus", onTerminalFocus)
+        background.stop()
+      }
       await screenController.destroy()
       // Geometry is a convenience: a failed final write must never mask a clean shutdown.
       await saveUiState().catch(() => undefined)

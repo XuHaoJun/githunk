@@ -44,6 +44,50 @@ describe("BackgroundRefresher", () => {
     expect(DEFAULT_REFRESH_INTERVAL_MS).toBe(10_000)
   })
 
+  test("fetches immediately when background starts, like lazygit", async () => {
+    const timers = fakeTimers()
+    let fetches = 0
+    const refresher = new BackgroundRefresher({
+      fetch: async () => { fetches++ },
+      refresh: async () => undefined,
+      autoRefresh: false,
+      fetchIntervalMs: 60_000,
+      timers,
+    })
+    refresher.start()
+    await Promise.resolve()
+    expect(fetches).toBe(1)
+    refresher.stop()
+  })
+
+  test("focus-triggered fetches wait for the configured interval", async () => {
+    const timers = fakeTimers()
+    let now = 0
+    let fetches = 0
+    const refresher = new BackgroundRefresher({
+      fetch: async () => { fetches++ },
+      refresh: async () => undefined,
+      autoRefresh: false,
+      fetchIntervalMs: 60_000,
+      now: () => now,
+      timers,
+    })
+    refresher.start()
+    await Promise.resolve()
+    expect(fetches).toBe(1)
+
+    now = 59_999
+    expect(refresher.triggerFetchIfDue()).toBe(false)
+    expect(fetches).toBe(1)
+
+    now = 60_000
+    expect(refresher.triggerFetchIfDue()).toBe(true)
+    await Promise.resolve()
+    expect(fetches).toBe(2)
+    expect(refresher.triggerFetchIfDue()).toBe(false)
+    refresher.stop()
+  })
+
   test("fetches on the fetch interval and refreshes on the refresh interval", async () => {
     const timers = fakeTimers()
     let fetches = 0
@@ -57,14 +101,14 @@ describe("BackgroundRefresher", () => {
     })
     refresher.start()
 
-    // The first tick waits out the interval, as lazygit's goEvery does.
+    // The working-tree refresh waits out its interval, while the startup fetch runs immediately.
     timers.advance(9_999)
     expect(refreshes).toBe(0)
 
     timers.advance(1)
     await Promise.resolve()
     expect(refreshes).toBe(1)
-    expect(fetches).toBe(0)
+    expect(fetches).toBe(1)
 
     for (let step = 0; step < 5; step++) {
       timers.advance(10_000)
@@ -193,10 +237,11 @@ describe("BackgroundRefresher", () => {
     refresher.stop()
   })
 
-  test("stop cancels every pending timer, so nothing outlives the app", () => {
+  test("stop cancels every pending timer, so nothing outlives the app", async () => {
     const timers = fakeTimers()
     const refresher = new BackgroundRefresher({ fetch: async () => undefined, refresh: async () => undefined, timers })
     refresher.start()
+    await Promise.resolve()
     expect(timers.pending()).toBe(2)
     refresher.stop()
     expect(timers.pending()).toBe(0)
