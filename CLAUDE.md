@@ -120,8 +120,18 @@ Persistence must not dirty `git status`.
 `install.sh` installs to `$GITHUNK_INSTALL_DIR` / `$XDG_BIN_HOME` / `~/.local/bin`;
 `githunk update [version] [--check]` updates curl installs; npm installs update through npm.
 
-Bump `package.json`, commit/push, then push the matching `v<version>` tag. Do not copy a
-hardcoded version from documentation. Packaging checks (require built/staged artifacts):
+The canonical release trigger is `release <version>`; do not use `publish <version>` for the full release.
+`skills/githunk-release/SKILL.md` owns the end-to-end procedure and evidence report. `publish` remains
+reserved for an explicitly requested npm-only operation.
+
+Release preflight requires a clean `main` checkout, an unused `v<version>` tag, and an unused version
+for the root and five platform packages. Run baseline `bun run check` before changing
+`package.json`; a reported or observed failure stops the release before the version edit. After it
+passes, change only `package.json`, run the prepared-version project and host-package gates, commit
+with `docs: release v<version>`, push the commit before the exact tag, and never force-update or move
+a tag. The skill requires explicit confirmation immediately before creating and pushing the release
+commit and tag. Do not copy a hardcoded version from documentation.
+Packaging checks (require built/staged artifacts):
 
 ```bash
 bun run stage:prebuilt:release       # CI artifact root; local: bun run ./scripts/stage-prebuilt-npm.ts
