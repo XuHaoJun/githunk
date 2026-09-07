@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import type { TestRendererSetup } from "@opentui/core/testing"
 import { act } from "react"
+import { RGBA } from "@opentui/core"
 import { createTempRepository } from "../../helpers/temp-repository"
 import { GitRunner } from "../../../src/git/runner"
 import { loadReviewDocument } from "../../../src/review/git/load-review-document"
@@ -27,6 +28,16 @@ async function settle(setup: TestRendererSetup, ready: () => boolean): Promise<v
     await flush(setup)
   }
   expect(ready()).toBe(true)
+}
+
+function spanAt(setup: TestRendererSetup, x: number, y: number) {
+  const spans = setup.captureSpans().lines[y]?.spans ?? []
+  let column = 0
+  for (const span of spans) {
+    if (x >= column && x < column + span.width) return span
+    column += span.width
+  }
+  throw new Error(`no span at ${x},${y}`)
 }
 
 function element(setup: TestRendererSetup, id: string) {
@@ -74,7 +85,13 @@ describe("review base picker interactions", () => {
       await act(async () => { await setup.mockMouse.click(header.x, header.y) })
       await flush(setup)
       expect(controller.baseSelection).toBeUndefined()
+      expect(setup.captureCharFrame()).toContain("feature → [main ▾]")
       const base = element(setup, "review-base-selector")
+      // The base reads as a button: accent text at rest, the shared control background on hover.
+      expect(spanAt(setup, base.x, base.y).fg.toString()).toBe(RGBA.fromHex("#81a2be").toString())
+      await act(async () => { await setup.mockMouse.moveTo(base.x, base.y) })
+      await flush(setup)
+      expect(spanAt(setup, base.x, base.y).bg.toString()).toBe(RGBA.fromHex("#365f8a").toString())
       await act(async () => { await setup.mockMouse.click(base.x, base.y) })
       await settle(setup, () => controller.baseSelection?.loading === false)
       await act(async () => { await setup.mockInput.typeText("release") })

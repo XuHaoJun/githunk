@@ -120,6 +120,27 @@ describe("reviewHeaderLines", () => {
     expect(truncated.length).toBeLessThan("refs/heads/機能ブランチ-very-long-name-exceeding-width → refs/heads/main".length)
   })
 
+  test("renders the base as a bracketed control with the choose-base action", () => {
+    const lines = reviewHeaderLines(makeState(), 120)
+    const base = lines[0]?.find((span) => span.action === "choose-base")
+    expect(base?.text).toBe("[main ▾]")
+    expect(lines[0]?.map((span) => span.text).join("")).toContain("feature/payment → [main ▾]")
+  })
+
+  test("keeps the closing bracket when the base label is truncated", () => {
+    const state = makeState({ headRef: "refs/heads/feature/payment", baseRef: "refs/heads/release/2026-09-very-long-branch-name" })
+    const lines = reviewHeaderLines(state, 30)
+    const base = lines[0]?.find((span) => span.action === "choose-base")
+    expect(base?.text).toMatch(/^\[release.*… ▾\]$/)
+    expect(cellWidth(lines[0]?.map((span) => span.text).join("") ?? "")).toBeLessThanOrEqual(30)
+  })
+
+  test("drops the decoration when the header cannot fit a label cell plus brackets", () => {
+    const lines = reviewHeaderLines(makeState(), 4)
+    const base = lines[0]?.find((span) => span.action === "choose-base")
+    expect(base?.text).toBe("main")
+  })
+
   test("returns styled spans without mutating state", () => {
     const state = makeState()
     const lines = reviewHeaderLines(state, 80)

@@ -35,6 +35,23 @@ function truncateCell(text: string, maxWidth: number): string {
   return out + "…"
 }
 
+// The base label is a clickable control that opens the base picker. Brackets
+// match the workspace's other buttons ([Note], [Approve], [Ctrl-R retry]) and
+// the glyph says "opens a chooser"; the file tree already renders ▼/▶.
+const BASE_DECORATION_WIDTH = cellWidth("[ ▾]")
+
+function decorateBase(label: string): string {
+  return `[${label} ▾]`
+}
+
+// Truncate the inner label, not the decorated text, so the closing bracket
+// survives. Below the width needed for one label cell plus the decoration,
+// fall back to the bare truncated label rather than a dangling "[".
+function truncateBase(label: string, maxWidth: number): string {
+  if (maxWidth < BASE_DECORATION_WIDTH + 1) return truncateCell(label, maxWidth)
+  return decorateBase(truncateCell(label, maxWidth - BASE_DECORATION_WIDTH))
+}
+
 function formatStat(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—"
   return String(value)
@@ -87,11 +104,11 @@ export function reviewHeaderLines(state: ReviewState, width: number): readonly R
       : "Aggregate"
 
   // Keep the base reachable even when the current branch name fills the terminal.
-  const baseBudget = Math.min(cellWidth(baseLabel), Math.max(1, Math.floor(w / 2)))
+  const baseBudget = Math.min(cellWidth(decorateBase(baseLabel)), Math.max(1, Math.floor(w / 2)))
   const headPrefix = w > baseBudget + 3
     ? `${truncateCell(headLabel, w - baseBudget - 3)} → `
     : ""
-  const baseText = truncateCell(baseLabel, Math.max(0, w - cellWidth(headPrefix)))
+  const baseText = truncateBase(baseLabel, Math.max(0, w - cellWidth(headPrefix)))
   const suffix = `  ·  ${commits} commits · ${files} files · ${additionsText} ${deletionsText}  [${projectionLabel}]`
   const suffixText = truncateCell(suffix, Math.max(0, w - cellWidth(headPrefix) - cellWidth(baseText)))
 

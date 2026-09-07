@@ -39,7 +39,12 @@ const COLORS = {
   viewed: "#b9ca4a",
   changed: "#f0c674",
   feedback: "#c397d8",
+  // Clickable header controls; Tomorrow Night blue like the rest of the palette.
+  action: "#81a2be",
 } as const
+
+// Background shared with the focused composer controls, used while the mouse hovers a header control.
+const CONTROL_HOVER_BACKGROUND = "#365f8a"
 
 
 function fitText(text: string, width: number, overflowMarker = "."): string {
@@ -256,6 +261,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const [projectionNotice, setProjectionNotice] = useState<string | null>(null)
   const [sidebarWidthPreference, setSidebarWidthPreference] = useState(REVIEW_SIDEBAR_DEFAULT_WIDTH)
   const [resizeBarHovered, setResizeBarHovered] = useState(false)
+  const [baseSelectorHovered, setBaseSelectorHovered] = useState(false)
   const [resizingSidebar, setResizingSidebar] = useState(false)
   const [visibleFileKeys, setVisibleFileKeys] = useState<readonly string[]>([])
   const [focus, setFocus] = useState<"stream" | "sidebar" | "filter">("stream")
@@ -1136,12 +1142,21 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         {reviewHeaderLines(state, dimensions.width).map((line, lineIndex) => (
           <box key={lineIndex} style={{ width: "100%", height: 1, flexShrink: 0, flexDirection: "row" }}>
             {line.map((span, spanIndex) => span.action === "choose-base" ? (
-              <box key={spanIndex} id="review-base-selector" style={{ width: cellWidth(span.text), height: 1, flexShrink: 0 }} onMouseUp={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                requestBaseSelection()
-              }}>
-                <text content={span.text} fg={COLORS.strong} selectable={false} wrapMode="none" truncate={true} />
+              <box
+                key={spanIndex}
+                id="review-base-selector"
+                style={{ width: cellWidth(span.text), height: 1, flexShrink: 0, ...(baseSelectorHovered ? { backgroundColor: CONTROL_HOVER_BACKGROUND } : {}) }}
+                onMouseOver={() => setBaseSelectorHovered(true)}
+                onMouseOut={() => setBaseSelectorHovered(false)}
+                onMouseUp={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  // The picker overlay covers the header; do not rely on a mouse-out to clear the highlight.
+                  setBaseSelectorHovered(false)
+                  requestBaseSelection()
+                }}
+              >
+                <text content={span.text} fg={baseSelectorHovered ? COLORS.strong : COLORS.action} selectable={false} wrapMode="none" truncate={true} />
               </box>
             ) : <text key={spanIndex} content={span.text} fg={span.style === "dim" ? COLORS.dim : COLORS.strong} wrapMode="none" truncate={true} />)}
           </box>
