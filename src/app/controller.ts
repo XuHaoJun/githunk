@@ -5,9 +5,8 @@ import { listCommits, loadCommit, loadCommitFilePatch, type CommitListOptions } 
 import type { CommitDetails, CommitSummary } from "../domain/commit"
 import { parseDiff } from "../domain/diff/parse"
 import type { DiffDocument, DiffFile } from "../domain/diff/document"
-import type { AppModel, PatchSection } from "../domain/repository"
+import type { AppModel, PatchSection, WorkingTreeSnapshot } from "../domain/repository"
 import type { BranchDeleteRequest, BranchListing } from "../domain/branch"
-import type { WorkingTreeSnapshot } from "../domain/repository"
 import type { ReviewTarget, WorkingTreeScope, ChangedFile, DiscardFileMode } from "../domain/review-target"
 import { reviewStateFor, type ReviewDatabase, type ReviewFileState } from "../domain/review-progress"
 import { fingerprintWorkingTreeFile, workingTreeTargetKey } from "../review/working-tree-fingerprint"
@@ -149,6 +148,37 @@ function rawPatchForFile(file: ChangedFile, sections: readonly IndexedPatchSecti
 }
 function ownValue<T>(record: Record<string, T> | undefined, key: string): T | undefined {
   return record !== undefined && Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined
+}
+function workingTreeSnapshotMatchesModel(snapshot: WorkingTreeSnapshot, model: AppModel): boolean {
+  if (
+    model.repositoryRoot !== snapshot.repositoryRoot ||
+    model.branch !== snapshot.branch ||
+    model.upstream !== snapshot.upstream ||
+    model.reviewTarget.kind !== "working-tree" ||
+    model.reviewTarget.scope !== snapshot.reviewTarget.scope ||
+    model.files.length !== snapshot.files.length ||
+    model.rawPatchSections.length !== snapshot.patches.length
+  ) return false
+  for (let index = 0; index < snapshot.files.length; index++) {
+    const previous = model.files[index]!
+    const next = snapshot.files[index]!
+    if (
+      previous.path !== next.path ||
+      previous.previousPath !== next.previousPath ||
+      previous.indexStatus !== next.indexStatus ||
+      previous.worktreeStatus !== next.worktreeStatus ||
+      previous.untracked !== next.untracked ||
+      previous.conflicted !== next.conflicted ||
+      previous.additions !== next.additions ||
+      previous.deletions !== next.deletions
+    ) return false
+  }
+  for (let index = 0; index < snapshot.patches.length; index++) {
+    const previous = model.rawPatchSections[index]!
+    const next = snapshot.patches[index]!
+    if (previous.label !== next.label || previous.text !== next.text) return false
+  }
+  return true
 }
 function changedFilesFromDocument(document: DiffDocument): readonly ChangedFile[] {
   return document.files.flatMap((file: DiffFile) => {
@@ -1177,10 +1207,24 @@ export class AppController {
     try {
       const snapshot = await this.loadSnapshot(target, options)
       if (generation !== this.generation) return
+      // lazygit's 10-second routine refreshes only FILES (`pkg/gui/background.go:149-156`);
+      // unchanged file state never rebuilds commit history, patch indexes, or review fingerprints.
+      // Besides matching that scope, retaining the installed model prevents a stable large patch
+      // from repeatedly driving JavaScriptCore's allocator to a new high-water mark.
+      if (options.background === true && workingTreeSnapshotMatchesModel(snapshot, previousState)) {
+        this.setState({ loading: false }, ["banner"])
+        return
+      }
       const review = await this.reviewForSnapshot(snapshot.reviewTarget, snapshot.files, snapshot.patches)
       if (generation !== this.generation) return
-      const history = await this.loadCommitHistory("HEAD")
-      if (generation !== this.generation) return
+      let commits = this.currentState.commits ?? []
+      let historyWarning: string | undefined
+      if (options.background !== true || snapshot.branch !== previousState.branch) {
+        const history = await this.loadCommitHistory("HEAD")
+        if (generation !== this.generation) return
+        commits = history.commits
+        historyWarning = history.warning
+      }
       const reviewState = this.priorStashStateForRefresh ?? this.currentState
       const reviewStatuses = this.preserveReviewingStatuses(review.statuses, snapshot.reviewTarget, snapshot.files, review.sections, reviewState)
       const reviewSummary = this.reviewSummaryFor(reviewStatuses, snapshot.files)
@@ -1189,7 +1233,7 @@ export class AppController {
         : this.workingTreeCursor
       const selectionId = cursor.selectionId !== undefined && snapshot.files.some((file) => file.path === cursor.selectionId) ? cursor.selectionId : undefined
       const focusId = cursor.focusId !== undefined && snapshot.files.some((file) => file.path === cursor.focusId) ? cursor.focusId : undefined
-      const warning = history.warning ?? review.warning
+      const warning = historyWarning ?? review.warning
       this.setState({
         ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
         ...(warning === undefined ? {} : { banner: warning }),
@@ -1202,7 +1246,7 @@ export class AppController {
         rawPatchSections: snapshot.patches,
         reviewStatuses,
         reviewSummary,
-        commits: history.commits,
+        commits,
         loading: false,
         title: titleFor(snapshot.reviewTarget, snapshot.branch),
       }, ["upstream", "upstreamChoice", "banner", "selectionId", "focusId"])

@@ -56,6 +56,22 @@ describe("main pane virtual diff viewport", () => {
       setup.renderer.destroy()
     }
   })
+  test("does not rebuild an unchanged virtual layout", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    try {
+      const pane = createMainPane(setup.renderer, model())
+      setup.renderer.root.add(pane.box)
+      const document = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD + 20))
+      installMainContent(pane, content(document), false)
+      const layout = virtualMainPaneFor(pane)?.layout()
+      installMainContent(pane, content(document), false)
+      expect(layout).toBeDefined()
+      expect(virtualMainPaneFor(pane)?.layout()).toBe(layout)
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+
 
   test("preserves raw line-range selection while scrolling away from it", async () => {
     const setup = await createTestRenderer({ width: 120, height: 40 })

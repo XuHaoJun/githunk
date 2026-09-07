@@ -68,6 +68,25 @@ describe("working tree invalidation", () => {
       await repository.cleanup()
     }
   })
+  test("unchanged background refresh does not reread review state", async () => {
+    const repository = await createTempRepository()
+    try {
+      const store = new WorkingTreeReviewStore(repository.path)
+      const patch = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n"
+      const controller = new AppController({
+        repositoryRoot: repository.path,
+        reviewStore: store,
+        load: async () => snapshot(repository.path, patch),
+      })
+      await controller.refresh()
+      store.load = async () => { throw new Error("unchanged review state should not be reloaded") }
+      await controller.refreshFiles()
+      expect(controller.state.banner).toBeUndefined()
+      expect(controller.state.reviewStatuses?.["a.ts"]).toBe("not-reviewed")
+    } finally {
+      await repository.cleanup()
+    }
+  })
   test("preserves a review started during an in-flight refresh", async () => {
     const repository = await createTempRepository()
     try {
@@ -101,6 +120,7 @@ describe("working tree invalidation", () => {
       const store = new WorkingTreeReviewStore(repository.path)
       const originalLoad = store.load.bind(store)
       let storeLoads = 0
+      let snapshotLoads = 0
       let signalStoreLoadStarted: (() => void) | undefined
       let releaseStoreLoad: (() => void) | undefined
       const storeLoadStarted = new Promise<void>((resolve) => { signalStoreLoadStarted = resolve })
@@ -116,7 +136,12 @@ describe("working tree invalidation", () => {
       const controller = new AppController({
         repositoryRoot: repository.path,
         reviewStore: store,
-        load: async () => snapshot(repository.path, patch),
+        load: async () => {
+          snapshotLoads += 1
+          const loaded = snapshot(repository.path, patch)
+          if (snapshotLoads === 1) return loaded
+          return { ...loaded, files: loaded.files.map((file) => ({ ...file, additions: file.additions + 1 })) }
+        },
       })
       await controller.refresh()
       const refresh = controller.refreshFiles()
@@ -129,38 +154,69 @@ describe("working tree invalidation", () => {
       await repository.cleanup()
     }
   })
-  test("preserves a review started during commit-history loading", async () => {
-    const repository = await createTempRepository()
-    try {
-      const store = new WorkingTreeReviewStore(repository.path)
-      const patch = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n"
-      let commitLoads = 0
-      let signalHistoryLoadStarted: (() => void) | undefined
-      let releaseHistoryLoad: (() => void) | undefined
-      const historyLoadStarted = new Promise<void>((resolve) => { signalHistoryLoadStarted = resolve })
-      const controller = new AppController({
-        repositoryRoot: repository.path,
-        reviewStore: store,
-        load: async () => snapshot(repository.path, patch),
-        loadCommits: async () => {
-          commitLoads += 1
-          if (commitLoads === 2) {
-            signalHistoryLoadStarted?.()
-            await new Promise<void>((resolve) => { releaseHistoryLoad = resolve })
-          }
-          return []
-        },
-      })
-      await controller.refresh()
-      const refresh = controller.refreshFiles()
-      await historyLoadStarted
-      controller.selectFile("a.ts")
-      releaseHistoryLoad?.()
-      await refresh
-      expect(controller.state.reviewStatuses?.["a.ts"]).toBe("reviewing")
-    } finally {
-      await repository.cleanup()
-    }
+  test("files refresh reloads commit history when the branch changes", async () => {
+    let branch = "main"
+    let subject = "main commit"
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async () => ({ ...snapshot("/tmp/repo", ""), branch }),
+      loadCommits: async () => [{
+        oid: "a".repeat(40),
+        shortOid: "a".repeat(8),
+        parentOids: [],
+        authorName: "Author",
+        authoredAt: "2026-09-07T00:00:00.000Z",
+        subject,
+        body: "",
+      }],
+    })
+    await controller.refresh()
+    branch = "feature"
+    subject = "feature commit"
+    await controller.refreshFiles()
+    expect(controller.state.branch).toBe("feature")
+    expect(controller.state.commits?.map((commit) => commit.subject)).toEqual(["feature commit"])
+  })
+
+  test("successful unchanged files refresh clears a prior refresh error", async () => {
+    let fail = false
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async () => {
+        if (fail) throw new Error("temporary refresh failure")
+        return snapshot("/tmp/repo", "")
+      },
+    })
+    await controller.refresh()
+    fail = true
+    await controller.refreshFiles()
+    expect(controller.state.banner).toContain("temporary refresh failure")
+    fail = false
+    await controller.refreshFiles()
+    expect(controller.state.banner).toBeUndefined()
+  })
+
+  test("files refresh leaves commit history unchanged", async () => {
+    let patch = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n"
+    let subject = "startup commit"
+    const controller = new AppController({
+      repositoryRoot: "/tmp/repo",
+      load: async () => snapshot("/tmp/repo", patch),
+      loadCommits: async () => [{
+        oid: "a".repeat(40),
+        shortOid: "a".repeat(8),
+        parentOids: [],
+        authorName: "Author",
+        authoredAt: "2026-09-07T00:00:00.000Z",
+        subject,
+        body: "",
+      }],
+    })
+    await controller.refresh()
+    subject = "background reload"
+    patch = patch.replace("+new", "+changed")
+    await controller.refreshFiles()
+    expect(controller.state.commits?.map((commit) => commit.subject)).toEqual(["startup commit"])
   })
   test("does not carry stash review into working tree after pop", async () => {
     const repository = await createTempRepository()

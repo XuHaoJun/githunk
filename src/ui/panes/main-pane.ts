@@ -458,9 +458,11 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     const virtual = virtualMainPaneFor(pane)
     if (virtualDocument && virtual !== undefined) {
       releaseAnsiText(pane.text)
-      // install() already clamps and paints the bounded window via renderWindow;
-      // a second clampScroll() would repaint the same window twice per install.
-      virtual.install(doc, content.preamble ?? "")
+      // Building a VirtualDiffLayout walks every parsed line. Stable refreshes hand this function
+      // the same cached document; retain its layout and bounded native window instead of rebuilding
+      // both for content that is already installed.
+      const reuseLayout = virtual.isActive() && sameIdentity && identicalText && previousContent?.document === doc
+      if (!reuseLayout) virtual.install(doc, content.preamble ?? "")
       renderedTexts.delete(pane)
       if (previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
       return
