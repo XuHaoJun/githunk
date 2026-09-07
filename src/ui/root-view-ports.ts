@@ -1,6 +1,7 @@
 import type { DiffDocument } from "../domain/diff/document"
 import type { DiscardFileMode, WorkingTreeScope } from "../domain/review-target"
 import type { BranchDeleteRequest } from "../domain/branch"
+import type { SubmoduleConfig } from "../domain/submodule"
 import type { CommitDetails, CommitSummary } from "../domain/commit"
 import type { TagPreview, TagSummary } from "../domain/tag"
 import type { RefLogTarget } from "../git/ref-log"
@@ -19,6 +20,7 @@ export type RepositoryCommands = {
   readonly onUnstageFile: (path: string) => Promise<void>
   readonly onDiscardFile: (path: string, mode: DiscardFileMode) => Promise<void>
   readonly onDiscardFiles: (paths: readonly string[], mode: DiscardFileMode) => Promise<void>
+  readonly onResetSubmodule: (submodule: SubmoduleConfig) => Promise<void>
   readonly onToggleAllFiles: () => Promise<void>
   readonly onScopeChange: (scope: WorkingTreeScope) => Promise<void>
   readonly onOpenBranchReview: () => Promise<void>

@@ -249,4 +249,44 @@ describe("GitMutations", () => {
     await mutations.discardFile("file.txt", "all")
     expect((await repo.git(["status", "--short"])).stdout).toBe("")
   })
+  test("stashes submodule changes before resetting to the superproject gitlink", async () => {
+    const child = await createTempRepository()
+    try {
+      await child.write("child.txt", "child v1\n")
+      await child.git(["add", "--", "child.txt"])
+      await child.git(["commit", "--quiet", "-m", "child v1"])
+      const childV1 = (await child.git(["rev-parse", "HEAD"])).stdout.trim()
+
+      await repo.git(["-c", "protocol.file.allow=always", "submodule", "add", "-q", child.path, "vendor/child"])
+      await repo.git(["commit", "--quiet", "-m", "add child submodule"])
+
+      await child.write("child.txt", "child v2\n")
+      await child.git(["add", "--", "child.txt"])
+      await child.git(["commit", "--quiet", "-m", "child v2"])
+      const childV2 = (await child.git(["rev-parse", "HEAD"])).stdout.trim()
+      await repo.git(["-C", "vendor/child", "fetch", "--quiet"])
+      await repo.git(["-C", "vendor/child", "checkout", "--quiet", childV2])
+      await repo.git(["add", "--", "vendor/child"])
+      await repo.git(["commit", "--quiet", "-m", "update child submodule"])
+
+      await repo.git(["-C", "vendor/child", "checkout", "--quiet", childV1])
+      await repo.write("vendor/child/child.txt", "local child change\n")
+      await repo.write("vendor/child/untracked.txt", "local untracked child change\n")
+      await repo.git(["add", "--", "vendor/child"])
+
+      const submodule = { name: "vendor/child", path: "vendor/child", url: child.path }
+      const mutations = new GitMutations(runner)
+      await mutations.resetSubmodule(submodule)
+
+      expect((await repo.git(["status", "--porcelain"])).stdout).toBe("")
+      expect((await repo.git(["-C", "vendor/child", "rev-parse", "HEAD"])).stdout.trim()).toBe(childV2)
+      expect((await repo.git(["-C", "vendor/child", "status", "--porcelain"])).stdout).toBe("")
+      expect((await repo.git(["-C", "vendor/child", "stash", "list", "--format=%gd"])).stdout.trim()).toBe("stash@{0}")
+      const stashFiles = (await repo.git(["-C", "vendor/child", "stash", "show", "--include-untracked", "--name-only", "stash@{0}"])).stdout
+      expect(stashFiles).toContain("child.txt")
+      expect(stashFiles).toContain("untracked.txt")
+    } finally {
+      await child.cleanup()
+    }
+  })
 })

@@ -35,6 +35,9 @@ export const LOG_ACTIONS = {
   discardAllUnstagedChangesInFile: "Discard all unstaged changes selected file(s)",
   /** english.go:2173 */
   discardAllChangesInFile: "Discard all changes in selected file(s)",
+
+  /** files_controller.go:1805-1825; english.go:2222 */
+  resetSubmodule: "Reset submodule",
   /**
    * staging_controller.go:239-265; english.go:2215. Both staging and discarding a selection:
    * `DiscardSelection` (:213) routes through `applySelectionAndRefresh(true)` into the same

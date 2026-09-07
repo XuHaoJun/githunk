@@ -557,6 +557,51 @@ describe("panel 2 tabs", () => {
     expect(view.mainContent?.plainText).toBe(`Name: libs/mid/vendor/inner\nPath: libs/mid/vendor/inner\nUrl:  ${inner.path}\n\n`)
   })
 
+  test("Files d on a dirty submodule offers stash-and-update and resets the gitlink", async () => {
+    const child = await createTempRepository()
+    extras.push(child)
+    await child.write("child.txt", "child v1\n")
+    await child.git(["add", "--", "child.txt"])
+    await child.git(["commit", "--quiet", "-m", "child v1"])
+    const childV1 = (await child.git(["rev-parse", "HEAD"])).stdout.trim()
+    let childV2 = ""
+
+    harness = await createShellHarness({
+      setup: async (repository) => {
+        await repository.write("base.txt", "base\n")
+        await repository.git(["add", "--", "base.txt"])
+        await repository.git(["commit", "--quiet", "-m", "base"])
+        await repository.git(["-c", "protocol.file.allow=always", "submodule", "add", "-q", child.path, "vendor/child"])
+        await repository.git(["commit", "--quiet", "-m", "add child submodule"])
+
+        await child.write("child.txt", "child v2\n")
+        await child.git(["add", "--", "child.txt"])
+        childV2 = (await child.git(["rev-parse", "HEAD"])).stdout.trim()
+        await repository.git(["-C", "vendor/child", "fetch", "--quiet"])
+        await repository.git(["-C", "vendor/child", "checkout", "--quiet", childV2])
+        await repository.git(["add", "--", "vendor/child"])
+        await repository.git(["commit", "--quiet", "-m", "update child submodule"])
+
+        await repository.git(["-C", "vendor/child", "checkout", "--quiet", childV1])
+        await repository.write("vendor/child/child.txt", "local child change\n")
+        await repository.write("vendor/child/untracked.txt", "local untracked child change\n")
+        await repository.git(["add", "--", "vendor/child"])
+      },
+    })
+
+    await harness.pressKey("2")
+    await harness.flush()
+    await harness.pressKey("d")
+    expect(harness.frame()).toContain("Stash uncommitted submodule changes and update")
+
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    expect(harness.frame()).toContain("Reset submodule")
+    expect((await harness.repository.git(["status", "--porcelain"])).stdout).toBe("")
+    expect((await harness.repository.git(["-C", "vendor/child", "rev-parse", "HEAD"])).stdout.trim()).toBe(childV2)
+    expect((await harness.repository.git(["-C", "vendor/child", "stash", "list", "--format=%gd"])).stdout.trim()).toBe("stash@{0}")
+  })
+
   test("a repository with no submodules renders lazygit's No submodules message", async () => {
     harness = await createShellHarness()
     const view = harness.app.view!

@@ -1,5 +1,8 @@
+import { stat } from "node:fs/promises"
+import { join } from "node:path"
 import type { DiffDocument } from "../domain/diff/document"
 import { buildPartialPatch, type PartialPatchOptions } from "../domain/diff/transform"
+import { submoduleFullPath, type SubmoduleConfig } from "../domain/submodule"
 import type { DiscardFileMode } from "../domain/review-target"
 import { MutationQueue } from "../app/mutation-queue"
 import { GitRunner } from "./runner"
@@ -87,6 +90,41 @@ export class GitMutations {
       // pkg/commands/oscommands/os.go:52,188-189 os.RemoveAll), so a single -f
       // silently no-ops where lazygit discards.
       await this.runner.run(["clean", "-ff", "-d", "--", path])
+      await this.refresh()
+    })
+  }
+
+  /**
+   * Mirrors lazygit's FilesController.ResetSubmodule (files_controller.go:1805-1825):
+   * unstage the gitlink, stash the child worktree, then force it to the parent module's recorded
+   * commit (submodule.go:185-207).
+   */
+  async resetSubmodule(submodule: SubmoduleConfig): Promise<void> {
+    return this.queue.run(async () => {
+      const fullPath = submoduleFullPath(submodule)
+      await this.runner.run(["restore", "--staged", "--", fullPath], { acceptedExitCodes: [0, 1] })
+
+      let worktreeExists = true
+      try {
+        await stat(join(this.runner.cwd, fullPath))
+      } catch (error) {
+        if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+          worktreeExists = false
+        } else {
+          throw error
+        }
+      }
+      if (worktreeExists) {
+        await this.runner.run(["-C", fullPath, "stash", "--include-untracked"])
+      }
+
+      const updateArgs = ["submodule", "update", "--init", "--force", "--", submodule.path]
+      const parentPath = submodule.parentModule === undefined ? undefined : submoduleFullPath(submodule.parentModule)
+      if (parentPath === undefined) {
+        await this.runner.run(updateArgs)
+      } else {
+        await this.runner.run(["-C", parentPath, ...updateArgs])
+      }
       await this.refresh()
     })
   }

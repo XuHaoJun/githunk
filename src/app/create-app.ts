@@ -313,6 +313,7 @@ export function createApp(options: CreateAppOptions): App {
         onUnstageFile: repositoryUi((path) => controller.unstageFile(path)),
         onDiscardFile: repositoryUi((path, mode) => controller.discardFile(path, mode)),
         onDiscardFiles: repositoryUi((paths, mode) => controller.discardFiles(paths, mode)),
+        onResetSubmodule: repositoryUi((submodule) => controller.resetSubmodule(submodule)),
         onToggleAllFiles: repositoryUi(() => controller.toggleAllFiles()),
         onScopeChange: repositoryUi((scope) => controller.setWorkingTreeScope(scope)),
         onOpenBranchReview: async () => {

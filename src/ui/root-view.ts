@@ -60,7 +60,7 @@ import {
   type FileTreeRow,
   type FileTreeState,
 } from "./file-tree"
-import { submoduleFullName } from "../domain/submodule"
+import { submoduleFullName, submoduleFullPath, type SubmoduleConfig } from "../domain/submodule"
 import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainPointerSelection, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainDiffVisualRowRange, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, virtualMainPaneFor, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
@@ -673,6 +673,24 @@ export class RootView {
     const id = this.filesPanel.views.files?.selectedId
     if (id === undefined) return undefined
     return fileTreeRows(this.filesTree).find((row) => row.id === id)
+  }
+
+  private submoduleForPath(path: string): SubmoduleConfig | undefined {
+    return (this.model.submodules ?? []).find((submodule) => submoduleFullPath(submodule) === path)
+  }
+
+  private openSubmoduleResetMenu(submodule: SubmoduleConfig): void {
+    this.actionMenu.openMenu(submoduleFullPath(submodule), [{
+      key: "enter",
+      label: "Stash uncommitted submodule changes and update",
+      onPress: () => this.runUiMutation(() => this.ports.commands.onResetSubmodule(submodule)),
+    }])
+    this.recomputeLayout()
+  }
+
+  private refuseSubmoduleMultiSelection(): void {
+    this.panes.files.box.bottomTitle = "Multiselection not supported for submodules"
+    this.root.requestRender()
   }
 
   private selectedFileRowsForRange(): readonly FileTreeRow<ChangedFile>[] | undefined {
@@ -1949,6 +1967,22 @@ export class RootView {
       const firstRow = active.state.rows[range.startIndex]
       if (firstRow === undefined) return
       const resolved = this.resolveFilesForRows(rows)
+
+      const selectedSubmodules = resolved.files.flatMap((file) => {
+        const submodule = this.submoduleForPath(file.path)
+        return submodule === undefined ? [] : [submodule]
+      })
+      if (selectedSubmodules.length > 0) {
+        if (resolved.files.length !== 1) {
+          this.refuseSubmoduleMultiSelection()
+          return
+        }
+        const submodule = selectedSubmodules[0]
+        if (submodule === undefined) return
+        this.openSubmoduleResetMenu(submodule)
+        return
+      }
+
       if (resolved.files.some((file) => file.conflicted)) {
         this.panes.files.box.bottomTitle = "line actions disabled: conflicted file"
         this.root.requestRender()
@@ -1986,6 +2020,19 @@ export class RootView {
     }
     const row = this.selectedFileRow()
     if (row === undefined) return
+
+    const resolved = this.resolveFilesForRows([row])
+    const selectedSubmodule = resolved.files.length === 1
+      ? this.submoduleForPath(resolved.files[0]?.path ?? "")
+      : undefined
+    if (selectedSubmodule !== undefined) {
+      this.openSubmoduleResetMenu(selectedSubmodule)
+      return
+    }
+    if (resolved.files.some((file) => this.submoduleForPath(file.path) !== undefined)) {
+      this.refuseSubmoduleMultiSelection()
+      return
+    }
     const path = row.path
     const hasStaged = row.kind === "directory"
       ? someFileInNode(row.node, fileHasStagedChanges)

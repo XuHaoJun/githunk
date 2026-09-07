@@ -969,7 +969,11 @@ export class AppController {
     await this.runMutation(() => this.mutations?.discardFiles(paths, mode), true)
   }
 
-
+  async resetSubmodule(submodule: SubmoduleConfig): Promise<void> {
+    if (!this.ensureWorkingTreeMutation()) return
+    this.logAction(LOG_ACTIONS.resetSubmodule)
+    await this.runMutation(() => this.mutations?.resetSubmodule(submodule))
+  }
 
   async toggleAllFiles(): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
