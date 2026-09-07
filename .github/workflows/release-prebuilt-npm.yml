@@ -35,7 +35,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       - name: Resolve npm dist-tag and GitHub latest status
         id: resolve
@@ -80,7 +80,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -124,7 +124,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -188,7 +188,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -233,7 +233,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       - name: Download platform artifacts
         uses: actions/download-artifact@v4

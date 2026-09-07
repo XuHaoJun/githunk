@@ -6,7 +6,7 @@
 
 **Architecture:** Native CI matrix builds one host binary per platform; staging scripts assemble 1 meta + 5 platform npm packages with `os`/`cpu` fields; `bin/githunk.js` execs the matching prebuilt binary with the existing Node bundle as fallback. Execution: inline in this session (operator pre-approved).
 
-**Tech Stack:** Bun 1.4.0 (`build --compile`), TypeScript strict, GitHub Actions native runners, npm OIDC trusted publishing.
+**Tech Stack:** Bun 1.4.2 (`build --compile`), TypeScript strict, GitHub Actions native runners, npm OIDC trusted publishing.
 
 **Spec:** hunk reference at `learn-projects/hunk` (`scripts/build-bin.ts`, `scripts/prebuilt-package-helpers.ts`, `scripts/stage-prebuilt-npm.ts`, `scripts/build-prebuilt-artifact.ts`, `scripts/publish-prebuilt-npm.ts`, `bin/hunk.cjs`, `.github/workflows/release-prebuilt-npm.yml`); decisions from operator: npm first (no install.sh), manual placeholder publish + 6 trusted publishers as operator actions.
 
