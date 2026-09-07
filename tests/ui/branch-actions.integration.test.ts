@@ -310,6 +310,42 @@ describe("branch action parity", () => {
     expect(frame).toContain("New branch name (branch is off of 'origin/feature/foo')")
     expect(frame).toContain("feature/foo")
   })
+  test("remote branch checkout returns to the selected local branch", async () => {
+    harness = await createShellHarness({ setup: seedRemoteBranch })
+
+    await harness.pressKey("3")
+    await harness.pressKey("]")
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    await harness.pressKey(" ")
+    await harness.settle()
+
+    const view = harness.app.view!
+    expect((await harness.repository.git(["branch", "--show-current"])).stdout.trim()).toBe("feature/foo")
+    expect(view.branchesPanel.child).toBeUndefined()
+    expect(view.activeBranchesTab).toBe("branches")
+    expect(view.branchesPanel.views.branches.selectedId).toBe("local:feature/foo")
+    expect(view.renderedListText("branches")).toContain("feature/foo")
+    expect(view.isMutating).toBe(false)
+    expect(harness.frame()).not.toContain("Mutation in progress; refreshing…")
+  })
+  test("remote branch checkout selects an existing tracking branch", async () => {
+    harness = await createShellHarness({ setup: seedTrackedRemoteBranch })
+
+    await harness.pressKey("3")
+    await harness.pressKey("]")
+    await harness.pressKey("RETURN")
+    await harness.settle()
+    await harness.pressKey(" ")
+    await harness.settle()
+
+    const view = harness.app.view!
+    expect((await harness.repository.git(["branch", "--show-current"])).stdout.trim()).toBe("feature/foo")
+    expect(view.branchesPanel.child).toBeUndefined()
+    expect(view.activeBranchesTab).toBe("branches")
+    expect(view.branchesPanel.views.branches.selectedId).toBe("local:feature/foo")
+    expect(harness.frame()).not.toContain("Mutation in progress; refreshing…")
+  })
 
   test("creating from a local branch checks out the new branch", async () => {
     harness = await createShellHarness()

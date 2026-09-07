@@ -3700,10 +3700,17 @@ export class RootView {
     const isCurrent = (): boolean => {
       if (requestGeneration !== this.remoteCheckoutGeneration) return false
       if (this.focusManager.active !== requestFocus || this.branchesPanel.activeTab !== requestActiveTab ||
-        requestChildRemote !== (requestChild?.value.kind === "remote-branches" ? requestChild.value.remote : null) ||
-        (this.branchesPanel.child?.view.selectedId ?? this.branchesPanel.views[this.branchesPanel.activeTab]?.selectedId) !== requestSelectedId ||
+        requestChildRemote !== (this.branchesPanel.child?.value.kind === "remote-branches" ? this.branchesPanel.child.value.remote : null) ||
         this.branchFilter !== requestFilter || this.branchFilterActive !== requestFilterActive ||
         JSON.stringify(this.model.reviewTarget) !== requestTarget) return false
+      const currentSelectedId = (this.branchesPanel.child?.view ?? this.branchesPanel.views[this.branchesPanel.activeTab])?.selectedId
+      // The controller refresh intentionally reloads only the remote list, so its lazily-loaded
+      // child rows disappear during a successful checkout. Do not mistake that own refresh for
+      // the user moving to another row; navigation still invalidates remoteCheckoutGeneration.
+      const childWasClearedByRefresh = currentSelectedId === undefined &&
+        requestChildRemote !== null &&
+        requestSelectedId === `remote-branch:${selection.ref}`
+      if (currentSelectedId !== requestSelectedId && !childWasClearedByRefresh) return false
       return requestSelectedId === `remote-branch:${selection.ref}`
     }
     void this.ports.commands.onCheckoutRemoteTracking(selection, confirmedMismatch).then((result) => {
@@ -3722,7 +3729,12 @@ export class RootView {
         if (this.actionMenu.isOpen() && this.actionMenu.box.title === "Remote tracking mismatch") {
           this.actionMenu.close()
         }
-        this.panes.branches.box.bottomTitle = undefined
+        this.panes.main.box.bottomTitle = undefined
+        if (result !== undefined) {
+          this.finishLocalBranchCheckout(result.localBranch)
+        } else {
+          this.panes.branches.box.bottomTitle = undefined
+        }
       }
       this.root.requestRender()
     }).catch((error: unknown) => {
@@ -3732,6 +3744,7 @@ export class RootView {
     }).finally(() => {
       this.mutationInFlight = false
       this.remoteCheckoutInFlight = false
+      this.ports.host.onMutationSettled()
       if (requestGeneration === this.remoteCheckoutGeneration) {
         this.clearTransientMenus()
       }
@@ -3862,7 +3875,7 @@ export class RootView {
     this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
     void operation().then(() => {
       this.mutationInFlight = false
-      this.finishBranchCreate(branchName)
+      this.finishLocalBranchCheckout(branchName)
       this.ports.host.onMutationSettled()
     }).catch((error: unknown) => {
       this.mutationInFlight = false
@@ -3872,14 +3885,20 @@ export class RootView {
         return
       }
       if (finishOnFailure) {
-        this.finishBranchCreate(branchName)
+        this.finishLocalBranchCheckout(branchName)
       }
       this.panes.main.box.bottomTitle = error instanceof Error ? error.message : String(error)
       this.root.requestRender()
     })
   }
 
-  private finishBranchCreate(branchName: string): void {
+  /**
+   * Mirrors lazygit's `CheckoutRef`: the refresh selects the checked-out branch and the
+   * branches context is visible before/after the operation (`pkg/gui/controllers/helpers/refs_helper.go:42-83`;
+   * `pkg/gui/controllers/helpers/refresh_helper.go:1206-1209`). Remote-branch checkout uses the
+   * same completion path as local branch creation so a successful checkout is visibly complete.
+   */
+  private finishLocalBranchCheckout(branchName: string): void {
     if (this.branchesPanel.child !== undefined) {
       this.branchesPanel = { ...leavePanelChild(this.branchesPanel), activeTab: "branches" }
     }
@@ -3891,6 +3910,7 @@ export class RootView {
         views: { ...this.branchesPanel.views, branches: selectListRow(branchView, localId) },
       }
     }
+    this.panes.main.box.bottomTitle = undefined
     if (this.focusManager.active !== "branches") this.focusManager.focus("branches")
     this.renderBranchesPane()
     this.syncPreviewForFocus("branches")
