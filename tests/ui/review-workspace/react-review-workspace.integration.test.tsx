@@ -873,6 +873,37 @@ describe("React review workspace", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("Enter in the finish summary submits the review", async () => {
+    const file = makeFile("src/finish.ts", ["-const old = 1", "+const next = 2"])
+    const session = makeSession([file])
+    let submits = 0
+    const realSubmit = session.finishDialog.submit.bind(session.finishDialog)
+    session.finishDialog.submit = async () => { submits += 1; return realSubmit() }
+    session.finishDialog.open()
+    session.invalidate()
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
+
+    try {
+      await flush(setup)
+      await act(async () => { await setup.mockInput.typeText("done"); await Bun.sleep(30) })
+      expect(session.finishDialog.getSummary()).toContain("done")
+      await act(async () => { await setup.mockInput.pressKey("RETURN"); await Bun.sleep(60) })
+      await flush(setup)
+      expect(submits).toBe(1)
+      // Enter must not have been swallowed as a newline in the summary instead.
+      expect(session.finishDialog.getSummary()).not.toContain("\n")
+
+      // This session has no artifact store, so the submission throws. A throw
+      // used to leave the dialog open still reading "Ready to finish", which is
+      // indistinguishable from the key doing nothing at all.
+      const message = session.finishDialog.getValidationMessage()
+      expect(message).not.toBe("Ready to finish")
+      expect(message.length).toBeGreaterThan(0)
+      expect(setup.captureCharFrame()).toContain(message.slice(0, 24))
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
   test("renders and dismisses the finish dialog through the React session", async () => {
     const file = makeFile("src/finish.ts", ["-const old = 1", "+const next = 2"])
     const session = makeSession([file])
