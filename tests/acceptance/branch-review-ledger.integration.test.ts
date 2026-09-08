@@ -98,6 +98,14 @@ describe("branch review — open-objections ledger", () => {
         undefined,
         { width: 120, showLineNumbers: true, wrapLines: false },
       )
+      // The objection sits under the line it was written against, not at the
+      // end of the file: GitLab renders a discussion in the notes holder that
+      // follows its own diff row (diffs/components/diff_view.vue:224-250).
+      const rowIndex = rows.findIndex((r) => r.type === "feedback" && r.feedbackId === addressed.id)
+      const lineAbove = rows[rowIndex - 1]
+      expect(lineAbove?.type).toBe("stack-line")
+      expect((lineAbove as { cell: { newLineNumber?: number } }).cell.newLineNumber).toBe(2)
+
       const excerpt = rows.filter((r) => r.type === "feedback-excerpt" && r.feedbackId === addressed.id)
       expect(excerpt.map((r) => (r as { side: string; text: string }).side)).toEqual(["was", "now"])
       expect((excerpt[0] as { text: string }).text).toContain("AGENT-A")

@@ -294,6 +294,42 @@ function rowActions(verdict: LedgerVerdict): string {
   return "[e]dit [a]nchor [-]resolve"
 }
 
+/**
+ * Where an objection's rows belong: immediately after the line it was written
+ * against, the way GitLab renders a discussion in the notes holder that follows
+ * its own diff row (app/assets/javascripts/diffs/components/diff_view.vue:224-250).
+ * Collecting them at the end of the file made the reader scroll away from the
+ * code to find out what was said about it.
+ *
+ * Returns -1 when no rendered row carries that line, which happens for file
+ * anchors and for lines that have dropped out of the diff; those rows fall back
+ * to the end of the file.
+ */
+function insertionIndexForAnchor(
+  rows: readonly HunkDiffRow[],
+  anchor: ReviewState["feedback"][number]["anchor"],
+): number {
+  if (anchor.kind !== "range") return -1
+  let found = -1
+  for (const [index, row] of rows.entries()) {
+    if (row.type === "split-line") {
+      if (row.isExpansionRow === true) continue
+      const cell = anchor.side === "old" ? row.left : row.right
+      if (cell.lineNumber === anchor.endLine) found = index
+    } else if (row.type === "stack-line") {
+      if (row.isExpansionRow === true) continue
+      const lineNumber = anchor.side === "old" ? row.cell.oldLineNumber : row.cell.newLineNumber
+      if (lineNumber === anchor.endLine) found = index
+    }
+  }
+  if (found === -1) return -1
+  // Step past anything already placed under this line so two objections on one
+  // line keep the order they were written in.
+  let after = found + 1
+  while (after < rows.length && (rows[after]!.type === "feedback" || rows[after]!.type === "feedback-excerpt")) after += 1
+  return after
+}
+
 function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: ReviewState, mode: "split" | "stack"): void {
   for (const feedback of state.feedback) {
     if (feedback.anchor.fileKey !== file.id) continue
@@ -301,7 +337,8 @@ function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: Re
     const body = feedback.body.replace(/\s+/gu, " ").trim()
     const detail = body.length > 0 ? body : "(empty feedback)"
     const verdict = ledgerVerdict(feedback, state.document.generation.headOid)
-    rows.push({
+    const group: HunkDiffRow[] = []
+    group.push({
       type: "feedback",
       key: `${file.id}:${mode}:feedback:${feedback.id}`,
       fileKey: file.id,
@@ -313,7 +350,10 @@ function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: Re
       // handoff it is the only part of this row the reviewer has not already read.
       text: `${ledgerBadge(verdict)} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} ${rowActions(verdict)}`,
     })
-    appendFeedbackExcerptRows(rows, file, state, feedback, verdict, mode)
+    appendFeedbackExcerptRows(group, file, state, feedback, verdict, mode)
+    const at = insertionIndexForAnchor(rows, feedback.anchor)
+    if (at === -1) rows.push(...group)
+    else rows.splice(at, 0, ...group)
   }
 }
 
