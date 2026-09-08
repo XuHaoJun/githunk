@@ -120,8 +120,8 @@ export function reviewHeaderLines(state: ReviewState, width: number): readonly R
   const pendingPart = progress.pending > 0 ? ` · ${progress.pending} pending` : progress.pending === 0 ? " · 0 pending" : ""
   // Also show reviewing count if any?
   const reviewingPart = progress.reviewing > 0 ? ` · ${progress.reviewing} reviewing` : ""
-  // PROTOTYPE (open-objections ledger): the verdict must not need hunting for.
-  // A filter is where you go looking; this is what you see on arrival.
+  // The ledger verdict must not need hunting for: a filter is where you go
+  // looking, this is what you see on arrival.
   const ledgerPart = ledgerHeaderText(state.feedback, doc.generation.headOid)
   const line2Raw = `${reviewedLabel}${changedPart}${reviewingPart}${pendingPart}${ledgerPart === "" ? "" : `  ·  ${ledgerPart}`}`
   const line2 = truncateCell(line2Raw, w)
