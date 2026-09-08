@@ -19,6 +19,14 @@ import { currentBranchRef, inferReviewBase, resolveRefOid, type ReviewBaseCandid
 import { emptyReviewDatabaseV2 } from "../../review/storage/schemas"
 import { sha256Tuple } from "../../review/core/identity"
 import { MutationQueue } from "../../app/mutation-queue"
+import { LocalStateFile } from "../../storage/local-state-file"
+import {
+  HANDOFF_JSON_PATH,
+  HANDOFF_MARKDOWN_PATH,
+  buildHandoffMailbox,
+  ledgerVerdict,
+  renderHandoffMarkdown,
+} from "../../review/core/ledger"
 import type { ReviewDecision } from "../../review/core/artifact"
 import { buildReviewArtifact, validateFinishReview } from "../../review/core/artifact"
 import type { ReviewArtifactV1 } from "../../review/core/artifact"
@@ -512,6 +520,57 @@ export class ReviewWorkspaceController {
     this.aggregateDocument = undefined
     this.dispatch({ type: "projection/apply", projection: { kind: "aggregate" }, document: aggregate })
     return true
+  }
+
+  /**
+   * PROTOTYPE (open-objections ledger).
+   *
+   * Stamp every open item as handed off and write the mailbox. This is the act
+   * that draws the line the `untouched` verdict is measured from: before it an
+   * `active` anchor means nothing, after it means nobody touched those lines.
+   *
+   * The mailbox is written through LocalStateFile, so it inherits the atomic
+   * write, 0600 mode and symlink refusal, and lands under the git directory
+   * where it cannot dirty `git status`.
+   */
+  async handoffFeedback(): Promise<
+    | { ok: true; handedOff: number; total: number; path: string }
+    | { ok: false; reason: string }
+  > {
+    const current = this._state
+    if (current === undefined || this._baseSelection !== undefined) return { ok: false, reason: "unavailable" }
+    const pending = current.feedback.filter((feedback) => ledgerVerdict(feedback) !== "retired")
+    if (pending.length === 0) return { ok: false, reason: "nothing-to-hand-off" }
+
+    const at = this.nowImpl()
+    const headOid = current.document.generation.headOid
+    const mailbox = buildHandoffMailbox(current, { generatedAt: at, headOid })
+
+    const jsonFile = new LocalStateFile({ runner: this.runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
+    const markdownFile = new LocalStateFile({ runner: this.runner, relativePath: HANDOFF_MARKDOWN_PATH, pathKind: "handoff" })
+    let path: string
+    try {
+      await jsonFile.writeText(`${JSON.stringify(mailbox, null, 2)}\n`)
+      await markdownFile.writeText(renderHandoffMarkdown(mailbox))
+      path = jsonFile.path
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) }
+    }
+
+    const freshlyHandedOff = pending.filter((feedback) => feedback.status !== "handed-off")
+    if (freshlyHandedOff.length > 0) {
+      this.dispatch({ type: "feedback/handoff", ids: freshlyHandedOff.map((f) => f.id), at, headOid })
+    }
+    return { ok: true, handedOff: freshlyHandedOff.length, total: pending.length, path }
+  }
+
+  /** PROTOTYPE (open-objections ledger): close an item a human has looked at. */
+  retireFeedback(id: string): boolean {
+    const current = this._state
+    if (current === undefined || this._baseSelection !== undefined) return false
+    const before = current.feedback
+    this.dispatch({ type: "feedback/retire", id, at: this.nowImpl() })
+    return this._state?.feedback !== before
   }
 
   async flushDrafts(): Promise<void> {

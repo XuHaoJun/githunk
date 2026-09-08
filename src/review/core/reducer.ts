@@ -307,6 +307,34 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         revision: state.revision + 1,
       }
     }
+    // PROTOTYPE (open-objections ledger)
+    case "feedback/handoff": {
+      const ids = new Set(action.ids)
+      if (ids.size === 0) return state
+      let changed = false
+      const copy = state.feedback.map((feedback) => {
+        if (!ids.has(feedback.id)) return feedback
+        if (feedback.status === "handed-off" || feedback.status === "retired") return feedback
+        changed = true
+        return {
+          ...feedback,
+          status: "handed-off" as const,
+          handoff: { at: action.at, headOid: action.headOid },
+          updatedAt: action.at,
+        }
+      })
+      if (!changed) return state
+      return { ...state, feedback: copy, revision: state.revision + 1 }
+    }
+    case "feedback/retire": {
+      const idx = state.feedback.findIndex((f) => f.id === action.id)
+      if (idx < 0) return state
+      const existing = state.feedback[idx]!
+      if (existing.status === "retired") return state
+      const copy = [...state.feedback]
+      copy[idx] = { ...existing, status: "retired" as const, updatedAt: action.at }
+      return { ...state, feedback: copy, revision: state.revision + 1 }
+    }
     case "feedback/next": {
       const target = feedbackNavigationTarget(state, "next")
       if (!target) return state

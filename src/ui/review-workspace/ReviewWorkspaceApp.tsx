@@ -109,6 +109,8 @@ function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "str
     command("review.finishReview"),
     command("review.help"),
     command("review.close"),
+    command("review.handoffFeedback"),
+    command("review.retireFeedback"),
   ]
   const trailer = `${focus} — ${selected}`
   return notice ? `${notice} | ${hints.join(" | ")} | ${trailer}` : `${hints.join(" | ")} | ${trailer}`
@@ -930,6 +932,31 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       const file = fileKey ? current.document.files.find((candidate) => candidate.key === fileKey) : undefined
       const hunkIndex = Math.max(1, current.selection.hunkIndex)
       if (file?.hunks[hunkIndex]) void toggleGap(file.key, `before:${hunkIndex}`)
+      return true
+    }
+    // PROTOTYPE (open-objections ledger)
+    if (commandId === "review.handoffFeedback") {
+      void controller.handoffFeedback().then((result) => {
+        if (result.ok) {
+          setFeedbackMessage(
+            result.handedOff === 0
+              ? `Mailbox rewritten with ${result.total} open item(s) — ${result.path}`
+              : `Handed off ${result.handedOff} of ${result.total} item(s) → ${result.path}`,
+          )
+        } else if (result.reason === "nothing-to-hand-off") {
+          setFeedbackMessage("Nothing to hand off.")
+        } else {
+          setFeedbackMessage(`Handoff failed: ${result.reason}`)
+        }
+        session.invalidate()
+      })
+      return true
+    }
+    if (commandId === "review.retireFeedback" && selectedFeedbackId) {
+      if (controller.retireFeedback(selectedFeedbackId)) {
+        setFeedbackMessage("Retired.")
+        session.invalidate()
+      }
       return true
     }
     if (commandId === "review.cycleFilterScope") {

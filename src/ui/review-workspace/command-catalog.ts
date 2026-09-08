@@ -272,6 +272,26 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     available: always,
     hint: "close",
   },
+  // PROTOTYPE (open-objections ledger)
+  {
+    id: "review.handoffFeedback",
+    title: "Hand off open feedback to an agent",
+    // "A" for agent. "H" and "x" are reserved for lazygit parity (main-scroll-left
+    // and extension panes), which tests/ui/review-workspace/command-catalog.test.ts
+    // guards; "-" is free on both tables.
+    keys: ["A"],
+    focus: ["stream", "sidebar"],
+    available: always,
+    hint: "handoff",
+  },
+  {
+    id: "review.retireFeedback",
+    title: "Retire selected feedback (looked, closing it)",
+    keys: ["-"],
+    focus: ["stream", "sidebar"],
+    available: always,
+    hint: "retire",
+  },
 ] as const
 
 const keyToCommand = new Map<string, ReviewCommand>()

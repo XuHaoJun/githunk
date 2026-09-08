@@ -93,6 +93,10 @@ const feedbackSchema = z
     replacement: z.string().optional(),
     anchor: anchorSchema,
     resolution: z.enum(["active", "stale", "orphaned"]),
+    // PROTOTYPE (open-objections ledger). Optional so a review written before
+    // the ledger existed still loads; absent reads as "open".
+    status: z.enum(["open", "handed-off", "retired"]).optional(),
+    handoff: z.object({ at: timestampSchema, headOid: z.string().min(1) }).strict().optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
   })
@@ -335,6 +339,8 @@ function toFeedback(raw: z.infer<typeof feedbackSchema>): ReviewFeedback {
     body: raw.body,
     anchor: toAnchor(raw.anchor),
     resolution: raw.resolution,
+    ...(raw.status === undefined ? {} : { status: raw.status }),
+    ...(raw.handoff === undefined ? {} : { handoff: raw.handoff }),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   }

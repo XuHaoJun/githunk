@@ -1,6 +1,7 @@
 import type { ReviewState } from "../../review/core/state"
 import type { HighlightPayload, HighlightedLine } from "../../review/git/highlight/highlight-payload"
 import type { HunkReviewFile } from "./hunk-review-model"
+import { ledgerBadge, ledgerVerdict } from "../../review/core/ledger"
 
 export type HunkRenderSpan = Readonly<{
   text: string
@@ -282,7 +283,9 @@ function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: Re
       feedbackId: feedback.id,
       severity: feedback.severity,
       resolution: feedback.resolution,
-      text: `${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} [e]dit [d]elete [a]nchor`,
+      // PROTOTYPE (open-objections ledger): the verdict leads, because after a
+      // handoff it is the only part of this row the reviewer has not already read.
+      text: `${ledgerBadge(ledgerVerdict(feedback, state.document.generation.headOid))} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} [e]dit [d]elete [a]nchor [-]retire`,
     })
   }
 }

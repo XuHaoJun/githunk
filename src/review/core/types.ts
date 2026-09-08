@@ -78,6 +78,24 @@ export type ReviewAnchor =
       contextDigest: string
     }>
 
+/**
+ * PROTOTYPE (open-objections ledger).
+ *
+ * `status` is the second axis `resolution` cannot carry. `resolution` answers
+ * "can this comment still find the lines it points at"; `status` answers "has
+ * anyone been asked to do something about it". Only the pair is a verdict:
+ * an `active` anchor is unremarkable before a handoff and damning after one,
+ * because it means the agent left those exact lines untouched.
+ *
+ * Absent `status` means "open" so no persisted review needs a migration.
+ */
+export type ReviewFeedbackStatus = "open" | "handed-off" | "retired"
+
+export type ReviewFeedbackHandoff = Readonly<{
+  at: string
+  headOid: string
+}>
+
 export type ReviewFeedback = Readonly<{
   id: string
   kind: "note" | "suggestion"
@@ -86,6 +104,8 @@ export type ReviewFeedback = Readonly<{
   replacement?: string
   anchor: ReviewAnchor
   resolution: "active" | "stale" | "orphaned"
+  status?: ReviewFeedbackStatus
+  handoff?: ReviewFeedbackHandoff
   createdAt: string
   updatedAt: string
 }>

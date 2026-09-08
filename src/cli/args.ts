@@ -4,6 +4,8 @@ import manifest from "../../package.json" with { type: "json" }
 export type CliParseResult =
   | { readonly kind: "start"; readonly startDirectory?: string }
   | { readonly kind: "update"; readonly version?: string; readonly check: boolean }
+  // PROTOTYPE (open-objections ledger): the agent's read-only way in.
+  | { readonly kind: "handoff"; readonly json: boolean }
   | { readonly kind: "help"; readonly text: string }
   | { readonly kind: "version"; readonly text: string }
   | { readonly kind: "error"; readonly message: string; readonly exitCode: number }
@@ -15,6 +17,7 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
   let stdout = ""
   let stderr = ""
   let update: { readonly version?: string; readonly check: boolean } | undefined
+  let handoff: { readonly json: boolean } | undefined
   const program = new Command()
   program
     .name("githunk")
@@ -47,6 +50,14 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
       }
     })
 
+  program
+    .command("handoff")
+    .description("print the open review objections githunk last handed off")
+    .option("--json", "print the raw mailbox JSON instead of markdown")
+    .action((options: { json?: boolean }) => {
+      handoff = { json: options.json ?? false }
+    })
+
   try {
     program.parse([...argv], { from: "user" })
   } catch (error) {
@@ -60,6 +71,7 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
   }
 
   if (update !== undefined) return { kind: "update", ...update }
+  if (handoff !== undefined) return { kind: "handoff", ...handoff }
 
   const options = program.opts<{ path?: string }>()
   const positional = program.args[0]
