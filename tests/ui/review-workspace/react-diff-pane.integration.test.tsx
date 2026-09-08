@@ -306,6 +306,43 @@ describe("React review diff pane", () => {
     }
   })
 
+  test("a pending reveal does not drag a reader back after they scroll away", async () => {
+    const file = makeFile("src/large.ts", Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`))
+    const setup = await testRender(
+      <ReviewDiffPane
+        files={[toHunkReviewFile(file)]}
+        state={makeState([file])}
+        layout="stack"
+        width={80}
+        height={10}
+        selectedFileKey={file.key}
+        selectedHunkIndex={0}
+      />,
+      { width: 80, height: 10, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const scrollBox = setup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as { x: number; y: number; scrollTop: number }
+      await act(async () => {
+        await setup.mockMouse.scroll(scrollBox.x + 2, scrollBox.y + 2, "down")
+        await setup.renderOnce()
+      })
+      const afterScroll = scrollBox.scrollTop
+      expect(afterScroll).toBeGreaterThan(0)
+
+      // The mount's reveal retries land up to 48ms later. They must not undo a
+      // scroll the reader made in the meantime.
+      await act(async () => {
+        await Bun.sleep(80)
+        await setup.renderOnce()
+      })
+      expect(scrollBox.scrollTop).toBe(afterScroll)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
   test("keeps the file and hunk visible after their headers scroll off the top", async () => {
     const file = makeFile("src/large.ts", Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`))
     const setup = await testRender(

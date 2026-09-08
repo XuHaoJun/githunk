@@ -152,3 +152,85 @@ describe("semantic-only state and explicit reveal tokens", () => {
     expect(() => planReviewIntent(s0, { type: "gap/toggle", fileKey: "a", gapId: "" })).toThrow()
   })
 })
+
+describe("ledger transitions", () => {
+  const anchor = { kind: "file" as const, fileKey: "a", contentId: "content-a" }
+  function feedback(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      kind: "note" as const,
+      severity: "comment" as const,
+      body: `body ${id}`,
+      anchor,
+      resolution: "active" as const,
+      createdAt: "2026-09-08T00:00:00.000Z",
+      updatedAt: "2026-09-08T00:00:00.000Z",
+      ...overrides,
+    }
+  }
+  function stateWith(items: ReturnType<typeof feedback>[]) {
+    const doc = createReviewDocument({
+      identity: makeIdentity(),
+      generation: makeGeneration(),
+      commits: [],
+      files: [makeFile({ key: "a", path: "a" })],
+    })
+    return { ...createInitialReviewState(doc), feedback: items }
+  }
+
+  test("one handoff stamps every listed item with the same checkpoint", () => {
+    const state = stateWith([feedback("one"), feedback("two")])
+    const next = reduceReviewState(state, {
+      type: "feedback/handoff",
+      items: [{ id: "one" }, { id: "two", excerpt: ["const x = 1"] }],
+      at: "2026-09-08T01:00:00.000Z",
+      headOid: "h1",
+    })
+    expect(next.feedback.map((f) => f.status)).toEqual(["handed-off", "handed-off"])
+    expect(next.feedback[0]!.handoff).toEqual({ at: "2026-09-08T01:00:00.000Z", headOid: "h1" })
+    // The excerpt is the evidence of what was objected to, and only travels when captured.
+    expect(next.feedback[1]!.handoff?.excerpt).toEqual(["const x = 1"])
+    expect(next.feedback[0]!.handoff).not.toHaveProperty("excerpt")
+    expect(next.revision).toBe(state.revision + 1)
+  })
+
+  test("re-handing off keeps the original checkpoint, so the verdict keeps its baseline", () => {
+    const already = feedback("one", {
+      status: "handed-off",
+      handoff: { at: "2026-09-08T01:00:00.000Z", headOid: "first" },
+    })
+    const next = reduceReviewState(stateWith([already]), {
+      type: "feedback/handoff",
+      items: [{ id: "one" }],
+      at: "2026-09-08T09:00:00.000Z",
+      headOid: "second",
+    })
+    expect(next.feedback[0]!.handoff?.headOid).toBe("first")
+  })
+
+  test("a resolved objection is not dragged back into a handoff", () => {
+    const state = stateWith([feedback("one", { status: "resolved" })])
+    const next = reduceReviewState(state, {
+      type: "feedback/handoff",
+      items: [{ id: "one" }],
+      at: "t",
+      headOid: "h1",
+    })
+    expect(next).toBe(state)
+  })
+
+  test("handing off nothing, or an id that is not there, changes nothing", () => {
+    const state = stateWith([feedback("one")])
+    expect(reduceReviewState(state, { type: "feedback/handoff", items: [], at: "t", headOid: "h1" })).toBe(state)
+    expect(reduceReviewState(state, { type: "feedback/handoff", items: [{ id: "ghost" }], at: "t", headOid: "h1" })).toBe(state)
+  })
+
+  test("resolving is terminal and idempotent", () => {
+    const state = stateWith([feedback("one", { status: "handed-off" })])
+    const next = reduceReviewState(state, { type: "feedback/resolve", id: "one", at: "2026-09-08T02:00:00.000Z" })
+    expect(next.feedback[0]!.status).toBe("resolved")
+    expect(next.feedback[0]!.updatedAt).toBe("2026-09-08T02:00:00.000Z")
+    expect(reduceReviewState(next, { type: "feedback/resolve", id: "one", at: "later" })).toBe(next)
+    expect(reduceReviewState(next, { type: "feedback/resolve", id: "ghost", at: "later" })).toBe(next)
+  })
+})

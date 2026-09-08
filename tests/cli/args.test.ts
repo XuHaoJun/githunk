@@ -73,3 +73,26 @@ describe("parseCliArgs", () => {
     expect(result.exitCode).not.toBe(0)
   })
 })
+
+describe("handoff — the agent's contract", () => {
+  test("reads the mailbox, in either shape", () => {
+    expect(parseCliArgs(["handoff"])).toEqual({ kind: "handoff", json: false })
+    expect(parseCliArgs(["handoff", "--json"])).toEqual({ kind: "handoff", json: true })
+  })
+
+  test("answers one objection by id", () => {
+    expect(parseCliArgs(["handoff", "reply", "--id", "fb-1", "--body", "why not"]))
+      .toEqual({ kind: "handoff-reply", id: "fb-1", body: "why not" })
+  })
+
+  test("a reply without an id or a body is refused rather than half-written", () => {
+    expect(parseCliArgs(["handoff", "reply", "--body", "why not"]).kind).toBe("error")
+    expect(parseCliArgs(["handoff", "reply", "--id", "fb-1"]).kind).toBe("error")
+  })
+
+  test("there is no CLI verb for the verdict — the agent cannot mark its own work done", () => {
+    for (const verb of ["resolve", "handoff-resolve", "status"]) {
+      expect(parseCliArgs(["handoff", verb, "--id", "fb-1"]).kind).toBe("error")
+    }
+  })
+})

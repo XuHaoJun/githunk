@@ -122,6 +122,16 @@ export function ReviewDiffPane({
   const previousHunkRevealTokenRef = useRef<number | undefined>(undefined)
   const pendingSelectionRevealRequestRef = useRef<SelectionRevealRequest | null>(null)
   const pendingSelectionRevealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  /**
+   * The scroll position the reveal believes it owns.
+   *
+   * A reveal retries a few times because layout can settle late, and those
+   * retries used to fire whatever had happened in between — scroll away inside
+   * the retry window and the viewport yanked back to the selection. Anything
+   * other than this value means the reader moved, and the reader outranks a
+   * pending reveal.
+   */
+  const revealScrollTopRef = useRef<number | null>(null)
   const window = useMemo(
     () => sectionWindow(files, state, layout, scrollTop, viewportHeight, overscan, expandedSourceByGap, replies),
     [expandedSourceByGap, files, layout, overscan, replies, scrollTop, state.expandedGaps, state.feedback, viewportHeight],
@@ -266,6 +276,7 @@ export function ReviewDiffPane({
         const next = Math.min(Math.max(0, top), Math.max(0, window.total - measuredHeight))
         scrollBox.scrollTop = next
         setScrollTop(next)
+        revealScrollTopRef.current = next
         onViewportChange?.(next)
       }
       if (revealingFeedback) {
@@ -280,6 +291,9 @@ export function ReviewDiffPane({
       if (target < currentTop || target + 1 > currentEnd) scrollTo(target)
     }
 
+    revealScrollTopRef.current = scrollRef.current === null
+      ? null
+      : Math.max(0, Math.floor(scrollRef.current.scrollTop))
     revealSelection()
     const retryDelays = [0, 16, 48]
     pendingSelectionRevealTimersRef.current = retryDelays.map((delay, retryIndex) => setTimeout(() => {
@@ -291,6 +305,15 @@ export function ReviewDiffPane({
         || currentRequest.token !== request.token
         || currentRequest.fileRevealToken !== request.fileRevealToken
       ) return
+      // The reader scrolled after this reveal was scheduled; leave them where
+      // they are rather than dragging them back to a selection they moved past.
+      const scrollBox = scrollRef.current
+      const owned = revealScrollTopRef.current
+      if (scrollBox !== null && owned !== null && Math.max(0, Math.floor(scrollBox.scrollTop)) !== owned) {
+        pendingSelectionRevealRequestRef.current = null
+        clearPendingTimers()
+        return
+      }
       revealSelection()
       if (retryIndex === retryDelays.length - 1) {
         pendingSelectionRevealRequestRef.current = null
