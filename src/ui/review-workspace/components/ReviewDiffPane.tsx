@@ -4,7 +4,7 @@ import type { ReviewState } from "../../../review/core/state"
 import type { HighlightPayload } from "../../../review/git/highlight/highlight-payload"
 import type { HunkDiffAddress } from "../hunk-diff-row-model"
 import type { HunkReviewFile } from "../hunk-review-model"
-import { ReviewDiffSection, hunkSectionRowCount, hunkSectionRowOffset } from "./ReviewDiffSection"
+import { ReviewDiffSection, feedbackSectionRowOffset, hunkSectionRowCount, hunkSectionRowOffset } from "./ReviewDiffSection"
 import { ReviewStickyHeader } from "./ReviewStickyHeader"
 import { resolveStickyDiffHeader } from "../sticky-header"
 import { PANE_SCROLLBAR_GUTTER } from "../../panes/common"
@@ -241,8 +241,16 @@ export function ReviewDiffPane({
 
     const sectionTop = window.offsets[index] ?? 0
     const sectionHeight = window.heights[index] ?? 0
-    const hunkOffset = hunkSectionRowOffset(selectedFile, layout, Math.max(0, selectedHunkIndex), state, expandedSourceByGap, index > 0)
-    const target = sectionTop + Math.min(Math.max(0, hunkOffset), Math.max(0, sectionHeight - 1))
+    // Aim at the objection's own row when one is being revealed; its hunk
+    // header can sit comfortably on screen while the objection itself does not.
+    const feedbackOffset = state.reveal.scrollToFeedback && selectedFeedbackId !== undefined && selectedFeedbackId !== null
+      ? feedbackSectionRowOffset(selectedFile, layout, selectedFeedbackId, state, expandedSourceByGap, index > 0)
+      : -1
+    const revealingFeedback = feedbackOffset >= 0
+    const rowOffset = revealingFeedback
+      ? feedbackOffset
+      : hunkSectionRowOffset(selectedFile, layout, Math.max(0, selectedHunkIndex), state, expandedSourceByGap, index > 0)
+    const target = sectionTop + Math.min(Math.max(0, rowOffset), Math.max(0, sectionHeight - 1))
 
     const revealSelection = () => {
       const scrollBox = scrollRef.current
@@ -250,12 +258,22 @@ export function ReviewDiffPane({
       const measuredHeight = Math.max(1, Math.floor(scrollBox.viewport.height || viewportHeight))
       const currentTop = Math.max(0, Math.floor(scrollBox.scrollTop))
       const currentEnd = currentTop + measuredHeight
-      if (target < currentTop || target + 1 > currentEnd) {
-        const nextTop = Math.min(Math.max(0, target), Math.max(0, window.total - measuredHeight))
-        scrollBox.scrollTop = nextTop
-        setScrollTop(nextTop)
-        onViewportChange?.(nextTop)
+      const scrollTo = (top: number) => {
+        const next = Math.min(Math.max(0, top), Math.max(0, window.total - measuredHeight))
+        scrollBox.scrollTop = next
+        setScrollTop(next)
+        onViewportChange?.(next)
       }
+      if (revealingFeedback) {
+        // Pinning the row to the very top hides the code it is about, which is
+        // the half a reader needs. A third down shows the lines above it and
+        // leaves room for the was/now pair below.
+        const margin = Math.max(1, Math.floor(measuredHeight / 6))
+        const comfortable = target >= currentTop + margin && target + 1 <= currentEnd - margin
+        if (!comfortable) scrollTo(target - Math.floor(measuredHeight / 3))
+        return
+      }
+      if (target < currentTop || target + 1 > currentEnd) scrollTo(target)
     }
 
     revealSelection()
@@ -276,7 +294,7 @@ export function ReviewDiffPane({
       }
     }, delay))
     return clearPendingTimers
-  }, [expandedSourceByGap, files, layout, onViewportChange, selectedFileKey, selectedFileRevealToken, selectedHunkIndex, selectedHunkRevealToken, state, viewportHeight])
+  }, [expandedSourceByGap, files, layout, onViewportChange, selectedFileKey, selectedFeedbackId, selectedFileRevealToken, selectedHunkIndex, selectedHunkRevealToken, state, viewportHeight])
 
   const sticky = useMemo(
     () => (stickyRows === 0

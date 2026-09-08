@@ -759,6 +759,44 @@ describe("React review workspace", () => {
     }
   })
 
+  test("jumping to an objection scrolls it into view, not just its file", async () => {
+    // Long enough that an objection near the bottom starts off screen at 30 rows.
+    const lines = Array.from({ length: 60 }, (_, index) => (index === 54 ? "+needle line" : ` context ${index}`))
+    const file = makeFile("src/long.ts", lines)
+    const feedback = [{
+      id: "deep-objection",
+      kind: "note" as const,
+      severity: "blocking" as const,
+      body: "OBJECTION-MARKER deep in the file",
+      anchor: createRangeAnchor(file, { side: "new", startLine: 55, endLine: 55 }),
+      resolution: "active" as const,
+      createdAt: "2026-09-08T00:00:00.000Z",
+      updatedAt: "2026-09-08T00:00:00.000Z",
+    }]
+    const { session } = makeInteractiveSession([file], feedback)
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
+
+    try {
+      await flush(setup)
+      expect(setup.captureCharFrame()).not.toContain("OBJECTION-MARKER")
+
+      await act(async () => { await setup.mockInput.typeText("L"); await Bun.sleep(30) })
+      await flush(setup)
+      await act(async () => { await setup.mockInput.pressKey("RETURN"); await Bun.sleep(60) })
+      await flush(setup)
+
+      const frame = setup.captureCharFrame()
+      expect(frame).not.toContain("Enter jump")
+      expect(frame).toContain("OBJECTION-MARKER")
+      // Not pinned to the very top: the code it is about has to be visible too.
+      const rows = frame.split("\n")
+      const at = rows.findIndex((row) => row.includes("OBJECTION-MARKER"))
+      expect(at).toBeGreaterThan(3)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
   test("documents numeric panel focus in the help dialog", async () => {
     const setup = await testRender(
       <ReviewWorkspaceApp session={makeSession([makeFile("src/help.ts", ["-old", "+new"])])} />,

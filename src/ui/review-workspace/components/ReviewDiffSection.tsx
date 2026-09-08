@@ -1,3 +1,4 @@
+import { feedbackRowCountForFile } from "../hunk-diff-row-model"
 import { useMemo } from "react"
 import type { ReviewState } from "../../../review/core/state"
 import type { HighlightPayload } from "../../../review/git/highlight/highlight-payload"
@@ -66,7 +67,7 @@ export function hunkSectionRowCount(
   showDivider = false,
 ): number {
   const dividerRows = showDivider ? 1 : 0
-  const feedbackCount = state?.feedback.filter((feedback) => feedback.anchor.fileKey === file.id).length ?? 0
+  const feedbackCount = state === undefined ? 0 : feedbackRowCountForFile(file, state, layout)
   if (file.kind === "binary" || file.reviewFile.source === "binary" || file.reviewFile.source === "too-large") return dividerRows + 2 + feedbackCount
   let count = dividerRows + 1
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
@@ -130,6 +131,31 @@ export function hunkSectionRowOffset(
   }
   return offset
 }
+/**
+ * Where an objection's own row sits inside its file section.
+ *
+ * Revealing used to aim at the objection's hunk header, which was close enough
+ * while objections were collected at the end of a file and is not close enough
+ * now that each sits under the line it was written against: a visible hunk
+ * header says nothing about whether the objection below it is on screen.
+ *
+ * Rows come from the same builder the section renders, so the answer cannot
+ * disagree with what is drawn. Returns -1 when the file holds no such row.
+ */
+export function feedbackSectionRowOffset(
+  file: HunkReviewFile,
+  layout: "split" | "stack",
+  feedbackId: string,
+  state: ReviewState,
+  expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
+  showDivider = false,
+): number {
+  const rows = rowsFor(file, state, layout, 120, true, false, undefined, expandedSourceByGap)
+  const index = rows.findIndex((row) => row.type === "feedback" && row.feedbackId === feedbackId)
+  if (index < 0) return -1
+  return (showDivider ? 1 : 0) + 1 + index
+}
+
 export function ReviewDiffSection({
   file,
   state,

@@ -330,7 +330,18 @@ function insertionIndexForAnchor(
   return after
 }
 
-function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: ReviewState, mode: "split" | "stack"): void {
+/**
+ * The rows each objection contributes, grouped so the caller can place them
+ * and so row counting and row building cannot drift apart. They did: the
+ * section row count knew one row per objection while the builder had started
+ * emitting a `was`/`now` pair too, and every offset past that file was wrong.
+ */
+export function feedbackRowGroups(
+  file: HunkReviewFile,
+  state: ReviewState,
+  mode: "split" | "stack",
+): readonly Readonly<{ feedbackId: string; anchor: ReviewState["feedback"][number]["anchor"]; rows: readonly HunkDiffRow[] }>[] {
+  const groups: { feedbackId: string; anchor: ReviewState["feedback"][number]["anchor"]; rows: readonly HunkDiffRow[] }[] = []
   for (const feedback of state.feedback) {
     if (feedback.anchor.fileKey !== file.id) continue
     const hunkIndex = feedback.anchor.kind === "range" ? feedback.anchor.ownerHunkIndex : -1
@@ -351,9 +362,23 @@ function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: Re
       text: `${ledgerBadge(verdict)} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} ${rowActions(verdict)}`,
     })
     appendFeedbackExcerptRows(group, file, state, feedback, verdict, mode)
-    const at = insertionIndexForAnchor(rows, feedback.anchor)
-    if (at === -1) rows.push(...group)
-    else rows.splice(at, 0, ...group)
+    groups.push({ feedbackId: feedback.id, anchor: feedback.anchor, rows: group })
+  }
+  return groups
+}
+
+/** How many rows this file's objections add, for section height maths. */
+export function feedbackRowCountForFile(file: HunkReviewFile, state: ReviewState, mode: "split" | "stack"): number {
+  let count = 0
+  for (const group of feedbackRowGroups(file, state, mode)) count += group.rows.length
+  return count
+}
+
+function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: ReviewState, mode: "split" | "stack"): void {
+  for (const group of feedbackRowGroups(file, state, mode)) {
+    const at = insertionIndexForAnchor(rows, group.anchor)
+    if (at === -1) rows.push(...group.rows)
+    else rows.splice(at, 0, ...group.rows)
   }
 }
 
