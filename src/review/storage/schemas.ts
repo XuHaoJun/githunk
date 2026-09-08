@@ -261,6 +261,10 @@ const submittedFeedbackSchema = z
     body: z.string(),
     replacement: z.string().optional(),
     anchor: anchorSchema,
+    // PROTOTYPE (open-objections ledger); optional so artifacts written before
+    // the ledger still parse.
+    status: z.enum(["open", "handed-off", "retired"]).optional(),
+    handoff: z.object({ at: timestampSchema, headOid: z.string().min(1) }).strict().optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
   })
@@ -415,6 +419,8 @@ function toSubmittedFeedback(raw: z.infer<typeof submittedFeedbackSchema>): Subm
     severity: raw.severity,
     body: raw.body,
     anchor: toAnchor(raw.anchor),
+    ...(raw.status === undefined ? {} : { status: raw.status }),
+    ...(raw.handoff === undefined ? {} : { handoff: raw.handoff }),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   }

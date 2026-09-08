@@ -1,6 +1,6 @@
 import type { ReviewState } from "./state"
 import type { ReviewIdentity, ReviewGeneration } from "./types"
-import type { ReviewFeedback } from "./types"
+import type { ReviewFeedback, ReviewFeedbackHandoff, ReviewFeedbackStatus } from "./types"
 
 export type ReviewDecision = "comment" | "approve" | "request-changes"
 
@@ -11,6 +11,10 @@ export type SubmittedFeedback = Readonly<{
   body: string
   replacement?: string
   anchor: ReviewFeedback["anchor"]
+  // PROTOTYPE (open-objections ledger): the artifact is the durable record, so
+  // it keeps how each objection ended, not just that it was raised.
+  status?: ReviewFeedbackStatus
+  handoff?: ReviewFeedbackHandoff
   createdAt: string
   updatedAt: string
 }>
@@ -46,17 +50,26 @@ export function validateFinishReview(
   if (state.projection.kind !== "aggregate") {
     return { ok: false, reason: "projection-invalid" }
   }
-  if (state.feedback.some((f) => f.kind === "suggestion" && (
+  // PROTOTYPE (open-objections ledger). Retired feedback is closed: a human
+  // looked at it and let it go. It stays in the artifact as a record of what
+  // was raised, but it no longer gates the decision, and its anchor may be
+  // legitimately gone — the code it objected to was often deleted outright.
+  //
+  // Every gate below therefore reads the live set. Before the ledger the only
+  // exit from a moved anchor was `a` (re-anchor), which is the wrong verb when
+  // the objection is genuinely settled; `-` (retire) is the missing one.
+  const live = state.feedback.filter((f) => f.status !== "retired")
+  if (live.some((f) => f.kind === "suggestion" && (
     f.anchor.kind !== "range" || f.anchor.side !== "new" || !f.replacement || f.replacement.trim().length === 0 ||
     !state.document.files.some((file) => file.key === f.anchor.fileKey && file.contentId === f.anchor.contentId && file.source !== "binary" && file.source !== "too-large")
   ))) return { ok: false, reason: "suggestion-invalid" }
-  const hasStaleOrOrphaned = state.feedback.some((f) => f.resolution !== "active")
+  const hasStaleOrOrphaned = live.some((f) => f.resolution !== "active")
   if (hasStaleOrOrphaned) {
     return { ok: false, reason: "feedback-needs-reanchor" }
   }
   const summaryTrimmed = input.summary.trim()
-  const hasBlocking = state.feedback.some((f) => f.severity === "blocking")
-  const hasComment = state.feedback.some((f) => f.severity === "comment")
+  const hasBlocking = live.some((f) => f.severity === "blocking")
+  const hasComment = live.some((f) => f.severity === "comment")
 
   if (input.decision === "approve" || input.decision === "request-changes") {
     if (summaryTrimmed.length === 0) {
@@ -139,6 +152,8 @@ export function buildReviewArtifact(
     body: f.body,
     ...(f.replacement !== undefined ? { replacement: f.replacement } : {}),
     anchor: f.anchor,
+    ...(f.status === undefined ? {} : { status: f.status }),
+    ...(f.handoff === undefined ? {} : { handoff: f.handoff }),
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,
   }))
