@@ -111,8 +111,8 @@ describe("branch review — open-objections ledger", () => {
       const approve = { decision: "approve" as const, summary: "looks good" }
       const state = reopened.state!
       expect(validateFinishReview(state, approve)).toMatchObject({ ok: false, reason: "feedback-needs-reanchor" })
-      const retired: ReviewState = { ...state, feedback: state.feedback.map((f) => ({ ...f, status: "retired" as const })) }
-      expect(validateFinishReview(retired, approve)).toEqual({ ok: true })
+      const resolved: ReviewState = { ...state, feedback: state.feedback.map((f) => ({ ...f, status: "resolved" as const })) }
+      expect(validateFinishReview(resolved, approve)).toEqual({ ok: true })
 
       await reopened.destroy()
     } finally {

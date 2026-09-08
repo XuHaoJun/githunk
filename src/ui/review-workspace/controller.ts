@@ -547,7 +547,7 @@ export class ReviewWorkspaceController {
   > {
     const current = this._state
     if (current === undefined || this._baseSelection !== undefined) return { ok: false, reason: "unavailable" }
-    const pending = current.feedback.filter((feedback) => ledgerVerdict(feedback) !== "retired")
+    const pending = current.feedback.filter((feedback) => ledgerVerdict(feedback) !== "resolved")
     if (pending.length === 0) return { ok: false, reason: "nothing-to-hand-off" }
 
     const at = this.nowImpl()
@@ -580,11 +580,11 @@ export class ReviewWorkspaceController {
   }
 
   /** Close an item a human has looked at. */
-  retireFeedback(id: string): boolean {
+  resolveFeedback(id: string): boolean {
     const current = this._state
     if (current === undefined || this._baseSelection !== undefined) return false
     const before = current.feedback
-    this.dispatch({ type: "feedback/retire", id, at: this.nowImpl() })
+    this.dispatch({ type: "feedback/resolve", id, at: this.nowImpl() })
     return this._state?.feedback !== before
   }
 

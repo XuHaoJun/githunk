@@ -313,7 +313,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       let changed = false
       const copy = state.feedback.map((feedback) => {
         if (!excerptById.has(feedback.id)) return feedback
-        if (feedback.status === "handed-off" || feedback.status === "retired") return feedback
+        if (feedback.status === "handed-off" || feedback.status === "resolved") return feedback
         changed = true
         const excerpt = excerptById.get(feedback.id)
         return {
@@ -330,13 +330,13 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (!changed) return state
       return { ...state, feedback: copy, revision: state.revision + 1 }
     }
-    case "feedback/retire": {
+    case "feedback/resolve": {
       const idx = state.feedback.findIndex((f) => f.id === action.id)
       if (idx < 0) return state
       const existing = state.feedback[idx]!
-      if (existing.status === "retired") return state
+      if (existing.status === "resolved") return state
       const copy = [...state.feedback]
-      copy[idx] = { ...existing, status: "retired" as const, updatedAt: action.at }
+      copy[idx] = { ...existing, status: "resolved" as const, updatedAt: action.at }
       return { ...state, feedback: copy, revision: state.revision + 1 }
     }
     case "feedback/next": {

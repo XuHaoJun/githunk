@@ -17,9 +17,9 @@ import type { ReviewDocument, ReviewFeedback, ReviewFeedbackHandoff } from "./ty
  * - `addressed` handed off, and the anchored lines no longer resolve, so the
  *               code under the objection moved. Says the code changed, NOT
  *               that the change is correct.
- * - `retired`   a human looked and closed it (fixed elsewhere, or persuaded)
+ * - `resolved`   a human looked and closed it (fixed elsewhere, or persuaded)
  */
-export type LedgerVerdict = "open" | "waiting" | "untouched" | "addressed" | "retired"
+export type LedgerVerdict = "open" | "waiting" | "untouched" | "addressed" | "resolved"
 
 /**
  * `atHeadOid` is the HEAD the current document was built from. Without it a
@@ -28,7 +28,7 @@ export type LedgerVerdict = "open" | "waiting" | "untouched" | "addressed" | "re
  * moved past the handoff.
  */
 export function ledgerVerdict(feedback: ReviewFeedback, atHeadOid?: string): LedgerVerdict {
-  if (feedback.status === "retired") return "retired"
+  if (feedback.status === "resolved") return "resolved"
   if (feedback.status !== "handed-off") return "open"
   if (atHeadOid !== undefined && feedback.handoff?.headOid === atHeadOid) return "waiting"
   return feedback.resolution === "active" ? "untouched" : "addressed"
@@ -39,7 +39,7 @@ export type LedgerCounts = Readonly<{
   waiting: number
   untouched: number
   addressed: number
-  retired: number
+  resolved: number
   /** Everything still asking for the reviewer's attention. */
   unsettled: number
 }>
@@ -49,23 +49,23 @@ export function ledgerCounts(feedback: readonly ReviewFeedback[], atHeadOid?: st
   let waiting = 0
   let untouched = 0
   let addressed = 0
-  let retired = 0
+  let resolved = 0
   for (const item of feedback) {
     const verdict = ledgerVerdict(item, atHeadOid)
     if (verdict === "open") open++
     else if (verdict === "waiting") waiting++
     else if (verdict === "untouched") untouched++
     else if (verdict === "addressed") addressed++
-    else retired++
+    else resolved++
   }
-  return { open, waiting, untouched, addressed, retired, unsettled: open + waiting + untouched + addressed }
+  return { open, waiting, untouched, addressed, resolved, unsettled: open + waiting + untouched + addressed }
 }
 
 export function ledgerBadge(verdict: LedgerVerdict): string {
   if (verdict === "waiting") return "handed-off"
   if (verdict === "untouched") return "UNTOUCHED"
   if (verdict === "addressed") return "addressed"
-  if (verdict === "retired") return "retired"
+  if (verdict === "resolved") return "resolved"
   return "open"
 }
 
@@ -77,7 +77,7 @@ export function ledgerHeaderText(feedback: readonly ReviewFeedback[], atHeadOid?
   if (counts.waiting > 0) parts.push(`${counts.waiting} handed off`)
   if (counts.addressed > 0) parts.push(`${counts.addressed} addressed`)
   if (counts.untouched > 0) parts.push(`${counts.untouched} UNTOUCHED`)
-  if (counts.retired > 0) parts.push(`${counts.retired} retired`)
+  if (counts.resolved > 0) parts.push(`${counts.resolved} resolved`)
   return parts.join(" · ")
 }
 
@@ -174,7 +174,7 @@ export function buildHandoffMailbox(
   input: { generatedAt: string; headOid: string },
 ): HandoffMailbox {
   const items = state.feedback
-    .filter((feedback) => ledgerVerdict(feedback) !== "retired")
+    .filter((feedback) => ledgerVerdict(feedback) !== "resolved")
     .map((feedback): HandoffItem => {
       const range = feedback.anchor.kind === "range" ? feedback.anchor : null
       return {

@@ -87,7 +87,7 @@ export type ReviewAnchor =
  *
  * Absent `status` means "open" so no persisted review needs a migration.
  */
-export type ReviewFeedbackStatus = "open" | "handed-off" | "retired"
+export type ReviewFeedbackStatus = "open" | "handed-off" | "resolved"
 
 export type ReviewFeedbackHandoff = Readonly<{
   at: string

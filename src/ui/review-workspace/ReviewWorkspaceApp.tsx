@@ -110,7 +110,7 @@ function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "str
     command("review.help"),
     command("review.close"),
     command("review.handoffFeedback"),
-    command("review.retireFeedback"),
+    command("review.resolveFeedback"),
   ]
   const trailer = `${focus} — ${selected}`
   return notice ? `${notice} | ${hints.join(" | ")} | ${trailer}` : `${hints.join(" | ")} | ${trailer}`
@@ -951,9 +951,9 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       })
       return true
     }
-    if (commandId === "review.retireFeedback" && selectedFeedbackId) {
-      if (controller.retireFeedback(selectedFeedbackId)) {
-        setFeedbackMessage("Retired.")
+    if (commandId === "review.resolveFeedback" && selectedFeedbackId) {
+      if (controller.resolveFeedback(selectedFeedbackId)) {
+        setFeedbackMessage("Resolved.")
         session.invalidate()
       }
       return true

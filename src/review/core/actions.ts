@@ -26,5 +26,5 @@ export type ReviewAction =
   // One act stamps every open item, so the "was it handed off" line is drawn
   // once for the review rather than per comment.
   | { type: "feedback/handoff"; items: readonly { id: string; excerpt?: readonly string[] }[]; at: string; headOid: string }
-  | { type: "feedback/retire"; id: string; at: string }
+  | { type: "feedback/resolve"; id: string; at: string }
   | { type: "document/reconciled"; document: ReviewDocument; viewed: Readonly<Record<string, ViewedRecord>>; feedback: readonly ReviewFeedback[]; selection: ReviewSelection; lineSelection: ReviewLineSelection | null; expandedGaps: readonly ExpandedGap[] }

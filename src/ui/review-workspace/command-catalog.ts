@@ -286,12 +286,12 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     hint: "handoff",
   },
   {
-    id: "review.retireFeedback",
-    title: "Retire selected feedback (looked, closing it)",
+    id: "review.resolveFeedback",
+    title: "Resolve selected feedback",
     keys: ["-"],
     focus: ["stream", "sidebar"],
     available: always,
-    hint: "retire",
+    hint: "resolve",
   },
 ] as const
 

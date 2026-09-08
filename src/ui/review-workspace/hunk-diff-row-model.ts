@@ -279,6 +279,21 @@ function feedbackAnchorText(file: HunkReviewFile, feedback: ReviewState["feedbac
   return `${file.path} ${feedback.anchor.side}:${line}`
 }
 
+/**
+ * The keys worth pressing on this row, not every key that works.
+ *
+ * `d` and `-` do different things and listing both on every row left the
+ * difference to the reader. Delete says the objection never happened; once it
+ * has been handed off that erases the fact that someone was asked to act, so
+ * past that point the honest close is `-`. Every binding still works when
+ * pressed — this is the recommendation, not the permission.
+ */
+function rowActions(verdict: LedgerVerdict): string {
+  if (verdict === "resolved") return "[e]dit [d]elete"
+  if (verdict === "open") return "[e]dit [d]elete [a]nchor"
+  return "[e]dit [a]nchor [-]resolve"
+}
+
 function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: ReviewState, mode: "split" | "stack"): void {
   for (const feedback of state.feedback) {
     if (feedback.anchor.fileKey !== file.id) continue
@@ -296,7 +311,7 @@ function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: Re
       resolution: feedback.resolution,
       // The verdict leads, because after a
       // handoff it is the only part of this row the reviewer has not already read.
-      text: `${ledgerBadge(verdict)} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} [e]dit [d]elete [a]nchor [-]retire`,
+      text: `${ledgerBadge(verdict)} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} ${rowActions(verdict)}`,
     })
     appendFeedbackExcerptRows(rows, file, state, feedback, verdict, mode)
   }

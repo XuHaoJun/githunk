@@ -21,7 +21,7 @@ asked to act"), and derives the verdict from the pair in
 | `handed-off`, HEAD still at handoff | any | `waiting` |
 | `handed-off` | `active` | **`untouched`** — those exact lines were not changed |
 | `handed-off` | `stale` / `orphaned` | `addressed` — the code moved (NOT "is correct") |
-| `retired` | any | `retired` |
+| `resolved` | any | `resolved` |
 
 `resolution` is already recomputed every generation by `reconcileAnchor`, so the
 verdict costs no extra Git.
@@ -34,7 +34,7 @@ bun test tests/acceptance/branch-review-ledger.integration.test.ts
 
 In the TUI: `b` (Branch Review) → `c` on a line to leave feedback → `A` to hand
 off → let an agent commit → reopen → the header and the feedback rows carry the
-verdict. `-` retires the item you have looked at.
+verdict. `-` resolves the item you have looked at.
 
 The agent reads `githunk handoff` / `githunk handoff --json`. That CLI is
 read-only on purpose: an agent that could mark its own work addressed would make
@@ -59,7 +59,7 @@ record moves into the artifact. Do not finish until the verdicts satisfy you.
 
 ## Finishing a review
 
-`validateFinishReview` reads the live set (`status !== "retired"`). Retired items
+`validateFinishReview` reads the live set (`status !== "resolved"`). Resolved items
 stay in the artifact as a record of what was raised but stop gating the decision,
 because their anchor is often legitimately gone — the code they objected to was
 deleted. Before the ledger the only exit from a moved anchor was `a` (re-anchor),
@@ -70,9 +70,9 @@ The gates that follow from this, all observed:
 | situation | Finish |
 | --- | --- |
 | an `addressed` item still live | refused, `feedback-needs-reanchor` |
-| that item retired with `-` | allowed |
+| that item resolved with `-` | allowed |
 | Approve with an `UNTOUCHED` **blocking** item live | refused, `approve-has-blocking-feedback` |
-| that item retired with `-` | allowed |
+| that item resolved with `-` | allowed |
 
 The third row is the one worth keeping: you cannot approve a branch while a
 blocking objection sits on lines nobody touched.

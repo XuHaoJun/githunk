@@ -85,6 +85,13 @@ const rangeAnchorSchema = z
 
 const anchorSchema = z.discriminatedUnion("kind", [fileAnchorSchema, rangeAnchorSchema])
 
+// "retired" was this status's first name before it took code review's word for
+// the same act. Accepted on read and normalised, so a review written under the
+// old name still loads.
+const feedbackStatusSchema = z
+  .enum(["open", "handed-off", "resolved", "retired"])
+  .transform((value) => (value === "retired" ? "resolved" as const : value))
+
 const handoffSchema = z
   .object({
     at: timestampSchema,
@@ -104,7 +111,7 @@ const feedbackSchema = z
     resolution: z.enum(["active", "stale", "orphaned"]),
     // Optional so a review written before
     // the ledger existed still loads; absent reads as "open".
-    status: z.enum(["open", "handed-off", "retired"]).optional(),
+    status: feedbackStatusSchema.optional(),
     handoff: handoffSchema.optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
@@ -272,7 +279,7 @@ const submittedFeedbackSchema = z
     anchor: anchorSchema,
     // Optional so artifacts written before
     // the ledger still parse.
-    status: z.enum(["open", "handed-off", "retired"]).optional(),
+    status: feedbackStatusSchema.optional(),
     handoff: handoffSchema.optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
