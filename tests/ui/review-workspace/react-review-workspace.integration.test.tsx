@@ -700,6 +700,61 @@ describe("React review workspace", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("L lists objections with their verdicts and Enter jumps to one", async () => {
+    const first = makeFile("src/a.ts", ["-old", "+new"])
+    const second = makeFile("src/b.ts", ["-old", "+new"])
+    const feedback = [
+      {
+        id: "obj-a",
+        kind: "note" as const,
+        severity: "blocking" as const,
+        body: "first objection",
+        anchor: createFileAnchor(first),
+        resolution: "active" as const,
+        createdAt: "2026-09-08T00:00:00.000Z",
+        updatedAt: "2026-09-08T00:00:00.000Z",
+      },
+      {
+        id: "obj-b",
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "second objection",
+        anchor: createFileAnchor(second),
+        resolution: "active" as const,
+        status: "handed-off" as const,
+        handoff: { at: "2026-09-08T00:00:00.000Z", headOid: "0".repeat(40) },
+        createdAt: "2026-09-08T00:00:00.000Z",
+        updatedAt: "2026-09-08T00:00:00.000Z",
+      },
+    ]
+    const { session, getState } = makeInteractiveSession([first, second], feedback)
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
+
+    try {
+      await flush(setup)
+      await act(async () => { await setup.mockInput.typeText("L"); await Bun.sleep(30) })
+      await flush(setup)
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("Objections")
+      expect(frame).toContain("first objection")
+      expect(frame).toContain("second objection")
+      // The verdict travels with the entry, so the list says what is left to do.
+      expect(frame).toContain("open")
+      expect(frame).toContain("UNTOUCHED")
+      expect(frame).toContain("Enter jump")
+
+      // j then Enter selects the second entry and lands on its file.
+      await act(async () => { await setup.mockInput.typeText("j"); await Bun.sleep(30) })
+      await flush(setup)
+      await act(async () => { await setup.mockInput.pressKey("RETURN"); await Bun.sleep(30) })
+      await flush(setup)
+      expect(setup.captureCharFrame()).not.toContain("Enter jump")
+      expect(getState().selection.fileKey).toBe(second.key)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
   test("documents numeric panel focus in the help dialog", async () => {
     const setup = await testRender(
       <ReviewWorkspaceApp session={makeSession([makeFile("src/help.ts", ["-old", "+new"])])} />,

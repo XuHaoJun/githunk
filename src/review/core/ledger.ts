@@ -8,6 +8,7 @@
  * explicit user act. Nothing here runs Git.
  */
 import type { ReviewState } from "./state"
+import { sortedReviewFeedback } from "./selectors"
 import type { ReviewDocument, ReviewFeedback, ReviewFeedbackHandoff } from "./types"
 
 /**
@@ -116,6 +117,40 @@ export function reviewCheckpoint(
     return { kind: "submission", at: submission.submittedAt, headOid: submission.headOid }
   }
   return { kind: "handoff", at: handoff.at, headOid: handoff.headOid }
+}
+
+/**
+ * Every objection as one line, for a jump list.
+ *
+ * `{` and `}` walk the ledger one step at a time, which is fine for two and
+ * useless for twenty: you cannot see the shape of what is left, or pick. This
+ * is the same information GitLab puts above a merge request as its unresolved
+ * thread counter and navigator.
+ */
+export type ObjectionListEntry = Readonly<{
+  id: string
+  verdict: LedgerVerdict
+  text: string
+}>
+
+export function objectionList(
+  state: Pick<ReviewState, "document" | "feedback">,
+  atHeadOid?: string,
+): readonly ObjectionListEntry[] {
+  return sortedReviewFeedback(state).map((feedback) => {
+    const verdict = ledgerVerdict(feedback, atHeadOid)
+    const path = pathForFeedback(state.document, feedback)
+    const where = feedback.anchor.kind === "range"
+      ? `${path}:${feedback.anchor.startLine}`
+      : path
+    const body = feedback.body.replace(/\s+/gu, " ").trim()
+    const mark = feedback.severity === "blocking" ? "!" : "◆"
+    return {
+      id: feedback.id,
+      verdict,
+      text: `${ledgerBadge(verdict).padEnd(10)} ${mark} ${where}  ${body.length > 0 ? body : "(empty)"}`,
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------

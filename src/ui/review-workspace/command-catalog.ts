@@ -286,6 +286,16 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     hint: "handoff",
   },
   {
+    id: "review.listObjections",
+    title: "List objections and jump to one",
+    // "L" for list. Lowercase l is the layout cycle, and H / x are reserved for
+    // lazygit parity.
+    keys: ["L"],
+    focus: ["any"],
+    available: (state) => state.feedback.length > 0,
+    hint: "list",
+  },
+  {
     id: "review.resolveFeedback",
     title: "Resolve selected feedback",
     keys: ["-"],
