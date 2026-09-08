@@ -1,6 +1,6 @@
 import type { ReviewState } from "../../review/core/state"
 import { reviewProgress } from "../../review/core/selectors"
-import { ledgerHeaderText } from "../../review/core/ledger"
+import { ledgerHeaderText, reviewCheckpoint } from "../../review/core/ledger"
 import { cellWidth } from "../cell-width"
 
 export type ReviewHeaderSpan = Readonly<{
@@ -98,8 +98,10 @@ export function reviewHeaderLines(state: ReviewState, width: number): readonly R
   // Line 1: head → base  •  commits · files · stats  •  projection
   // The label is load-bearing: outside the aggregate the counts describe a
   // narrower range and finishing a review is refused.
+  // The lens can be measured from a finished review or from a handoff, so the
+  // label reads the checkpoint rather than assuming which one opened it.
   const projectionLabel = state.projection.kind === "since-last-review"
-    ? "Since last review"
+    ? (reviewCheckpoint(state)?.kind === "handoff" ? "Since handoff" : "Since last review")
     : state.projection.kind === "commit"
       ? `Commit ${state.projection.oid.slice(0, 7)}`
       : "Aggregate"

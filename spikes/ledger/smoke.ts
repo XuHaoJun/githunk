@@ -3,7 +3,7 @@ import { createTempRepository } from "../../tests/helpers/temp-repository"
 import { GitRunner } from "../../src/git/runner"
 import { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
 import { createRangeAnchor } from "../../src/review/core/anchors"
-import { ledgerVerdict, ledgerHeaderText, HANDOFF_MARKDOWN_PATH } from "../../src/review/core/ledger"
+import { ledgerVerdict, ledgerHeaderText, HANDOFF_MARKDOWN_PATH, reviewCheckpoint } from "../../src/review/core/ledger"
 import { ReviewStateStore } from "../../src/review/storage/review-state-store"
 import { readFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
@@ -58,6 +58,14 @@ for (const fb of relaunched.state!.feedback) {
   console.log(`  ${ledgerVerdict(fb, head).padEnd(10)} ${a}  ${fb.body}`)
 }
 console.log("header          :", ledgerHeaderText(relaunched.state!.feedback, head))
+
+// "What did the agent actually change?" — the lens opens from the handoff even
+// though no review has ever been finished here.
+console.log("checkpoint      :", reviewCheckpoint(relaunched.state!))
+const lens = await relaunched.enterSinceLastReview()
+console.log("enter lens      :", lens)
+console.log("lens files      :", relaunched.state!.document.files.map((f) => `${f.path} +${f.stats.additions}/-${f.stats.deletions}`))
+relaunched.exitProjection()
 
 // Retire the one the agent argued its way out of.
 const untouched = relaunched.state!.feedback.find((f) => ledgerVerdict(f, head) === "untouched")

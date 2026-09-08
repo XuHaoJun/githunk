@@ -10,7 +10,7 @@
  * explicit user act. Nothing here runs Git.
  */
 import type { ReviewState } from "./state"
-import type { ReviewDocument, ReviewFeedback } from "./types"
+import type { ReviewDocument, ReviewFeedback, ReviewFeedbackHandoff } from "./types"
 
 /**
  * - `open`      never handed off; the reviewer still owns it
@@ -81,6 +81,43 @@ export function ledgerHeaderText(feedback: readonly ReviewFeedback[], atHeadOid?
   if (counts.untouched > 0) parts.push(`${counts.untouched} UNTOUCHED`)
   if (counts.retired > 0) parts.push(`${counts.retired} retired`)
   return parts.join(" · ")
+}
+
+/**
+ * The most recent handoff, as a checkpoint to diff from.
+ *
+ * A handoff is a sharper checkpoint than a finished review for "what changed
+ * since": it is the exact moment the reviewer asked someone to change things.
+ */
+export function latestHandoff(
+  feedback: readonly ReviewFeedback[],
+): Readonly<{ at: string; headOid: string }> | undefined {
+  let latest: ReviewFeedbackHandoff | undefined
+  for (const item of feedback) {
+    const handoff = item.handoff
+    if (handoff === undefined) continue
+    if (latest === undefined || handoff.at > latest.at) latest = handoff
+  }
+  return latest
+}
+
+/**
+ * The point "what changed since" is measured from: the later of the last
+ * finished review and the last handoff. Both stamps come from the same clock,
+ * so the comparison needs no Git.
+ */
+export type ReviewCheckpoint = Readonly<{ kind: "submission" | "handoff"; at: string; headOid: string }>
+
+export function reviewCheckpoint(
+  state: Pick<ReviewState, "feedback" | "lastSubmission">,
+): ReviewCheckpoint | undefined {
+  const handoff = latestHandoff(state.feedback)
+  const submission = state.lastSubmission
+  if (!submission) return handoff && { kind: "handoff", at: handoff.at, headOid: handoff.headOid }
+  if (!handoff || submission.submittedAt >= handoff.at) {
+    return { kind: "submission", at: submission.submittedAt, headOid: submission.headOid }
+  }
+  return { kind: "handoff", at: handoff.at, headOid: handoff.headOid }
 }
 
 // ---------------------------------------------------------------------------

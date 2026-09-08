@@ -40,6 +40,23 @@ The agent reads `githunk handoff` / `githunk handoff --json`. That CLI is
 read-only on purpose: an agent that could mark its own work addressed would make
 `untouched` worthless.
 
+## Seeing what the agent actually changed
+
+The verdict says an objection was addressed; it does not show the change. On the
+aggregate that change is buried in the whole branch, so `s` now opens its lens
+from a **handoff** as well as from a finished review — whichever stamp is later.
+A handoff is the sharper checkpoint of the two: it is the moment the reviewer
+asked someone to change things, so `handoff..HEAD` is exactly the agent's work.
+The header says `[Since handoff]` rather than `[Since last review]` when that is
+what it measured from.
+
+Observed in `smoke.ts`: with no review ever finished, the checkpoint resolves to
+the handoff and the lens narrows an 8-file branch to `app.ts +1/-1`.
+
+Note that `R` (finish) clears the feedback list — see
+review-artifact-store.ts:157 — so a finished review closes the round and the
+record moves into the artifact. Do not finish until the verdicts satisfy you.
+
 ## Finishing a review
 
 `validateFinishReview` reads the live set (`status !== "retired"`). Retired items
@@ -64,4 +81,6 @@ blocking objection sits on lines nobody touched.
 
 - `githunk skill path` (the mailbox markdown carries the instructions instead)
 - `unaddressed` filter scope on `f`
+- a per-objection before/after: the ledger keeps `contextDigest`, not the text,
+  so it can say an anchor moved but cannot show what the line used to be
 - the `disputed` verdict from the design conversation

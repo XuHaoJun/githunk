@@ -26,6 +26,7 @@ import {
   buildHandoffMailbox,
   ledgerVerdict,
   renderHandoffMarkdown,
+  reviewCheckpoint,
 } from "../../review/core/ledger"
 import type { ReviewDecision } from "../../review/core/artifact"
 import { buildReviewArtifact, validateFinishReview } from "../../review/core/artifact"
@@ -469,18 +470,26 @@ export class ReviewWorkspaceController {
   }
 
   /**
-   * Open the "what changed since I last finished a review" lens.
+   * Open the "what changed since my last checkpoint" lens.
    *
    * A projection renders a narrower file set over the same review generation,
    * so viewed records and feedback stay with the aggregate, which remains the
    * system of record: `validateFinishReview` refuses to submit from anywhere
    * else, and `persistedFromReviewState` always writes the aggregate back.
+   *
+   * PROTOTYPE (open-objections ledger): a handoff is a checkpoint too, and a
+   * sharper one — it is the moment the reviewer asked someone to change things,
+   * which is exactly the range that answers "what did the agent do". Without
+   * this the lens needs a *finished* review, so a reviewer who handed off and
+   * came back had no way to see the agent's work apart from the whole branch.
+   * Both stamps carry an ISO timestamp from the same clock, so the later one
+   * wins without asking Git which commit is newer.
    */
   async enterSinceLastReview(): Promise<ProjectionSwitchResult> {
     const current = this._state
     if (current === undefined || this._baseSelection !== undefined) return { ok: false, reason: "unavailable" }
     if (current.projection.kind !== "aggregate") return { ok: false, reason: "already-projected" }
-    const fromHeadOid = current.lastSubmission?.headOid
+    const fromHeadOid = reviewCheckpoint(current)?.headOid
     if (fromHeadOid === undefined || fromHeadOid.trim() === "") return { ok: false, reason: "no-previous-review" }
 
     const aggregate = current.document
