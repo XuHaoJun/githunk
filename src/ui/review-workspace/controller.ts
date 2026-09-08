@@ -477,7 +477,7 @@ export class ReviewWorkspaceController {
    * system of record: `validateFinishReview` refuses to submit from anywhere
    * else, and `persistedFromReviewState` always writes the aggregate back.
    *
-   * PROTOTYPE (open-objections ledger): a handoff is a checkpoint too, and a
+   * A handoff is a checkpoint too, and a
    * sharper one — it is the moment the reviewer asked someone to change things,
    * which is exactly the range that answers "what did the agent do". Without
    * this the lens needs a *finished* review, so a reviewer who handed off and
@@ -532,8 +532,6 @@ export class ReviewWorkspaceController {
   }
 
   /**
-   * PROTOTYPE (open-objections ledger).
-   *
    * Stamp every open item as handed off and write the mailbox. This is the act
    * that draws the line the `untouched` verdict is measured from: before it an
    * `active` anchor means nothing, after it means nobody touched those lines.
@@ -573,7 +571,7 @@ export class ReviewWorkspaceController {
     return { ok: true, handedOff: freshlyHandedOff.length, total: pending.length, path }
   }
 
-  /** PROTOTYPE (open-objections ledger): close an item a human has looked at. */
+  /** Close an item a human has looked at. */
   retireFeedback(id: string): boolean {
     const current = this._state
     if (current === undefined || this._baseSelection !== undefined) return false

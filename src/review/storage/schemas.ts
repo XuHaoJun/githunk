@@ -93,7 +93,7 @@ const feedbackSchema = z
     replacement: z.string().optional(),
     anchor: anchorSchema,
     resolution: z.enum(["active", "stale", "orphaned"]),
-    // PROTOTYPE (open-objections ledger). Optional so a review written before
+    // Optional so a review written before
     // the ledger existed still loads; absent reads as "open".
     status: z.enum(["open", "handed-off", "retired"]).optional(),
     handoff: z.object({ at: timestampSchema, headOid: z.string().min(1) }).strict().optional(),
@@ -261,7 +261,7 @@ const submittedFeedbackSchema = z
     body: z.string(),
     replacement: z.string().optional(),
     anchor: anchorSchema,
-    // PROTOTYPE (open-objections ledger); optional so artifacts written before
+    // Optional so artifacts written before
     // the ledger still parse.
     status: z.enum(["open", "handed-off", "retired"]).optional(),
     handoff: z.object({ at: timestampSchema, headOid: z.string().min(1) }).strict().optional(),

@@ -11,7 +11,7 @@ export type SubmittedFeedback = Readonly<{
   body: string
   replacement?: string
   anchor: ReviewFeedback["anchor"]
-  // PROTOTYPE (open-objections ledger): the artifact is the durable record, so
+  // The artifact is the durable record, so
   // it keeps how each objection ended, not just that it was raised.
   status?: ReviewFeedbackStatus
   handoff?: ReviewFeedbackHandoff
@@ -50,7 +50,7 @@ export function validateFinishReview(
   if (state.projection.kind !== "aggregate") {
     return { ok: false, reason: "projection-invalid" }
   }
-  // PROTOTYPE (open-objections ledger). Retired feedback is closed: a human
+  // Retired feedback is closed: a human
   // looked at it and let it go. It stays in the artifact as a record of what
   // was raised, but it no longer gates the decision, and its anchor may be
   // legitimately gone — the code it objected to was often deleted outright.

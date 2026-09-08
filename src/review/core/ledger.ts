@@ -1,6 +1,4 @@
 /**
- * PROTOTYPE (open-objections ledger).
- *
  * Derives the verdict on a piece of feedback from the pair
  * (`status`, `resolution`) and renders the handoff mailbox.
  *

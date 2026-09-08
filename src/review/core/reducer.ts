@@ -307,7 +307,6 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         revision: state.revision + 1,
       }
     }
-    // PROTOTYPE (open-objections ledger)
     case "feedback/handoff": {
       const ids = new Set(action.ids)
       if (ids.size === 0) return state

@@ -274,7 +274,6 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     available: always,
     hint: "close",
   },
-  // PROTOTYPE (open-objections ledger)
   {
     id: "review.handoffFeedback",
     title: "Hand off open feedback to an agent",

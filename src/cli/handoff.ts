@@ -1,6 +1,4 @@
 /**
- * PROTOTYPE (open-objections ledger).
- *
  * The agent's way in. Deliberately READ-ONLY: the reviewer's TUI is the only
  * writer of ledger state. An agent that could mark its own work addressed
  * would make the `untouched` verdict worthless, which is the one thing this

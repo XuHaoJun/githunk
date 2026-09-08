@@ -283,7 +283,7 @@ function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: Re
       feedbackId: feedback.id,
       severity: feedback.severity,
       resolution: feedback.resolution,
-      // PROTOTYPE (open-objections ledger): the verdict leads, because after a
+      // The verdict leads, because after a
       // handoff it is the only part of this row the reviewer has not already read.
       text: `${ledgerBadge(ledgerVerdict(feedback, state.document.generation.headOid))} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} [e]dit [d]elete [a]nchor [-]retire`,
     })

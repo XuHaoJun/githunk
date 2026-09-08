@@ -79,8 +79,6 @@ export type ReviewAnchor =
     }>
 
 /**
- * PROTOTYPE (open-objections ledger).
- *
  * `status` is the second axis `resolution` cannot carry. `resolution` answers
  * "can this comment still find the lines it points at"; `status` answers "has
  * anyone been asked to do something about it". Only the pair is a verdict:

@@ -1,7 +1,7 @@
-# Prototype spike — open-objections ledger
+# Open-objections ledger — prototype notes
 
-Throwaway code answering one question: does the ledger *feel* right?
-Not production. No unit tests of its own, no schema migration, no docs update.
+Prototype on `prototype/open-objections-ledger`. Not production: no schema
+migration, no parity-matrix entry, no release notes.
 
 ## The question
 
@@ -29,7 +29,7 @@ verdict costs no extra Git.
 ## Try it
 
 ```bash
-bun run spikes/ledger/smoke.ts     # end-to-end against a real temp repo
+bun test tests/acceptance/branch-review-ledger.integration.test.ts
 ```
 
 In the TUI: `b` (Branch Review) → `c` on a line to leave feedback → `A` to hand

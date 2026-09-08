@@ -4,7 +4,7 @@ import manifest from "../../package.json" with { type: "json" }
 export type CliParseResult =
   | { readonly kind: "start"; readonly startDirectory?: string }
   | { readonly kind: "update"; readonly version?: string; readonly check: boolean }
-  // PROTOTYPE (open-objections ledger): the agent's read-only way in.
+  // The agent's read-only way in.
   | { readonly kind: "handoff"; readonly json: boolean }
   | { readonly kind: "help"; readonly text: string }
   | { readonly kind: "version"; readonly text: string }

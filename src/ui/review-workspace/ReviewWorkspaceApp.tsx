@@ -934,7 +934,6 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       if (file?.hunks[hunkIndex]) void toggleGap(file.key, `before:${hunkIndex}`)
       return true
     }
-    // PROTOTYPE (open-objections ledger)
     if (commandId === "review.handoffFeedback") {
       void controller.handoffFeedback().then((result) => {
         if (result.ok) {
