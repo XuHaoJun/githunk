@@ -4,7 +4,7 @@ import { GitRunner } from "../../src/git/runner"
 import { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
 import { ReviewStateStore } from "../../src/review/storage/review-state-store"
 import { createRangeAnchor } from "../../src/review/core/anchors"
-import { HANDOFF_JSON_PATH, ledgerVerdict, reviewCheckpoint } from "../../src/review/core/ledger"
+import { HANDOFF_JSON_PATH, HANDOFF_REPLIES_PATH, ledgerVerdict, reviewCheckpoint, serializeReviewReplies } from "../../src/review/core/ledger"
 import { validateFinishReview } from "../../src/review/core/artifact"
 import type { ReviewState } from "../../src/review/core/state"
 import { buildHunkStackRows } from "../../src/ui/review-workspace/hunk-diff-row-model"
@@ -114,6 +114,38 @@ describe("branch review — open-objections ledger", () => {
       // The objection nobody touched has nothing to compare, so it stays quiet.
       const untouched = reopened.state!.feedback.find((f) => ledgerVerdict(f, head) === "untouched")!
       expect(rows.filter((r) => r.type === "feedback-excerpt" && r.feedbackId === untouched.id)).toEqual([])
+
+      // The agent answers the objection it did not act on. Its words land beside
+      // the objection; they do not settle it — an answered objection whose lines
+      // are unchanged reads DISPUTED, which is a question for the reviewer.
+      const disputedItem = reopened.state!.feedback.find((f) => ledgerVerdict(f, head) === "untouched")!
+      const repliesFile = (await new GitRunner({ cwd: repo.path }).run(["rev-parse", "--git-path", HANDOFF_REPLIES_PATH])).stdout.trim()
+      await Bun.write(
+        `${repo.path}/${repliesFile}`,
+        serializeReviewReplies([{ id: disputedItem.id, body: "the sort is needed for the range query", at: new Date().toISOString() }]),
+      )
+
+      const withReplies = new ReviewWorkspaceController({
+        runner: new GitRunner({ cwd: repo.path }),
+        stateStore: new ReviewStateStore(new GitRunner({ cwd: repo.path })),
+      })
+      await withReplies.open("refs/heads/master")
+      const replies = withReplies.replies
+      expect(replies.get(disputedItem.id)?.body).toContain("range query")
+      expect(ledgerVerdict(disputedItem, head, { replied: true })).toBe("disputed")
+      // The reply cannot move the verdict of an objection whose code did change.
+      const addressedItem = reopened.state!.feedback.find((f) => ledgerVerdict(f, head) === "addressed")!
+      expect(ledgerVerdict(addressedItem, head, { replied: true })).toBe("addressed")
+
+      const replyRows = buildHunkStackRows(
+        toHunkReviewFile(withReplies.state!.document.files[0]!),
+        withReplies.state!,
+        undefined,
+        { width: 120, showLineNumbers: true, wrapLines: false, replies },
+      ).filter((r) => r.type === "feedback-reply")
+      expect(replyRows.length).toBe(1)
+      expect((replyRows[0] as { text: string }).text).toContain("range query")
+      await withReplies.destroy()
 
       // A blocking objection nobody touched blocks Approve until a human closes it.
       const approve = { decision: "approve" as const, summary: "looks good" }

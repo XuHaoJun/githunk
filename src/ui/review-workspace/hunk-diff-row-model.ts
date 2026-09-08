@@ -1,7 +1,7 @@
 import type { ReviewState } from "../../review/core/state"
 import type { HighlightPayload, HighlightedLine } from "../../review/git/highlight/highlight-payload"
 import type { HunkReviewFile } from "./hunk-review-model"
-import { ledgerBadge, ledgerVerdict, type LedgerVerdict } from "../../review/core/ledger"
+import { ledgerBadge, ledgerVerdict, type LedgerVerdict, type ReviewReplies } from "../../review/core/ledger"
 import { linesForAnchor } from "../../review/core/anchors"
 
 export type HunkRenderSpan = Readonly<{
@@ -53,6 +53,14 @@ export type HunkDiffRow =
       feedbackId: string
       severity: "comment" | "blocking"
       resolution: "active" | "stale" | "orphaned"
+      text: string
+    }>
+  | Readonly<{
+      type: "feedback-reply"
+      key: string
+      fileKey: string
+      hunkIndex: number
+      feedbackId: string
       text: string
     }>
   | Readonly<{
@@ -129,6 +137,8 @@ export type HunkRowBuildOptions = Readonly<{
   wrapLines: boolean
   tabWidth?: number
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>
+  /** The agent's answers, so a replied-to objection can show one and read DISPUTED. */
+  replies?: ReviewReplies
 }>
 
 function plainSpans(line: string | undefined): readonly HunkRenderSpan[] {
@@ -340,6 +350,7 @@ export function feedbackRowGroups(
   file: HunkReviewFile,
   state: ReviewState,
   mode: "split" | "stack",
+  replies?: ReviewReplies,
 ): readonly Readonly<{ feedbackId: string; anchor: ReviewState["feedback"][number]["anchor"]; rows: readonly HunkDiffRow[] }>[] {
   const groups: { feedbackId: string; anchor: ReviewState["feedback"][number]["anchor"]; rows: readonly HunkDiffRow[] }[] = []
   for (const feedback of state.feedback) {
@@ -347,7 +358,8 @@ export function feedbackRowGroups(
     const hunkIndex = feedback.anchor.kind === "range" ? feedback.anchor.ownerHunkIndex : -1
     const body = feedback.body.replace(/\s+/gu, " ").trim()
     const detail = body.length > 0 ? body : "(empty feedback)"
-    const verdict = ledgerVerdict(feedback, state.document.generation.headOid)
+    const reply = replies?.get(feedback.id)
+    const verdict = ledgerVerdict(feedback, state.document.generation.headOid, { replied: reply !== undefined })
     const group: HunkDiffRow[] = []
     group.push({
       type: "feedback",
@@ -361,6 +373,21 @@ export function feedbackRowGroups(
       // handoff it is the only part of this row the reviewer has not already read.
       text: `${ledgerBadge(verdict)} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} ${rowActions(verdict)}`,
     })
+    if (reply !== undefined) {
+      // The agent's own words, kept visually distinct from the reviewer's row
+      // above them. Showing them settles nothing: the verdict beside them was
+      // computed from the code, not from this.
+      for (const [index, line] of reply.body.split("\n").entries()) {
+        group.push({
+          type: "feedback-reply",
+          key: `${file.id}:${mode}:feedback:${feedback.id}:reply:${index}`,
+          fileKey: file.id,
+          hunkIndex: feedback.anchor.kind === "range" ? feedback.anchor.ownerHunkIndex : -1,
+          feedbackId: feedback.id,
+          text: `    ${index === 0 ? "agent" : "     "} │ ${line}`,
+        })
+      }
+    }
     appendFeedbackExcerptRows(group, file, state, feedback, verdict, mode)
     groups.push({ feedbackId: feedback.id, anchor: feedback.anchor, rows: group })
   }
@@ -368,14 +395,25 @@ export function feedbackRowGroups(
 }
 
 /** How many rows this file's objections add, for section height maths. */
-export function feedbackRowCountForFile(file: HunkReviewFile, state: ReviewState, mode: "split" | "stack"): number {
+export function feedbackRowCountForFile(
+  file: HunkReviewFile,
+  state: ReviewState,
+  mode: "split" | "stack",
+  replies?: ReviewReplies,
+): number {
   let count = 0
-  for (const group of feedbackRowGroups(file, state, mode)) count += group.rows.length
+  for (const group of feedbackRowGroups(file, state, mode, replies)) count += group.rows.length
   return count
 }
 
-function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: ReviewState, mode: "split" | "stack"): void {
-  for (const group of feedbackRowGroups(file, state, mode)) {
+function appendFeedbackRows(
+  rows: HunkDiffRow[],
+  file: HunkReviewFile,
+  state: ReviewState,
+  mode: "split" | "stack",
+  replies?: ReviewReplies,
+): void {
+  for (const group of feedbackRowGroups(file, state, mode, replies)) {
     const at = insertionIndexForAnchor(rows, group.anchor)
     if (at === -1) rows.push(...group.rows)
     else rows.splice(at, 0, ...group.rows)
@@ -489,7 +527,7 @@ export function buildHunkSplitRows(
       additionLine += content.additions
     }
   }
-  appendFeedbackRows(rows, file, state, "split")
+  appendFeedbackRows(rows, file, state, "split", options.replies)
   return rows
 }
 
@@ -559,6 +597,6 @@ export function buildHunkStackRows(
       additionLine += content.additions
     }
   }
-  appendFeedbackRows(rows, file, state, "stack")
+  appendFeedbackRows(rows, file, state, "stack", options.replies)
   return rows
 }

@@ -21,6 +21,7 @@ asked to act"), and derives the verdict from the pair in
 | `handed-off`, HEAD still at handoff | any | `waiting` |
 | `handed-off` | `active` | **`untouched`** — those exact lines were not changed |
 | `handed-off` | `stale` / `orphaned` | `addressed` — the code moved (NOT "is correct") |
+| `handed-off`, answered | `active` | **`disputed`** — it argued instead of changing the lines |
 | `resolved` | any | `resolved` |
 
 `resolution` is already recomputed every generation by `reconcileAnchor`, so the
@@ -39,6 +40,27 @@ verdict. `-` resolves the item you have looked at.
 The agent reads `githunk handoff` / `githunk handoff --json`. That CLI is
 read-only on purpose: an agent that could mark its own work addressed would make
 `untouched` worthless.
+
+## When the agent disagrees
+
+The rule is not "the agent cannot write" — it is **the agent cannot write the
+verdict**. Words are its own, status and resolution are not. So replies live in
+a second file the agent owns:
+
+```
+.git/githunk/handoff/pending.json   githunk writes · agent reads
+.git/githunk/handoff/replies.json   agent writes   · githunk reads
+```
+
+Separate owners, so neither needs a lock. `githunk handoff reply --id <id>
+--body <text>` appends one; githunk reads them with the document and renders
+each under its objection, and the mailbox markdown tells the agent the command.
+
+A reply settles nothing. An answered objection whose anchored lines are
+unchanged reads `disputed` rather than `untouched`: it means the agent argued
+rather than complied, which is the one outcome that needs the reviewer to read
+instead of merely look. An objection whose code did change stays `addressed`
+whether or not it was answered.
 
 ## Seeing what the agent actually changed
 
@@ -83,4 +105,3 @@ blocking objection sits on lines nobody touched.
 - `unaddressed` filter scope on `f`
 - a per-objection before/after: the ledger keeps `contextDigest`, not the text,
   so it can say an anchor moved but cannot show what the line used to be
-- the `disputed` verdict from the design conversation

@@ -1405,6 +1405,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             onSelectFeedback={(feedbackId) => { executeCommand("review.selectFeedback", feedbackId) }}
             onSelectDiffAddress={(address) => { executeCommand("review.selectDiffLine", address) }}
             selectedFeedbackId={selectedFeedbackId}
+            replies={controller.replies}
             onViewportChange={session.setViewportStart}
           />
         </box>

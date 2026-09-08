@@ -1,4 +1,5 @@
 import { feedbackRowCountForFile } from "../hunk-diff-row-model"
+import type { ReviewReplies } from "../../../review/core/ledger"
 import { useMemo } from "react"
 import type { ReviewState } from "../../../review/core/state"
 import type { HighlightPayload } from "../../../review/git/highlight/highlight-payload"
@@ -7,6 +8,7 @@ import { buildHunkSplitRows, buildHunkStackRows, hunkGapBefore, hunkDiffAddresse
 import { ReviewDiffRow } from "./ReviewDiffRow"
 
 export type ReviewDiffSectionProps = Readonly<{
+  replies?: ReviewReplies
   file: HunkReviewFile
   state: ReviewState
   layout: "split" | "stack"
@@ -47,11 +49,13 @@ function rowsFor(
   wrapLines: boolean,
   highlight: HighlightPayload | undefined,
   expandedSourceByGap: ReadonlyMap<string, readonly string[]> | undefined,
+  replies?: ReviewReplies,
 ): readonly HunkDiffRow[] {
   const options = {
     width,
     showLineNumbers,
     wrapLines,
+    ...(replies ? { replies } : {}),
     ...(expandedSourceByGap ? { expandedSourceByGap } : {}),
   }
   return layout === "split"
@@ -65,9 +69,10 @@ export function hunkSectionRowCount(
   state?: ReviewState,
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
   showDivider = false,
+  replies?: ReviewReplies,
 ): number {
   const dividerRows = showDivider ? 1 : 0
-  const feedbackCount = state === undefined ? 0 : feedbackRowCountForFile(file, state, layout)
+  const feedbackCount = state === undefined ? 0 : feedbackRowCountForFile(file, state, layout, replies)
   if (file.kind === "binary" || file.reviewFile.source === "binary" || file.reviewFile.source === "too-large") return dividerRows + 2 + feedbackCount
   let count = dividerRows + 1
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
@@ -149,8 +154,9 @@ export function feedbackSectionRowOffset(
   state: ReviewState,
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
   showDivider = false,
+  replies?: ReviewReplies,
 ): number {
-  const rows = rowsFor(file, state, layout, 120, true, false, undefined, expandedSourceByGap)
+  const rows = rowsFor(file, state, layout, 120, true, false, undefined, expandedSourceByGap, replies)
   const index = rows.findIndex((row) => row.type === "feedback" && row.feedbackId === feedbackId)
   if (index < 0) return -1
   return (showDivider ? 1 : 0) + 1 + index
@@ -174,14 +180,15 @@ export function ReviewDiffSection({
   onToggleGap,
   selectedFeedbackId,
   showDivider,
+  replies,
 }: ReviewDiffSectionProps) {
   const rows = useMemo(
-    () => rowsFor(file, state, layout, width, showLineNumbers, wrapLines, highlight, expandedSourceByGap),
-    [expandedSourceByGap, file, layout, highlight, showLineNumbers, state.expandedGaps, state.feedback, width, wrapLines],
+    () => rowsFor(file, state, layout, width, showLineNumbers, wrapLines, highlight, expandedSourceByGap, replies),
+    [expandedSourceByGap, file, layout, highlight, replies, showLineNumbers, state.expandedGaps, state.feedback, width, wrapLines],
   )
   const digits = lineDigits(file)
   const selectProps = onSelect ? { onMouseUp: () => onSelect() } : {}
-  const totalRows = hunkSectionRowCount(file, layout, state, expandedSourceByGap, showDivider)
+  const totalRows = hunkSectionRowCount(file, layout, state, expandedSourceByGap, showDivider, replies)
   const visibleStart = Math.max(0, Math.min(totalRows, Math.floor(rowStart)))
   const visibleEnd = Math.max(visibleStart, Math.min(totalRows, Math.ceil(rowEnd ?? totalRows)))
   const hasDiffRows = rows.some((row) => row.type !== "feedback")

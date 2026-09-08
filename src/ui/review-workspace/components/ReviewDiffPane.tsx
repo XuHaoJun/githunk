@@ -4,6 +4,7 @@ import type { ReviewState } from "../../../review/core/state"
 import type { HighlightPayload } from "../../../review/git/highlight/highlight-payload"
 import type { HunkDiffAddress } from "../hunk-diff-row-model"
 import type { HunkReviewFile } from "../hunk-review-model"
+import type { ReviewReplies } from "../../../review/core/ledger"
 import { ReviewDiffSection, feedbackSectionRowOffset, hunkSectionRowCount, hunkSectionRowOffset } from "./ReviewDiffSection"
 import { ReviewStickyHeader } from "./ReviewStickyHeader"
 import { resolveStickyDiffHeader } from "../sticky-header"
@@ -30,6 +31,7 @@ export type ReviewDiffPaneProps = Readonly<{
   onVisibleFileKeysChange?: (fileKeys: readonly string[]) => void
   onViewportChange?: (top: number) => void
   selectedFeedbackId?: string | null
+  replies?: ReviewReplies
   selectedFileRevealToken?: number
   selectedHunkRevealToken?: number
   focused?: boolean
@@ -58,13 +60,14 @@ function sectionWindow(
   viewportHeight: number,
   overscan: number,
   expandedSourceByGap: ReadonlyMap<string, readonly string[]> | undefined,
+  replies: ReviewReplies | undefined,
 ): SectionWindow {
   const heights: number[] = []
   const offsets: number[] = [0]
   let total = 0
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index]!
-    const height = hunkSectionRowCount(file, layout, state, expandedSourceByGap, index > 0)
+    const height = hunkSectionRowCount(file, layout, state, expandedSourceByGap, index > 0, replies)
     heights.push(height)
     total += height
     offsets.push(total)
@@ -101,6 +104,7 @@ export function ReviewDiffPane({
   onVisibleFileKeysChange,
   onViewportChange,
   selectedFeedbackId,
+  replies,
   selectedFileRevealToken,
   selectedHunkRevealToken,
   focused,
@@ -119,8 +123,8 @@ export function ReviewDiffPane({
   const pendingSelectionRevealRequestRef = useRef<SelectionRevealRequest | null>(null)
   const pendingSelectionRevealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const window = useMemo(
-    () => sectionWindow(files, state, layout, scrollTop, viewportHeight, overscan, expandedSourceByGap),
-    [expandedSourceByGap, files, layout, overscan, scrollTop, state.expandedGaps, state.feedback, viewportHeight],
+    () => sectionWindow(files, state, layout, scrollTop, viewportHeight, overscan, expandedSourceByGap, replies),
+    [expandedSourceByGap, files, layout, overscan, replies, scrollTop, state.expandedGaps, state.feedback, viewportHeight],
   )
   // The native bar overlays the right edge when visible; reserve its cell only for overflowing
   // streams so short diffs retain their full width.
@@ -244,7 +248,7 @@ export function ReviewDiffPane({
     // Aim at the objection's own row when one is being revealed; its hunk
     // header can sit comfortably on screen while the objection itself does not.
     const feedbackOffset = state.reveal.scrollToFeedback && selectedFeedbackId !== undefined && selectedFeedbackId !== null
-      ? feedbackSectionRowOffset(selectedFile, layout, selectedFeedbackId, state, expandedSourceByGap, index > 0)
+      ? feedbackSectionRowOffset(selectedFile, layout, selectedFeedbackId, state, expandedSourceByGap, index > 0, replies)
       : -1
     const revealingFeedback = feedbackOffset >= 0
     const rowOffset = revealingFeedback
@@ -349,6 +353,7 @@ export function ReviewDiffPane({
               const select = onSelectFile ? () => onSelectFile(file.id) : undefined
               return (
                 <ReviewDiffSection
+                  {...(replies ? { replies } : {})}
                   key={file.id}
                   file={file}
                   state={state}

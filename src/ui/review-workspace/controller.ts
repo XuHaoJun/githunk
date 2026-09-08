@@ -24,6 +24,9 @@ import { LocalStateFile } from "../../storage/local-state-file"
 import {
   HANDOFF_JSON_PATH,
   HANDOFF_MARKDOWN_PATH,
+  HANDOFF_REPLIES_PATH,
+  parseReviewReplies,
+  type ReviewReplies,
   buildHandoffMailbox,
   ledgerVerdict,
   renderHandoffMarkdown,
@@ -106,6 +109,8 @@ export class ReviewWorkspaceController {
   private gapRequestCounter = 0
   /** The aggregate document a projection lens was opened from, kept so exiting restores it. */
   private aggregateDocument: ReviewDocument | undefined
+  /** The agent's answers, reloaded with the document. Read-only to githunk. */
+  private _replies: ReviewReplies = new Map()
   constructor(options: ReviewWorkspaceControllerOptions) {
     this.runner = options.runner
     this.stateStore = options.stateStore
@@ -126,6 +131,24 @@ export class ReviewWorkspaceController {
 
   get state(): ReviewState | undefined {
     return this._state
+  }
+
+  /** What the agent said back, keyed by objection id; empty when it has said nothing. */
+  get replies(): ReviewReplies {
+    return this._replies
+  }
+
+  /**
+   * Re-read the agent's reply file. It belongs to the agent, so githunk polls it
+   * rather than tracking it: there is no write from this side to invalidate on.
+   */
+  private async loadReplies(): Promise<void> {
+    try {
+      const file = new LocalStateFile({ runner: this.runner, relativePath: HANDOFF_REPLIES_PATH, pathKind: "handoff" })
+      this._replies = parseReviewReplies(await file.readText())
+    } catch {
+      this._replies = new Map()
+    }
   }
 
   get error(): ReviewWorkspaceError | undefined {
@@ -302,6 +325,7 @@ export class ReviewWorkspaceController {
   async open(baseRef?: string): Promise<ReviewState | undefined>
   async open(baseRef?: string): Promise<ReviewState | undefined> {
     if (this.destroyed) throw new Error("controller destroyed")
+    await this.loadReplies()
     const token = ++this.requestId
     let resolvedBase = baseRef
     // An explicit base supersedes an open picker. chooseBase drives its own
