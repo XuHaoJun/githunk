@@ -308,17 +308,22 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       }
     }
     case "feedback/handoff": {
-      const ids = new Set(action.ids)
-      if (ids.size === 0) return state
+      const excerptById = new Map(action.items.map((item) => [item.id, item.excerpt] as const))
+      if (excerptById.size === 0) return state
       let changed = false
       const copy = state.feedback.map((feedback) => {
-        if (!ids.has(feedback.id)) return feedback
+        if (!excerptById.has(feedback.id)) return feedback
         if (feedback.status === "handed-off" || feedback.status === "retired") return feedback
         changed = true
+        const excerpt = excerptById.get(feedback.id)
         return {
           ...feedback,
           status: "handed-off" as const,
-          handoff: { at: action.at, headOid: action.headOid },
+          handoff: {
+            at: action.at,
+            headOid: action.headOid,
+            ...(excerpt === undefined ? {} : { excerpt }),
+          },
           updatedAt: action.at,
         }
       })

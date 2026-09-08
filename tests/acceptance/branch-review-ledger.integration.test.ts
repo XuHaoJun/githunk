@@ -7,6 +7,8 @@ import { createRangeAnchor } from "../../src/review/core/anchors"
 import { HANDOFF_JSON_PATH, ledgerVerdict, reviewCheckpoint } from "../../src/review/core/ledger"
 import { validateFinishReview } from "../../src/review/core/artifact"
 import type { ReviewState } from "../../src/review/core/state"
+import { buildHunkStackRows } from "../../src/ui/review-workspace/hunk-diff-row-model"
+import { toHunkReviewFile } from "../../src/ui/review-workspace/hunk-review-model"
 
 /**
  * The open-objections loop against a real repository: leave objections, hand
@@ -83,6 +85,27 @@ describe("branch review — open-objections ledger", () => {
       const lens = await reopened.enterSinceLastReview()
       expect(lens).toMatchObject({ ok: true, fileCount: 1 })
       reopened.exitProjection()
+
+      // GitLab keeps the diff a note was written against next to the note, so an
+      // outdated discussion can still show what was objected to after the code
+      // is gone (note_diff_files.diff, db/structure.sql:25690-25700). The same
+      // evidence has to reach the row model here.
+      const addressed = reopened.state!.feedback.find((f) => ledgerVerdict(f, head) === "addressed")!
+      expect(addressed.handoff?.excerpt).toEqual(["AGENT-A"])
+      const rows = buildHunkStackRows(
+        toHunkReviewFile(reopened.state!.document.files[0]!),
+        reopened.state!,
+        undefined,
+        { width: 120, showLineNumbers: true, wrapLines: false },
+      )
+      const excerpt = rows.filter((r) => r.type === "feedback-excerpt" && r.feedbackId === addressed.id)
+      expect(excerpt.map((r) => (r as { side: string; text: string }).side)).toEqual(["was", "now"])
+      expect((excerpt[0] as { text: string }).text).toContain("AGENT-A")
+      expect((excerpt[1] as { text: string }).text).toContain("renamed")
+
+      // The objection nobody touched has nothing to compare, so it stays quiet.
+      const untouched = reopened.state!.feedback.find((f) => ledgerVerdict(f, head) === "untouched")!
+      expect(rows.filter((r) => r.type === "feedback-excerpt" && r.feedbackId === untouched.id)).toEqual([])
 
       // A blocking objection nobody touched blocks Approve until a human closes it.
       const approve = { decision: "approve" as const, summary: "looks good" }

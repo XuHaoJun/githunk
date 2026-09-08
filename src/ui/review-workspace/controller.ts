@@ -19,6 +19,7 @@ import { currentBranchRef, inferReviewBase, resolveRefOid, type ReviewBaseCandid
 import { emptyReviewDatabaseV2 } from "../../review/storage/schemas"
 import { sha256Tuple } from "../../review/core/identity"
 import { MutationQueue } from "../../app/mutation-queue"
+import { linesForAnchor } from "../../review/core/anchors"
 import { LocalStateFile } from "../../storage/local-state-file"
 import {
   HANDOFF_JSON_PATH,
@@ -566,7 +567,14 @@ export class ReviewWorkspaceController {
 
     const freshlyHandedOff = pending.filter((feedback) => feedback.status !== "handed-off")
     if (freshlyHandedOff.length > 0) {
-      this.dispatch({ type: "feedback/handoff", ids: freshlyHandedOff.map((f) => f.id), at, headOid })
+      // Capture what each objection points at now. Once the code changes the
+      // anchor can only say that it moved; the text is the only thing that can
+      // still show the reviewer what they objected to.
+      const items = freshlyHandedOff.map((feedback) => {
+        const excerpt = linesForAnchor(feedback.anchor, current.document)
+        return { id: feedback.id, ...(excerpt === undefined ? {} : { excerpt }) }
+      })
+      this.dispatch({ type: "feedback/handoff", items, at, headOid })
     }
     return { ok: true, handedOff: freshlyHandedOff.length, total: pending.length, path }
   }

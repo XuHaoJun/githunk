@@ -1,6 +1,7 @@
 import { z } from "zod"
 import type { ReviewArtifactV1, SubmittedFeedback } from "../core/artifact"
-import type { ReviewIdentity, ReviewGeneration, ReviewAnchor, ReviewFeedback, ReviewFeedbackDraft } from "../core/types"
+import type { ReviewIdentity, ReviewGeneration, ReviewAnchor, ReviewFeedback, ReviewFeedbackDraft, ReviewFeedbackHandoff } from "../core/types"
+import { ANCHOR_EXCERPT_LINE_LIMIT } from "../core/anchors"
 import type { ViewedRecord, ExpandedGap, SubmittedReviewRef, ReviewSelection, ReviewLineSelection } from "../core/state"
 
 // ---------------------------------------------------------------------------
@@ -84,6 +85,14 @@ const rangeAnchorSchema = z
 
 const anchorSchema = z.discriminatedUnion("kind", [fileAnchorSchema, rangeAnchorSchema])
 
+const handoffSchema = z
+  .object({
+    at: timestampSchema,
+    headOid: z.string().min(1),
+    excerpt: z.array(z.string()).max(ANCHOR_EXCERPT_LINE_LIMIT).optional(),
+  })
+  .strict()
+
 const feedbackSchema = z
   .object({
     id: z.string().min(1),
@@ -96,7 +105,7 @@ const feedbackSchema = z
     // Optional so a review written before
     // the ledger existed still loads; absent reads as "open".
     status: z.enum(["open", "handed-off", "retired"]).optional(),
-    handoff: z.object({ at: timestampSchema, headOid: z.string().min(1) }).strict().optional(),
+    handoff: handoffSchema.optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
   })
@@ -264,7 +273,7 @@ const submittedFeedbackSchema = z
     // Optional so artifacts written before
     // the ledger still parse.
     status: z.enum(["open", "handed-off", "retired"]).optional(),
-    handoff: z.object({ at: timestampSchema, headOid: z.string().min(1) }).strict().optional(),
+    handoff: handoffSchema.optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
   })
@@ -335,6 +344,14 @@ function toAnchor(raw: z.infer<typeof anchorSchema>): ReviewAnchor {
   }
 }
 
+function toHandoff(raw: z.infer<typeof handoffSchema>): ReviewFeedbackHandoff {
+  return {
+    at: raw.at,
+    headOid: raw.headOid,
+    ...(raw.excerpt === undefined ? {} : { excerpt: raw.excerpt as readonly string[] }),
+  }
+}
+
 function toFeedback(raw: z.infer<typeof feedbackSchema>): ReviewFeedback {
   const base: ReviewFeedback = {
     id: raw.id,
@@ -344,7 +361,7 @@ function toFeedback(raw: z.infer<typeof feedbackSchema>): ReviewFeedback {
     anchor: toAnchor(raw.anchor),
     resolution: raw.resolution,
     ...(raw.status === undefined ? {} : { status: raw.status }),
-    ...(raw.handoff === undefined ? {} : { handoff: raw.handoff }),
+    ...(raw.handoff === undefined ? {} : { handoff: toHandoff(raw.handoff) }),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   }
@@ -420,7 +437,7 @@ function toSubmittedFeedback(raw: z.infer<typeof submittedFeedbackSchema>): Subm
     body: raw.body,
     anchor: toAnchor(raw.anchor),
     ...(raw.status === undefined ? {} : { status: raw.status }),
-    ...(raw.handoff === undefined ? {} : { handoff: raw.handoff }),
+    ...(raw.handoff === undefined ? {} : { handoff: toHandoff(raw.handoff) }),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   }

@@ -164,6 +164,17 @@ export function ReviewDiffRow({ row, width, digits, showLineNumbers, selected = 
     )
   }
 
+  if (row.type === "feedback-excerpt") {
+    // "was" reads as removed and "now" as added, so the pair scans like the
+    // diff it stands in for.
+    const style = row.side === "was" ? COLORS.deletion : COLORS.addition
+    return (
+      <box id={row.key} style={{ width: "100%", height: 1 }} {...clickProps}>
+        <text content={new StyledText([chunk(row.text, style)])} wrapMode="none" truncate={true} />
+      </box>
+    )
+  }
+
   if (row.type === "split-line") {
     const { leftWidth, rightWidth } = resolveHunkSplitPaneWidths(width)
     return (

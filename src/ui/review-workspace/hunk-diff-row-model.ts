@@ -1,7 +1,8 @@
 import type { ReviewState } from "../../review/core/state"
 import type { HighlightPayload, HighlightedLine } from "../../review/git/highlight/highlight-payload"
 import type { HunkReviewFile } from "./hunk-review-model"
-import { ledgerBadge, ledgerVerdict } from "../../review/core/ledger"
+import { ledgerBadge, ledgerVerdict, type LedgerVerdict } from "../../review/core/ledger"
+import { linesForAnchor } from "../../review/core/anchors"
 
 export type HunkRenderSpan = Readonly<{
   text: string
@@ -52,6 +53,15 @@ export type HunkDiffRow =
       feedbackId: string
       severity: "comment" | "blocking"
       resolution: "active" | "stale" | "orphaned"
+      text: string
+    }>
+  | Readonly<{
+      type: "feedback-excerpt"
+      key: string
+      fileKey: string
+      hunkIndex: number
+      feedbackId: string
+      side: "was" | "now"
       text: string
     }>
   | Readonly<{
@@ -275,6 +285,7 @@ function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: Re
     const hunkIndex = feedback.anchor.kind === "range" ? feedback.anchor.ownerHunkIndex : -1
     const body = feedback.body.replace(/\s+/gu, " ").trim()
     const detail = body.length > 0 ? body : "(empty feedback)"
+    const verdict = ledgerVerdict(feedback, state.document.generation.headOid)
     rows.push({
       type: "feedback",
       key: `${file.id}:${mode}:feedback:${feedback.id}`,
@@ -285,9 +296,55 @@ function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: Re
       resolution: feedback.resolution,
       // The verdict leads, because after a
       // handoff it is the only part of this row the reviewer has not already read.
-      text: `${ledgerBadge(ledgerVerdict(feedback, state.document.generation.headOid))} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} [e]dit [d]elete [a]nchor [-]retire`,
+      text: `${ledgerBadge(verdict)} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} [e]dit [d]elete [a]nchor [-]retire`,
+    })
+    appendFeedbackExcerptRows(rows, file, state, feedback, verdict, mode)
+  }
+}
+
+/**
+ * Show what an objection was written against, and what stands there now.
+ *
+ * Only for `addressed`: that is githunk's name for GitLab's "outdated"
+ * discussion — the anchor could not be relocated, so the lines the reviewer
+ * objected to are gone (`lib/gitlab/diff/position_tracer/line_strategy.rb:98-99`
+ * draws the same line: "If the line is still in the MR, we don't treat this as
+ * outdated"). Every other verdict either has nothing to compare (`open`,
+ * `waiting`) or compares equal by definition (`untouched`).
+ */
+function appendFeedbackExcerptRows(
+  rows: HunkDiffRow[],
+  file: HunkReviewFile,
+  state: ReviewState,
+  feedback: ReviewState["feedback"][number],
+  verdict: LedgerVerdict,
+  mode: "split" | "stack",
+): void {
+  if (verdict !== "addressed") return
+  const was = feedback.handoff?.excerpt
+  if (was === undefined || was.length === 0) return
+  const shortOid = (oid: string) => oid.slice(0, 7)
+  const push = (side: "was" | "now", label: string, line: string, index: number) => {
+    rows.push({
+      type: "feedback-excerpt",
+      key: `${file.id}:${mode}:feedback:${feedback.id}:${side}:${index}`,
+      fileKey: file.id,
+      hunkIndex: feedback.anchor.kind === "range" ? feedback.anchor.ownerHunkIndex : -1,
+      feedbackId: feedback.id,
+      side,
+      text: `    ${label} │ ${line}`,
     })
   }
+  const wasLabel = `was ${shortOid(feedback.handoff?.headOid ?? "")}`
+  was.forEach((line, index) => { push("was", index === 0 ? wasLabel : " ".repeat(wasLabel.length), line, index) })
+
+  const now = linesForAnchor(feedback.anchor, state.document)
+  const nowLabel = `now ${shortOid(state.document.generation.headOid)}`
+  if (now === undefined || now.length === 0) {
+    push("now", nowLabel, "(gone — the code this objected to no longer resolves here)", 0)
+    return
+  }
+  now.forEach((line, index) => { push("now", index === 0 ? nowLabel : " ".repeat(nowLabel.length), line, index) })
 }
 
 export function buildHunkSplitRows(

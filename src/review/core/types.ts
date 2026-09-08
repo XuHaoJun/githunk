@@ -92,6 +92,17 @@ export type ReviewFeedbackStatus = "open" | "handed-off" | "retired"
 export type ReviewFeedbackHandoff = Readonly<{
   at: string
   headOid: string
+  /**
+   * The anchored lines as they read at the handoff.
+   *
+   * GitLab stores the diff a note was written against alongside the note
+   * (`note_diff_files.diff`, db/structure.sql:25690-25700, written by
+   * DiffNote#create_diff_file, app/models/diff_note.rb:66-80) precisely so an
+   * outdated discussion can still show what was objected to after the code is
+   * gone. A digest can only say the anchor moved; it cannot show the reader
+   * what moved.
+   */
+  excerpt?: readonly string[]
 }>
 
 export type ReviewFeedback = Readonly<{
