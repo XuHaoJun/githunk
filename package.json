@@ -15,6 +15,7 @@
   "scripts": {
     "start": "bun run src/main.ts",
     "dev": "bun --watch src/main.ts",
+    "handoff": "bun run src/cli.ts handoff",
     "build": "bun build src/cli.ts --target=node --format=esm --packages=external --outfile=dist/githunk.js --banner '#!/usr/bin/env node'",
     "build:bin": "bun run ./scripts/build-bin.ts",
     "build:prebuilt:artifact": "bun run ./scripts/build-prebuilt-artifact.ts",
