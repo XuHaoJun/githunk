@@ -119,13 +119,26 @@ export function reviewCheckpoint(
 }
 
 // ---------------------------------------------------------------------------
-// Mailbox
+// The agent's mailbox
+//
+// Everything below produces the file an agent reads to learn what the reviewer
+// wants changed. A mailbox rather than a connection: githunk writes it and
+// stops, the agent reads it whenever it likes, and neither has to be running
+// for the other to work. hunk does the same job over a loopback daemon and its
+// own guide documents how to debug an agent sandbox blocking the port
+// (learn-projects/hunk/docs/agent-workflows.md); a file under the git directory
+// has no port to block, survives ssh, and any language can read it.
+//
+// Written on `A`, read back through `githunk handoff [--json]`. That CLI is
+// read-only on purpose: an agent able to mark its own work addressed would make
+// the `untouched` verdict worthless, and that verdict is the whole point.
 // ---------------------------------------------------------------------------
 
 /** Paths relative to the git directory, in githunk's usual `githunk/` namespace. */
 export const HANDOFF_JSON_PATH = "githunk/handoff/pending.json"
 export const HANDOFF_MARKDOWN_PATH = "githunk/handoff/pending.md"
 
+/** One objection as the agent sees it: enough to locate the lines and read the ask. */
 export type HandoffItem = Readonly<{
   id: string
   path: string
@@ -138,6 +151,11 @@ export type HandoffItem = Readonly<{
   replacement?: string
 }>
 
+/**
+ * The JSON contract at HANDOFF_JSON_PATH. `version` is the promise to whoever
+ * parses it; the markdown beside it is the same content for a reader who would
+ * rather not parse anything.
+ */
 export type HandoffMailbox = Readonly<{
   version: 1
   generatedAt: string
