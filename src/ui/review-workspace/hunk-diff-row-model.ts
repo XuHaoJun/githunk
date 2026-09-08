@@ -341,7 +341,7 @@ function appendFeedbackExcerptRows(
   const now = linesForAnchor(feedback.anchor, state.document)
   const nowLabel = `now ${shortOid(state.document.generation.headOid)}`
   if (now === undefined || now.length === 0) {
-    push("now", nowLabel, "(gone — the code this objected to no longer resolves here)", 0)
+    push("now", nowLabel, "(not in the diff any more — these lines now match the base)", 0)
     return
   }
   now.forEach((line, index) => { push("now", index === 0 ? nowLabel : " ".repeat(nowLabel.length), line, index) })

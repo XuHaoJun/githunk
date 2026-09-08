@@ -163,9 +163,14 @@ export function linesForAnchor(anchor: ReviewAnchor, document: ReviewDocument): 
   if (anchor.kind !== "range") return undefined
   const file = document.files.find((f) => f.key === anchor.fileKey)
   if (!file || file.source === "binary" || file.source === "too-large") return undefined
-  const owner = file.hunks.find((h) => h.index === anchor.ownerHunkIndex)
-  if (!owner) return undefined
-  const byNumber = new Map(sideLinesForHunk(owner, anchor.side).map((entry) => [entry.lineNumber, entry.content] as const))
+  // Read the line numbers across every hunk rather than trusting
+  // `ownerHunkIndex`. At capture time the owner holds them either way; at read
+  // time the diff has moved on and hunk indices shift, so trusting the stored
+  // index reports "gone" for lines that are still right there.
+  const byNumber = new Map<number, string>()
+  for (const hunk of file.hunks) {
+    for (const entry of sideLinesForHunk(hunk, anchor.side)) byNumber.set(entry.lineNumber, entry.content)
+  }
   const out: string[] = []
   for (let line = anchor.startLine; line <= anchor.endLine && out.length < ANCHOR_EXCERPT_LINE_LIMIT; line++) {
     const content = byNumber.get(line)
