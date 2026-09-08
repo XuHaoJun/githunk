@@ -74,7 +74,3 @@ export async function startApp(options: StartAppOptions = {}): Promise<number> {
 
   return 0
 }
-
-if (import.meta.main) {
-  process.exitCode = await startApp()
-}
