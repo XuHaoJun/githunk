@@ -1,7 +1,8 @@
-# Open-objections ledger — prototype notes
+# Open-objections ledger
 
-Prototype on `prototype/open-objections-ledger`. Not production: no schema
-migration, no parity-matrix entry, no release notes.
+Branch Review's fifth githunk review extension
+(`docs/lazygit-compatibility-v0.1.md` row 14a). lazygit has no counterpart: it
+has no review feedback model at all.
 
 ## The question
 
@@ -27,11 +28,30 @@ asked to act"), and derives the verdict from the pair in
 `resolution` is already recomputed every generation by `reconcileAnchor`, so the
 verdict costs no extra Git.
 
-## Try it
+## Keys
 
-```bash
-bun test tests/acceptance/branch-review-ledger.integration.test.ts
-```
+| Key | Does |
+| --- | --- |
+| `c` | object to the selected line (existing) |
+| `A` | hand off every open objection and write the mailbox |
+| `-` | resolve one you have looked at |
+| `a` | re-anchor one whose code moved (existing) |
+| `L` | list objections, `j`/`k` to move, Enter to jump |
+| `s` | narrow to what changed since the last handoff or finished review |
+
+`H` and `x` are reserved for lazygit parity (main-scroll-left, extension panes)
+and `l` cycles the layout, which is why the two new keys are `A` and `-`.
+
+## Tests
+
+| File | Pins |
+| --- | --- |
+| `tests/review/core/ledger.test.ts` | the verdict truth table, checkpoint selection, mailbox contract, reply parsing |
+| `tests/review/core/reducer.test.ts` | handoff stamping, re-handoff keeping the original checkpoint, resolve being terminal |
+| `tests/review/storage/schemas.test.ts` | round-tripping status/handoff/excerpt, the legacy status name, the excerpt cap |
+| `tests/cli/args.test.ts` | that no CLI verb writes a verdict |
+| `tests/acceptance/branch-review-ledger.integration.test.ts` | the loop against a real repository, across a restart |
+| `tests/ui/review-workspace/react-review-workspace.integration.test.tsx` | the `L` list, the jump landing on the objection, the finish dialog reporting a failed submit |
 
 In the TUI: `b` (Branch Review) → `c` on a line to leave feedback → `A` to hand
 off → let an agent commit → reopen → the header and the feedback rows carry the
@@ -102,6 +122,9 @@ blocking objection sits on lines nobody touched.
 ## Not built
 
 - `githunk skill path` (the mailbox markdown carries the instructions instead)
-- `unaddressed` filter scope on `f`
-- a per-objection before/after: the ledger keeps `contextDigest`, not the text,
-  so it can say an anchor moved but cannot show what the line used to be
+- an `unaddressed` filter scope on `f`
+- agent-driven navigation and highlighting. Both need a live connection to a
+  running window — hunk spends roughly 10,650 lines on that daemon and its own
+  guide documents debugging an agent sandbox that blocks the port — and both
+  only mean anything while the reviewer is present, which is the premise this
+  ledger gives up on purpose.

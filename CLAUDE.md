@@ -14,8 +14,9 @@ and dependencies; `bun.lock` pins the dependency graph. Do not add runtime depen
   Key reference: `learn-projects/lazygit/docs/keybindings/Keybindings_en.md`.
 - **Record parity changes** in `docs/lazygit-compatibility-v0.1.md`, the authoritative matrix:
   `compatible` / `githunk review extension` / `not yet implemented` / `blocked`.
-  Its four review extensions are main-pane selection/copy, the lower-right review area,
-  draggable splitters and the command log's failed-command output block.
+  Its five review extensions are main-pane selection/copy, the lower-right review area,
+  draggable splitters, the command log's failed-command output block and Branch Review's
+  open-objections ledger.
 - **Preserve strictness:** `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
   `readonly` fields and `readonly T[]` parameters. Use the existing optional-field idiom
   `...(x === undefined ? {} : { x })`; do not loosen compiler settings.
@@ -108,6 +109,9 @@ Normal `.git/` layout:
 - `githunk/reviews/<review-id>/<artifact-id>.json`: immutable review artifacts.
 - `githunk/working-tree-review-state-v1.json`: restricted Working Tree/Stash progress;
   starts empty, with no migration from the old combined `review-state-v1.json`.
+- `githunk/handoff/pending.{json,md}`: the open-objections mailbox githunk writes and an
+  agent reads. `githunk/handoff/replies.json` is the reverse — the agent owns it, githunk
+  only reads it, and no CLI verb writes `status` or `resolution`.
 
 Persistence must not dirty `git status`.
 
@@ -158,5 +162,7 @@ Release traps to preserve:
 
 - `docs/githunk-prd-v0.1.md`: product (§1–3), selection spike (§16), v0.2 scope (§19).
 - `docs/lazygit-compatibility-v0.1.md`: authoritative parity status.
+- `docs/superpowers/specs/2026-09-08-open-objections-ledger.md`: the open-objections
+  ledger (Branch Review review extension 5).
 - `docs/release-checklist-v0.1.md`: release verification/evidence.
 - `docs/clipboard-compatibility-v0.1.md`: terminal clipboard compatibility/evidence.

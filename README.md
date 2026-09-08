@@ -58,6 +58,96 @@ githunk path/to/repository
 
 `githunk --help` prints all options; `githunk --version` prints the installed version.
 
+## Open objections
+
+An agent writes four hundred lines, you leave five objections, and it comes back
+saying it addressed them all. Which one did it skip? Today the honest answers are
+"re-read the whole diff" or "take its word for it".
+
+githunk keeps a ledger of your objections and decides that question itself.
+
+### A round
+
+Press `b` for Branch Review, `c` on a line to object, then `A` to hand off:
+
+```sh
+githunk handoff          # what the reviewer wants changed, as markdown
+githunk handoff --json   # the same thing, with ids and line numbers
+```
+
+Your agent reads that, changes what it changes, and commits. Reopen githunk:
+
+```
+feature → [main ▾]  ·  2 commits · 1 files · +2 −1  [Aggregate]
+Reviewed 0/1 · 1 reviewing · 2 pending  ·  1 addressed · 1 UNTOUCHED
+
+  2 +   return store.find(e => e.key === key) ?? null
+addressed stale ! note — filter()[0] allocates the whole array — use find() — cache.ts new:2
+    was d9937c4 │   return store.filter(e => e.key === key)[0]
+    now d85d5d6 │   return store.find(e => e.key === key) ?? null
+  6 +   store.sort((a, b) => a.key < b.key ? -1 : 1)
+UNTOUCHED active ! note — sorting on every put is O(n log n) per write — cache.ts new:6
+```
+
+The header is the whole ledger in one line. Each objection sits under the line it
+was written against, carrying its verdict and — once the code moves — what it used
+to say and what stands there now.
+
+`UNTOUCHED` is the one you could not have learned any other way: those lines are
+byte-identical to when you handed them off. No summary can talk it away, because
+it is a fact about the code and not a claim about the work.
+
+Press `L` for the list of objections and Enter to jump to one, `-` to resolve one
+you have looked at, `a` to re-anchor one, and `s` to see only what changed since
+the handoff.
+
+### When the agent disagrees
+
+Skipping an objection and disagreeing with it are different things, so an agent
+can say which it is:
+
+```sh
+githunk handoff reply --id <id> --body "the sort is needed for the range query"
+```
+
+The answer appears under your objection. It settles nothing: an answered objection
+whose lines are unchanged reads `DISPUTED` rather than `UNTOUCHED` — it argued
+instead of complying, which is a question for you.
+
+There is deliberately no CLI verb that marks an objection done. An agent that
+could mark its own work addressed would make the whole ledger worthless, so the
+verdict is computed from the code and nothing an agent writes can move it.
+
+### Where the ledger lives
+
+Under the Git directory, never the worktree, so reviewing never dirties
+`git status`:
+
+```
+.git/githunk/review-state-v2.json      your objections, across sessions
+.git/githunk/handoff/pending.json      githunk writes · agent reads
+.git/githunk/handoff/replies.json      agent writes   · githunk reads
+```
+
+Two files with two owners means neither side needs a lock and no daemon has to be
+running. Quit githunk, come back in two days, and the ledger is still there.
+
+### Compared with hunk
+
+githunk's review renderer is derived from [hunk](https://github.com/modem-dev/hunk),
+which is the better tool for reviewing beside a live agent: it can drive your
+window, jump you to a hunk, highlight the expression under discussion, and answer
+inline. githunk does none of that.
+
+What githunk adds is memory. hunk's review notes live in the process — quitting
+ends them — so it cannot ask whether the lines an objection pointed at survived
+someone else's commit. githunk re-anchors every objection against every new
+generation, which is what makes `UNTOUCHED`, `DISPUTED` and "since the handoff"
+possible at all.
+
+Reviewing in one sitting: use hunk. Handing work to an agent and verifying it
+later: that is what this is for.
+
 ## Development
 
 This repository uses Bun for development and for producing the Node.js bundle published to npm:
