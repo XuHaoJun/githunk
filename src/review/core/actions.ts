@@ -6,7 +6,7 @@ export type ReviewAction =
   | { type: "selection/move"; unit: "file" | "hunk"; direction: "next" | "previous" }
   | { type: "selection/set-line"; selection: ReviewLineSelection }
   | { type: "selection/move-line"; direction: "next" | "previous" }
-  | { type: "selection/viewport-anchor"; fileKey: string; hunkIndex: number; reveal?: "hunk" }
+  | { type: "selection/viewport-anchor"; fileKey: string; hunkIndex: number; reveal?: "hunk" | "feedback" }
   | { type: "filter/set-query"; query: string }
   | { type: "filter/set-scope"; scope: "all" | "unreviewed" | "changed" | "feedback" }
   | { type: "projection/set"; projection: ReviewProjection }

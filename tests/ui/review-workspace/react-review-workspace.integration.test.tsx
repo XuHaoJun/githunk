@@ -719,7 +719,7 @@ describe("React review workspace", () => {
         kind: "note" as const,
         severity: "comment" as const,
         body: "second objection",
-        anchor: createFileAnchor(second),
+        anchor: createRangeAnchor(second, { side: "new", startLine: 1, endLine: 1 }),
         resolution: "active" as const,
         status: "handed-off" as const,
         handoff: { at: "2026-09-08T00:00:00.000Z", headOid: "0".repeat(40) },
@@ -750,6 +750,10 @@ describe("React review workspace", () => {
       await flush(setup)
       expect(setup.captureCharFrame()).not.toContain("Enter jump")
       expect(getState().selection.fileKey).toBe(second.key)
+      // The jump has to land on the objection, not the top of its file.
+      // ReviewDiffPane picks between two scroll effects on this flag
+      // (components/ReviewDiffPane.tsx:163,193); false scrolls to the file head.
+      expect(getState().reveal.scrollToFeedback).toBe(true)
     } finally {
       await act(async () => setup.renderer.destroy())
     }

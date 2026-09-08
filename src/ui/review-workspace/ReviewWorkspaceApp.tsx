@@ -652,7 +652,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     if (!file) return
     controller.dispatchIntent({ type: "selection/select-file", fileKey: file.key })
     if (feedback.anchor.kind === "range") {
-      controller.dispatchIntent({ type: "selection/viewport-anchor", fileKey: file.key, hunkIndex: feedback.anchor.ownerHunkIndex, reveal: "hunk" })
+      controller.dispatchIntent({ type: "selection/viewport-anchor", fileKey: file.key, hunkIndex: feedback.anchor.ownerHunkIndex, reveal: "feedback" })
     }
     setFocus("stream")
     session.invalidate()
