@@ -112,4 +112,41 @@ describe("artifact finish and markdown", () => {
     // blocking should appear before comment in blocking-first ordering
     expect(md.indexOf("replaced code")).toBeGreaterThan(idxBlocking)
   })
+  test("renders feedback outcome and handoff checkpoint", () => {
+    const h = makeHunk(0, 1, [" a"])
+    const file = makeFile({ key: "a", path: "src/a.ts", hunks: [h] as unknown as ReviewFile["hunks"] })
+    const doc = makeDoc([file])
+    let state = createInitialReviewState(doc)
+    const anchor = createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 })
+    state = reduceReviewState(state, planReviewIntent(state, {
+      type: "feedback/start-draft",
+      anchor,
+      kind: "note",
+      severity: "comment",
+      body: "please reconsider",
+    }))
+    state = reduceReviewState(state, planReviewIntent(state, {
+      type: "feedback/create",
+      id: "f1",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    }))
+    state = reduceReviewState(state, {
+      type: "feedback/handoff",
+      items: [{ id: "f1", excerpt: ["a"] }],
+      at: "2026-08-27T01:00:00.000Z",
+      headOid: "h1",
+    })
+    state = reduceReviewState(state, { type: "feedback/resolve", id: "f1", at: "2026-08-27T02:00:00.000Z" })
+    const artifact = buildReviewArtifact(state, {
+      id: "art-2",
+      submittedAt: "2026-08-27T03:00:00.000Z",
+      decision: "approve",
+      summary: "closed after review",
+    })
+    const markdown = renderReviewArtifactMarkdown(artifact)
+    expect(markdown).toContain("- Status: resolved")
+    expect(markdown).toContain("- Handoff: 2026-08-27T01:00:00.000Z at h1")
+    expect(markdown).toContain("Handoff excerpt:")
+    expect(markdown).toContain("  a")
+  })
 })

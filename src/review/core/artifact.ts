@@ -238,6 +238,15 @@ export function renderReviewArtifactMarkdown(artifact: ReviewArtifactV1): string
       const location = anchor.kind === "range" ? `${path}:${anchor.startLine}-${anchor.endLine} (${anchor.side})` : `${path} (file)`
       lines.push(`### ${fb.severity} ${fb.kind} at ${location}`)
       lines.push("")
+      lines.push(`- Status: ${fb.status ?? "open"}`)
+      if (fb.handoff !== undefined) {
+        lines.push(`- Handoff: ${fb.handoff.at} at ${fb.handoff.headOid}`)
+        if (fb.handoff.excerpt !== undefined && fb.handoff.excerpt.length > 0) {
+          lines.push("Handoff excerpt:")
+          for (const excerptLine of fb.handoff.excerpt) lines.push(`  ${excerptLine}`)
+        }
+      }
+      lines.push("")
       lines.push(fb.body)
       lines.push("")
       if (fb.kind === "suggestion" && fb.replacement !== undefined) {
