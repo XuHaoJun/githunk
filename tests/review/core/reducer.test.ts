@@ -193,6 +193,16 @@ describe("ledger transitions", () => {
     expect(next.feedback[0]!.handoff).not.toHaveProperty("excerpt")
     expect(next.revision).toBe(state.revision + 1)
   })
+  test("does not hand off feedback whose anchor is already stale", () => {
+    const state = stateWith([feedback("stale", { resolution: "stale" })])
+    const next = reduceReviewState(state, {
+      type: "feedback/handoff",
+      items: [{ id: "stale" }],
+      at: "2026-09-08T01:00:00.000Z",
+      headOid: "h1",
+    })
+    expect(next).toBe(state)
+  })
 
   test("re-handing off keeps the original checkpoint, so the verdict keeps its baseline", () => {
     const already = feedback("one", {

@@ -319,7 +319,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       let changed = false
       const copy = state.feedback.map((feedback) => {
         if (!excerptById.has(feedback.id)) return feedback
-        if (feedback.status === "handed-off" || feedback.status === "resolved") return feedback
+        if (feedback.status === "handed-off" || feedback.status === "resolved" || feedback.resolution !== "active") return feedback
         changed = true
         const excerpt = excerptById.get(feedback.id)
         return {
