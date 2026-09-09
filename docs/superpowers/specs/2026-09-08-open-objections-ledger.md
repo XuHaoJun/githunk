@@ -25,6 +25,12 @@ asked to act"), and derives the verdict from the pair in
 | `handed-off`, answered | `active` | **`disputed`** — it argued instead of changing the lines |
 | `resolved` | any | `resolved` |
 
+`addressed` is a progress observation, not an approval: it means a handed-off
+objection's original anchor no longer resolves on the current generation. The
+agent may have changed the requested code, but the verdict does not say that
+change is correct. It remains live until the reviewer re-anchors the request or
+resolves it after inspection.
+
 
 ### Range attribution
 
