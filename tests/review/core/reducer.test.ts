@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
+import { createLineSelection } from "../../../src/review/core/anchors"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { planReviewIntent } from "../../../src/review/core/intents"
@@ -88,6 +89,25 @@ describe("semantic-only state and explicit reveal tokens", () => {
     expect(s2.reveal.hunkToken).toBe(s1.reveal.hunkToken + 1)
   })
 
+  test("manual line selection clears feedback reveal mode", () => {
+    const hunk = createReviewHunk({ index: 0, oldStart: 1, oldCount: 0, newStart: 1, newCount: 2, lines: ["+x", "+y"] })
+    const file = makeFile({ key: "src/a.ts", path: "src/a.ts", hunks: [hunk] })
+    const state = createInitialReviewState(makeDoc([file]))
+    const revealed = reduceReviewState(state, {
+      type: "selection/viewport-anchor",
+      fileKey: file.key,
+      hunkIndex: 0,
+      reveal: "feedback",
+    })
+    const line = createLineSelection(file, { hunkIndex: 0, side: "new", line: 1 })
+
+    const selected = reduceReviewState(revealed, { type: "selection/set-line", selection: line })
+    expect(selected.reveal.scrollToFeedback).toBe(false)
+
+    const revealedWithLine = { ...revealed, lineSelection: line, selection: { fileKey: file.key, hunkIndex: 0 } }
+    const moved = reduceReviewState(revealedWithLine, { type: "selection/move-line", direction: "next" })
+    expect(moved.reveal.scrollToFeedback).toBe(false)
+  })
   test("filter normalization preserves document order and matches normalized paths", () => {
     const doc = makeDoc([
       makeFile({ key: "a", path: "src/foo.ts" }),

@@ -91,12 +91,23 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
     case "selection/set-line": {
       const s = action.selection
       if (state.lineSelection && JSON.stringify(state.lineSelection) === JSON.stringify(s)) return state
-      return { ...state, selection: { fileKey: s.fileKey, hunkIndex: s.hunkIndex }, lineSelection: s, revision: state.revision + 1 }
+      return {
+        ...state,
+        selection: { fileKey: s.fileKey, hunkIndex: s.hunkIndex },
+        lineSelection: s,
+        reveal: { ...state.reveal, scrollToFeedback: false },
+        revision: state.revision + 1,
+      }
     }
     case "selection/move-line": {
       const next = moveReviewLineSelection(state, action.direction)
       if (!next) return state
-      return { ...state, lineSelection: next, revision: state.revision + 1 }
+      return {
+        ...state,
+        lineSelection: next,
+        reveal: { ...state.reveal, scrollToFeedback: false },
+        revision: state.revision + 1,
+      }
     }
     case "selection/move": {
       const target = moveReviewSelection(state, action.unit, action.direction)
