@@ -24,6 +24,18 @@ import { PANE_SCROLLBAR_GUTTER } from "../panes/common"
 export type ReviewWorkspaceAppProps = Readonly<{
   session: ReactReviewSession
 }>
+export function computeObjectionListWindow(
+  entryCount: number,
+  selectedIndex: number,
+  maxVisibleEntries: number,
+): Readonly<{ start: number; end: number }> {
+  const count = Math.max(0, entryCount)
+  if (count === 0) return { start: 0, end: 0 }
+  const selected = Math.min(Math.max(0, selectedIndex), count - 1)
+  const visible = Math.min(count, Math.max(1, maxVisibleEntries))
+  const start = Math.min(Math.max(0, selected - visible + 1), count - visible)
+  return { start, end: start + visible }
+}
 
 const REVIEW_SIDEBAR_DEFAULT_WIDTH = 30
 const REVIEW_SIDEBAR_MIN_WIDTH = 20
@@ -1195,6 +1207,22 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     && state.document.files.some((file) => file.key === state.draft?.anchor.fileKey && file.source !== "binary" && file.source !== "too-large")
   const replacementInvalid = suggestionReplacementInvalid(state)
   const orphanedFeedback = state.feedback.filter((feedback) => !state.document.files.some((file) => file.key === feedback.anchor.fileKey))
+  const objectionListHeight = Math.min(27, Math.max(6, dimensions.height - 3))
+  const objectionEntries = objectionListIndex === null
+    ? []
+    : objectionList(state, state.document.generation.headOid, controller.replies)
+  const selectedObjectionIndex = objectionEntries.length === 0
+    ? 0
+    : Math.min(Math.max(0, objectionListIndex ?? 0), objectionEntries.length - 1)
+  const objectionWindow = computeObjectionListWindow(
+    objectionEntries.length,
+    selectedObjectionIndex,
+    Math.max(1, objectionListHeight - 4),
+  )
+  const visibleObjectionEntries = objectionEntries.slice(objectionWindow.start, objectionWindow.end)
+  const objectionRangeLabel = objectionEntries.length > visibleObjectionEntries.length
+    ? ` [${objectionWindow.start + 1}-${objectionWindow.end}/${objectionEntries.length}]`
+    : ""
 
   return (
     <box id="react-review-workspace" visible={active} onMouse={handleSidebarResizeMouse} style={{ position: "relative", width: "100%", height: "100%", flexDirection: "column", overflow: "hidden" }}>
@@ -1586,11 +1614,11 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       {objectionListIndex !== null ? (
         <box
           id="review-objection-list"
-          style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: Math.min(27, Math.max(6, dimensions.height - 3)), zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
+          style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: objectionListHeight, zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
         >
           <text
-            content={`Objections — ${ledgerHeaderText(state.feedback, state.document.generation.headOid, controller.replies) || "none"}\n${objectionList(state, state.document.generation.headOid, controller.replies)
-              .map((entry, index) => `${index === objectionListIndex ? ">" : " "} ${entry.text}`)
+            content={`Objections${objectionRangeLabel} — ${ledgerHeaderText(state.feedback, state.document.generation.headOid, controller.replies) || "none"}\n${visibleObjectionEntries
+              .map((entry, index) => `${index + objectionWindow.start === selectedObjectionIndex ? ">" : " "} ${entry.text}`)
               .join("\n")}\nj/k move · Enter jump · Esc close`}
             wrapMode="none"
             truncate={true}

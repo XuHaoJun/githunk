@@ -759,6 +759,38 @@ describe("React review workspace", () => {
     }
   })
 
+  test("keeps the selected objection visible while the list scrolls", async () => {
+    const file = makeFile("src/objections.ts", ["-old", "+new"])
+    const feedback = Array.from({ length: 20 }, (_, index) => ({
+      id: `objection-${String(index).padStart(2, "0")}`,
+      kind: "note" as const,
+      severity: "comment" as const,
+      body: `objection-${String(index).padStart(2, "0")}`,
+      anchor: createFileAnchor(file),
+      resolution: "active" as const,
+      createdAt: "2026-09-08T00:00:00.000Z",
+      updatedAt: "2026-09-08T00:00:00.000Z",
+    }))
+    const { session } = makeInteractiveSession([file], feedback)
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 12 })
+
+    try {
+      await flush(setup)
+      await act(async () => {
+        await setup.mockInput.typeText("L")
+        await Bun.sleep(30)
+      })
+      await act(async () => {
+        await setup.mockInput.typeText("j".repeat(15), 100)
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+
+      expect(setup.captureCharFrame()).toContain("objection-15")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
   test("jumping to an objection scrolls it into view, not just its file", async () => {
     // Long enough that an objection near the bottom starts off screen at 30 rows.
     const lines = Array.from({ length: 60 }, (_, index) => (index === 54 ? "+needle line" : ` context ${index}`))
