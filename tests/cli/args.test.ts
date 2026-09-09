@@ -79,6 +79,15 @@ describe("handoff — the agent's contract", () => {
     expect(parseCliArgs(["handoff"])).toEqual({ kind: "handoff", json: false })
     expect(parseCliArgs(["handoff", "--json"])).toEqual({ kind: "handoff", json: true })
   })
+  test("preserves --path for handoff and reply commands", () => {
+    expect(parseCliArgs(["--path", "/tmp/repo", "handoff"])).toEqual({
+      kind: "handoff",
+      json: false,
+      startDirectory: "/tmp/repo",
+    })
+    expect(parseCliArgs(["--path", "/tmp/repo", "handoff", "reply", "--id", "fb-1", "--body", "why not"]))
+      .toEqual({ kind: "handoff-reply", id: "fb-1", body: "why not", startDirectory: "/tmp/repo" })
+  })
 
   test("answers one objection by id", () => {
     expect(parseCliArgs(["handoff", "reply", "--id", "fb-1", "--body", "why not"]))

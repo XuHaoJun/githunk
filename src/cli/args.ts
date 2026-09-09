@@ -5,8 +5,8 @@ export type CliParseResult =
   | { readonly kind: "start"; readonly startDirectory?: string }
   | { readonly kind: "update"; readonly version?: string; readonly check: boolean }
   // The agent's read-only way in.
-  | { readonly kind: "handoff"; readonly json: boolean }
-  | { readonly kind: "handoff-reply"; readonly id: string; readonly body: string }
+  | { readonly kind: "handoff"; readonly json: boolean; readonly startDirectory?: string }
+  | { readonly kind: "handoff-reply"; readonly id: string; readonly body: string; readonly startDirectory?: string }
   | { readonly kind: "help"; readonly text: string }
   | { readonly kind: "version"; readonly text: string }
   | { readonly kind: "error"; readonly message: string; readonly exitCode: number }
@@ -80,12 +80,25 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
     throw error
   }
 
-  if (update !== undefined) return { kind: "update", ...update }
-  if (handoffReply !== undefined) return { kind: "handoff-reply", ...handoffReply }
-  if (handoff !== undefined) return { kind: "handoff", ...handoff }
-
   const options = program.opts<{ path?: string }>()
   const positional = program.args[0]
-  const startDirectory = options.path ?? positional
+  const startDirectory = options.path ?? (
+    update === undefined && handoff === undefined && handoffReply === undefined ? positional : undefined
+  )
+  if (update !== undefined) return { kind: "update", ...update }
+  if (handoffReply !== undefined) {
+    return {
+      kind: "handoff-reply",
+      ...handoffReply,
+      ...(startDirectory === undefined ? {} : { startDirectory }),
+    }
+  }
+  if (handoff !== undefined) {
+    return {
+      kind: "handoff",
+      ...handoff,
+      ...(startDirectory === undefined ? {} : { startDirectory }),
+    }
+  }
   return startDirectory === undefined ? { kind: "start" } : { kind: "start", startDirectory }
 }
