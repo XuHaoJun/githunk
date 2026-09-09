@@ -44,7 +44,7 @@ describe("published CLI package", () => {
     expect(manifest.license).toBe("MIT")
     expect(bin?.githunk).toBe("bin/githunk.js")
     expect(publishConfig?.access).toBe("public")
-    expect(engines?.node).toBe(">=26.1.0")
+    expect(engines?.node).toBe(">=26.4.0")
     expect(manifest.files).toEqual(expect.arrayContaining(["bin", "dist/githunk.js", "README.md", "LICENSE"]))
     expect(await readFile(join(root, "bin/githunk.js"), "utf8")).toContain("--experimental-ffi")
     expect(await readFile(join(root, "README.md"), "utf8")).toContain("npm install --global @xuhaojun/githunk")
