@@ -189,7 +189,11 @@ export function feedbackSectionRowOffset(
   const rows = rowsFor(file, state, layout, 120, true, false, undefined, expandedSourceByGap, replies)
   const index = rows.findIndex((row) => row.type === "feedback" && row.feedbackId === feedbackId)
   if (index < 0) return -1
-  return (showDivider ? 1 : 0) + 1 + index
+  const hasExplanation = file.metadata.hunks.length === 0
+    || file.kind === "binary"
+    || file.reviewFile.source === "binary"
+    || file.reviewFile.source === "too-large"
+  return (showDivider ? 1 : 0) + (hasExplanation ? 2 : 1) + index
 }
 
 export function ReviewDiffSection({

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { createInitialReviewState } from "../../../src/review/core/state"
-import { createRangeAnchor } from "../../../src/review/core/anchors"
+import { createRangeAnchor, createFileAnchor } from "../../../src/review/core/anchors"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { toHunkReviewFile } from "../../../src/ui/review-workspace/hunk-review-model"
-import { hunkSectionRowCount, hunkSectionRowOffset } from "../../../src/ui/review-workspace/components/ReviewDiffSection"
+import { feedbackSectionRowOffset, hunkSectionRowCount, hunkSectionRowOffset } from "../../../src/ui/review-workspace/components/ReviewDiffSection"
 import { resolveStickyDiffHeader } from "../../../src/ui/review-workspace/sticky-header"
 import type { HunkReviewFile } from "../../../src/ui/review-workspace/hunk-review-model"
 import type { ReviewFile } from "../../../src/review/core/types"
@@ -213,5 +213,24 @@ describe("Sticky diff header", () => {
 
     expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: 1, sectionOffsets: sectionOffsets(files, state, "stack") }))
       .toEqual({ fileKey: binary.key, filePath: binary.path, hunkIndex: -1 })
+  })
+  test("places file feedback after a no-diff explanation row", () => {
+    const file = makeFile({ key: "mode-only", path: "mode-only", contentId: "content-mode-only", hunks: [] })
+    const base = makeState([file])
+    const state = {
+      ...base,
+      feedback: [{
+        id: "file-feedback",
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "review the mode",
+        anchor: createFileAnchor(file),
+        resolution: "active" as const,
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:00.000Z",
+      }],
+    }
+
+    expect(feedbackSectionRowOffset(toHunkReviewFile(file), "stack", "file-feedback", state)).toBe(2)
   })
 })
