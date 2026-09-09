@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createTestRenderer } from "@opentui/core/testing"
-import { createMainPane, getMainDiffLineSelection, getMainPointerSelection, installMainContent, setMainDiffLineRangeState, virtualMainPaneFor } from "../../src/ui/panes/main-pane"
+import { createMainPane, getMainDiffLineSelection, getMainPointerSelection, getMainSelection, getMainSelectionProjection, installMainContent, resolveMainNativeSelection, setMainDiffLineRangeState, setMainDocumentSelection, virtualMainPaneFor } from "../../src/ui/panes/main-pane"
 import { parseDiff } from "../../src/domain/diff/parse"
 import { createDiffLineRangeState, toggleDiffLineRange } from "../../src/domain/diff/line-selection"
 import { VIRTUAL_DIFF_LINE_THRESHOLD } from "../../src/domain/diff/virtual"
@@ -218,6 +218,52 @@ describe("main pane virtual diff viewport", () => {
       expect(virtualMainPaneFor(pane)?.isActive()).toBe(true)
       expect(pane.text.lineCount).toBeLessThanOrEqual(pane.text.height + pane.text.height * 2 + 10)
       expect(pane.text.scrollHeight).toBe(above.lines.length)
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
+  test("publishes the exact bounded projection and carries document selections across windows", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    try {
+      const pane = createMainPane(setup.renderer, model())
+      setup.renderer.root.add(pane.box)
+      const document = parseDiff(patchText(VIRTUAL_DIFF_LINE_THRESHOLD + 20))
+      installMainContent(pane, { ...content(document), preamble: "commit abc\n" }, false)
+      await setup.flush()
+
+      const first = getMainSelectionProjection(pane)
+      expect(first?.text).toBe(pane.text.plainText)
+      expect(first?.segments[0]?.displayStartUtf16).toBe(0)
+      expect(first?.segments.at(-1)?.displayEndUtf16).toBe(first?.text.length)
+      for (let index = 1; index < (first?.segments.length ?? 0); index += 1) {
+        expect(first?.segments[index]?.displayStartUtf16).toBe(first?.segments[index - 1]?.displayEndUtf16)
+      }
+
+      const generation = first?.generation ?? 0
+      pane.text.scrollY = Math.floor(pane.text.scrollHeight / 2)
+      await setup.flush()
+      const middle = getMainSelectionProjection(pane)
+      expect(middle?.generation).toBeGreaterThan(generation)
+      expect(middle?.text).toBe(pane.text.plainText)
+
+      const selected = {
+        valid: true as const,
+        startUtf16: document.lines[6]!.startUtf16,
+        endUtf16: document.lines[6]!.endUtf16,
+        active: true as const,
+      }
+      setMainDocumentSelection(pane, selected)
+      pane.text.scrollY = pane.text.maxScrollY
+      await setup.flush()
+      expect(getMainSelection(pane)).toEqual({ valid: true, kind: "document", selection: selected })
+
+      pane.text.scrollY = 0
+      await setup.flush()
+      ;(pane.text as unknown as { setSelection(start: number, end: number): void }).setSelection(0, 5)
+      expect(resolveMainNativeSelection(pane)).toEqual({ valid: true, kind: "text", text: "commi" })
+      pane.text.scrollY = pane.text.maxScrollY
+      await setup.flush()
+      expect(getMainSelection(pane)).toBeUndefined()
     } finally {
       setup.renderer.destroy()
     }
