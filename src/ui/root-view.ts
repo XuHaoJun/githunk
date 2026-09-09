@@ -808,9 +808,12 @@ export class RootView {
     }
   }
   cancelGesture(): void {
-    // Cancelling an in-progress main drag clears the semantic selection, matching OpenTUI's
-    // renderer selection reset on a non-selecting down. A completed selection survives focus/Escape.
-    if (this.gestureOwner?.kind === "main-selection") clearMainSelection(this.panes.main)
+    // Cancelling an in-progress main drag clears semantic state and renderer paint, matching
+    // OpenTUI's selection reset while preserving completed selections after mouse-up.
+    if (this.gestureOwner?.kind === "main-selection") {
+      clearMainSelection(this.panes.main)
+      virtualMainPaneFor(this.panes.main)?.resetSelection()
+    }
     this.gestureOwner = undefined
     this.activeSplitterDrag = undefined
   }

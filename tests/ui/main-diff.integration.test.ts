@@ -54,6 +54,26 @@ async function dragMainText(harness: ShellHarness, needle: string): Promise<void
   await harness.flush()
   expect(view.mainPane.text.getSelectedText()).toBe(needle)
 }
+function mainPoint(harness: ShellHarness, needle: string): { readonly x: number; readonly row: number } {
+  const captured = harness.captureSpans()
+  const row = captured.lines.findIndex((line) => line.spans.some((span) => span.text.includes(needle)))
+  expect(row).toBeGreaterThanOrEqual(0)
+  let x = 0
+  for (const span of captured.lines[row]!.spans) {
+    const index = span.text.indexOf(needle)
+    if (index >= 0) return { x: x + index, row }
+    x += span.width
+  }
+  throw new Error(`main text ${JSON.stringify(needle)} was not found`)
+}
+
+async function dragMainRange(harness: ShellHarness, startNeedle: string, endNeedle: string): Promise<string> {
+  const start = mainPoint(harness, startNeedle)
+  const end = mainPoint(harness, endNeedle)
+  await harness.drag(start.x, start.row, end.x + endNeedle.length - 1, end.row)
+  await harness.flush()
+  return harness.app.view!.mainPane.text.getSelectedText()
+}
 
 function expectDefault(color: RGBA): void {
   expect(color.intent).toBe("default")
@@ -184,6 +204,77 @@ describe("main pane diff rendering", () => {
     await harness.pressKey("o", { ctrl: true })
     expect(copied).toEqual(["+TWO"])
     expect(harness.frame()).toContain("OSC52 emitted")
+  })
+  test("copies an eager multi-line diff range from a real panel-4 drag", async () => {
+    harness = await createShellHarness({
+      width: 140,
+      height: 30,
+      setup: async (repository: TempRepository) => {
+        await repository.write("a.txt", "one\ntwo\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("a.txt", "one\nTWO\nthree\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "second change"])
+      },
+    })
+    await harness.pressKey("4")
+    await harness.app.view!.whenPreviewSettled()
+    await harness.pressKey("0")
+    const selected = await dragMainRange(harness, "-two", "+TWO")
+    expect(selected).toContain("-two")
+    expect(selected).toContain("+TWO")
+    const copied: string[] = []
+    const renderer = harness.renderer as unknown as {
+      isOsc52Supported: () => boolean
+      copyToClipboardOSC52: (text: string) => boolean
+    }
+    renderer.isOsc52Supported = () => true
+    renderer.copyToClipboardOSC52 = (value) => {
+      copied.push(value)
+      return true
+    }
+    await harness.pressKey("o", { ctrl: true })
+    expect(copied).toEqual(["-two\n+TWO"])
+  })
+
+  test("copies preamble-to-diff text and rejects document-only modes", async () => {
+    harness = await createShellHarness({
+      width: 140,
+      height: 30,
+      setup: async (repository: TempRepository) => {
+        await repository.write("a.txt", "one\ntwo\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("a.txt", "one\nTWO\nthree\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "second change"])
+      },
+    })
+    await harness.pressKey("4")
+    await harness.app.view!.whenPreviewSettled()
+    await harness.pressKey("0")
+    const selected = await dragMainRange(harness, "commit ", "+TWO")
+    expect(selected).toContain("commit ")
+    expect(selected).toContain("+TWO")
+    const copied: string[] = []
+    const renderer = harness.renderer as unknown as {
+      isOsc52Supported: () => boolean
+      copyToClipboardOSC52: (text: string) => boolean
+    }
+    renderer.isOsc52Supported = () => true
+    renderer.copyToClipboardOSC52 = (value) => {
+      copied.push(value)
+      return true
+    }
+    await harness.pressKey("o", { ctrl: true })
+    expect(copied).toEqual([selected])
+    expect(harness.frame()).not.toContain("Selection rejected")
+    await harness.pressKey("y")
+    await harness.pressKey("5")
+    await harness.flush()
+    expect(copied).toEqual([selected])
+    expect(harness.frame()).toContain("Selection rejected")
   })
 
   test("copies a commit id selected from the commit preview preamble", async () => {

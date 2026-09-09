@@ -129,8 +129,14 @@ export function resolveMainNativeSelection(pane: PaneHandle): MainSelection | un
   const projection = selectionProjections.get(pane)
   if (projection === undefined) return undefined
   const nativeRange = pane.text.getSelection() as NativeSelectionRange | null | undefined
-  const selectedText = pane.text.getSelectedText()
   if (nativeRange === null || nativeRange === undefined) return undefined
+  const nativeStart = nativeRange.start ?? nativeRange.anchor ?? 0
+  const nativeEnd = nativeRange.end ?? nativeRange.focus ?? nativeStart
+  if (nativeStart === nativeEnd) {
+    storedSelections.delete(pane)
+    return undefined
+  }
+  const selectedText = pane.text.getSelectedText()
   const selection = resolveMainSelection(projection, nativeRange, selectedText)
   storedSelections.set(pane, { projectionGeneration: projection.generation, value: selection })
   return selection

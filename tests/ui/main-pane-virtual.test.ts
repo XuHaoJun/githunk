@@ -232,4 +232,19 @@ describe("main pane virtual diff viewport", () => {
       setup.renderer.destroy()
     }
   })
+  test("does not turn a zero-length native click into an active semantic selection", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    try {
+      const pane = createMainPane(setup.renderer, model())
+      setup.renderer.root.add(pane.box)
+      const document = parseDiff(patchText(4))
+      installMainContent(pane, content(document), false)
+      await setup.flush()
+      ;(pane.text as unknown as { setSelection(start: number, end: number): void }).setSelection(0, 0)
+      expect(resolveMainNativeSelection(pane)).toBeUndefined()
+      expect(getMainSelection(pane)).toBeUndefined()
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
 })
