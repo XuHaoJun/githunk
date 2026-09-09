@@ -129,7 +129,10 @@ export function resolveMainNativeSelection(pane: PaneHandle): MainSelection | un
   const projection = selectionProjections.get(pane)
   if (projection === undefined) return undefined
   const nativeRange = pane.text.getSelection() as NativeSelectionRange | null | undefined
-  if (nativeRange === null || nativeRange === undefined) return undefined
+  if (nativeRange === null || nativeRange === undefined) {
+    storedSelections.delete(pane)
+    return undefined
+  }
   const nativeStart = nativeRange.start ?? nativeRange.anchor ?? 0
   const nativeEnd = nativeRange.end ?? nativeRange.focus ?? nativeStart
   if (nativeStart === nativeEnd) {
@@ -173,6 +176,13 @@ export function createMainPane(renderer: CliRenderer, _model: AppModel): PaneHan
   const pane = createPane(renderer, "main", "0 Main", "", true)
   pane.text.selectionBg = SELECTED_LINE_BG
   ensureMainTextSelectionSurface(pane)
+  const nativeSelectionChanged = pane.text.onSelectionChanged.bind(pane.text)
+  pane.text.onSelectionChanged = (selection) => {
+    // Renderer-owned selection updates include Ctrl-clicks that never reach RootView's mouse
+    // handler. Invalidate the semantic snapshot before preserving OpenTUI's native paint.
+    if (selection !== null) clearMainSelection(pane)
+    return nativeSelectionChanged(selection)
+  }
   createVirtualMainPane(pane, {
     publishProjection: (draft) => publishProjection(pane, draft),
     currentDocumentSelection: () => currentDocumentSelection(pane),

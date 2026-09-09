@@ -565,6 +565,16 @@ describe("main pane keyboard line ranges", () => {
     await harness.flush()
     expect(getMainSelection(view.mainPane)).toBeUndefined()
   })
+  test("renderer-owned Ctrl-click clears completed semantic selection", async () => {
+    harness = await virtualChangedFileHarness()
+    const view = harness.app.view!
+    await selectFirstVirtualChange()
+    expect(getMainSelection(view.mainPane)).toBeDefined()
+    const geometry = view.paneTextGeometry("main")!
+    await harness.mockMouse.click(geometry.screenX + 2, geometry.screenY + 1, MouseButtons.LEFT, { modifiers: { ctrl: true } })
+    await harness.flush()
+    expect(getMainSelection(view.mainPane)).toBeUndefined()
+  })
 
   test("uses virtual raw indexes for a real stage mutation", async () => {
     harness = await virtualChangedFileHarness()

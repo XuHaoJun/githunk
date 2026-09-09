@@ -245,6 +245,7 @@ export class RootView {
   private lastSplitterPress: { readonly axis: "vertical" | "horizontal"; readonly x: number; readonly y: number; readonly at: number } | undefined
   private activeSplitterDrag: SplitterAxis | undefined
   gestureOwner: GestureOwner | undefined
+  private pendingNativeMainSelection = false
   private pendingClick: { readonly viewId: string; readonly stableId: string; readonly x: number; readonly y: number; readonly at: number; readonly arrowToggled?: boolean } | undefined
   private hoveredListRow: HoveredListRow | undefined
 
@@ -311,6 +312,7 @@ export class RootView {
   private readonly registry = createRegistry()
   private readonly filterInput = new FilterInput()
   private readonly handleResize: () => void
+  private readonly handleSelection: () => void
   private readonly handleKey: (key: KeyEvent) => void
   private destroyed = false
 
@@ -479,6 +481,13 @@ export class RootView {
       }
       this.recomputeLayout()
     }
+    this.handleSelection = () => {
+      if (!this.pendingNativeMainSelection) return
+      this.pendingNativeMainSelection = false
+      // OpenTUI emits `selection` after mouse-up has updated the native range. Defer until its
+      // final selectable notification completes, then consume the renderer-owned endpoint.
+      queueMicrotask(() => resolveMainNativeSelection(this.panes.main))
+    }
     this.handleKey = (key: KeyEvent) => {
       if (this.ports.host.isBranchReviewActive()) return
       const normalized = normalizeKey(key)
@@ -520,6 +529,7 @@ export class RootView {
       key.stopPropagation()
     }
     renderer.on("resize", this.handleResize)
+    renderer.on("selection", this.handleSelection)
     renderer.keyInput.on("keypress", this.handleKey)
     this.installMouseHandlers()
     this.applyFocus(this.focusManager.active)
@@ -807,13 +817,22 @@ export class RootView {
       height: Math.max(1, heightOf(win as unknown as never) - 2),
     }
   }
+  private resetMainNativeSelection(): void {
+    const view = this.panes.main.text
+    if (view !== null && typeof view === "object" && "resetSelection" in view) {
+      const reset = view.resetSelection
+      if (typeof reset === "function") reset.call(view)
+    }
+  }
   cancelGesture(): void {
     // Cancelling an in-progress main drag clears semantic state and renderer paint, matching
     // OpenTUI's selection reset while preserving completed selections after mouse-up.
     if (this.gestureOwner?.kind === "main-selection") {
       clearMainSelection(this.panes.main)
       virtualMainPaneFor(this.panes.main)?.resetSelection()
+      this.resetMainNativeSelection()
     }
+    this.pendingNativeMainSelection = false
     this.gestureOwner = undefined
     this.activeSplitterDrag = undefined
   }
@@ -4664,6 +4683,7 @@ export class RootView {
       }
     }
     this.renderer.off("resize", this.handleResize)
+    this.renderer.off("selection", this.handleSelection)
     this.renderer.keyInput.off("keypress", this.handleKey)
     this.root.destroyRecursively()
   }
@@ -4842,8 +4862,8 @@ export class RootView {
             return
           }
           if (event.type === "up" || (event.type as string) === "cancel") {
-            if (event.type === "up" && owner.selectable) resolveMainNativeSelection(this.panes.main)
-            else if ((event.type as string) === "cancel" || !owner.selectable) clearMainSelection(this.panes.main)
+            if (event.type === "up" && owner.selectable) this.pendingNativeMainSelection = true
+            if ((event.type as string) === "cancel" || !owner.selectable) clearMainSelection(this.panes.main)
             this.gestureOwner = undefined
             event.preventDefault()
             event.stopPropagation()
@@ -4971,6 +4991,7 @@ export class RootView {
           const rangeState = getMainDiffLineRangeState(this.panes.main)
           if (rangeState !== undefined && rangeState.rangeMode !== "none") setMainDiffLineRangeState(this.panes.main, clearDiffLineRange(rangeState))
           clearMainSelection(this.panes.main)
+          this.pendingNativeMainSelection = false
           this.pendingClick = undefined
           this.lastSplitterPress = undefined
           if (this.focusManager.active !== "main") this.focusManager.focus("main")
@@ -4978,11 +4999,7 @@ export class RootView {
           // that native range on drag/up, so eager and virtual content share one path.
           const selectable = event.button === 0 && event.modifiers.ctrl !== true
           if (!selectable) {
-            const view = this.panes.main.text
-            if (view !== null && typeof view === "object" && "resetSelection" in view) {
-              const reset = view.resetSelection
-              if (typeof reset === "function") reset.call(view)
-            }
+            this.resetMainNativeSelection()
           }
           this.gestureOwner = { kind: "main-selection", selectable }
           this.clearTransientMenus()

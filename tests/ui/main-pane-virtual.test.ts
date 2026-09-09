@@ -247,4 +247,26 @@ describe("main pane virtual diff viewport", () => {
       setup.renderer.destroy()
     }
   })
+  test("clears a stored semantic selection when the native range disappears", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    try {
+      const pane = createMainPane(setup.renderer, model())
+      setup.renderer.root.add(pane.box)
+      const document = parseDiff(patchText(4))
+      installMainContent(pane, content(document), false)
+      await setup.flush()
+      setMainDocumentSelection(pane, {
+        valid: true,
+        startUtf16: document.lines[0]!.startUtf16,
+        endUtf16: document.lines[0]!.endUtf16,
+        active: true,
+      })
+      expect(getMainSelection(pane)).toBeDefined()
+      ;(pane.text as unknown as { resetSelection(): void }).resetSelection()
+      expect(resolveMainNativeSelection(pane)).toBeUndefined()
+      expect(getMainSelection(pane)).toBeUndefined()
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
 })
