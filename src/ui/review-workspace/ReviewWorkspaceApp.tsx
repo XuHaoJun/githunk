@@ -955,7 +955,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     }
     if (commandId === "review.listObjections") {
       if (current.feedback.length === 0) return false
-      const entries = objectionList(current, current.document.generation.headOid)
+      const entries = objectionList(current, current.document.generation.headOid, controller.replies)
       const at = entries.findIndex((entry) => entry.id === selectedFeedbackId)
       setObjectionListIndex(at >= 0 ? at : 0)
       session.invalidate()
@@ -1083,7 +1083,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       return
     }
     if (objectionListIndex !== null && current) {
-      const entries = objectionList(current, current.document.generation.headOid)
+      const entries = objectionList(current, current.document.generation.headOid, controller.replies)
       const lower = name.toLowerCase()
       if (lower === "j" || name === "down") {
         setObjectionListIndex(Math.min(entries.length - 1, objectionListIndex + 1))
@@ -1199,7 +1199,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   return (
     <box id="react-review-workspace" visible={active} onMouse={handleSidebarResizeMouse} style={{ position: "relative", width: "100%", height: "100%", flexDirection: "column", overflow: "hidden" }}>
       <box id="react-review-header" style={{ width: "100%", height: 3, flexShrink: 0, flexDirection: "column" }}>
-        {reviewHeaderLines(state, dimensions.width).map((line, lineIndex) => (
+        {reviewHeaderLines(state, dimensions.width, controller.replies).map((line, lineIndex) => (
           <box key={lineIndex} style={{ width: "100%", height: 1, flexShrink: 0, flexDirection: "row" }}>
             {line.map((span, spanIndex) => span.action === "choose-base" ? (
               <box
@@ -1589,7 +1589,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
           style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: Math.min(27, Math.max(6, dimensions.height - 3)), zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
         >
           <text
-            content={`Objections — ${ledgerHeaderText(state.feedback, state.document.generation.headOid) || "none"}\n${objectionList(state, state.document.generation.headOid)
+            content={`Objections — ${ledgerHeaderText(state.feedback, state.document.generation.headOid, controller.replies) || "none"}\n${objectionList(state, state.document.generation.headOid, controller.replies)
               .map((entry, index) => `${index === objectionListIndex ? ">" : " "} ${entry.text}`)
               .join("\n")}\nj/k move · Enter jump · Esc close`}
             wrapMode="none"

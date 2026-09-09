@@ -1,4 +1,5 @@
 import type { ReviewState } from "../../review/core/state"
+import type { ReviewReplies } from "../../review/core/ledger"
 import { reviewProgress } from "../../review/core/selectors"
 import { ledgerHeaderText, reviewCheckpoint } from "../../review/core/ledger"
 import { cellWidth } from "../cell-width"
@@ -58,7 +59,7 @@ function formatStat(value: number | null | undefined): string {
   return String(value)
 }
 
-export function reviewHeaderLines(state: ReviewState, width: number): readonly ReviewHeaderLine[] {
+export function reviewHeaderLines(state: ReviewState, width: number, replies?: ReviewReplies): readonly ReviewHeaderLine[] {
   const w = Math.max(0, Math.floor(width))
   const progress = reviewProgress(state)
   const doc = state.document
@@ -124,7 +125,7 @@ export function reviewHeaderLines(state: ReviewState, width: number): readonly R
   const reviewingPart = progress.reviewing > 0 ? ` · ${progress.reviewing} reviewing` : ""
   // The ledger verdict must not need hunting for: a filter is where you go
   // looking, this is what you see on arrival.
-  const ledgerPart = ledgerHeaderText(state.feedback, doc.generation.headOid)
+  const ledgerPart = ledgerHeaderText(state.feedback, doc.generation.headOid, replies)
   const line2Raw = `${reviewedLabel}${changedPart}${reviewingPart}${pendingPart}${ledgerPart === "" ? "" : `  ·  ${ledgerPart}`}`
   const line2 = truncateCell(line2Raw, w)
 

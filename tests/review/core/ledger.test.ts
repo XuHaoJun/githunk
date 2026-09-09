@@ -305,6 +305,14 @@ describe("objectionList — the jump list carries the verdict, not just the plac
     const state = stateWith([first], [makeFeedback({ id: "x", anchor: createFileAnchor(first), body: "   " })])
     expect(objectionList(state, LATER_OID)[0]!.text).toContain("(empty)")
   })
+  test("marks an answered untouched objection as disputed in the list", () => {
+    const state = stateWith([first], [handedOff({ id: "answered", anchor: createFileAnchor(first) })])
+
+    const entries = objectionList(state, LATER_OID, replied("answered"))
+
+    expect(entries[0]?.verdict).toBe("disputed")
+    expect(entries[0]?.text).toContain("DISPUTED")
+  })
 })
 
 describe("linesForAnchor — the text an objection points at", () => {

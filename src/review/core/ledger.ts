@@ -181,9 +181,10 @@ export type ObjectionListEntry = Readonly<{
 export function objectionList(
   state: Pick<ReviewState, "document" | "feedback">,
   atHeadOid?: string,
+  replies?: ReviewReplies,
 ): readonly ObjectionListEntry[] {
   return sortedReviewFeedback(state).map((feedback) => {
-    const verdict = ledgerVerdict(feedback, atHeadOid)
+    const verdict = ledgerVerdict(feedback, atHeadOid, { replied: replies?.has(feedback.id) === true })
     const path = pathForFeedback(state.document, feedback)
     const where = feedback.anchor.kind === "range"
       ? `${path}:${feedback.anchor.startLine}`

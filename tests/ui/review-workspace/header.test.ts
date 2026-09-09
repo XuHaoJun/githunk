@@ -4,6 +4,7 @@ import { createReviewDocument } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { createReviewHunk } from "../../../src/review/core/document"
 import type { ReviewState } from "../../../src/review/core/state"
+import type { ReviewReplies } from "../../../src/review/core/ledger"
 import { cellWidth } from "../../../src/ui/cell-width"
 
 function makeState(opts?: {
@@ -90,6 +91,29 @@ describe("reviewHeaderLines", () => {
     expect(text).toMatch(/Reviewed|viewed/i)
   })
 
+  test("includes replies when summarizing the ledger", () => {
+    const state = makeState()
+    const feedback = {
+      id: "answered",
+      anchor: { kind: "file" as const, fileKey: "file-0.ts", contentId: "c0" },
+      kind: "note" as const,
+      severity: "comment" as const,
+      body: "why",
+      resolution: "active" as const,
+      status: "handed-off" as const,
+      handoff: { at: "2026-09-01T00:00:00.000Z", headOid: "b".repeat(40) },
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    }
+    const replies: ReviewReplies = new Map([
+      ["answered", { id: "answered", body: "because", at: "2026-09-01T01:00:00.000Z" }],
+    ])
+
+    const lines = reviewHeaderLines({ ...state, feedback: [feedback] }, 120, replies)
+    const text = lines.flatMap((line) => line.map((span) => span.text)).join(" ")
+
+    expect(text).toContain("1 DISPUTED")
+  })
   test("names the active projection so narrowed counts are never read as the whole review", () => {
     const label = (projection: ReviewState["projection"]) =>
       reviewHeaderLines(makeState({ projection }), 120).flatMap((line) => line.map((span) => span.text)).join(" ")
