@@ -277,4 +277,35 @@ describe("branch review — open-objections ledger", () => {
       await repo.cleanup()
     }
   })
+  test("rejects handoff when feedback changes during mailbox writes", async () => {
+    const repo = await createTempRepository()
+    try {
+      await repo.write("app.ts", "one\n")
+      await repo.git(["add", "."])
+      await repo.git(["commit", "-qm", "base"])
+      await repo.git(["checkout", "-qb", "feature"])
+      await repo.write("app.ts", "two\n")
+      await repo.git(["commit", "-qam", "change"])
+
+      const runner = new GitRunner({ cwd: repo.path })
+      const controller = new ReviewWorkspaceController({ runner })
+      await controller.open("refs/heads/master")
+      const file = controller.state!.document.files[0]!
+      const anchor = createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 })
+      controller.dispatchIntent({ type: "feedback/start-draft", anchor, kind: "note", severity: "comment", body: "original" })
+      controller.dispatchIntent({ type: "feedback/create", id: "fb-1", createdAt: "2026-09-08T01:00:00.000Z" })
+
+      const handoff = controller.handoffFeedback()
+      await Promise.resolve()
+      controller.dispatchIntent({ type: "feedback/edit", id: "fb-1", body: "edited", updatedAt: "2026-09-08T02:00:00.000Z" })
+      const outcome = await handoff
+
+      expect(outcome.ok).toBe(false)
+      expect(controller.state!.feedback[0]!.body).toBe("edited")
+      expect(controller.state!.feedback[0]!.status).not.toBe("handed-off")
+      await controller.destroy()
+    } finally {
+      await repo.cleanup()
+    }
+  })
 })

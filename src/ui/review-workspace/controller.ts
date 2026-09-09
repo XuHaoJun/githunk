@@ -602,11 +602,28 @@ export class ReviewWorkspaceController {
     | { ok: true; handedOff: number; total: number; path: string }
     | { ok: false; reason: string }
   > {
+    return this.reviewOperationQueue.run(() => this.handoffFeedbackSerialized())
+  }
+
+  private async handoffFeedbackSerialized(): Promise<
+    | { ok: true; handedOff: number; total: number; path: string }
+    | { ok: false; reason: string }
+  > {
     const current = this._state
     if (current === undefined || this._baseSelection !== undefined) return { ok: false, reason: "unavailable" }
     const pending = current.feedback.filter((feedback) => ledgerVerdict(feedback) !== "resolved")
     if (pending.length === 0) return { ok: false, reason: "nothing-to-hand-off" }
 
+    const reviewId = current.document.identity.id
+    const generationId = current.document.generation.id
+    const revision = current.revision
+    const isCurrent = (): boolean => {
+      const latest = this._state
+      return latest === current
+        && latest.revision === revision
+        && latest.document.identity.id === reviewId
+        && latest.document.generation.id === generationId
+    }
     const at = this.nowImpl()
     const headOid = current.document.generation.headOid
     const mailbox = buildHandoffMailbox(current, { generatedAt: at, headOid })
@@ -633,6 +650,7 @@ export class ReviewWorkspaceController {
     try {
       await jsonFile.writeText(`${JSON.stringify(mailbox, null, 2)}\n`)
       await markdownFile.writeText(renderHandoffMarkdown(mailbox))
+      if (!isCurrent()) throw new Error("review changed during handoff")
       if (freshlyHandedOff.length > 0) {
         await this.dispatchAndPersist({ type: "feedback/handoff", items, at, headOid })
       }
