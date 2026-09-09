@@ -15,7 +15,9 @@ import {
   HANDOFF_MARKDOWN_PATH,
   HANDOFF_REPLIES_PATH,
   parseReviewReplies,
+  renderHandoffMarkdown,
   serializeReviewReplies,
+  type HandoffMailbox,
   type ReviewReply,
 } from "../review/core/ledger"
 
@@ -25,6 +27,38 @@ const handoffMailboxSchema = z
     items: z.array(z.object({ id: z.string().min(1) }).passthrough()),
   })
   .passthrough()
+const canonicalHandoffSchema = z
+  .object({
+    version: z.literal(1),
+    generatedAt: z.string(),
+    reviewId: z.string(),
+    headOid: z.string(),
+    baseRef: z.string().nullable(),
+    items: z.array(z.object({
+      id: z.string().min(1),
+      path: z.string(),
+      side: z.enum(["old", "new"]).nullable(),
+      startLine: z.number().int().nullable(),
+      endLine: z.number().int().nullable(),
+      severity: z.enum(["comment", "blocking"]),
+      kind: z.enum(["note", "suggestion"]),
+      body: z.string(),
+      replacement: z.string().optional(),
+    }).strict()),
+  })
+  .strict()
+
+function parseCanonicalHandoff(raw: string | undefined): HandoffMailbox | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+  const result = canonicalHandoffSchema.safeParse(parsed)
+  return result.success ? result.data as HandoffMailbox : undefined
+}
 const replyFileSchema = z
   .object({
     version: z.literal(1).optional(),
@@ -52,14 +86,23 @@ function handoffContainsId(raw: string | undefined, id: string): boolean {
 
 export async function runHandoff(input: { json: boolean; cwd: string }): Promise<HandoffOutcome> {
   const runner = new GitRunner({ cwd: input.cwd })
-  const file = new LocalStateFile({
-    runner,
-    relativePath: input.json ? HANDOFF_JSON_PATH : HANDOFF_MARKDOWN_PATH,
-    pathKind: "handoff",
-  })
+  const jsonFile = new LocalStateFile({ runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
   let text: string | undefined
   try {
-    text = await file.readText()
+    if (input.json) {
+      text = await jsonFile.readText()
+    } else {
+      // JSON is the durable mailbox; markdown is a convenience rendering.
+      // Reading the canonical file here keeps a crash between the two atomic
+      // renames from making the CLI show an older handoff.
+      const canonical = parseCanonicalHandoff(await jsonFile.readText())
+      if (canonical !== undefined) {
+        text = renderHandoffMarkdown(canonical)
+      } else {
+        const markdownFile = new LocalStateFile({ runner, relativePath: HANDOFF_MARKDOWN_PATH, pathKind: "handoff" })
+        text = await markdownFile.readText()
+      }
+    }
   } catch (error) {
     return { text: error instanceof Error ? error.message : String(error), exitCode: 1 }
   }

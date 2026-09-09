@@ -6,7 +6,7 @@ import { ReviewWorkspaceController } from "../../src/ui/review-workspace/control
 import { ReviewStateStore, emptyReviewDatabaseV2 } from "../../src/review/storage/review-state-store"
 import { createRangeAnchor } from "../../src/review/core/anchors"
 import { createReviewHunk } from "../../src/review/core/document"
-import { HANDOFF_JSON_PATH, HANDOFF_REPLIES_PATH, ledgerVerdict, reviewCheckpoint, serializeReviewReplies } from "../../src/review/core/ledger"
+import { HANDOFF_JSON_PATH, HANDOFF_MARKDOWN_PATH, HANDOFF_REPLIES_PATH, ledgerVerdict, reviewCheckpoint, serializeReviewReplies } from "../../src/review/core/ledger"
 import { validateFinishReview } from "../../src/review/core/artifact"
 import { LocalStateFile } from "../../src/storage/local-state-file"
 import type { ReviewState } from "../../src/review/core/state"
@@ -273,6 +273,39 @@ describe("branch review — open-objections ledger", () => {
       expect(outcome.exitCode).not.toBe(0)
       expect(outcome.text).toContain("press A")
       expect(outcome.text).not.toContain("press H")
+    } finally {
+      await repo.cleanup()
+    }
+  })
+  test("renders the canonical JSON handoff when markdown publication is stale", async () => {
+    const repo = await createTempRepository()
+    try {
+      const runner = new GitRunner({ cwd: repo.path })
+      const jsonFile = new LocalStateFile({ runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
+      const markdownFile = new LocalStateFile({ runner, relativePath: HANDOFF_MARKDOWN_PATH, pathKind: "handoff" })
+      await jsonFile.writeText(JSON.stringify({
+        version: 1,
+        generatedAt: "2026-09-08T01:00:00.000Z",
+        reviewId: "review-1",
+        headOid: "a".repeat(40),
+        baseRef: "refs/heads/master",
+        items: [{
+          id: "new-id",
+          path: "app.ts",
+          side: "new",
+          startLine: 2,
+          endLine: 2,
+          severity: "comment",
+          kind: "note",
+          body: "use the new path",
+        }],
+      }))
+      await markdownFile.writeText("# stale handoff\n- [old-id] app.ts:1\n")
+
+      const outcome = await runHandoff({ json: false, cwd: repo.path })
+      expect(outcome.exitCode).toBe(0)
+      expect(outcome.text).toContain("[new-id] app.ts:2 (new side)")
+      expect(outcome.text).not.toContain("old-id")
     } finally {
       await repo.cleanup()
     }

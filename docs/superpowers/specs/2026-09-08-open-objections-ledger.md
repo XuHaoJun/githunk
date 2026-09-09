@@ -85,6 +85,10 @@ a second file the agent owns:
 .git/githunk/handoff/pending.json   githunk writes · agent reads
 .git/githunk/handoff/replies.json   agent writes   · githunk reads
 ```
+`pending.json` is the canonical mailbox. `pending.md` is a convenience mirror;
+the CLI renders the canonical JSON for its default text output, so a crash
+between the two atomic file replacements cannot make `githunk handoff` show
+an older handoff.
 
 Separate owners, so neither needs a lock. `githunk handoff reply --id <id>
 --body <text>` appends one; githunk reads them with the document and renders
