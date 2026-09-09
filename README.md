@@ -61,10 +61,12 @@ githunk path/to/repository
 ## Open objections
 
 An agent writes four hundred lines, you leave five objections, and it comes back
-saying it addressed them all. Which one did it skip? Today the honest answers are
-"re-read the whole diff" or "take its word for it".
+saying it addressed them all. Which anchors moved, and which lines stayed the same?
+Today the honest answers are "re-read the whole diff" or "take its word for it".
 
-githunk keeps a ledger of your objections and decides that question itself.
+githunk records each objection and computes whether its anchor moved or stayed
+byte-identical. It cannot decide whether a changed implementation satisfies the
+request; that remains your review.
 
 ### A round
 
@@ -89,7 +91,7 @@ addressed stale ! note — filter()[0] allocates the whole array — use find() 
 UNTOUCHED active ! note — sorting on every put is O(n log n) per write — cache.ts new:6
 ```
 
-The header is the whole ledger in one line. Each objection sits under the line it
+The header is the ledger's one-line summary. Each objection sits under the line it
 was written against, carrying its verdict and — once the code moves — what it used
 to say and what stands there now.
 

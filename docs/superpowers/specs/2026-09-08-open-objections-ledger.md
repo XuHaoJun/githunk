@@ -109,7 +109,8 @@ The verdict says an objection was addressed; it does not show the change. On the
 aggregate that change is buried in the whole branch, so `s` now opens its lens
 from a **handoff** as well as from a finished review — whichever stamp is later.
 A handoff is the sharper checkpoint of the two: it is the moment the reviewer
-asked someone to change things, so `handoff..HEAD` is exactly the agent's work.
+asked someone to change things, so `handoff..HEAD` is the range of changes to
+inspect. It is not proof that every commit in that range came from the agent.
 The header says `[Since handoff]` rather than `[Since last review]` when that is
 what it measured from.
 
