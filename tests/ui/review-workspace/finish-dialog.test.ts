@@ -163,6 +163,7 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
     v = dialog.getValidation()
     expect(v.ok).toBe(false)
     expect(v.reason).toBe("feedback-needs-reanchor")
+    expect(v.message).toBe("Finish blocked: an objection no longer resolves — press Esc, select it, then press a to re-anchor or - to resolve it")
   })
 
   test("non-aggregate projection blocks Finish without switching", async () => {

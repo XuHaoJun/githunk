@@ -14,7 +14,7 @@ const REASON_MESSAGES: Record<string, string> = {
   "draft-open": "Finish blocked: composer is open — save or cancel the draft first",
   "commit-projection-invalid": "Finish blocked: only the aggregate projection can be submitted",
   "projection-invalid": "Finish blocked: only the aggregate projection can be submitted",
-  "feedback-needs-reanchor": "Finish blocked: an objection no longer resolves — press a to re-anchor it, or - to resolve it",
+  "feedback-needs-reanchor": "Finish blocked: an objection no longer resolves — press Esc, select it, then press a to re-anchor or - to resolve it",
   "approve-has-blocking-feedback": "Finish blocked: Approve cannot have blocking feedback",
   "request-changes-requires-blocking": "Finish blocked: Request Changes requires at least one blocking item",
   "comment-has-blocking-feedback": "Finish blocked: Comment cannot have blocking feedback",
