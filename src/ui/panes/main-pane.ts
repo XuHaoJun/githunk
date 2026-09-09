@@ -472,9 +472,10 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
   const nextIdentity = `${content.source}:${content.stableId}`
 
   const sameIdentity = previousIdentity !== undefined && previousIdentity === nextIdentity
+  const sameDocument = content.document === undefined || previousContent?.document === content.document
   const identicalText = virtualDocument
-    ? previousContent?.document?.text === content.document?.text && previousContent?.preamble === content.preamble
-    : previousText !== undefined && previousText === nextText
+    ? sameDocument && previousContent?.document?.text === content.document?.text && previousContent?.preamble === content.preamble
+    : sameDocument && previousText !== undefined && previousText === nextText
   const previousWasDocument = documents.has(pane)
   const replacingDocument = previousWasDocument && content.document === undefined
   const enteringDocument = !previousWasDocument && content.document !== undefined

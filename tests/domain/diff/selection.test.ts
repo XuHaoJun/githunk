@@ -96,6 +96,31 @@ describe("precise diff selection and copy", () => {
     })
   })
 
+  test("maps a visible virtual newline to the complete CRLF raw range", () => {
+    const value = parseDiff(fixture.replaceAll("\n", "\r\n"))
+    const lineIndex = value.lines.findIndex((line) => line.kind === "addition")
+    const line = value.lines[lineIndex]!
+    const body = line.raw.slice(0, -2)
+    const projection: MainSelectionProjection = {
+      generation: 1,
+      document: value,
+      text: `${body}\n`,
+      segments: [{
+        kind: "document",
+        displayStartUtf16: 0,
+        displayEndUtf16: body.length + 1,
+        rawStartUtf16: line.startUtf16,
+        rawEndUtf16: line.endUtf16,
+        lineIndex,
+      }],
+    }
+    expect(resolveMainSelection(projection, { start: body.length, end: body.length + 1 }, "\n")).toMatchObject({
+      valid: true,
+      kind: "document",
+      selection: { startUtf16: line.startUtf16 + body.length, endUtf16: line.endUtf16 },
+    })
+  })
+
   test("normalizes UTF-8 ranges against the exact projection text", () => {
     const value = doc()
     const additionIndex = value.lines.findIndex((line) => line.kind === "addition")

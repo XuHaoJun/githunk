@@ -125,8 +125,12 @@ export function resolveMainSelection(
     if (segment.kind === "text") return { valid: true, kind: "text", text: selectedText }
     if (segment.kind !== "document") continue
 
-    const segmentRawStart = segment.rawStartUtf16 + overlapStart - segment.displayStartUtf16
-    const segmentRawEnd = segment.rawStartUtf16 + overlapEnd - segment.displayStartUtf16
+    const segmentRawStart = overlapStart === segment.displayStartUtf16
+      ? segment.rawStartUtf16
+      : segment.rawStartUtf16 + overlapStart - segment.displayStartUtf16
+    const segmentRawEnd = overlapEnd === segment.displayEndUtf16
+      ? segment.rawEndUtf16
+      : segment.rawStartUtf16 + overlapEnd - segment.displayStartUtf16
     rawStart = rawStart === undefined ? segmentRawStart : Math.min(rawStart, segmentRawStart)
     rawEnd = rawEnd === undefined ? segmentRawEnd : Math.max(rawEnd, segmentRawEnd)
     lineIndex ??= segment.lineIndex

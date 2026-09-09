@@ -31,6 +31,7 @@ type VirtualState = {
   viewportWidth: number
   rawSelection: DocumentSelection | undefined
   renderedWindow: readonly [number, number] | undefined
+  renderedContentWidth: number | undefined
   nativeCopySource: { readonly text: string; readonly preambleEndUtf16: number } | undefined
   preambleSpans: ReadonlyMap<number, readonly DiffStatSpan[]>
   originalDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
@@ -165,6 +166,7 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
     viewportWidth: Math.max(0, Math.floor(text.width)),
     rawSelection: undefined,
     renderedWindow: undefined,
+    renderedContentWidth: undefined,
     nativeCopySource: undefined,
     preambleSpans: new Map(),
     originalDescriptors,
@@ -225,8 +227,14 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
     if (state.scrollX > maxX) state.scrollX = maxX
     const overscan = Math.max(VIRTUAL_MAIN_OVERSCAN_MIN, state.viewportHeight)
     const window = state.layout.window(state.scrollY, state.viewportHeight, overscan)
+    const previousWindow = state.renderedWindow
+    const projectionWindowChanged = previousWindow === undefined
+      || previousWindow[0] !== window[0]
+      || previousWindow[1] !== window[1]
+    const projectionContentChanged = state.renderedContentWidth !== state.layout.contentWidth
     const localScrollY = state.scrollY - window[0]
     state.renderedWindow = window
+    state.renderedContentWidth = state.layout.contentWidth
     const rows: string[] = []
     const displays = [] as Array<{ readonly gutterCols: number; readonly style: "plain" | "addition" | "deletion" | "hunk-header" | "metadata" }>
     const preambleRows: string[] = []
@@ -300,8 +308,10 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
       : { text: `${preamble}${body}`, preambleEndUtf16: preamble.length }
     const installed: InstalledPaneText = installDiffText(text, { preamble, body, displayLines: displays, highlightScrollY: () => localScrollY, preambleSpans })
     if (projectionCursor !== installed.text.length) throw new Error("virtual main selection projection does not cover installed text")
-    selectionPort.publishProjection({ document: state.document!, text: installed.text, segments: projectionSegments })
     const originalScrollY = state.originalDescriptors.get("scrollY")?.set
+    if (projectionWindowChanged || projectionContentChanged) {
+      selectionPort.publishProjection({ document: state.document!, text: installed.text, segments: projectionSegments })
+    }
     originalScrollY?.call(text, localScrollY)
     const originalScrollX = state.originalDescriptors.get("scrollX")?.set
     originalScrollX?.call(text, state.scrollX)
@@ -326,6 +336,8 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
       state.viewportHeight = current.height
       state.viewportWidth = current.width
       installAccessors(pane, state, rerender)
+      state.renderedWindow = undefined
+      state.renderedContentWidth = undefined
       text.wrapMode = "none"
       renderWindow()
     },
@@ -340,6 +352,7 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
       state.layout = undefined
       state.rawSelection = undefined
       state.renderedWindow = undefined
+      state.renderedContentWidth = undefined
       state.nativeCopySource = undefined
       releaseDiffText(text)
       state.preambleSpans = new Map()
@@ -394,8 +407,16 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
       }
       const maxY = Math.max(0, state.layout.totalRows - state.viewportHeight)
       const maxX = Math.max(0, state.layout.contentWidth - state.viewportWidth)
-      state.scrollY = Math.min(maxY, Math.max(0, state.scrollY))
-      state.scrollX = Math.min(maxX, Math.max(0, state.scrollX))
+      const nextY = Math.min(maxY, Math.max(0, state.scrollY))
+      const nextX = Math.min(maxX, Math.max(0, state.scrollX))
+      const current = dimensions(text)
+      const unchanged = nextY === state.scrollY
+        && nextX === state.scrollX
+        && current.height === state.viewportHeight
+        && current.width === state.viewportWidth
+      state.scrollY = nextY
+      state.scrollX = nextX
+      if (unchanged) return
       renderWindow()
     },
   }
