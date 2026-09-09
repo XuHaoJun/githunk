@@ -220,9 +220,10 @@ export function ReviewDiffSection({
   const totalRows = hunkSectionRowCount(file, layout, state, expandedSourceByGap, showDivider, replies)
   const visibleStart = Math.max(0, Math.min(totalRows, Math.floor(rowStart)))
   const visibleEnd = Math.max(visibleStart, Math.min(totalRows, Math.ceil(rowEnd ?? totalRows)))
-  const hasDiffRows = rows.some((row) => row.type !== "feedback")
+  const hasDiffRows = rows.some((row) =>
+    row.type === "hunk-header" || row.type === "collapsed" || row.type === "split-line" || row.type === "stack-line")
   const sectionChromeRows = showDivider ? 1 : 0
-  const contentRows = hasDiffRows ? rows : rows.filter((row) => row.type === "feedback")
+  const contentRows = rows
   const visibleContentRows = contentRows.filter((_, index) => {
     const fullIndex = index + (hasDiffRows ? 1 : 2) + sectionChromeRows
     return fullIndex >= visibleStart && fullIndex < visibleEnd
