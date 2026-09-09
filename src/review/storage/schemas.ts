@@ -119,6 +119,12 @@ const feedbackSchema = z
   })
   .strict()
   .superRefine((val, ctx) => {
+    if (val.status === "handed-off" && val.handoff === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "handed-off feedback requires handoff metadata", path: ["handoff"] })
+    }
+    if ((val.status === undefined || val.status === "open") && val.handoff !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "open feedback cannot contain handoff metadata", path: ["handoff"] })
+    }
     if (val.kind === "suggestion") {
       if (val.anchor.kind !== "range" || val.anchor.side !== "new") {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "suggestion requires new-side range anchor", path: ["anchor"] })
@@ -287,6 +293,12 @@ const submittedFeedbackSchema = z
   })
   .strict()
   .superRefine((val, ctx) => {
+    if (val.status === "handed-off" && val.handoff === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "handed-off feedback requires handoff metadata", path: ["handoff"] })
+    }
+    if ((val.status === undefined || val.status === "open") && val.handoff !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "open feedback cannot contain handoff metadata", path: ["handoff"] })
+    }
     if (val.kind === "suggestion") {
       if (val.anchor.kind !== "range" || val.anchor.side !== "new") {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "suggestion requires new-side range anchor", path: ["anchor"] })

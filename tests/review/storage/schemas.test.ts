@@ -197,6 +197,24 @@ describe("schemas – rejected invalid ranges/decisions/timestamps", () => {
   })
 })
 
+describe("schemas – status and handoff consistency", () => {
+  test("rejects handed-off feedback without a checkpoint", () => {
+    const db = makeValidDatabase()
+    db.reviews["abc123"].feedback[0].status = "handed-off"
+    expect(parseReviewDatabaseV2(db).ok).toBe(false)
+  })
+
+  test("rejects open artifact feedback with a checkpoint", () => {
+    const artifact = makeValidArtifact()
+    artifact.feedback[0]!.status = "open"
+    artifact.feedback[0]!.handoff = {
+      at: new Date().toISOString(),
+      headOid: "a".repeat(40),
+    }
+    expect(parseReviewArtifactV1(artifact).ok).toBe(false)
+  })
+})
+
 describe("schemas – detached baseByHead keys", () => {
   test("accepts valid detached key", () => {
     const db: any = makeValidDatabase()
