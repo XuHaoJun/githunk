@@ -100,7 +100,7 @@ export class FinishDialog {
       if (rec.path === file.path && rec.contentId === file.contentId) viewed++
       else changed++
     }
-    const pending = state.feedback.length
+    const pending = state.feedback.filter((feedback) => feedback.status !== "resolved").length
     return { viewed, total, pending, changed }
   }
 

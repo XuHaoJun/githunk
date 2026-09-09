@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
-import { createLineSelection } from "../../../src/review/core/anchors"
+import { createFileAnchor, createLineSelection } from "../../../src/review/core/anchors"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { planReviewIntent } from "../../../src/review/core/intents"
@@ -107,6 +107,40 @@ describe("semantic-only state and explicit reveal tokens", () => {
     const revealedWithLine = { ...revealed, lineSelection: line, selection: { fileKey: file.key, hunkIndex: 0 } }
     const moved = reduceReviewState(revealedWithLine, { type: "selection/move-line", direction: "next" })
     expect(moved.reveal.scrollToFeedback).toBe(false)
+  })
+  test("feedback navigation skips resolved entries", () => {
+    const first = makeFile({ key: "first", path: "first.ts" })
+    const second = makeFile({ key: "second", path: "second.ts" })
+    const state = {
+      ...createInitialReviewState(makeDoc([first, second])),
+      feedback: [
+        {
+          id: "open",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "still open",
+          anchor: createFileAnchor(first),
+          resolution: "active" as const,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z",
+        },
+        {
+          id: "resolved",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "already closed",
+          anchor: createFileAnchor(second),
+          resolution: "active" as const,
+          status: "resolved" as const,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z",
+        },
+      ],
+    }
+
+    const next = reduceReviewState(state, { type: "feedback/next" })
+
+    expect(next).toBe(state)
   })
   test("filter normalization preserves document order and matches normalized paths", () => {
     const doc = makeDoc([

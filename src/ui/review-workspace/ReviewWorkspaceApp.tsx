@@ -200,7 +200,7 @@ function nextUnreviewedFile(state: ReviewState, direction: "next" | "previous"):
 type FeedbackTarget = Readonly<{ feedbackId: string; fileKey: string; hunkIndex: number }>
 
 function feedbackTarget(state: ReviewState, direction: "next" | "previous", currentFeedbackId?: string | null): FeedbackTarget | null {
-  const feedback = sortedReviewFeedback(state)
+  const feedback = sortedReviewFeedback(state).filter((item) => item.status !== "resolved")
   if (feedback.length === 0) return null
   const currentIndex = currentFeedbackId
     ? feedback.findIndex((item) => item.id === currentFeedbackId)

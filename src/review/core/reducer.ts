@@ -13,7 +13,7 @@ function projectionsEqual(a: ReviewState["projection"], b: ReviewState["projecti
 
 function sortedFeedbackForNavigation(state: ReviewState) {
   const indexByKey = new Map(state.document.files.map((f, i) => [f.key, i] as const))
-  return [...state.feedback].sort((a, b) => {
+  return state.feedback.filter((feedback) => feedback.status !== "resolved").sort((a, b) => {
     const ia = indexByKey.get(a.anchor.fileKey) ?? Number.MAX_SAFE_INTEGER
     const ib = indexByKey.get(b.anchor.fileKey) ?? Number.MAX_SAFE_INTEGER
     if (ia !== ib) return ia - ib
