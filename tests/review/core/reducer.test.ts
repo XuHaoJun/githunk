@@ -203,6 +203,22 @@ describe("ledger transitions", () => {
     })
     expect(next).toBe(state)
   })
+  test("re-anchoring a handed-off objection opens a fresh round", () => {
+    const state = stateWith([feedback("one", {
+      resolution: "stale",
+      status: "handed-off",
+      handoff: { at: "2026-09-08T01:00:00.000Z", headOid: "old-head" },
+    })])
+    const next = reduceReviewState(state, {
+      type: "feedback/reanchor",
+      id: "one",
+      anchor: { ...anchor },
+      updatedAt: "2026-09-08T02:00:00.000Z",
+    })
+    expect(next.feedback[0]?.status).toBe("open")
+    expect(next.feedback[0]).not.toHaveProperty("handoff")
+    expect(next.feedback[0]?.resolution).toBe("active")
+  })
 
   test("re-handing off keeps the original checkpoint, so the verdict keeps its baseline", () => {
     const already = feedback("one", {

@@ -299,10 +299,12 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       const idx = state.feedback.findIndex((f) => f.id === action.id)
       if (idx < 0) return state
       const existing = state.feedback[idx]!
+      const { handoff: _handoff, ...withoutHandoff } = existing
       const updated = {
-        ...existing,
+        ...withoutHandoff,
         anchor: action.anchor,
         resolution: "active" as const,
+        status: existing.status === "resolved" ? "resolved" as const : "open" as const,
         updatedAt: action.updatedAt,
       }
       const copy = [...state.feedback]
