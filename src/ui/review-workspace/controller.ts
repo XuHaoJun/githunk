@@ -142,13 +142,22 @@ export class ReviewWorkspaceController {
    * Re-read the agent's reply file. It belongs to the agent, so githunk polls it
    * rather than tracking it: there is no write from this side to invalidate on.
    */
-  private async loadReplies(): Promise<void> {
+  private async loadReplies(): Promise<boolean> {
+    const previous = this._replies
+    let next: ReviewReplies
     try {
       const file = new LocalStateFile({ runner: this.runner, relativePath: HANDOFF_REPLIES_PATH, pathKind: "handoff" })
-      this._replies = parseReviewReplies(await file.readText())
+      next = parseReviewReplies(await file.readText())
     } catch {
-      this._replies = new Map()
+      next = new Map()
     }
+    const changed = previous.size !== next.size
+      || [...previous].some(([id, reply]) => {
+        const current = next.get(id)
+        return current === undefined || current.body !== reply.body || current.at !== reply.at
+      })
+    this._replies = next
+    return changed
   }
 
   get error(): ReviewWorkspaceError | undefined {
@@ -269,6 +278,8 @@ export class ReviewWorkspaceController {
       const doc = await this.loadDocumentImpl(capturedBase)
       if (!ownsRequest()) return
       if (capturedReviewId !== undefined && doc.identity.id !== capturedReviewId) return
+      const repliesChanged = await this.loadReplies()
+      if (!ownsRequest()) return
       // A same-generation response is still useful after a failed load.
       // Storage errors require retrying the pending semantic write before
       // they may be cleared; load errors only need a successful response.
@@ -284,6 +295,8 @@ export class ReviewWorkspaceController {
         if (!ownsRequest()) return
         if (this._error !== undefined) {
           this._error = undefined
+          this.publish()
+        } else if (repliesChanged) {
           this.publish()
         }
         return

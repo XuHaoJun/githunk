@@ -6,6 +6,7 @@ import { ReviewStateStore } from "../../src/review/storage/review-state-store"
 import { createRangeAnchor } from "../../src/review/core/anchors"
 import { HANDOFF_JSON_PATH, HANDOFF_REPLIES_PATH, ledgerVerdict, reviewCheckpoint, serializeReviewReplies } from "../../src/review/core/ledger"
 import { validateFinishReview } from "../../src/review/core/artifact"
+import { LocalStateFile } from "../../src/storage/local-state-file"
 import type { ReviewState } from "../../src/review/core/state"
 import { buildHunkStackRows } from "../../src/ui/review-workspace/hunk-diff-row-model"
 import { toHunkReviewFile } from "../../src/ui/review-workspace/hunk-review-model"
@@ -155,6 +156,41 @@ describe("branch review — open-objections ledger", () => {
       expect(validateFinishReview(resolved, approve)).toEqual({ ok: true })
 
       await reopened.destroy()
+    } finally {
+      await repo.cleanup()
+    }
+  })
+  test("refreshing an unchanged generation reloads agent replies", async () => {
+    const repo = await createTempRepository()
+    try {
+      await repo.git(["config", "user.email", "t@t"])
+      await repo.git(["config", "user.name", "t"])
+      await repo.write("app.ts", "one\n")
+      await repo.git(["add", "."])
+      await repo.git(["commit", "-qm", "base"])
+      await repo.git(["checkout", "-qb", "feature"])
+      await repo.write("app.ts", "two\n")
+      await repo.git(["commit", "-qam", "change"])
+
+      const runner = new GitRunner({ cwd: repo.path })
+      const controller = new ReviewWorkspaceController({
+        runner,
+        stateStore: new ReviewStateStore(new GitRunner({ cwd: repo.path })),
+      })
+      await controller.open("refs/heads/master")
+      expect(controller.replies.size).toBe(0)
+
+      const repliesFile = new LocalStateFile({ runner, relativePath: HANDOFF_REPLIES_PATH, pathKind: "handoff" })
+      await repliesFile.writeText(serializeReviewReplies([{
+        id: "fb-1",
+        body: "the change is intentional",
+        at: "2026-09-08T02:00:00.000Z",
+      }]))
+
+      await controller.refreshGeneration()
+
+      expect(controller.replies.get("fb-1")?.body).toBe("the change is intentional")
+      await controller.destroy()
     } finally {
       await repo.cleanup()
     }
