@@ -245,7 +245,7 @@ describe("the mailbox", () => {
     expect(markdown).toContain("UNTOUCHED")
     expect(markdown).toContain("githunk handoff reply --id <id>")
     expect(markdown).toContain("DISPUTED")
-    expect(markdown).toContain("[fb-1] src/cache.ts:2")
+    expect(markdown).toContain("[fb-1] src/cache.ts:2 (new side)")
   })
 
   test("an empty mailbox says so rather than rendering an instruction with no items", () => {

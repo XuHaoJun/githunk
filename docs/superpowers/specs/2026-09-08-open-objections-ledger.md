@@ -25,6 +25,14 @@ asked to act"), and derives the verdict from the pair in
 | `handed-off`, answered | `active` | **`disputed`** — it argued instead of changing the lines |
 | `resolved` | any | `resolved` |
 
+
+### Range attribution
+
+Mailbox ranges use inclusive, one-based source-line numbers on the diff side named
+by `side` (`old` or `new`). They are source coordinates, never terminal row
+indexes. `pending.json` stores `side`, `startLine`, and `endLine` as separate
+fields; `pending.md` repeats the side after the path and range, for example
+`src/cache.ts:2-3 (new side)`. File-level objections have no side or line range.
 `resolution` is already recomputed every generation by `reconcileAnchor`, so the
 verdict costs no extra Git.
 

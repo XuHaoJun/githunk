@@ -311,7 +311,8 @@ export function buildHandoffMailbox(
 function locationText(item: HandoffItem): string {
   if (item.startLine === null) return item.path
   const lines = item.startLine === item.endLine ? `${item.startLine}` : `${item.startLine}-${item.endLine}`
-  return `${item.path}:${lines}`
+  const side = item.side === null ? "" : ` (${item.side} side)`
+  return `${item.path}:${lines}${side}`
 }
 
 export function renderHandoffMarkdown(mailbox: HandoffMailbox): string {
