@@ -336,7 +336,11 @@ function insertionIndexForAnchor(
   // Step past anything already placed under this line so two objections on one
   // line keep the order they were written in.
   let after = found + 1
-  while (after < rows.length && (rows[after]!.type === "feedback" || rows[after]!.type === "feedback-excerpt")) after += 1
+  while (after < rows.length) {
+    const type = rows[after]!.type
+    if (type !== "feedback" && type !== "feedback-reply" && type !== "feedback-excerpt") break
+    after += 1
+  }
   return after
 }
 

@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { createFileAnchor } from "../../../src/review/core/anchors"
+import { createFileAnchor, createRangeAnchor } from "../../../src/review/core/anchors"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { toHunkReviewFile } from "../../../src/ui/review-workspace/hunk-review-model"
 import { buildHunkSplitRows, buildHunkStackRows } from "../../../src/ui/review-workspace/hunk-diff-rows"
+import type { ReviewReplies } from "../../../src/review/core/ledger"
 import type { ReviewFile } from "../../../src/review/core/types"
 
 function makeFile(): ReviewFile {
@@ -138,5 +139,42 @@ describe("Hunk-derived diff rows", () => {
     const feedback = rows.find((row) => row.type === "feedback")
 
     expect(feedback).toMatchObject({ feedbackId: "feedback-1", severity: "blocking", resolution: "active" })
+  })
+  test("keeps same-line replies with their own feedback rows", () => {
+    const file = makeFile()
+    const anchor = createRangeAnchor(file, { side: "new", startLine: 10, endLine: 10 })
+    const base = makeState(file)
+    const state = {
+      ...base,
+      feedback: [1, 2].map((index) => ({
+        id: `feedback-${index}`,
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: `comment ${index}`,
+        anchor,
+        resolution: "active" as const,
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:00.000Z",
+      })),
+    }
+    const replies: ReviewReplies = new Map([
+      ["feedback-1", { id: "feedback-1", body: "reply one", at: "2026-09-01T01:00:00.000Z" }],
+      ["feedback-2", { id: "feedback-2", body: "reply two", at: "2026-09-01T02:00:00.000Z" }],
+    ])
+
+    const rows = buildHunkStackRows(toHunkReviewFile(file), state, undefined, {
+      width: 120,
+      showLineNumbers: true,
+      wrapLines: false,
+      replies,
+    })
+    const feedbackRows = rows.filter((row) => row.type === "feedback" || row.type === "feedback-reply")
+
+    expect(feedbackRows.map((row) => `${row.type}:${row.feedbackId}`)).toEqual([
+      "feedback:feedback-1",
+      "feedback-reply:feedback-1",
+      "feedback:feedback-2",
+      "feedback-reply:feedback-2",
+    ])
   })
 })
