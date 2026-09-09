@@ -114,13 +114,14 @@ function feedbackRowsBeforeHunk(
 ): number {
   let count = 0
   for (const group of feedbackRowGroups(file, state, layout, replies)) {
-    if (group.anchor.kind !== "range") continue
+    const anchor = group.anchor
+    if (anchor.kind !== "range") continue
     const ownerIndex = file.metadata.hunks.findIndex((hunk) => {
-      const start = group.anchor.side === "old" ? hunk.deletionStart : hunk.additionStart
-      const lineCount = group.anchor.side === "old" ? hunk.deletionCount : hunk.additionCount
+      const start = anchor.side === "old" ? hunk.deletionStart : hunk.additionStart
+      const lineCount = anchor.side === "old" ? hunk.deletionCount : hunk.additionCount
       return lineCount > 0
-        && group.anchor.startLine >= start
-        && group.anchor.endLine < start + lineCount
+        && anchor.startLine >= start
+        && anchor.endLine < start + lineCount
     })
     if (ownerIndex >= 0 && ownerIndex < hunkIndex) count += group.rows.length
   }
