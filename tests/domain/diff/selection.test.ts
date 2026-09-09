@@ -60,6 +60,17 @@ describe("precise diff selection and copy", () => {
     expect(boundary.valid).toBe(false)
   })
 
+  test("maps prefixed raw selections before a display projection exists", () => {
+    const value = parseDiff(fixture)
+    expect(value.rendered).toBeUndefined()
+    const preamble = "commit abc\n"
+    const bodyStart = value.text.indexOf("new")
+    const start = preamble.length + bodyStart
+    const selection = selectionFromRenderable(value, { start, end: start + "new".length }, "new", preamble)
+    expect(selection.valid).toBe(true)
+    expect(copySelection(value, selection, "text")).toBe("new")
+  })
+
   test("strips exactly one marker while preserving indentation and newlines", () => {
     const value = doc()
     const addition = value.lines.find((line) => line.kind === "addition")!

@@ -26,6 +26,7 @@ type VirtualState = {
   viewportWidth: number
   rawSelection: DocumentSelection | undefined
   renderedWindow: readonly [number, number] | undefined
+  nativeCopySource: { readonly text: string; readonly preambleEndUtf16: number } | undefined
   preambleSpans: ReadonlyMap<number, readonly DiffStatSpan[]>
   originalDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
   originalOwnDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
@@ -41,6 +42,8 @@ export type VirtualMainPane = {
   setLineSelection(startUtf16: number, endUtf16: number): void
   setPointerSelection(startRow: number, startColumn: number, endRow: number, endColumn: number): DocumentSelection | undefined
   selection(): DocumentSelection | undefined
+  nativeCopySource(): { readonly text: string; readonly preambleEndUtf16: number } | undefined
+  clearRawSelection(): void
   resetSelection(): void
   clampScroll(): void
 }
@@ -157,6 +160,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     viewportWidth: Math.max(0, Math.floor(text.width)),
     rawSelection: undefined,
     renderedWindow: undefined,
+    nativeCopySource: undefined,
     preambleSpans: new Map(),
     originalDescriptors,
     originalOwnDescriptors,
@@ -241,7 +245,11 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       displays.push({ gutterCols: value.gutterCols, style: value.style })
     }
     const preamble = preambleRows.length === 0 ? "" : `${preambleRows.join("\n")}\n`
-    installDiffText(text, { preamble, body: rows.join("\n"), displayLines: displays, highlightScrollY: () => localScrollY, preambleSpans })
+    const body = rows.join("\n")
+    state.nativeCopySource = preamble.length === 0
+      ? undefined
+      : { text: `${preamble}${body}`, preambleEndUtf16: preamble.length }
+    installDiffText(text, { preamble, body, displayLines: displays, highlightScrollY: () => localScrollY, preambleSpans })
     const originalScrollY = state.originalDescriptors.get("scrollY")?.set
     originalScrollY?.call(text, localScrollY)
     const originalScrollX = state.originalDescriptors.get("scrollX")?.set
@@ -281,6 +289,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       state.layout = undefined
       state.rawSelection = undefined
       state.renderedWindow = undefined
+      state.nativeCopySource = undefined
       releaseDiffText(text)
       state.preambleSpans = new Map()
       restoreAccessors()
@@ -316,6 +325,10 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       return selection
     },
     selection: () => state.rawSelection,
+    nativeCopySource: () => state.nativeCopySource,
+    clearRawSelection() {
+      state.rawSelection = undefined
+    },
     resetSelection() {
       state.rawSelection = undefined
       ;(text as unknown as { resetSelection?: () => void }).resetSelection?.()

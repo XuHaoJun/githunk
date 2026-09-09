@@ -226,7 +226,7 @@ describe("main pane diff rendering", () => {
     expect(harness.frame()).toContain("OSC52 emitted")
   })
 
-  test("copies a commit id from a virtual commit preview preamble", async () => {
+  test("copies top and scrolled text from a virtual commit preview preamble", async () => {
     harness = await createShellHarness({
       width: 140,
       height: 30,
@@ -234,12 +234,13 @@ describe("main pane diff rendering", () => {
         const lineCount = 11_000
         const base = Array.from({ length: lineCount }, (_, index) => `base ${index}`).join("\n") + "\n"
         const changed = Array.from({ length: lineCount }, (_, index) => `changed ${index}`).join("\n") + "\n"
+        const message = Array.from({ length: 100 }, (_, index) => `message line ${index}`).join("\n")
         await repository.write("large.txt", base)
         await repository.git(["add", "large.txt"])
         await repository.git(["commit", "-m", "base"])
         await repository.write("large.txt", changed)
         await repository.git(["add", "large.txt"])
-        await repository.git(["commit", "-m", "large change"])
+        await repository.git(["commit", "-m", message])
       },
     })
     await harness.pressKey("4")
@@ -255,13 +256,14 @@ describe("main pane diff rendering", () => {
     const start = normalizedPreamble.indexOf(selected)
     expect(start).toBeGreaterThanOrEqual(0)
 
-    const text = view.mainPane.text as unknown as {
-      setSelection?: (start: number, end: number) => void
-      getSelectedText?: () => string
-    }
-    text.setSelection?.(start, start + selected.length)
-    await harness.flush()
-    expect(text.getSelectedText?.()).toBe(selected)
+    const geometry = view.paneTextGeometry("main")!
+    await harness.drag(
+      geometry.screenX + start,
+      geometry.screenY,
+      geometry.screenX + start + selected.length - 1,
+      geometry.screenY,
+    )
+    expect(view.mainPane.text.getSelectedText()).toBe(selected)
 
     const copied: string[] = []
     const renderer = harness.renderer as unknown as {
@@ -276,6 +278,23 @@ describe("main pane diff rendering", () => {
     await harness.pressKey("o", { ctrl: true })
     expect(copied).toEqual([selected])
     expect(harness.frame()).toContain("OSC52 emitted")
+
+    const scrolledSelected = "message line 80"
+    const preambleRows = normalizedPreamble.slice(0, -1).split("\n")
+    const selectedRow = preambleRows.findIndex((row) => row.includes(scrolledSelected))
+    expect(selectedRow).toBeGreaterThan(view.mainPane.text.height)
+    const selectedColumn = preambleRows[selectedRow]!.indexOf(scrolledSelected)
+    view.mainPane.text.scrollY = selectedRow
+    await harness.flush()
+    await harness.drag(
+      geometry.screenX + selectedColumn,
+      geometry.screenY,
+      geometry.screenX + selectedColumn + scrolledSelected.length - 1,
+      geometry.screenY,
+    )
+    expect(view.mainPane.text.getSelectedText()).toBe(scrolledSelected)
+    await harness.pressKey("o", { ctrl: true })
+    expect(copied).toEqual([selected, scrolledSelected])
   })
 
 

@@ -3579,10 +3579,7 @@ export class RootView {
     const virtual = virtualMainPaneFor(this.panes.main)
     if (!virtual?.isActive()) return
     const anchor = this.mainPointerAnchor
-    if (anchor === undefined) {
-      virtual.resetSelection()
-      return
-    }
+    if (anchor === undefined) return
     const point = this.mainPointerCoordinates(event)
     if (point === undefined) {
       virtual.resetSelection()
@@ -4368,7 +4365,22 @@ export class RootView {
     let directText: string | undefined
     let rejected: Extract<RenderableCopySelection, { readonly valid: false }> | undefined
     if (nativeRange && pointerSelection === undefined && keyboardSelection === undefined) {
-      const resolved = resolveRenderableCopySelection(source, nativeRange, pane.text.getSelectedText())
+      const selectedText = pane.text.getSelectedText()
+      const virtualCopySource = virtualMainPaneFor(pane)?.nativeCopySource()
+      const virtualSelection = virtualCopySource === undefined
+        ? undefined
+        : resolveRenderableCopySelection({ kind: "text", text: virtualCopySource.text }, nativeRange, selectedText)
+      let resolved: RenderableCopySelection
+      if (virtualCopySource !== undefined && virtualSelection !== undefined) {
+        const virtualStartUtf16 = virtualSelection.valid && virtualSelection.kind === "document"
+          ? undefined
+          : virtualSelection.startUtf16
+        resolved = virtualStartUtf16 !== undefined && virtualStartUtf16 < virtualCopySource.preambleEndUtf16
+          ? virtualSelection
+          : resolveRenderableCopySelection(source, nativeRange, selectedText)
+      } else {
+        resolved = resolveRenderableCopySelection(source, nativeRange, selectedText)
+      }
       if (!resolved.valid) rejected = resolved
       else if (resolved.kind === "document") selection = resolved.selection
       else if (mode === "text") directText = resolved.text
@@ -5027,14 +5039,17 @@ export class RootView {
           // range, and clears any prior one like the renderer's down-clear (chunk-bun-da1keqyp.js:9181-9183).
           const canSelect = event.button === 0 && !event.modifiers.ctrl
           const point = virtual?.isActive() && canSelect ? this.mainPointerCoordinates(event) : undefined
-          this.mainPointerAnchor = point
+          const preambleSelection = point !== undefined
+            && point.row + this.panes.main.text.scrollY < (virtual?.layout()?.preambleRows ?? 0)
+          this.mainPointerAnchor = preambleSelection ? undefined : point
           if (virtual?.isActive()) {
-            if (point === undefined) virtual.resetSelection()
+            if (preambleSelection) virtual.clearRawSelection()
+            else if (point === undefined) virtual.resetSelection()
             else virtual.setPointerSelection(point.row, point.column, point.row, point.column)
           }
           this.gestureOwner = { kind: "main-selection" }
           this.clearTransientMenus()
-          if (virtual?.isActive() && canSelect) event.preventDefault()
+          if (virtual?.isActive() && canSelect && !preambleSelection) event.preventDefault()
           event.stopPropagation()
           return
         }

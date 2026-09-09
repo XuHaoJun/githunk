@@ -89,11 +89,12 @@ function appendDisplayCandidate(
   end: number,
   fullDisplayText: string,
   prefixLength: number,
+  display: boolean,
 ): void {
   const bodyStart = start - prefixLength
   const bodyEnd = end - prefixLength
   if (bodyStart < 0 || bodyEnd < bodyStart || bodyEnd > fullDisplayText.length - prefixLength) return
-  candidates.push({ start: bodyStart, end: bodyEnd, value: fullDisplayText.slice(start, end), display: true })
+  candidates.push({ start: bodyStart, end: bodyEnd, value: fullDisplayText.slice(start, end), display })
 }
 
 /**
@@ -105,23 +106,23 @@ export function selectionFromRenderable(document: DiffDocument, nativeRange: Nat
   const rendered = document.rendered
   const prefix = normalizedDisplayPrefix(displayPrefix)
   const prefixLength = prefix.length
-  const fullDisplayText = rendered === undefined ? undefined : `${prefix}${rendered.displayText}`
+  const fullDisplayText = `${prefix}${rendered?.displayText ?? document.text}`
   const hasDisplayPrefix = prefixLength > 0
   const candidates: Array<{ start: number; end: number; value: string; display: boolean }> = []
   if (nativeRange.unit !== "utf8") {
-    if (fullDisplayText !== undefined && start <= fullDisplayText.length && end <= fullDisplayText.length) {
-      appendDisplayCandidate(candidates, start, end, fullDisplayText, prefixLength)
+    if (start <= fullDisplayText.length && end <= fullDisplayText.length) {
+      appendDisplayCandidate(candidates, start, end, fullDisplayText, prefixLength, rendered !== undefined)
     }
     if (!hasDisplayPrefix && start <= document.text.length && end <= document.text.length) candidates.push({ start, end, value: document.text.slice(start, end), display: false })
   }
   if (nativeRange.unit === "utf8" || candidates.every((candidate) => candidate.value !== selectedText)) {
-    const values = fullDisplayText === undefined ? [document.text] : [fullDisplayText, document.text]
+    const values = rendered === undefined && !hasDisplayPrefix ? [document.text] : [fullDisplayText, document.text]
     const converted = values.map((value) => [utf8BoundaryToUtf16(value, start), utf8BoundaryToUtf16(value, end)] as const)
     for (let index = 0; index < converted.length; index++) {
       const [convertedStart, convertedEnd] = converted[index]!
       if (convertedStart === undefined || convertedEnd === undefined) continue
-      if (index === 0 && fullDisplayText !== undefined) {
-        appendDisplayCandidate(candidates, convertedStart, convertedEnd, fullDisplayText, prefixLength)
+      if (index === 0) {
+        appendDisplayCandidate(candidates, convertedStart, convertedEnd, fullDisplayText, prefixLength, rendered !== undefined)
         continue
       }
       if (!hasDisplayPrefix) candidates.push({ start: convertedStart, end: convertedEnd, value: values[index]!.slice(convertedStart, convertedEnd), display: false })
