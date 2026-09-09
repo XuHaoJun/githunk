@@ -403,7 +403,66 @@ describe("branch review — open-objections ledger", () => {
 
       expect(outcome.ok).toBe(false)
       expect(controller.state!.feedback[0]!.body).toBe("edited")
-      expect(controller.state!.feedback[0]!.status).toBe("handed-off")
+      expect(controller.state!.feedback[0]!.status).toBeUndefined()
+      const mailbox = new LocalStateFile({ runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
+      expect(await mailbox.readText()).toBeUndefined()
+      await controller.destroy()
+    } finally {
+      await repo.cleanup()
+    }
+  })
+  test("rejects handoff when feedback changes during checkpoint persistence", async () => {
+    const repo = await createTempRepository()
+    try {
+      await repo.write("app.ts", "one\n")
+      await repo.git(["add", "."])
+      await repo.git(["commit", "-qm", "base"])
+      await repo.git(["checkout", "-qb", "feature"])
+      await repo.write("app.ts", "two\n")
+      await repo.git(["commit", "-qam", "change"])
+
+      let database = emptyReviewDatabaseV2()
+      let releaseHandoff!: () => void
+      let signalHandoffStarted!: () => void
+      const handoffStarted = new Promise<void>((resolve) => { signalHandoffStarted = resolve })
+      const release = new Promise<void>((resolve) => { releaseHandoff = resolve })
+      let blocked = false
+      const stateStore = {
+        load: async () => database,
+        saveSemanticChange: async (updater: (value: typeof database) => typeof database) => {
+          const next = updater(database)
+          const isBlockedHandoff = Object.values(next.reviews).some((review) =>
+            review.feedback.some((feedback) => feedback.status === "handed-off" && feedback.body === "original"))
+          if (isBlockedHandoff && !blocked) {
+            blocked = true
+            signalHandoffStarted()
+            await release
+          }
+          database = next
+        },
+        quarantineWarning: undefined,
+        saveDraftDebounced: () => {},
+        flush: async () => {},
+      } as unknown as ReviewStateStore
+      const runner = new GitRunner({ cwd: repo.path })
+      const controller = new ReviewWorkspaceController({ runner, stateStore })
+      await controller.open("refs/heads/master")
+      const file = controller.state!.document.files[0]!
+      const anchor = createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 })
+      controller.dispatchIntent({ type: "feedback/start-draft", anchor, kind: "note", severity: "comment", body: "original" })
+      controller.dispatchIntent({ type: "feedback/create", id: "fb-1", createdAt: "2026-09-08T01:00:00.000Z" })
+      const handoff = controller.handoffFeedback()
+      await handoffStarted
+
+      controller.dispatchIntent({ type: "feedback/edit", id: "fb-1", body: "edited", updatedAt: "2026-09-08T02:00:00.000Z" })
+      releaseHandoff()
+      const outcome = await handoff
+
+      expect(outcome.ok).toBe(false)
+      expect(controller.state!.feedback[0]!.body).toBe("edited")
+      expect(controller.state!.feedback[0]!.status).toBeUndefined()
+      const mailbox = new LocalStateFile({ runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
+      expect(await mailbox.readText()).toBeUndefined()
       await controller.destroy()
     } finally {
       await repo.cleanup()

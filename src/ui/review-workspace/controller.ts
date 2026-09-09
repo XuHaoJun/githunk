@@ -507,7 +507,7 @@ export class ReviewWorkspaceController {
     this.publish()
     try {
       await this.persistState()
-      return true
+      return this._state === next
     } catch (error) {
       // A normal dispatch may have advanced the state while persistence was
       // in flight. Never roll that newer in-memory edit back to the snapshot
@@ -657,18 +657,39 @@ export class ReviewWorkspaceController {
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : String(err) }
     }
-
+    const handedOffIds = new Set(items.map((item) => item.id))
+    const rollbackHandoff = async (): Promise<void> => {
+      const latest = this._state
+      if (latest === undefined || handedOffIds.size === 0) return
+      let changed = false
+      const feedback = latest.feedback.map((entry) => {
+        if (!handedOffIds.has(entry.id)
+          || entry.status !== "handed-off"
+          || entry.resolution !== "active"
+          || entry.handoff?.at !== at
+          || entry.handoff.headOid !== headOid) return entry
+        const { status: _status, handoff: _handoff, ...reopened } = entry
+        changed = true
+        return reopened
+      })
+      if (!changed) return
+      this._state = { ...latest, feedback, revision: latest.revision + 1 }
+      this.publish()
+      await this.persistState().catch(() => undefined)
+    }
     try {
       await jsonFile.writeText(`${JSON.stringify(mailbox, null, 2)}\n`)
       await markdownFile.writeText(renderHandoffMarkdown(mailbox))
       if (!isCurrent()) throw new Error("review changed during handoff")
       if (freshlyHandedOff.length > 0) {
-        await this.dispatchAndPersist({ type: "feedback/handoff", items, at, headOid })
+        const persisted = await this.dispatchAndPersist({ type: "feedback/handoff", items, at, headOid })
+        if (!persisted) throw new Error("review changed during handoff")
       }
       return { ok: true, handedOff: freshlyHandedOff.length, total: pending.length, path: jsonFile.path }
     } catch (err) {
       await restoreLocalStateFile(jsonFile, previousJson).catch(() => undefined)
       await restoreLocalStateFile(markdownFile, previousMarkdown).catch(() => undefined)
+      await rollbackHandoff()
       return { ok: false, reason: err instanceof Error ? err.message : String(err) }
     }
   }
