@@ -509,8 +509,13 @@ export class ReviewWorkspaceController {
       await this.persistState()
       return true
     } catch (error) {
-      this._state = current
-      this.publish()
+      // A normal dispatch may have advanced the state while persistence was
+      // in flight. Never roll that newer in-memory edit back to the snapshot
+      // this durable action started from.
+      if (this._state === next) {
+        this._state = current
+        this.publish()
+      }
       throw error
     }
   }
