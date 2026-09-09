@@ -1,4 +1,5 @@
 import type { ReviewState } from "./state"
+import { ledgerVerdict } from "./ledger"
 import type { ReviewIdentity, ReviewGeneration } from "./types"
 import type { ReviewFeedback, ReviewFeedbackHandoff, ReviewFeedbackStatus } from "./types"
 
@@ -63,8 +64,10 @@ export function validateFinishReview(
     f.anchor.kind !== "range" || f.anchor.side !== "new" || !f.replacement || f.replacement.trim().length === 0 ||
     !state.document.files.some((file) => file.key === f.anchor.fileKey && file.contentId === f.anchor.contentId && file.source !== "binary" && file.source !== "too-large")
   ))) return { ok: false, reason: "suggestion-invalid" }
-  const hasStaleOrOrphaned = live.some((f) => f.resolution !== "active")
-  if (hasStaleOrOrphaned) {
+  const hasUnresolvedAnchor = live.some((f) =>
+    f.resolution !== "active" ||
+    ledgerVerdict(f, state.document.generation.headOid) === "addressed")
+  if (hasUnresolvedAnchor) {
     return { ok: false, reason: "feedback-needs-reanchor" }
   }
   const summaryTrimmed = input.summary.trim()

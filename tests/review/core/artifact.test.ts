@@ -5,15 +5,15 @@ import { createReviewHunk } from "../../../src/review/core/document"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { planReviewIntent } from "../../../src/review/core/intents"
 import { reduceReviewState } from "../../../src/review/core/reducer"
-import { createRangeAnchor } from "../../../src/review/core/anchors"
+import { createRangeAnchor, createFileAnchor } from "../../../src/review/core/anchors"
 import { validateFinishReview, buildReviewArtifact, renderReviewArtifactMarkdown } from "../../../src/review/core/artifact"
 import type { ReviewDocument, ReviewFile } from "../../../src/review/core/types"
 
-function makeIdentity() {
-  return createReviewIdentity({ headRef: "refs/heads/feature", headOid: "h1", baseRef: "main" })
+function makeIdentity(headOid = "h1") {
+  return createReviewIdentity({ headRef: "refs/heads/feature", headOid, baseRef: "main" })
 }
-function makeGeneration() {
-  return createReviewGeneration({ mergeBaseOid: "m1", baseOid: "b1", headOid: "h1" })
+function makeGeneration(headOid = "h1") {
+  return createReviewGeneration({ mergeBaseOid: "m1", baseOid: "b1", headOid })
 }
 function makeHunk(index: number, newStart: number, lines: string[]) {
   return createReviewHunk({ index, oldStart: newStart, oldCount: lines.length, newStart, newCount: lines.length, lines })
@@ -33,8 +33,8 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     ...overrides,
   } as unknown as ReviewFile
 }
-function makeDoc(files: ReviewFile[]): ReviewDocument {
-  return createReviewDocument({ identity: makeIdentity(), generation: makeGeneration(), commits: [{ oid: "c1", parents: [], author: "a", timestamp: 1, subject: "s", body: "" } as unknown as ReviewDocument["commits"][number]], files })
+function makeDoc(files: ReviewFile[], headOid = "h1"): ReviewDocument {
+  return createReviewDocument({ identity: makeIdentity(headOid), generation: makeGeneration(headOid), commits: [{ oid: "c1", parents: [], author: "a", timestamp: 1, subject: "s", body: "" } as unknown as ReviewDocument["commits"][number]], files })
 }
 
 describe("artifact finish and markdown", () => {
@@ -63,6 +63,40 @@ describe("artifact finish and markdown", () => {
     const staleFeedback = { ...state.feedback[0]!, resolution: "stale" as const }
     const staleState = { ...state, feedback: [staleFeedback] } as unknown as typeof state
     expect(validateFinishReview(staleState, { decision: "request-changes", summary: "Please address this" })).toEqual({ ok: false, reason: "feedback-needs-reanchor" })
+  })
+  test("addressed file feedback blocks finish until it is resolved", () => {
+    const file = makeFile({ key: "a", path: "src/a.ts", contentId: "content-before" })
+    const doc = makeDoc([file])
+    let state = createInitialReviewState(doc)
+    state = reduceReviewState(state, planReviewIntent(state, {
+      type: "feedback/start-draft",
+      anchor: createFileAnchor(file),
+      kind: "note",
+      severity: "comment",
+      body: "review this file",
+    }))
+    state = reduceReviewState(state, planReviewIntent(state, {
+      type: "feedback/create",
+      id: "f1",
+      createdAt: "2026-08-27T00:00:00.000Z",
+    }))
+    state = reduceReviewState(state, {
+      type: "feedback/handoff",
+      items: [{ id: "f1" }],
+      at: "2026-08-27T01:00:00.000Z",
+      headOid: "h1",
+    })
+
+    const changedDocument = makeDoc([makeFile({ key: "a", path: "src/a.ts", contentId: "content-after" })], "h2")
+    const addressedState = {
+      ...state,
+      document: changedDocument,
+      feedback: state.feedback.map((feedback) => ({ ...feedback, anchor: createFileAnchor(changedDocument.files[0]!) })),
+    }
+    expect(validateFinishReview(addressedState, { decision: "approve", summary: "done" })).toEqual({
+      ok: false,
+      reason: "feedback-needs-reanchor",
+    })
   })
 
   test("buildReviewArtifact deterministic id/timestamp and rejects commit projection", () => {
