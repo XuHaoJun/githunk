@@ -206,12 +206,16 @@ describe("schemas – status and handoff consistency", () => {
 
   test("rejects open artifact feedback with a checkpoint", () => {
     const artifact = makeValidArtifact()
-    artifact.feedback[0]!.status = "open"
-    artifact.feedback[0]!.handoff = {
-      at: new Date().toISOString(),
-      headOid: "a".repeat(40),
+    const invalidFeedback = {
+      ...artifact.feedback[0]!,
+      status: "open" as const,
+      handoff: {
+        at: new Date().toISOString(),
+        headOid: "a".repeat(40),
+      },
     }
-    expect(parseReviewArtifactV1(artifact).ok).toBe(false)
+    const invalidArtifact: ReviewArtifactV1 = { ...artifact, feedback: [invalidFeedback] }
+    expect(parseReviewArtifactV1(invalidArtifact).ok).toBe(false)
   })
 })
 
