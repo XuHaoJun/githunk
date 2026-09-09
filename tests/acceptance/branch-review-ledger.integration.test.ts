@@ -207,4 +207,20 @@ describe("branch review — open-objections ledger", () => {
       await repo.cleanup()
     }
   })
+  test("does not overwrite a malformed replies file", async () => {
+    const repo = await createTempRepository()
+    try {
+      const runner = new GitRunner({ cwd: repo.path })
+      const mailboxFile = new LocalStateFile({ runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
+      const repliesFile = new LocalStateFile({ runner, relativePath: HANDOFF_REPLIES_PATH, pathKind: "handoff" })
+      const malformed = "{\"version\":1,\"replies\":["
+      await mailboxFile.writeText(JSON.stringify({ version: 1, items: [{ id: "fb-1" }] }))
+      await repliesFile.writeText(malformed)
+      const outcome = await runHandoffReply({ id: "fb-1", body: "reason", cwd: repo.path })
+      expect(outcome.exitCode).not.toBe(0)
+      expect(await repliesFile.readText()).toBe(malformed)
+    } finally {
+      await repo.cleanup()
+    }
+  })
 })

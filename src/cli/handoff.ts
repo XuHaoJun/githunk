@@ -25,6 +25,18 @@ const handoffMailboxSchema = z
     items: z.array(z.object({ id: z.string().min(1) }).passthrough()),
   })
   .passthrough()
+const replyFileSchema = z
+  .object({
+    version: z.literal(1).optional(),
+    replies: z.array(
+      z.object({
+        id: z.string().min(1).refine((id) => id.trim() !== ""),
+        body: z.string().refine((body) => body.trim() !== ""),
+        at: z.string().optional(),
+      }).strict(),
+    ),
+  })
+  .strict()
 
 function handoffContainsId(raw: string | undefined, id: string): boolean {
   if (raw === undefined || raw.trim() === "") return false
@@ -72,7 +84,19 @@ export async function runHandoffReply(input: { id: string; body: string; cwd: st
     if (!handoffContainsId(mailbox, input.id)) {
       return { text: `objection not found in the current handoff: ${input.id}`, exitCode: 1 }
     }
-    const existing = parseReviewReplies(await file.readText())
+    const rawReplies = await file.readText()
+    let parsedReplies: unknown = { replies: [] }
+    if (rawReplies !== undefined && rawReplies.trim() !== "") {
+      try {
+        parsedReplies = JSON.parse(rawReplies)
+      } catch {
+        throw new Error("handoff replies file is malformed")
+      }
+    }
+    if (!replyFileSchema.safeParse(parsedReplies).success) {
+      throw new Error("handoff replies file is malformed")
+    }
+    const existing = parseReviewReplies(rawReplies)
     const at = new Date().toISOString()
     const next = new Map<string, ReviewReply>(existing)
     next.set(input.id, { id: input.id, body: input.body, at })
