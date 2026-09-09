@@ -4,7 +4,7 @@ import { MouseButtons } from "@opentui/core/testing"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 import type { TempRepository } from "../helpers/temp-repository"
 import type { DiffDocument } from "../../src/domain/diff/document"
-import { getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainPointerSelection, virtualMainPaneFor } from "../../src/ui/panes/main-pane"
+import { getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainSelection, virtualMainPaneFor } from "../../src/ui/panes/main-pane"
 import { VIRTUAL_DIFF_LINE_THRESHOLD } from "../../src/domain/diff/virtual"
 import { paneScrollbar } from "../../src/ui/panes/common"
 
@@ -32,6 +32,27 @@ function mainSpanWith(harness: ShellHarness, row: number, needle: string): { tex
   const found = spans.find((span) => span.text.includes(needle))
   expect(found, `no span containing ${JSON.stringify(needle)} on row ${row}: ${JSON.stringify(spans)}`).toBeDefined()
   return found!
+}
+async function dragMainText(harness: ShellHarness, needle: string): Promise<void> {
+  const view = harness.app.view!
+  const captured = harness.captureSpans()
+  const row = captured.lines.findIndex((line) => line.spans.some((span) => span.text.includes(needle)))
+  expect(row).toBeGreaterThanOrEqual(0)
+  let x = 0
+  let column = -1
+  const line = captured.lines[row]!
+  for (const span of line.spans) {
+    const index = span.text.indexOf(needle)
+    if (index >= 0) {
+      column = x + index
+      break
+    }
+    x += span.width
+  }
+  expect(column).toBeGreaterThanOrEqual(0)
+  await harness.drag(column, row, column + needle.length - 1, row)
+  await harness.flush()
+  expect(view.mainPane.text.getSelectedText()).toBe(needle)
 }
 
 function expectDefault(color: RGBA): void {
@@ -145,23 +166,10 @@ describe("main pane diff rendering", () => {
     await harness.flush()
     await harness.pressKey("0")
 
-    const view = harness.app.view!
-    const content = view.mainContent
-    const document = content?.document
-    expect(content?.preamble).toBeDefined()
-    expect(document?.rendered).toBeDefined()
-    const preamble = content?.preamble ?? ""
-    const normalizedPreamble = preamble.length === 0 || preamble.endsWith("\n") ? preamble : `${preamble}\n`
-    const bodyStart = document!.rendered!.displayText.indexOf("+TWO")
-    expect(bodyStart).toBeGreaterThanOrEqual(0)
-
-    const text = view.mainPane.text as unknown as {
-      setSelection?: (start: number, end: number) => void
-      getSelectedText?: () => string
-    }
-    text.setSelection?.(normalizedPreamble.length + bodyStart, normalizedPreamble.length + bodyStart + "+TWO".length)
-    await harness.flush()
-    expect(text.getSelectedText?.()).toBe("+TWO")
+    const content = harness.app.view!
+    expect(content.mainContent?.preamble).toBeDefined()
+    expect(content.mainContent?.document?.rendered).toBeDefined()
+    await dragMainText(harness, "+TWO")
 
     const copied: string[] = []
     const renderer = harness.renderer as unknown as {
@@ -196,20 +204,9 @@ describe("main pane diff rendering", () => {
     await harness.pressKey("0")
 
     const view = harness.app.view!
-    const content = view.mainContent!
-    const selected = content.stableId
-    const preamble = content.preamble ?? ""
-    const normalizedPreamble = preamble.length === 0 || preamble.endsWith("\n") ? preamble : `${preamble}\n`
-    const start = normalizedPreamble.indexOf(selected)
-    expect(start).toBeGreaterThanOrEqual(0)
-
-    const text = view.mainPane.text as unknown as {
-      setSelection?: (start: number, end: number) => void
-      getSelectedText?: () => string
-    }
-    text.setSelection?.(start, start + selected.length)
-    await harness.flush()
-    expect(text.getSelectedText?.()).toBe(selected)
+    const selected = view.mainContent!.stableId
+    expect((view.mainContent!.preamble ?? "").indexOf(selected)).toBeGreaterThanOrEqual(0)
+    await dragMainText(harness, selected)
 
     const copied: string[] = []
     const renderer = harness.renderer as unknown as {
@@ -375,7 +372,7 @@ describe("main pane keyboard line ranges", () => {
     return created
   }
 
-  async function selectFirstVirtualChange(): Promise<{ readonly document: DiffDocument; readonly startUtf16: number; readonly endUtf16: number }> {
+  async function selectFirstVirtualChange(reverse = false): Promise<{ readonly document: DiffDocument; readonly startUtf16: number; readonly endUtf16: number }> {
     const view = harness!.app.view!
     const pane = view.mainPane
     const document = getMainDocument(pane)
@@ -398,17 +395,26 @@ describe("main pane keyboard line ranges", () => {
     const endRow = (layout?.preambleRows ?? 0) + endIndex
     const start = layout!.rowAt(startRow)!
     const geometry = view.paneTextGeometry("main")!
-    const endColumn = Math.min(geometry.width - 1, start.gutterCols + 24)
-    await harness!.drag(
-      geometry.screenX + start.gutterCols,
-      geometry.screenY + startRow,
-      geometry.screenX + endColumn,
-      geometry.screenY + endRow,
-    )
-    const selection = getMainPointerSelection(pane)
-    expect(selection?.startUtf16).toBe(document!.lines[startIndex]!.startUtf16)
-    expect(selection?.endUtf16).toBe(document!.lines[endIndex]!.endUtf16)
-    return { document: document!, startUtf16: selection!.startUtf16, endUtf16: selection!.endUtf16 }
+    if (reverse) {
+      await harness!.drag(
+        geometry.screenX,
+        geometry.screenY + endRow + 1,
+        geometry.screenX + start.gutterCols,
+        geometry.screenY + startRow,
+      )
+    } else {
+      await harness!.drag(
+        geometry.screenX + start.gutterCols,
+        geometry.screenY + startRow,
+        geometry.screenX,
+        geometry.screenY + endRow + 1,
+      )
+    }
+    const resolved = getMainSelection(pane)
+    if (resolved?.valid !== true || resolved.kind !== "document") throw new Error("main selection was not a document selection")
+    const selection = resolved.selection
+    expect(selection.endUtf16).toBe(document!.lines[endIndex]!.endUtf16)
+    return { document: document!, startUtf16: selection.startUtf16, endUtf16: selection.endUtf16 }
   }
 
   test("routes a virtual mouse selection through exact raw copy and preserves it while scrolling", async () => {
@@ -418,8 +424,9 @@ describe("main pane keyboard line ranges", () => {
     const expected = selected.document.text.slice(selected.startUtf16, selected.endUtf16)
     view.mainPane.text.scrollY = Math.floor(view.mainPane.text.maxScrollY / 2)
     await harness.flush()
-    expect(getMainPointerSelection(view.mainPane)?.startUtf16).toBe(selected.startUtf16)
-    expect(getMainPointerSelection(view.mainPane)?.endUtf16).toBe(selected.endUtf16)
+    const preserved = getMainSelection(view.mainPane)
+    expect(preserved?.valid).toBe(true)
+    if (preserved?.valid !== true || preserved.kind !== "document") throw new Error("main selection was not preserved")
     view.mainPane.text.scrollY = 0
     await harness.flush()
 
@@ -436,22 +443,35 @@ describe("main pane keyboard line ranges", () => {
     await harness.pressKey("o", { ctrl: true })
     expect(copied).toEqual([expected])
   })
-  test("a non-selecting mouse down clears virtual pointer state instead of starting a range", async () => {
+  test("normalizes a reverse virtual mouse drag to the same raw range", async () => {
+    harness = await virtualChangedFileHarness()
+    const selected = await selectFirstVirtualChange(true)
+    const expected = selected.document.text.slice(selected.startUtf16, selected.endUtf16)
+    const copied: string[] = []
+    const renderer = harness.renderer as unknown as {
+      isOsc52Supported: () => boolean
+      copyToClipboardOSC52: (text: string) => boolean
+    }
+    renderer.isOsc52Supported = () => true
+    renderer.copyToClipboardOSC52 = (text) => {
+      copied.push(text)
+      return true
+    }
+    await harness.pressKey("o", { ctrl: true })
+    expect(copied).toEqual([expected])
+    expect(harness.frame()).not.toContain("Selection rejected")
+  })
+  test("a non-selecting mouse down clears semantic selection instead of starting a range", async () => {
     harness = await virtualChangedFileHarness()
     const view = harness.app.view!
     await selectFirstVirtualChange()
-    expect(getMainPointerSelection(view.mainPane)).toBeDefined()
+    expect(getMainSelection(view.mainPane)).toBeDefined()
     const geometry = view.paneTextGeometry("main")!
-    // Right-button matches OpenTUI's button 0 && !ctrl selection gate: it must not create a raw
-    // range, and clears any prior one like the renderer's down-clear.
+    // Right-button matches OpenTUI's button 0 && !ctrl selection gate: it must not create a
+    // selection, and clears any prior one like the renderer's down-clear.
     await harness.mockMouse.click(geometry.screenX + 2, geometry.screenY + 1, MouseButtons.RIGHT)
     await harness.flush()
-    expect(getMainPointerSelection(view.mainPane)).toBeUndefined()
-    await selectFirstVirtualChange()
-    expect(getMainPointerSelection(view.mainPane)).toBeDefined()
-    await harness.mockMouse.click(geometry.screenX + 2, geometry.screenY + 1, MouseButtons.LEFT, { modifiers: { ctrl: true } })
-    await harness.flush()
-    expect(getMainPointerSelection(view.mainPane)).toBeUndefined()
+    expect(getMainSelection(view.mainPane)).toBeUndefined()
   })
 
   test("uses virtual raw indexes for a real stage mutation", async () => {
@@ -514,12 +534,14 @@ describe("main pane keyboard line ranges", () => {
     await harness.drag(
       geometry.screenX + start.gutterCols,
       geometry.screenY + visibleStart,
-      geometry.screenX + endColumn,
-      geometry.screenY + visibleEnd,
+      geometry.screenX,
+      geometry.screenY + visibleEnd + 1,
     )
-    const selection = getMainPointerSelection(pane)
-    expect(selection?.startUtf16).toBe(document!.lines[startIndex]!.startUtf16)
-    expect(selection?.endUtf16).toBe(document!.lines[endIndex]!.endUtf16)
+    const resolved = getMainSelection(pane)
+    expect(resolved?.valid).toBe(true)
+    if (resolved?.valid !== true || resolved.kind !== "document") throw new Error("main selection was not a document selection")
+    expect(resolved.selection.startUtf16).toBe(document!.lines[startIndex]!.startUtf16)
+    expect(resolved.selection.endUtf16).toBe(document!.lines[endIndex]!.endUtf16)
     await harness.pressKey(" ")
     await harness.settle()
     const staged = (await harness.repository.git(["diff", "--cached", "--", "large.txt"])).stdout

@@ -29,10 +29,8 @@ type VirtualState = {
   scrollX: number
   viewportHeight: number
   viewportWidth: number
-  rawSelection: DocumentSelection | undefined
   renderedWindow: readonly [number, number] | undefined
   renderedContentWidth: number | undefined
-  nativeCopySource: { readonly text: string; readonly preambleEndUtf16: number } | undefined
   preambleSpans: ReadonlyMap<number, readonly DiffStatSpan[]>
   originalDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
   originalOwnDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
@@ -46,10 +44,6 @@ export type VirtualMainPane = {
   lineOffsets(startIndex: number, endIndex: number): VirtualDiffDisplayOffsets | undefined
   visualRowRange(startIndex: number, endIndex: number): { readonly startRow: number; readonly endRow: number } | undefined
   setLineSelection(startUtf16: number, endUtf16: number): void
-  setPointerSelection(startRow: number, startColumn: number, endRow: number, endColumn: number): DocumentSelection | undefined
-  selection(): DocumentSelection | undefined
-  nativeCopySource(): { readonly text: string; readonly preambleEndUtf16: number } | undefined
-  clearRawSelection(): void
   resetSelection(): void
   clampScroll(): void
 }
@@ -164,15 +158,12 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
     scrollX: 0,
     viewportHeight: Math.max(1, Math.floor(text.height)),
     viewportWidth: Math.max(0, Math.floor(text.width)),
-    rawSelection: undefined,
     renderedWindow: undefined,
     renderedContentWidth: undefined,
-    nativeCopySource: undefined,
     preambleSpans: new Map(),
     originalDescriptors,
     originalOwnDescriptors,
   }
-
   const restoreAccessors = (): void => {
     const target = text as unknown as Record<string, unknown>
     for (const name of ACCESSORS) {
@@ -183,7 +174,7 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
   }
 
   const visibleSelection = (): { readonly start: number; readonly end: number } | undefined => {
-    const selection = selectionPort.currentDocumentSelection() ?? state.rawSelection
+    const selection = selectionPort.currentDocumentSelection()
     const layout = state.layout
     const window = state.renderedWindow
     if (selection === undefined || layout === undefined || window === undefined) return undefined
@@ -303,9 +294,6 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
     }
     const preamble = preambleRows.length === 0 ? "" : `${preambleRows.join("\n")}\n`
     const body = rows.join("\n")
-    state.nativeCopySource = preamble.length === 0
-      ? undefined
-      : { text: `${preamble}${body}`, preambleEndUtf16: preamble.length }
     const installed: InstalledPaneText = installDiffText(text, { preamble, body, displayLines: displays, highlightScrollY: () => localScrollY, preambleSpans })
     if (projectionCursor !== installed.text.length) throw new Error("virtual main selection projection does not cover installed text")
     const originalScrollY = state.originalDescriptors.get("scrollY")?.set
@@ -350,10 +338,6 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
       state.active = false
       state.document = undefined
       state.layout = undefined
-      state.rawSelection = undefined
-      state.renderedWindow = undefined
-      state.renderedContentWidth = undefined
-      state.nativeCopySource = undefined
       releaseDiffText(text)
       state.preambleSpans = new Map()
       restoreAccessors()
@@ -369,32 +353,11 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
       const end = state.layout.preambleRows + Math.max(startIndex, endIndex)
       return { startRow: start, endRow: end }
     },
-    setLineSelection(startUtf16, endUtf16) {
-      if (!state.active || state.document === undefined) return
-      state.rawSelection = documentSelection(state.document, startUtf16, endUtf16)
+    setLineSelection(_startUtf16, _endUtf16) {
+      if (!state.active) return
       paintSelection()
-    },
-    setPointerSelection(startRow, startColumn, endRow, endColumn) {
-      if (!state.active || state.layout === undefined || state.document === undefined) return undefined
-      const start = state.layout.rawOffsetAt(Math.max(0, Math.floor(state.scrollY + startRow)), Math.max(0, Math.floor(state.scrollX + startColumn)))
-      const end = state.layout.rawOffsetAt(Math.max(0, Math.floor(state.scrollY + endRow)), Math.max(0, Math.floor(state.scrollX + endColumn)))
-      if (start === undefined || end === undefined) {
-        state.rawSelection = undefined
-        paintSelection()
-        return undefined
-      }
-      const selection = documentSelection(state.document, Math.min(start, end), Math.max(start, end))
-      state.rawSelection = selection
-      paintSelection()
-      return selection
-    },
-    selection: () => state.rawSelection,
-    nativeCopySource: () => state.nativeCopySource,
-    clearRawSelection() {
-      state.rawSelection = undefined
     },
     resetSelection() {
-      state.rawSelection = undefined
       ;(text as unknown as { resetSelection?: () => void }).resetSelection?.()
     },
     clampScroll() {

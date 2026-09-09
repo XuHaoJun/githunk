@@ -54,9 +54,15 @@ describe("panel 3 render-to-main", () => {
     const view = harness.app.view!
     const content = view.mainContent!
     const selected = "second commit"
-    const start = content.ansi!.text.indexOf(selected)
-    const text = view.mainPane.text as typeof view.mainPane.text & { setSelection?: (start: number, end: number) => void }
-    text.setSelection?.(start, start + selected.length)
+    const text = view.mainPane.text
+    const display = text.plainText
+    const start = display.indexOf(selected)
+    expect(start).toBeGreaterThan(-1)
+    const before = display.slice(0, start)
+    const row = before.split("\n").length - 1
+    const column = before.length - (before.lastIndexOf("\n") + 1)
+    const geometry = harness.paneTextGeometry("main")!
+    await harness.drag(geometry.screenX + column, geometry.screenY + row, geometry.screenX + column + selected.length, geometry.screenY + row)
     await harness.flush()
     expect(text.getSelectedText()).toBe(selected)
 

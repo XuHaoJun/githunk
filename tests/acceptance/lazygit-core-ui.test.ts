@@ -5,7 +5,7 @@ import { createMockMouse } from "@opentui/core/testing"
 import { heightOf, FOLDED_PANE_HEIGHT } from "../../src/ui/layout"
 import { paneScrollbar } from "../../src/ui/panes/common"
 import type { FocusId } from "../../src/ui/focus"
-import { copySelection, selectionFromRenderable } from "../../src/domain/diff/selection"
+import { copySelection } from "../../src/domain/diff/selection"
 import type { MainPaneContent } from "../../src/ui/panes/main-pane"
 
 async function expectGit(repository: TempRepository, args: readonly string[]): Promise<void> {
@@ -640,12 +640,10 @@ describe("lazygit core UI acceptance", () => {
     if (doc) {
       const lineWithUnicode = doc.lines.find((l) => l.raw.includes("€") || l.raw.includes("🙂"))
       expect(lineWithUnicode).toBeDefined()
-      const textViewUnicode = view.mainPane.text as unknown as {
-        setSelection: (start: number, end: number) => void
-        getSelectedText: () => string
-        getSelection: () => { start?: number; end?: number } | null
-        hasSelection: () => boolean
-        resetSelection: () => void
+      const textViewUnicode = view.mainPane.text as typeof view.mainPane.text & {
+        hasSelection?: () => boolean
+        getSelectedText?: () => string
+        resetSelection?: () => void
       }
       if (typeof textViewUnicode.resetSelection === "function") textViewUnicode.resetSelection()
       const textModeCopy = copySelection(doc, { valid: true, startUtf16: 0, endUtf16: doc.text.length, active: true }, "text")
@@ -662,23 +660,37 @@ describe("lazygit core UI acceptance", () => {
       view.mainPane.text.scrollY = 0
       view.mainPane.text.scrollX = 0
       const mainGeom = harness.paneTextGeometry("main")!
-      await mouse.drag(mainGeom.screenX + 1, mainGeom.screenY + 2, mainGeom.screenX + 10, mainGeom.screenY + 2)
-      await harness.flush()
-      const hasSelAfterDrag = typeof textViewUnicode.hasSelection === "function" ? textViewUnicode.hasSelection() : false
-      if (hasSelAfterDrag) {
-        const nativeRange = textViewUnicode.getSelection()
-        const selText = textViewUnicode.getSelectedText()
-        const mapped = selectionFromRenderable(doc, nativeRange ?? {}, selText)
-        const viaCopy = copySelection(doc, mapped, "text")
-        expect(viaCopy.length).toBeGreaterThan(0)
-        expect(viaCopy).not.toContain("Local Branches")
-        expect(viaCopy).not.toContain("5 Stash")
-        const copiedViaService = copySelection(doc, mapped, "text")
-        expect(copiedViaService).toBe(viaCopy)
+      const captured = harness.captureSpans()
+      const row = captured.lines.findIndex((line) => line.spans.some((span) => span.text.includes("a€🙂")))
+      expect(row).toBeGreaterThanOrEqual(0)
+      let column = -1
+      let x = 0
+      for (const span of captured.lines[row]!.spans) {
+        const index = span.text.indexOf("a€🙂")
+        if (index >= 0) {
+          column = x + index
+          break
+        }
+        x += span.width
       }
-      const leftPaneText = view.renderedListText("branches") + view.renderedListText("commits")
-      const copiedAll = copySelection(doc, { valid: true, startUtf16: 0, endUtf16: doc.text.length, active: true }, "text")
-      expect(copiedAll).not.toContain(leftPaneText.slice(0, 20))
+      expect(column).toBeGreaterThanOrEqual(mainGeom.screenX)
+      await mouse.drag(column, row, column + 3, row)
+      await harness.flush()
+      expect(textViewUnicode.hasSelection?.()).toBe(true)
+      const copiedViaMouse: string[] = []
+      const rendererClipboard = harness.renderer as unknown as {
+        isOsc52Supported: () => boolean
+        copyToClipboardOSC52: (text: string) => boolean
+      }
+      rendererClipboard.isOsc52Supported = () => true
+      rendererClipboard.copyToClipboardOSC52 = (text) => {
+        copiedViaMouse.push(text)
+        return true
+      }
+      await harness.pressKey("o", { ctrl: true })
+      await harness.flush()
+      expect(copiedViaMouse).toEqual(["a€🙂"])
+      expect(harness.frame()).not.toContain("Selection rejected")
       if (typeof textViewUnicode.resetSelection === "function") textViewUnicode.resetSelection()
     }
 

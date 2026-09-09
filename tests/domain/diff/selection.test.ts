@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { parseDiff } from "../../../src/domain/diff/parse"
 import type { DiffDocument } from "../../../src/domain/diff/document"
 import { renderDiff } from "../../../src/domain/diff/render"
-import { copySelection, selectionFromRenderable } from "../../../src/domain/diff/selection"
+import { copySelection } from "../../../src/domain/diff/selection"
 import {
   eagerDiffSelectionProjection,
   resolveMainSelection,
@@ -21,23 +21,6 @@ function doc(): Fixture {
 }
 
 describe("precise diff selection and copy", () => {
-  test("maps display-number selections and normalizes reversed drags", () => {
-    const value = doc()
-    const rendered = value.rendered!
-    const start = rendered.displayText.indexOf("new")
-    const end = start + "new".length
-    const selected = rendered.displayText.slice(start, end)
-    const selection = selectionFromRenderable(value, { start: end, end: start }, selected)
-    expect(selection.valid).toBe(true)
-    expect(copySelection(value, selection, "text")).toBe("new")
-  })
-
-  test("rejects pane contamination or native/display mismatches", () => {
-    const value = doc()
-    const selection = selectionFromRenderable(value, { start: 0, end: 4 }, "LEFT")
-    expect(selection.valid).toBe(false)
-    expect(copySelection(value, selection, "text")).toBe("")
-  })
 
   test("resolves exact projection ranges across text, decoration, and document segments", () => {
     const value = doc()

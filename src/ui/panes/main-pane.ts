@@ -1,7 +1,7 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import type { DiffDocument, DiffFile } from "../../domain/diff/document"
-import type { DocumentSelection, RenderableCopySource } from "../../domain/diff/selection"
+import type { DocumentSelection } from "../../domain/diff/selection"
 import { eagerDiffSelectionProjection, resolveMainSelection, textSelectionProjection, type MainSelection, type MainSelectionProjection, type NativeSelectionRange } from "../../domain/diff/selection-projection"
 import { renderDiff } from "../../domain/diff/render"
 import { changedIndexesInDiffLineRange, createDiffLineRangeState, diffLineSelectionRange, type DiffLineRangeState } from "../../domain/diff/line-selection"
@@ -51,21 +51,6 @@ export type MainPaneContent = {
   readonly plainText?: string
 }
 
-/** Returns the semantic source used by exact copy, not the pane's styled display representation. */
-export function getMainPaneCopySource(pane: PaneHandle): RenderableCopySource | undefined {
-  const content = installedContents.get(pane)
-  if (content === undefined) return undefined
-  if (content.document !== undefined) {
-    return {
-      kind: "diff",
-      document: content.document,
-      ...(content.preamble === undefined ? {} : { displayPrefix: content.preamble }),
-    }
-  }
-  if (content.ansi !== undefined) return { kind: "text", text: `${normalizedPreamble(content.preamble ?? "")}${content.ansi.text}` }
-  if (content.plainText !== undefined) return { kind: "text", text: content.plainText }
-  return { kind: "text", text: content.preamble ?? "No content" }
-}
 
 /**
  * The titles lazygit gives the main view per panel-3 selection. The panel, not the selected ref,
@@ -310,9 +295,6 @@ function applyMainDiffLineVisualSelection(pane: PaneHandle, resetWhenInactive = 
   else if (resetWhenInactive) text.resetSelection?.()
 }
 
-export function getMainPointerSelection(pane: PaneHandle): DocumentSelection | undefined {
-  return virtualMainPaneFor(pane)?.selection()
-}
 export function setMainDiffLineRangeState(pane: PaneHandle, state: DiffLineRangeState): void {
   lineRanges.set(pane, state)
   const virtual = virtualMainPaneFor(pane)
