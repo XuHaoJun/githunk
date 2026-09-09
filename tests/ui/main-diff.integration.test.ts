@@ -533,6 +533,7 @@ describe("main pane keyboard line ranges", () => {
     }
     await harness.pressKey("o", { ctrl: true })
     expect(copied).toEqual([expected])
+    expect(harness.frame()).not.toContain("Selection rejected")
   })
   test("normalizes a reverse virtual mouse drag to the same raw range", async () => {
     harness = await virtualChangedFileHarness()
