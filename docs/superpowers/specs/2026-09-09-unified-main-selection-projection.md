@@ -2,7 +2,7 @@
 
 Date: 2026-09-09
 Branch: `fix/copy-virtual-commit-preamble`
-Status: proposed design, awaiting written approval
+Status: approved design; implementation planned
 
 ## Goal
 
