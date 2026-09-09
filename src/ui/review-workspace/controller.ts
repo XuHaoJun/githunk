@@ -611,7 +611,7 @@ export class ReviewWorkspaceController {
   > {
     const current = this._state
     if (current === undefined || this._baseSelection !== undefined) return { ok: false, reason: "unavailable" }
-    const pending = current.feedback.filter((feedback) => ledgerVerdict(feedback) !== "resolved")
+    const pending = current.feedback.filter((feedback) => feedback.resolution === "active" && ledgerVerdict(feedback) !== "resolved")
     if (pending.length === 0) return { ok: false, reason: "nothing-to-hand-off" }
 
     const reviewId = current.document.identity.id
@@ -632,7 +632,7 @@ export class ReviewWorkspaceController {
     }
     const at = this.nowImpl()
     const headOid = current.document.generation.headOid
-    const mailbox = buildHandoffMailbox({ document: handoffDocument, feedback: current.feedback }, { generatedAt: at, headOid })
+    const mailbox = buildHandoffMailbox({ document: handoffDocument, feedback: pending }, { generatedAt: at, headOid })
     const freshlyHandedOff = pending.filter((feedback) => feedback.status !== "handed-off")
     const items = freshlyHandedOff.map((feedback) => {
       // Capture what each objection points at now. Once the code changes the

@@ -162,6 +162,48 @@ describe("branch review — open-objections ledger", () => {
       await repo.cleanup()
     }
   })
+  test("does not hand off stale feedback or count it as new work", async () => {
+    const repo = await createTempRepository()
+    try {
+      await repo.write("app.ts", "one\n")
+      await repo.git(["add", "."])
+      await repo.git(["commit", "-qm", "base"])
+      await repo.git(["checkout", "-qb", "feature"])
+      await repo.write("app.ts", "changed\n")
+      await repo.git(["commit", "-qam", "change"])
+
+      const runner = new GitRunner({ cwd: repo.path })
+      const controller = new ReviewWorkspaceController({ runner })
+      await controller.open("refs/heads/master")
+      const file = controller.state!.document.files[0]!
+      const anchor = createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 })
+      for (const id of ["active", "stale"] as const) {
+        controller.dispatchIntent({
+          type: "feedback/start-draft",
+          anchor,
+          kind: "note",
+          severity: "comment",
+          body: id,
+        })
+        controller.dispatchIntent({ type: "feedback/create", id, createdAt: "2026-09-08T01:00:00.000Z" })
+      }
+      const current = controller.state!
+      ;(controller as unknown as { _state: ReviewState })._state = {
+        ...current,
+        feedback: current.feedback.map((feedback) => feedback.id === "stale" ? { ...feedback, resolution: "stale" as const } : feedback),
+      }
+
+      const outcome = await controller.handoffFeedback()
+      expect(outcome).toMatchObject({ ok: true, handedOff: 1, total: 1 })
+      const mailboxPath = (await runner.run(["rev-parse", "--git-path", HANDOFF_JSON_PATH])).stdout.trim()
+      const mailbox = JSON.parse(await Bun.file(`${repo.path}/${mailboxPath}`).text()) as { items: { id: string }[] }
+      expect(mailbox.items.map((item) => item.id)).toEqual(["active"])
+      expect(controller.state!.feedback.map((feedback) => feedback.status)).toEqual(["handed-off", undefined])
+      await controller.destroy()
+    } finally {
+      await repo.cleanup()
+    }
+  })
   test("refreshing an unchanged generation reloads agent replies", async () => {
     const repo = await createTempRepository()
     try {

@@ -229,9 +229,10 @@ describe("the mailbox", () => {
     }])
   })
 
-  test("leaves out what the reviewer already closed", () => {
+  test("leaves out what the reviewer already closed or can no longer anchor", () => {
     const state = stateWith([file], [
       makeFeedback({ id: "live", anchor: range }),
+      makeFeedback({ id: "stale", anchor: range, resolution: "stale" }),
       makeFeedback({ id: "done", anchor: range, status: "resolved" }),
     ])
     const mailbox = buildHandoffMailbox(state, { generatedAt: "t", headOid: HANDOFF_OID })

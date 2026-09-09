@@ -283,7 +283,7 @@ export function buildHandoffMailbox(
   input: { generatedAt: string; headOid: string },
 ): HandoffMailbox {
   const items = state.feedback
-    .filter((feedback) => ledgerVerdict(feedback) !== "resolved")
+    .filter((feedback) => feedback.resolution === "active" && ledgerVerdict(feedback) !== "resolved")
     .map((feedback): HandoffItem => {
       const range = feedback.anchor.kind === "range" ? feedback.anchor : null
       return {
