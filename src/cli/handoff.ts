@@ -8,6 +8,7 @@
  * githunk reads as data. Separate files, separate owners, no lock.
  */
 import { GitRunner } from "../git/runner"
+import { z } from "zod"
 import { LocalStateFile } from "../storage/local-state-file"
 import {
   HANDOFF_JSON_PATH,
@@ -19,6 +20,23 @@ import {
 } from "../review/core/ledger"
 
 export type HandoffOutcome = { readonly text: string; readonly exitCode: number }
+const handoffMailboxSchema = z
+  .object({
+    items: z.array(z.object({ id: z.string().min(1) }).passthrough()),
+  })
+  .passthrough()
+
+function handoffContainsId(raw: string | undefined, id: string): boolean {
+  if (raw === undefined || raw.trim() === "") return false
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return false
+  }
+  const mailbox = handoffMailboxSchema.safeParse(parsed)
+  return mailbox.success && mailbox.data.items.some((item) => item.id === id)
+}
 
 export async function runHandoff(input: { json: boolean; cwd: string }): Promise<HandoffOutcome> {
   const runner = new GitRunner({ cwd: input.cwd })
@@ -43,9 +61,17 @@ export async function runHandoff(input: { json: boolean; cwd: string }): Promise
 }
 
 export async function runHandoffReply(input: { id: string; body: string; cwd: string }): Promise<HandoffOutcome> {
+  if (input.id.trim() === "" || input.body.trim() === "") {
+    return { text: "handoff reply requires a non-empty id and body", exitCode: 1 }
+  }
   const runner = new GitRunner({ cwd: input.cwd })
+  const mailboxFile = new LocalStateFile({ runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
   const file = new LocalStateFile({ runner, relativePath: HANDOFF_REPLIES_PATH, pathKind: "handoff" })
   try {
+    const mailbox = await mailboxFile.readText()
+    if (!handoffContainsId(mailbox, input.id)) {
+      return { text: `objection not found in the current handoff: ${input.id}`, exitCode: 1 }
+    }
     const existing = parseReviewReplies(await file.readText())
     const at = new Date().toISOString()
     const next = new Map<string, ReviewReply>(existing)

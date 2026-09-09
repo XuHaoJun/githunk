@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createTempRepository } from "../helpers/temp-repository"
 import { GitRunner } from "../../src/git/runner"
+import { runHandoffReply } from "../../src/cli/handoff"
 import { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
 import { ReviewStateStore } from "../../src/review/storage/review-state-store"
 import { createRangeAnchor } from "../../src/review/core/anchors"
@@ -191,6 +192,17 @@ describe("branch review — open-objections ledger", () => {
 
       expect(controller.replies.get("fb-1")?.body).toBe("the change is intentional")
       await controller.destroy()
+    } finally {
+      await repo.cleanup()
+    }
+  })
+  test("rejects blank and unknown handoff replies", async () => {
+    const repo = await createTempRepository()
+    try {
+      const blank = await runHandoffReply({ id: "fb-1", body: "   ", cwd: repo.path })
+      expect(blank.exitCode).not.toBe(0)
+      const unknown = await runHandoffReply({ id: "missing", body: "reason", cwd: repo.path })
+      expect(unknown.exitCode).not.toBe(0)
     } finally {
       await repo.cleanup()
     }

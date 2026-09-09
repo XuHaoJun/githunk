@@ -268,7 +268,7 @@ describe("replies are read as data, never trusted as structure", () => {
   })
 
   test("entries missing an id or a body are dropped, not defaulted", () => {
-    const raw = JSON.stringify({ replies: [{ id: "", body: "x" }, { id: "a" }, { body: "b" }, { id: "ok", body: "kept" }] })
+    const raw = JSON.stringify({ replies: [{ id: "", body: "x" }, { id: "a" }, { body: "b" }, { id: "space", body: "   " }, { id: "ok", body: "kept" }] })
     const replies = parseReviewReplies(raw)
     expect([...replies.keys()]).toEqual(["ok"])
   })

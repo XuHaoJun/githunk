@@ -85,8 +85,10 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
   const startDirectory = options.path ?? (
     update === undefined && handoff === undefined && handoffReply === undefined ? positional : undefined
   )
-  if (update !== undefined) return { kind: "update", ...update }
   if (handoffReply !== undefined) {
+    if (handoffReply.id.trim() === "" || handoffReply.body.trim() === "") {
+      return { kind: "error", message: "handoff reply requires a non-empty id and body", exitCode: 1 }
+    }
     return {
       kind: "handoff-reply",
       ...handoffReply,

@@ -89,6 +89,10 @@ describe("handoff — the agent's contract", () => {
       .toEqual({ kind: "handoff-reply", id: "fb-1", body: "why not", startDirectory: "/tmp/repo" })
   })
 
+  test("refuses empty reply id and body values", () => {
+    expect(parseCliArgs(["handoff", "reply", "--id=", "--body=why"]).kind).toBe("error")
+    expect(parseCliArgs(["handoff", "reply", "--id=fb-1", "--body=   "]).kind).toBe("error")
+  })
   test("answers one objection by id", () => {
     expect(parseCliArgs(["handoff", "reply", "--id", "fb-1", "--body", "why not"]))
       .toEqual({ kind: "handoff-reply", id: "fb-1", body: "why not" })

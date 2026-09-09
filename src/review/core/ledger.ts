@@ -236,7 +236,7 @@ export function parseReviewReplies(raw: string | undefined): ReviewReplies {
   for (const entry of replies) {
     if (typeof entry !== "object" || entry === null) continue
     const { id, body, at } = entry as { id?: unknown; body?: unknown; at?: unknown }
-    if (typeof id !== "string" || id === "" || typeof body !== "string" || body === "") continue
+    if (typeof id !== "string" || id.trim() === "" || typeof body !== "string" || body.trim() === "") continue
     out.set(id, { id, body, at: typeof at === "string" ? at : "" })
   }
   return out
