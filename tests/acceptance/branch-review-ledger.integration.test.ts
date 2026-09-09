@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createTempRepository } from "../helpers/temp-repository"
 import { GitRunner } from "../../src/git/runner"
-import { runHandoffReply } from "../../src/cli/handoff"
+import { runHandoff, runHandoffReply } from "../../src/cli/handoff"
 import { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
 import { ReviewStateStore } from "../../src/review/storage/review-state-store"
 import { createRangeAnchor } from "../../src/review/core/anchors"
@@ -219,6 +219,17 @@ describe("branch review — open-objections ledger", () => {
       const outcome = await runHandoffReply({ id: "fb-1", body: "reason", cwd: repo.path })
       expect(outcome.exitCode).not.toBe(0)
       expect(await repliesFile.readText()).toBe(malformed)
+    } finally {
+      await repo.cleanup()
+    }
+  })
+  test("names the actual handoff key when no mailbox exists", async () => {
+    const repo = await createTempRepository()
+    try {
+      const outcome = await runHandoff({ json: false, cwd: repo.path })
+      expect(outcome.exitCode).not.toBe(0)
+      expect(outcome.text).toContain("press A")
+      expect(outcome.text).not.toContain("press H")
     } finally {
       await repo.cleanup()
     }

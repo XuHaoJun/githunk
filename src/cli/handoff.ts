@@ -65,7 +65,7 @@ export async function runHandoff(input: { json: boolean; cwd: string }): Promise
   }
   if (text === undefined) {
     return {
-      text: "No handoff yet. Open githunk, review the branch, and press H to hand off open feedback.",
+      text: "No handoff yet. Open githunk, review the branch, and press A to hand off open feedback.",
       exitCode: 1,
     }
   }
