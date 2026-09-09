@@ -49,6 +49,10 @@ function stableJson(value: unknown): string {
   }
   return JSON.stringify(value)
 }
+async function restoreLocalStateFile(file: LocalStateFile, previous: string | undefined): Promise<void> {
+  if (previous === undefined) await file.remove()
+  else await file.writeText(previous)
+}
 
 function normalizeActiveProjection(
   projection: ReviewProjection,
@@ -494,6 +498,22 @@ export class ReviewWorkspaceController {
       }
     }
   }
+  private async dispatchAndPersist(action: ReviewAction): Promise<boolean> {
+    const current = this._state
+    if (current === undefined || this._baseSelection !== undefined) return false
+    const next = reduceReviewState(current, action)
+    if (next === current) return false
+    this._state = next
+    this.publish()
+    try {
+      await this.persistState()
+      return true
+    } catch (error) {
+      this._state = current
+      this.publish()
+      throw error
+    }
+  }
 
   dispatchIntent(intent: ReviewIntent): boolean {
     const current = this._state
@@ -590,30 +610,38 @@ export class ReviewWorkspaceController {
     const at = this.nowImpl()
     const headOid = current.document.generation.headOid
     const mailbox = buildHandoffMailbox(current, { generatedAt: at, headOid })
+    const freshlyHandedOff = pending.filter((feedback) => feedback.status !== "handed-off")
+    const items = freshlyHandedOff.map((feedback) => {
+      // Capture what each objection points at now. Once the code changes the
+      // anchor can only say that it moved; the text is the only thing that can
+      // still show the reviewer what they objected to.
+      const excerpt = linesForAnchor(feedback.anchor, current.document)
+      return { id: feedback.id, ...(excerpt === undefined ? {} : { excerpt }) }
+    })
 
     const jsonFile = new LocalStateFile({ runner: this.runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
     const markdownFile = new LocalStateFile({ runner: this.runner, relativePath: HANDOFF_MARKDOWN_PATH, pathKind: "handoff" })
-    let path: string
+    let previousJson: string | undefined
+    let previousMarkdown: string | undefined
     try {
-      await jsonFile.writeText(`${JSON.stringify(mailbox, null, 2)}\n`)
-      await markdownFile.writeText(renderHandoffMarkdown(mailbox))
-      path = jsonFile.path
+      previousJson = await jsonFile.readText()
+      previousMarkdown = await markdownFile.readText()
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : String(err) }
     }
 
-    const freshlyHandedOff = pending.filter((feedback) => feedback.status !== "handed-off")
-    if (freshlyHandedOff.length > 0) {
-      // Capture what each objection points at now. Once the code changes the
-      // anchor can only say that it moved; the text is the only thing that can
-      // still show the reviewer what they objected to.
-      const items = freshlyHandedOff.map((feedback) => {
-        const excerpt = linesForAnchor(feedback.anchor, current.document)
-        return { id: feedback.id, ...(excerpt === undefined ? {} : { excerpt }) }
-      })
-      this.dispatch({ type: "feedback/handoff", items, at, headOid })
+    try {
+      await jsonFile.writeText(`${JSON.stringify(mailbox, null, 2)}\n`)
+      await markdownFile.writeText(renderHandoffMarkdown(mailbox))
+      if (freshlyHandedOff.length > 0) {
+        await this.dispatchAndPersist({ type: "feedback/handoff", items, at, headOid })
+      }
+      return { ok: true, handedOff: freshlyHandedOff.length, total: pending.length, path: jsonFile.path }
+    } catch (err) {
+      await restoreLocalStateFile(jsonFile, previousJson).catch(() => undefined)
+      await restoreLocalStateFile(markdownFile, previousMarkdown).catch(() => undefined)
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) }
     }
-    return { ok: true, handedOff: freshlyHandedOff.length, total: pending.length, path }
   }
 
   /** Close an item a human has looked at. */
