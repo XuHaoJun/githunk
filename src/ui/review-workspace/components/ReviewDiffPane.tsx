@@ -263,7 +263,7 @@ export function ReviewDiffPane({
     const revealingFeedback = feedbackOffset >= 0
     const rowOffset = revealingFeedback
       ? feedbackOffset
-      : hunkSectionRowOffset(selectedFile, layout, Math.max(0, selectedHunkIndex), state, expandedSourceByGap, index > 0)
+      : hunkSectionRowOffset(selectedFile, layout, Math.max(0, selectedHunkIndex), state, expandedSourceByGap, index > 0, replies)
     const target = sectionTop + Math.min(Math.max(0, rowOffset), Math.max(0, sectionHeight - 1))
 
     const revealSelection = () => {
@@ -333,8 +333,9 @@ export function ReviewDiffPane({
           scrollTop,
           sectionOffsets: window.offsets,
           ...(expandedSourceByGap ? { expandedSourceByGap } : {}),
+          ...(replies ? { replies } : {}),
         })),
-    [expandedSourceByGap, files, layout, scrollTop, state, stickyRows, window.offsets],
+    [expandedSourceByGap, files, layout, replies, scrollTop, state, stickyRows, window.offsets],
   )
 
   const leadingSpacer = window.offsets[window.first] ?? 0

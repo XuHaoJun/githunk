@@ -1,6 +1,7 @@
 export {
   buildHunkSplitRows,
   buildHunkStackRows,
+  feedbackRowGroups,
   hunkGapBefore,
   hunkHeaderText,
   hunkDiffAddresses,

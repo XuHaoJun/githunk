@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { createInitialReviewState } from "../../../src/review/core/state"
+import { createRangeAnchor } from "../../../src/review/core/anchors"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { toHunkReviewFile } from "../../../src/ui/review-workspace/hunk-review-model"
-import { hunkSectionRowCount } from "../../../src/ui/review-workspace/components/ReviewDiffSection"
+import { hunkSectionRowCount, hunkSectionRowOffset } from "../../../src/ui/review-workspace/components/ReviewDiffSection"
 import { resolveStickyDiffHeader } from "../../../src/ui/review-workspace/sticky-header"
 import type { HunkReviewFile } from "../../../src/ui/review-workspace/hunk-review-model"
 import type { ReviewFile } from "../../../src/review/core/types"
@@ -186,6 +187,25 @@ describe("Sticky diff header", () => {
       .toMatchObject({ hunkIndex: 0 })
   })
 
+  test("includes feedback rows before a later hunk in its offset", () => {
+    const file = twoHunkFile()
+    const base = makeState([file])
+    const state = {
+      ...base,
+      feedback: [{
+        id: "feedback-1",
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "look here",
+        anchor: createRangeAnchor(file, { side: "new", startLine: 10, endLine: 10 }),
+        resolution: "active" as const,
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:00.000Z",
+      }],
+    }
+
+    expect(hunkSectionRowOffset(toHunkReviewFile(file), "stack", 1, state)).toBe(6)
+  })
   test("reports a binary file with no hunk", () => {
     const binary = makeFile({ key: "logo.png", path: "logo.png", contentId: "content-binary", hunks: [], source: "binary" })
     const state = makeState([binary])

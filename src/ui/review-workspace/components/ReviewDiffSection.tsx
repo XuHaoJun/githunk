@@ -4,7 +4,7 @@ import { useMemo } from "react"
 import type { ReviewState } from "../../../review/core/state"
 import type { HighlightPayload } from "../../../review/git/highlight/highlight-payload"
 import type { HunkReviewFile } from "../hunk-review-model"
-import { buildHunkSplitRows, buildHunkStackRows, hunkGapBefore, hunkDiffAddresses, type HunkDiffAddress, type HunkDiffRow } from "../hunk-diff-rows"
+import { buildHunkSplitRows, buildHunkStackRows, feedbackRowGroups, hunkGapBefore, hunkDiffAddresses, type HunkDiffAddress, type HunkDiffRow } from "../hunk-diff-rows"
 import { ReviewDiffRow } from "./ReviewDiffRow"
 
 export type ReviewDiffSectionProps = Readonly<{
@@ -105,6 +105,33 @@ function hunkBodyRowCount(hunk: HunkReviewFile["metadata"]["hunks"][number], lay
   }
   return count
 }
+function feedbackRowsBeforeHunk(
+  file: HunkReviewFile,
+  state: ReviewState,
+  layout: "split" | "stack",
+  hunkIndex: number,
+  replies?: ReviewReplies,
+): number {
+  let count = 0
+  for (const group of feedbackRowGroups(file, state, layout, replies)) {
+    if (group.anchor.kind !== "range") continue
+    const ownerIndex = file.metadata.hunks.findIndex((hunk) => {
+      const start = group.anchor.side === "old" ? hunk.deletionStart : hunk.additionStart
+      const lineCount = group.anchor.side === "old" ? hunk.deletionCount : hunk.additionCount
+      return lineCount > 0
+        && group.anchor.startLine >= start
+        && group.anchor.endLine < start + lineCount
+    })
+    if (ownerIndex >= 0 && ownerIndex < hunkIndex) count += group.rows.length
+  }
+  return count
+}
+
+/**
+ * The row model appends an objection beneath the source row it names. Hunk
+ * headers after that row therefore move down by the whole group, including
+ * replies and addressed excerpts.
+ */
 
 export function hunkSectionRowOffset(
   file: HunkReviewFile,
@@ -113,6 +140,7 @@ export function hunkSectionRowOffset(
   state?: ReviewState,
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
   showDivider = false,
+  replies?: ReviewReplies,
 ): number {
   const dividerRows = showDivider ? 1 : 0
   if (hunkIndex <= 0) return dividerRows + 1
@@ -134,6 +162,7 @@ export function hunkSectionRowOffset(
     const source = expandedSourceByGap?.get(`${file.id}:${selectedGap.gapId}`)
     offset += expanded && source ? Math.min(selectedGap.lineCount, source.length) : 1
   }
+  if (state !== undefined) offset += feedbackRowsBeforeHunk(file, state, layout, hunkIndex, replies)
   return offset
 }
 /**
