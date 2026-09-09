@@ -45,6 +45,33 @@ describe("panel 3 render-to-main", () => {
     expect(harness.frame()).toContain("0 Main — Log")
   })
 
+  test("copies selected text from a branch's ANSI preview", async () => {
+    harness = await createShellHarness({ commits: ["first commit", "second commit"] })
+    await harness.pressKey("3")
+    await harness.app.view!.whenPreviewSettled()
+    await harness.pressKey("0")
+
+    const view = harness.app.view!
+    const content = view.mainContent!
+    const selected = "second commit"
+    const start = content.ansi!.text.indexOf(selected)
+    const text = view.mainPane.text as typeof view.mainPane.text & { setSelection?: (start: number, end: number) => void }
+    text.setSelection?.(start, start + selected.length)
+    await harness.flush()
+    expect(text.getSelectedText()).toBe(selected)
+
+    const copied: string[] = []
+    const renderer = harness.renderer as unknown as { isOsc52Supported: () => boolean; copyToClipboardOSC52: (value: string) => boolean }
+    renderer.isOsc52Supported = () => true
+    renderer.copyToClipboardOSC52 = (value) => {
+      copied.push(value)
+      return true
+    }
+    await harness.pressKey("o", { ctrl: true })
+    expect(copied).toEqual([selected])
+    expect(harness.frame()).toContain("OSC52 emitted")
+  })
+
   test("moving the selection re-runs the graph for the newly selected branch", async () => {
     harness = await createShellHarness({ commits: ["shared base"] })
     await harness.repository.git(["checkout", "-b", "feature", "--quiet"])

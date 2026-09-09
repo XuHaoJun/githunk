@@ -33,6 +33,33 @@ describe("precise diff selection and copy", () => {
     expect(copySelection(value, selection, "text")).toBe("")
   })
 
+  test("maps diff selections after a visible preamble and rejects its boundary", () => {
+    const value = doc()
+    const rendered = value.rendered!
+    const preamble = "commit abc\n"
+    const fullDisplay = `${preamble}${rendered.displayText}`
+    const bodyStart = rendered.displayText.indexOf("new")
+    const start = preamble.length + bodyStart
+    const selected = fullDisplay.slice(start, start + "new".length)
+    const selection = selectionFromRenderable(value, { start, end: start + selected.length }, selected, preamble)
+    expect(selection.valid).toBe(true)
+    expect(copySelection(value, selection, "text")).toBe("new")
+    const utf8Preamble = "提交🙂\n"
+    const utf8Start = Buffer.byteLength(utf8Preamble, "utf8") + Buffer.byteLength(rendered.displayText.slice(0, bodyStart), "utf8")
+    const utf8Selection = selectionFromRenderable(
+      value,
+      { unit: "utf8", start: utf8Start, end: utf8Start + Buffer.byteLength("new", "utf8") },
+      "new",
+      utf8Preamble,
+    )
+    expect(copySelection(value, utf8Selection, "text")).toBe("new")
+
+    const boundaryStart = preamble.length - 1
+    const boundaryEnd = preamble.length + 1
+    const boundary = selectionFromRenderable(value, { start: boundaryStart, end: boundaryEnd }, fullDisplay.slice(boundaryStart, boundaryEnd), preamble)
+    expect(boundary.valid).toBe(false)
+  })
+
   test("strips exactly one marker while preserving indentation and newlines", () => {
     const value = doc()
     const addition = value.lines.find((line) => line.kind === "addition")!

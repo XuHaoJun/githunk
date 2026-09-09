@@ -1,7 +1,7 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import type { DiffDocument, DiffFile } from "../../domain/diff/document"
-import type { DocumentSelection } from "../../domain/diff/selection"
+import type { DocumentSelection, RenderableCopySource } from "../../domain/diff/selection"
 import { renderDiff } from "../../domain/diff/render"
 import { changedIndexesInDiffLineRange, createDiffLineRangeState, diffLineSelectionRange, type DiffLineRangeState } from "../../domain/diff/line-selection"
 import type { AnsiText } from "../ansi"
@@ -41,6 +41,22 @@ export type MainPaneContent = {
    */
   readonly ansi?: AnsiText
   readonly plainText?: string
+}
+
+/** Returns the semantic source used by exact copy, not the pane's styled display representation. */
+export function getMainPaneCopySource(pane: PaneHandle): RenderableCopySource | undefined {
+  const content = installedContents.get(pane)
+  if (content === undefined) return undefined
+  if (content.document !== undefined) {
+    return {
+      kind: "diff",
+      document: content.document,
+      ...(content.preamble === undefined ? {} : { displayPrefix: content.preamble }),
+    }
+  }
+  if (content.ansi !== undefined) return { kind: "text", text: `${normalizedPreamble(content.preamble ?? "")}${content.ansi.text}` }
+  if (content.plainText !== undefined) return { kind: "text", text: content.plainText }
+  return { kind: "text", text: content.preamble ?? "No content" }
 }
 
 /**

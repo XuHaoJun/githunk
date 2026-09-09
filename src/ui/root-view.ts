@@ -61,11 +61,11 @@ import {
   type FileTreeState,
 } from "./file-tree"
 import { submoduleFullName, submoduleFullPath, type SubmoduleConfig } from "../domain/submodule"
-import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainPointerSelection, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainDiffVisualRowRange, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, virtualMainPaneFor, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
+import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainPaneCopySource, getMainPaneContent, getMainPointerSelection, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainDiffVisualRowRange, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, virtualMainPaneFor, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { PANE_SCROLLBAR_GUTTER, paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
-import { copySelection, selectionFromRenderable, type DocumentSelection } from "../domain/diff/selection"
+import { copySelection, resolveRenderableCopySelection, selectionFromRenderable, type DocumentSelection, type RenderableCopySelection } from "../domain/diff/selection"
 import { clearDiffLineRange, diffLineSelectionRange, expandDiffLineRange, moveDiffLineSelection, toggleDiffLineRange } from "../domain/diff/line-selection"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
@@ -3611,7 +3611,7 @@ export class RootView {
     }
     const nativeRange = this.panes.main.text.getSelection()
     if (nativeRange) {
-      const selection = selectionFromRenderable(document, nativeRange, this.panes.main.text.getSelectedText())
+      const selection = selectionFromRenderable(document, nativeRange, this.panes.main.text.getSelectedText(), getMainPaneContent(this.panes.main)?.preamble)
       if (selection.valid && selection.endUtf16 > selection.startUtf16) {
         return { document, indexes: changeLineIndexes(document, selection.startUtf16, selection.endUtf16) }
       }
@@ -4342,12 +4342,13 @@ export class RootView {
   }
   private copyMainMode(mode: CopyMode): void {
     const pane = this.panes.main
-    const document = getMainDocument(pane)
-    if (!document) {
+    const source = getMainPaneCopySource(pane)
+    if (source === undefined) {
       pane.box.bottomTitle = "No text selected"
       this.root.requestRender()
       return
     }
+    const document = source.kind === "diff" ? source.document : undefined
     const rawPointerSelection = getMainPointerSelection(pane)
     // Same non-empty gate as mainActionTarget/mainChangeSelection: a zero-length click must not
     // block the keyboard/native fallback for text copy.
@@ -4356,7 +4357,7 @@ export class RootView {
       : undefined
     const keyboardSelection = getMainDiffLineSelection(pane)
     const nativeRange = pane.text.getSelection()
-    let selection: DocumentSelection | undefined = mode === "hunk" || mode === "file"
+    let selection: DocumentSelection | undefined = document === undefined || mode === "hunk" || mode === "file"
       ? undefined
       : pointerSelection ?? (keyboardSelection === undefined ? undefined : {
         valid: true as const,
@@ -4364,10 +4365,16 @@ export class RootView {
         endUtf16: keyboardSelection.endUtf16,
         active: true as const,
       })
-    if (selection === undefined && pointerSelection === undefined && keyboardSelection === undefined && nativeRange) {
-      selection = selectionFromRenderable(document, nativeRange, pane.text.getSelectedText())
+    let directText: string | undefined
+    let rejected: Extract<RenderableCopySelection, { readonly valid: false }> | undefined
+    if (nativeRange && pointerSelection === undefined && keyboardSelection === undefined) {
+      const resolved = resolveRenderableCopySelection(source, nativeRange, pane.text.getSelectedText())
+      if (!resolved.valid) rejected = resolved
+      else if (resolved.kind === "document") selection = resolved.selection
+      else if (mode === "text") directText = resolved.text
+      else rejected = { valid: false, startUtf16: resolved.startUtf16, endUtf16: resolved.endUtf16, reason: "native/display selection mismatch" }
     }
-    if (!selection && (mode === "hunk" || mode === "file")) {
+    if (!selection && rejected === undefined && document !== undefined && (mode === "hunk" || mode === "file")) {
       const target = getMainCursorTarget(pane)
       if (target) {
         selection = {
@@ -4380,12 +4387,12 @@ export class RootView {
         }
       }
     }
-    const text = copySelection(document, selection, mode)
-    if (selection && !selection.valid) {
-      pane.box.bottomTitle = `Selection rejected: ${selection.reason ?? "native/display mismatch"}`
+    if (rejected !== undefined) {
+      pane.box.bottomTitle = `Selection rejected: ${rejected.reason}`
       this.root.requestRender()
       return
     }
+    const text = directText ?? (document === undefined ? "" : copySelection(document, selection, mode))
     pane.box.bottomTitle = formatCopyResult(this.clipboard.copy(text))
     this.root.requestRender()
   }

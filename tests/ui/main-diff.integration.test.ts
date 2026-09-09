@@ -127,6 +127,157 @@ describe("main pane diff rendering", () => {
     expectIndexed(mainSpanWith(harness, top + 18, "+TWO").fg, 2)
     expect(mainSpans(harness, top + 18)[0]!.attributes & TextAttributes.DIM).toBe(TextAttributes.DIM)
   })
+  test("copies native selections from commit previews after the preamble", async () => {
+    harness = await createShellHarness({
+      width: 140,
+      height: 30,
+      setup: async (repository: TempRepository) => {
+        await repository.write("a.txt", "one\ntwo\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("a.txt", "one\nTWO\nthree\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "second change"])
+      },
+    })
+    await harness.pressKey("4")
+    await harness.app.view!.whenPreviewSettled()
+    await harness.flush()
+    await harness.pressKey("0")
+
+    const view = harness.app.view!
+    const content = view.mainContent
+    const document = content?.document
+    expect(content?.preamble).toBeDefined()
+    expect(document?.rendered).toBeDefined()
+    const preamble = content?.preamble ?? ""
+    const normalizedPreamble = preamble.length === 0 || preamble.endsWith("\n") ? preamble : `${preamble}\n`
+    const bodyStart = document!.rendered!.displayText.indexOf("+TWO")
+    expect(bodyStart).toBeGreaterThanOrEqual(0)
+
+    const text = view.mainPane.text as unknown as {
+      setSelection?: (start: number, end: number) => void
+      getSelectedText?: () => string
+    }
+    text.setSelection?.(normalizedPreamble.length + bodyStart, normalizedPreamble.length + bodyStart + "+TWO".length)
+    await harness.flush()
+    expect(text.getSelectedText?.()).toBe("+TWO")
+
+    const copied: string[] = []
+    const renderer = harness.renderer as unknown as {
+      isOsc52Supported: () => boolean
+      copyToClipboardOSC52: (text: string) => boolean
+    }
+    renderer.isOsc52Supported = () => true
+    renderer.copyToClipboardOSC52 = (value) => {
+      copied.push(value)
+      return true
+    }
+    await harness.pressKey("o", { ctrl: true })
+    expect(copied).toEqual(["+TWO"])
+    expect(harness.frame()).toContain("OSC52 emitted")
+  })
+
+  test("copies a commit id selected from the commit preview preamble", async () => {
+    harness = await createShellHarness({
+      width: 140,
+      height: 30,
+      setup: async (repository: TempRepository) => {
+        await repository.write("a.txt", "one\ntwo\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("a.txt", "one\nTWO\nthree\n")
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "second change"])
+      },
+    })
+    await harness.pressKey("4")
+    await harness.app.view!.whenPreviewSettled()
+    await harness.pressKey("0")
+
+    const view = harness.app.view!
+    const content = view.mainContent!
+    const selected = content.stableId
+    const preamble = content.preamble ?? ""
+    const normalizedPreamble = preamble.length === 0 || preamble.endsWith("\n") ? preamble : `${preamble}\n`
+    const start = normalizedPreamble.indexOf(selected)
+    expect(start).toBeGreaterThanOrEqual(0)
+
+    const text = view.mainPane.text as unknown as {
+      setSelection?: (start: number, end: number) => void
+      getSelectedText?: () => string
+    }
+    text.setSelection?.(start, start + selected.length)
+    await harness.flush()
+    expect(text.getSelectedText?.()).toBe(selected)
+
+    const copied: string[] = []
+    const renderer = harness.renderer as unknown as {
+      isOsc52Supported: () => boolean
+      copyToClipboardOSC52: (value: string) => boolean
+    }
+    renderer.isOsc52Supported = () => true
+    renderer.copyToClipboardOSC52 = (value) => {
+      copied.push(value)
+      return true
+    }
+    await harness.pressKey("o", { ctrl: true })
+    expect(copied).toEqual([selected])
+    expect(harness.frame()).toContain("OSC52 emitted")
+  })
+
+  test("copies a commit id from a virtual commit preview preamble", async () => {
+    harness = await createShellHarness({
+      width: 140,
+      height: 30,
+      setup: async (repository: TempRepository) => {
+        const lineCount = 11_000
+        const base = Array.from({ length: lineCount }, (_, index) => `base ${index}`).join("\n") + "\n"
+        const changed = Array.from({ length: lineCount }, (_, index) => `changed ${index}`).join("\n") + "\n"
+        await repository.write("large.txt", base)
+        await repository.git(["add", "large.txt"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("large.txt", changed)
+        await repository.git(["add", "large.txt"])
+        await repository.git(["commit", "-m", "large change"])
+      },
+    })
+    await harness.pressKey("4")
+    await harness.app.view!.whenPreviewSettled()
+    await harness.pressKey("0")
+
+    const view = harness.app.view!
+    const content = view.mainContent!
+    expect(virtualMainPaneFor(view.mainPane)?.isActive()).toBe(true)
+    const selected = content.stableId
+    const preamble = content.preamble ?? ""
+    const normalizedPreamble = preamble.length === 0 || preamble.endsWith("\n") ? preamble : `${preamble}\n`
+    const start = normalizedPreamble.indexOf(selected)
+    expect(start).toBeGreaterThanOrEqual(0)
+
+    const text = view.mainPane.text as unknown as {
+      setSelection?: (start: number, end: number) => void
+      getSelectedText?: () => string
+    }
+    text.setSelection?.(start, start + selected.length)
+    await harness.flush()
+    expect(text.getSelectedText?.()).toBe(selected)
+
+    const copied: string[] = []
+    const renderer = harness.renderer as unknown as {
+      isOsc52Supported: () => boolean
+      copyToClipboardOSC52: (value: string) => boolean
+    }
+    renderer.isOsc52Supported = () => true
+    renderer.copyToClipboardOSC52 = (value) => {
+      copied.push(value)
+      return true
+    }
+    await harness.pressKey("o", { ctrl: true })
+    expect(copied).toEqual([selected])
+    expect(harness.frame()).toContain("OSC52 emitted")
+  })
+
 
   test("keeps painting diff colours after scrolling deep into a long diff", async () => {
     harness = await createShellHarness({

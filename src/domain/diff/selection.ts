@@ -78,21 +78,53 @@ function mapDisplayRange(document: DiffDocument, start: number, end: number): Do
   return line ? { ...selection, fileIndex: line.fileIndex, ...(line.hunkIndex === undefined ? {} : { hunkIndex: line.hunkIndex }) } : selection
 }
 
-export function selectionFromRenderable(document: DiffDocument, nativeRange: NativeSelectionRange, selectedText: string): DocumentSelection {
+function normalizedDisplayPrefix(prefix: string | undefined): string {
+  if (prefix === undefined || prefix.length === 0 || prefix.endsWith("\n")) return prefix ?? ""
+  return `${prefix}\n`
+}
+
+function appendDisplayCandidate(
+  candidates: Array<{ start: number; end: number; value: string; display: boolean }>,
+  start: number,
+  end: number,
+  fullDisplayText: string,
+  prefixLength: number,
+): void {
+  const bodyStart = start - prefixLength
+  const bodyEnd = end - prefixLength
+  if (bodyStart < 0 || bodyEnd < bodyStart || bodyEnd > fullDisplayText.length - prefixLength) return
+  candidates.push({ start: bodyStart, end: bodyEnd, value: fullDisplayText.slice(start, end), display: true })
+}
+
+/**
+ * Native offsets include the visible preamble when eager main-pane content has one. Ranges that
+ * overlap that preamble are rejected instead of mapping header text into the diff document.
+ */
+export function selectionFromRenderable(document: DiffDocument, nativeRange: NativeSelectionRange, selectedText: string, displayPrefix?: string): DocumentSelection {
   const [start, end] = nativeBounds(nativeRange)
   const rendered = document.rendered
+  const prefix = normalizedDisplayPrefix(displayPrefix)
+  const prefixLength = prefix.length
+  const fullDisplayText = rendered === undefined ? undefined : `${prefix}${rendered.displayText}`
+  const hasDisplayPrefix = prefixLength > 0
   const candidates: Array<{ start: number; end: number; value: string; display: boolean }> = []
   if (nativeRange.unit !== "utf8") {
-    if (rendered && start <= rendered.displayText.length && end <= rendered.displayText.length) candidates.push({ start, end, value: rendered.displayText.slice(start, end), display: true })
-    if (start <= document.text.length && end <= document.text.length) candidates.push({ start, end, value: document.text.slice(start, end), display: false })
+    if (fullDisplayText !== undefined && start <= fullDisplayText.length && end <= fullDisplayText.length) {
+      appendDisplayCandidate(candidates, start, end, fullDisplayText, prefixLength)
+    }
+    if (!hasDisplayPrefix && start <= document.text.length && end <= document.text.length) candidates.push({ start, end, value: document.text.slice(start, end), display: false })
   }
   if (nativeRange.unit === "utf8" || candidates.every((candidate) => candidate.value !== selectedText)) {
-    const displayValue = rendered?.displayText
-    const values = displayValue ? [displayValue, document.text] : [document.text]
+    const values = fullDisplayText === undefined ? [document.text] : [fullDisplayText, document.text]
     const converted = values.map((value) => [utf8BoundaryToUtf16(value, start), utf8BoundaryToUtf16(value, end)] as const)
     for (let index = 0; index < converted.length; index++) {
       const [convertedStart, convertedEnd] = converted[index]!
-      if (convertedStart !== undefined && convertedEnd !== undefined) candidates.push({ start: convertedStart, end: convertedEnd, value: values[index]!.slice(convertedStart, convertedEnd), display: index === 0 && Boolean(displayValue) })
+      if (convertedStart === undefined || convertedEnd === undefined) continue
+      if (index === 0 && fullDisplayText !== undefined) {
+        appendDisplayCandidate(candidates, convertedStart, convertedEnd, fullDisplayText, prefixLength)
+        continue
+      }
+      if (!hasDisplayPrefix) candidates.push({ start: convertedStart, end: convertedEnd, value: values[index]!.slice(convertedStart, convertedEnd), display: false })
     }
   }
   const match = candidates.find((candidate) => candidate.value === selectedText)
@@ -103,6 +135,59 @@ export function selectionFromRenderable(document: DiffDocument, nativeRange: Nat
   }
   return selectionFromRaw(document, match.start, match.end)
 }
+
+/**
+ * Semantic sources available to main-pane copy. Diff sources preserve raw-document copy modes;
+ * text sources represent ANSI/plain output whose selected text is already copy-ready.
+ */
+export type RenderableCopySource =
+  | { readonly kind: "diff"; readonly document: DiffDocument; readonly displayPrefix?: string }
+  | { readonly kind: "text"; readonly text: string }
+
+export type RenderableCopySelection =
+  | { readonly valid: true; readonly kind: "document"; readonly selection: DocumentSelection }
+  | { readonly valid: true; readonly kind: "text"; readonly text: string; readonly startUtf16: number; readonly endUtf16: number }
+  | { readonly valid: false; readonly startUtf16: number; readonly endUtf16: number; readonly reason: string }
+
+function invalidRenderableCopySelection(startUtf16: number, endUtf16: number): RenderableCopySelection {
+  return { valid: false, startUtf16, endUtf16, reason: "native/display selection mismatch" }
+}
+
+function textSelectionFromRenderable(text: string, nativeRange: NativeSelectionRange, selectedText: string): RenderableCopySelection {
+  const [start, end] = nativeBounds(nativeRange)
+  const startUtf16 = nativeRange.unit === "utf8" ? utf8BoundaryToUtf16(text, start) : start
+  const endUtf16 = nativeRange.unit === "utf8" ? utf8BoundaryToUtf16(text, end) : end
+  if (startUtf16 === undefined || endUtf16 === undefined || startUtf16 < 0 || endUtf16 < startUtf16 || endUtf16 > text.length) {
+    return invalidRenderableCopySelection(start, end)
+  }
+  const value = text.slice(startUtf16, endUtf16)
+  return value === selectedText
+    ? { valid: true, kind: "text", text: value, startUtf16, endUtf16 }
+    : invalidRenderableCopySelection(startUtf16, endUtf16)
+}
+
+export function resolveRenderableCopySelection(
+  source: RenderableCopySource,
+  nativeRange: NativeSelectionRange,
+  selectedText: string,
+): RenderableCopySelection {
+  if (source.kind === "text") return textSelectionFromRenderable(source.text, nativeRange, selectedText)
+  const documentSelection = selectionFromRenderable(source.document, nativeRange, selectedText, source.displayPrefix)
+  if (documentSelection.valid) return { valid: true, kind: "document", selection: documentSelection }
+
+  const prefix = normalizedDisplayPrefix(source.displayPrefix)
+  if (prefix.length > 0) {
+    const prefixSelection = textSelectionFromRenderable(prefix, nativeRange, selectedText)
+    if (prefixSelection.valid && prefixSelection.kind === "text" && prefixSelection.endUtf16 <= prefix.length) return prefixSelection
+  }
+  const rendered = source.document.rendered
+  if (prefix.length > 0 && rendered !== undefined) {
+    const visibleSelection = textSelectionFromRenderable(`${prefix}${rendered.displayText}`, nativeRange, selectedText)
+    if (visibleSelection.valid && visibleSelection.kind === "text" && visibleSelection.startUtf16 < prefix.length) return visibleSelection
+  }
+  return invalidRenderableCopySelection(documentSelection.startUtf16, documentSelection.endUtf16)
+}
+
 
 function selectedRange(selection: DocumentSelection | undefined, document: DiffDocument, mode: CopyMode): [number, number] | undefined {
   if (!selection?.valid) return undefined
