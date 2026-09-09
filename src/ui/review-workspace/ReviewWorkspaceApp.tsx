@@ -1206,7 +1206,8 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     && state.draft.anchor.side === "new"
     && state.document.files.some((file) => file.key === state.draft?.anchor.fileKey && file.source !== "binary" && file.source !== "too-large")
   const replacementInvalid = suggestionReplacementInvalid(state)
-  const orphanedFeedback = state.feedback.filter((feedback) => !state.document.files.some((file) => file.key === feedback.anchor.fileKey))
+  const orphanedFeedback = state.feedback.filter((feedback) =>
+    feedback.status !== "resolved" && !state.document.files.some((file) => file.key === feedback.anchor.fileKey))
   const objectionListHeight = Math.min(27, Math.max(6, dimensions.height - 3))
   const objectionEntries = objectionListIndex === null
     ? []

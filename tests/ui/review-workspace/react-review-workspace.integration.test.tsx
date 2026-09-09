@@ -1107,6 +1107,29 @@ describe("React review workspace", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("does not show resolved orphaned feedback in recovery rows", async () => {
+    const file = makeFile("src/current.ts", ["-old", "+new"])
+    const feedback = [{
+      id: "resolved-orphan",
+      kind: "note" as const,
+      severity: "comment" as const,
+      body: "already closed",
+      anchor: { kind: "file" as const, fileKey: "src/deleted.ts", contentId: "gone" },
+      resolution: "active" as const,
+      status: "resolved" as const,
+      createdAt: "2026-08-28T00:00:00.000Z",
+      updatedAt: "2026-08-28T00:00:00.000Z",
+    }]
+    const { session } = makeInteractiveSession([file], feedback)
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
+
+    try {
+      await flush(setup)
+      expect(setup.renderer.root.findDescendantById("review-orphaned-feedback")).toBeUndefined()
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
   test("resolves stale feedback through keyboard delete and reanchor actions", async () => {
     const file = makeFile("src/stale.ts", ["-old", "+new"])
     const staleRange = createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 })
