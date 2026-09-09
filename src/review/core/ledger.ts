@@ -54,6 +54,11 @@ export function ledgerVerdict(
   if (feedback.status !== "handed-off") return "open"
   if (atHeadOid !== undefined && feedback.handoff?.headOid === atHeadOid) return "waiting"
   if (feedback.resolution !== "active") return "addressed"
+  if (
+    feedback.anchor.kind === "file"
+    && feedback.handoff?.contentId !== undefined
+    && feedback.handoff.contentId !== feedback.anchor.contentId
+  ) return "addressed"
   // Untouched lines plus an answer is an argument, not an oversight, and it is
   // the one outcome that needs the reviewer to read rather than just look.
   return options?.replied === true ? "disputed" : "untouched"

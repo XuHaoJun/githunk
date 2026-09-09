@@ -96,6 +96,7 @@ const handoffSchema = z
   .object({
     at: timestampSchema,
     headOid: z.string().min(1),
+    contentId: z.string().min(1).optional(),
     excerpt: z.array(z.string()).max(ANCHOR_EXCERPT_LINE_LIMIT).optional(),
   })
   .strict()
@@ -355,6 +356,7 @@ function toHandoff(raw: z.infer<typeof handoffSchema>): ReviewFeedbackHandoff {
   return {
     at: raw.at,
     headOid: raw.headOid,
+    ...(raw.contentId === undefined ? {} : { contentId: raw.contentId }),
     ...(raw.excerpt === undefined ? {} : { excerpt: raw.excerpt as readonly string[] }),
   }
 }

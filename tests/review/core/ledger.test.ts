@@ -98,6 +98,21 @@ describe("ledgerVerdict — resolution and status only mean something as a pair"
   test("once HEAD moves, an anchor that still resolves means those lines were left alone", () => {
     expect(ledgerVerdict(handedOff({ id: "x", anchor, resolution: "active" }), LATER_OID)).toBe("untouched")
   })
+  test("a changed file-level anchor is addressed after handoff", () => {
+    const handedOffFile = makeFile("a.ts", ["one"])
+    const currentFile = { ...handedOffFile, contentId: "content-a.ts-current" }
+    const feedback = handedOff({
+      id: "x",
+      anchor: createFileAnchor(currentFile),
+      handoff: {
+        at: "2026-09-08T01:00:00.000Z",
+        headOid: HANDOFF_OID,
+        contentId: handedOffFile.contentId,
+      },
+    })
+    expect(ledgerVerdict(feedback, LATER_OID)).toBe("addressed")
+  })
+
 
   test("an anchor that no longer resolves means the code under the objection moved", () => {
     for (const resolution of ["stale", "orphaned"] as const) {

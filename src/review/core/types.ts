@@ -93,6 +93,11 @@ export type ReviewFeedbackHandoff = Readonly<{
   at: string
   headOid: string
   /**
+   * The file content identity at handoff time. File anchors otherwise update
+   * their `contentId` during reconciliation and lose the comparison baseline.
+   */
+  contentId?: string
+  /**
    * The anchored lines as they read at the handoff.
    *
    * GitLab stores the diff a note was written against alongside the note

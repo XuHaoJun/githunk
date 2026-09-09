@@ -328,6 +328,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
           handoff: {
             at: action.at,
             headOid: action.headOid,
+            ...(feedback.anchor.kind === "file" ? { contentId: feedback.anchor.contentId } : {}),
             ...(excerpt === undefined ? {} : { excerpt }),
           },
           updatedAt: action.at,

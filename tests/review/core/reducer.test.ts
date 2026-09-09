@@ -187,7 +187,7 @@ describe("ledger transitions", () => {
       headOid: "h1",
     })
     expect(next.feedback.map((f) => f.status)).toEqual(["handed-off", "handed-off"])
-    expect(next.feedback[0]!.handoff).toEqual({ at: "2026-09-08T01:00:00.000Z", headOid: "h1" })
+    expect(next.feedback[0]!.handoff).toEqual({ at: "2026-09-08T01:00:00.000Z", headOid: "h1", contentId: "content-a" })
     // The excerpt is the evidence of what was objected to, and only travels when captured.
     expect(next.feedback[1]!.handoff?.excerpt).toEqual(["const x = 1"])
     expect(next.feedback[0]!.handoff).not.toHaveProperty("excerpt")
