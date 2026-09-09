@@ -624,15 +624,21 @@ export class ReviewWorkspaceController {
         && latest.document.identity.id === reviewId
         && latest.document.generation.id === generationId
     }
+    const handoffDocument = current.projection.kind === "aggregate" ? current.document : this.aggregateDocument
+    if (handoffDocument === undefined
+      || handoffDocument.identity.id !== reviewId
+      || handoffDocument.generation.id !== generationId) {
+      return { ok: false, reason: "stale" }
+    }
     const at = this.nowImpl()
     const headOid = current.document.generation.headOid
-    const mailbox = buildHandoffMailbox(current, { generatedAt: at, headOid })
+    const mailbox = buildHandoffMailbox({ document: handoffDocument, feedback: current.feedback }, { generatedAt: at, headOid })
     const freshlyHandedOff = pending.filter((feedback) => feedback.status !== "handed-off")
     const items = freshlyHandedOff.map((feedback) => {
       // Capture what each objection points at now. Once the code changes the
       // anchor can only say that it moved; the text is the only thing that can
       // still show the reviewer what they objected to.
-      const excerpt = linesForAnchor(feedback.anchor, current.document)
+      const excerpt = linesForAnchor(feedback.anchor, handoffDocument)
       return { id: feedback.id, ...(excerpt === undefined ? {} : { excerpt }) }
     })
 

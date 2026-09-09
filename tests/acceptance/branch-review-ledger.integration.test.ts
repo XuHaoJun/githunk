@@ -5,6 +5,7 @@ import { runHandoff, runHandoffReply } from "../../src/cli/handoff"
 import { ReviewWorkspaceController } from "../../src/ui/review-workspace/controller"
 import { ReviewStateStore, emptyReviewDatabaseV2 } from "../../src/review/storage/review-state-store"
 import { createRangeAnchor } from "../../src/review/core/anchors"
+import { createReviewHunk } from "../../src/review/core/document"
 import { HANDOFF_JSON_PATH, HANDOFF_REPLIES_PATH, ledgerVerdict, reviewCheckpoint, serializeReviewReplies } from "../../src/review/core/ledger"
 import { validateFinishReview } from "../../src/review/core/artifact"
 import { LocalStateFile } from "../../src/storage/local-state-file"
@@ -304,6 +305,78 @@ describe("branch review — open-objections ledger", () => {
       expect(controller.state!.feedback[0]!.body).toBe("edited")
       expect(controller.state!.feedback[0]!.status).not.toBe("handed-off")
       await controller.destroy()
+    } finally {
+      await repo.cleanup()
+    }
+  })
+  test("builds a projected handoff from the aggregate document", async () => {
+    const repo = await createTempRepository()
+    try {
+      await repo.write("app.ts", "one\n")
+      await repo.git(["add", "."])
+      await repo.git(["commit", "-qm", "base"])
+      await repo.git(["checkout", "-qb", "feature"])
+      await repo.write("app.ts", "two\n")
+      await repo.git(["commit", "-qam", "change"])
+
+      const runner = new GitRunner({ cwd: repo.path })
+      const controller = new ReviewWorkspaceController({
+        runner,
+        loadSinceLastReview: async (aggregate, fromHeadOid) => ({
+          kind: "ok" as const,
+          document: {
+            reviewId: aggregate.identity.id,
+            generationId: aggregate.generation.id,
+            projection: { kind: "since-last-review" as const, fromHeadOid },
+            files: [{
+              ...aggregate.files[0]!,
+              path: "lens/app.ts",
+              contentId: "projection-content",
+              hunks: [createReviewHunk({
+                index: 0,
+                oldStart: 1,
+                oldCount: 1,
+                newStart: 1,
+                newCount: 1,
+                lines: ["-one", "+lens"],
+              })],
+            }],
+          },
+        }),
+      })
+      await controller.open("refs/heads/master")
+      const file = controller.state!.document.files[0]!
+      const anchor = createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 })
+      controller.dispatchIntent({ type: "feedback/start-draft", anchor, kind: "note", severity: "comment", body: "change this" })
+      controller.dispatchIntent({ type: "feedback/create", id: "fb-1", createdAt: "2026-09-08T01:00:00.000Z" })
+      const state = controller.state!
+      const controllerInternals = controller as unknown as { _state: ReviewState }
+      controllerInternals._state = {
+        ...state,
+        lastSubmission: {
+          artifactId: "artifact-1",
+          generationId: state.document.generation.id,
+          headOid: "b".repeat(40),
+          submittedAt: "2026-09-08T00:00:00.000Z",
+        },
+      }
+
+      expect(await controller.enterSinceLastReview()).toMatchObject({ ok: true })
+      expect(controller.state!.projection.kind).toBe("since-last-review")
+      const outcome = await controller.handoffFeedback()
+
+      expect(outcome.ok).toBe(true)
+      const mailbox: unknown = JSON.parse(await new LocalStateFile({
+        runner,
+        relativePath: HANDOFF_JSON_PATH,
+        pathKind: "handoff",
+      }).readText() ?? "{}")
+      expect(mailbox).toMatchObject({
+        items: [{ id: "fb-1", path: "app.ts", side: "new", startLine: 1, endLine: 1, severity: "comment", kind: "note", body: "change this" }],
+      })
+      expect(controller.state!.feedback[0]!.handoff?.excerpt).toEqual(["two"])
+      await controller.destroy()
+
     } finally {
       await repo.cleanup()
     }
