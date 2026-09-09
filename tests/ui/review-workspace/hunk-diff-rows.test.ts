@@ -177,4 +177,36 @@ describe("Hunk-derived diff rows", () => {
       "feedback-reply:feedback-2",
     ])
   })
+  test("does not label a new handoff disputed by an earlier reply", () => {
+    const file = makeFile()
+    const anchor = createRangeAnchor(file, { side: "new", startLine: 10, endLine: 10 })
+    const base = makeState(file)
+    const state = {
+      ...base,
+      feedback: [{
+        id: "feedback-1",
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "new round",
+        anchor,
+        resolution: "active" as const,
+        status: "handed-off" as const,
+        handoff: { at: "2026-09-01T03:00:00.000Z", headOid: "b".repeat(40) },
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T03:00:00.000Z",
+      }],
+    }
+    const replies: ReviewReplies = new Map([
+      ["feedback-1", { id: "feedback-1", body: "old reply", at: "2026-09-01T02:00:00.000Z" }],
+    ])
+
+    const row = buildHunkStackRows(toHunkReviewFile(file), state, undefined, {
+      width: 120,
+      showLineNumbers: true,
+      wrapLines: false,
+      replies,
+    }).find((entry) => entry.type === "feedback")
+    expect(row?.text).toContain("UNTOUCHED")
+    expect(row?.text).not.toContain("DISPUTED")
+  })
 })

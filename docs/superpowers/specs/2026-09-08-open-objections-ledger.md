@@ -89,6 +89,9 @@ a second file the agent owns:
 the CLI renders the canonical JSON for its default text output, so a crash
 between the two atomic file replacements cannot make `githunk handoff` show
 an older handoff.
+Replies are associated with the active handoff round by their timestamp. A
+reply from an earlier round remains in the agent-owned file for history, but
+does not make a freshly re-anchored and re-handed-off objection `DISPUTED`.
 
 Separate owners, so neither needs a lock. `githunk handoff reply --id <id>
 --body <text>` appends one; githunk reads them with the document and renders

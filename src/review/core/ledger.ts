@@ -29,6 +29,20 @@ export type ReviewReply = Readonly<{
 }>
 
 /**
+ * Replies belong to the handoff round that produced them. The file is keyed by
+ * feedback id for agent ergonomics, so the timestamp is the round boundary
+ * when a reviewer re-anchors and hands the same objection off again.
+ */
+export function replyAppliesToHandoff(feedback: ReviewFeedback, reply: ReviewReply): boolean {
+  if (feedback.status !== "handed-off" || feedback.handoff?.at === undefined) return false
+  if (reply.at.trim() === "") return true
+  const handoffAt = Date.parse(feedback.handoff.at)
+  const replyAt = Date.parse(reply.at)
+  if (!Number.isNaN(handoffAt) && !Number.isNaN(replyAt)) return replyAt >= handoffAt
+  return reply.at >= feedback.handoff.at
+}
+
+/**
  * - `open`      never handed off; the reviewer still owns it
  * - `untouched` handed off, and the anchored lines still resolve verbatim —
  *               whoever was asked to act did not touch them
@@ -87,7 +101,8 @@ export function ledgerCounts(
   let addressed = 0
   let resolved = 0
   for (const item of feedback) {
-    const verdict = ledgerVerdict(item, atHeadOid, { replied: replies?.has(item.id) === true })
+    const reply = replies?.get(item.id)
+    const verdict = ledgerVerdict(item, atHeadOid, { replied: reply !== undefined && replyAppliesToHandoff(item, reply) })
     if (verdict === "open") open++
     else if (verdict === "waiting") waiting++
     else if (verdict === "untouched") untouched++
@@ -184,7 +199,8 @@ export function objectionList(
   replies?: ReviewReplies,
 ): readonly ObjectionListEntry[] {
   return sortedReviewFeedback(state).map((feedback) => {
-    const verdict = ledgerVerdict(feedback, atHeadOid, { replied: replies?.has(feedback.id) === true })
+    const reply = replies?.get(feedback.id)
+    const verdict = ledgerVerdict(feedback, atHeadOid, { replied: reply !== undefined && replyAppliesToHandoff(feedback, reply) })
     const path = pathForFeedback(state.document, feedback)
     const where = feedback.anchor.kind === "range"
       ? `${path}:${feedback.anchor.startLine}`

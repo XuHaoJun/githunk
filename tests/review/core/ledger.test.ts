@@ -173,6 +173,19 @@ describe("ledger counts and header", () => {
     expect(ledgerHeaderText([handedOff({ id: "x", anchor })], LATER_OID)).toBe("1 UNTOUCHED")
     expect(ledgerHeaderText([handedOff({ id: "x", anchor })], LATER_OID, replied("x"))).toBe("1 DISPUTED")
   })
+  test("a reply from an earlier handoff does not dispute the new round", () => {
+    const feedback = handedOff({
+      id: "x",
+      anchor,
+      handoff: { at: "2026-09-08T03:00:00.000Z", headOid: HANDOFF_OID },
+    })
+    const oldReply: ReviewReplies = new Map([
+      ["x", { id: "x", body: "why not", at: "2026-09-08T02:00:00.000Z" }],
+    ])
+
+    expect(ledgerCounts([feedback], LATER_OID, oldReply)).toMatchObject({ untouched: 1, disputed: 0 })
+    expect(objectionList(stateWith([file], [feedback]), LATER_OID, oldReply)[0]?.verdict).toBe("untouched")
+  })
 })
 
 describe("reviewCheckpoint — what 'since' is measured from", () => {

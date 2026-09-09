@@ -1,7 +1,7 @@
 import type { ReviewState } from "../../review/core/state"
 import type { HighlightPayload, HighlightedLine } from "../../review/git/highlight/highlight-payload"
 import type { HunkReviewFile } from "./hunk-review-model"
-import { ledgerBadge, ledgerVerdict, type LedgerVerdict, type ReviewReplies } from "../../review/core/ledger"
+import { ledgerBadge, ledgerVerdict, replyAppliesToHandoff, type LedgerVerdict, type ReviewReplies } from "../../review/core/ledger"
 import { linesForAnchor } from "../../review/core/anchors"
 
 export type HunkRenderSpan = Readonly<{
@@ -363,7 +363,7 @@ export function feedbackRowGroups(
     const body = feedback.body.replace(/\s+/gu, " ").trim()
     const detail = body.length > 0 ? body : "(empty feedback)"
     const reply = replies?.get(feedback.id)
-    const verdict = ledgerVerdict(feedback, state.document.generation.headOid, { replied: reply !== undefined })
+    const verdict = ledgerVerdict(feedback, state.document.generation.headOid, { replied: reply !== undefined && replyAppliesToHandoff(feedback, reply) })
     const group: HunkDiffRow[] = []
     group.push({
       type: "feedback",
