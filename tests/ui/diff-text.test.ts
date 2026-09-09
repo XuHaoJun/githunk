@@ -184,6 +184,21 @@ describe("diff text installation", () => {
       setup.renderer.destroy()
     }
   })
+  test("returns the exact installed text and normalized preamble length", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 20 })
+    try {
+      const text = new TextRenderable(setup.renderer, { id: "main-text", content: "", width: 118, height: 18, selectable: true })
+      setup.renderer.root.add(text)
+      text.wrapMode = "char"
+      const rendered = renderDiff(parseDiff(patchText(1)))
+      const installed = installDiffText(text, { preamble: "commit abc", body: rendered.displayText, displayLines: rendered.displayLines })
+      await setup.flush()
+      expect(installed.text).toBe(text.plainText)
+      expect(installed.preambleLength).toBe("commit abc\n".length)
+    } finally {
+      setup.renderer.destroy()
+    }
+  })
 })
 
 /**
