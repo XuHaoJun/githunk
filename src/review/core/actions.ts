@@ -6,7 +6,7 @@ export type ReviewAction =
   | { type: "selection/move"; unit: "file" | "hunk"; direction: "next" | "previous" }
   | { type: "selection/set-line"; selection: ReviewLineSelection }
   | { type: "selection/move-line"; direction: "next" | "previous" }
-  | { type: "selection/viewport-anchor"; fileKey: string; hunkIndex: number; reveal?: "hunk" }
+  | { type: "selection/viewport-anchor"; fileKey: string; hunkIndex: number; reveal?: "hunk" | "feedback" }
   | { type: "filter/set-query"; query: string }
   | { type: "filter/set-scope"; scope: "all" | "unreviewed" | "changed" | "feedback" }
   | { type: "projection/set"; projection: ReviewProjection }
@@ -23,4 +23,8 @@ export type ReviewAction =
   | { type: "feedback/reanchor"; id: string; anchor: ReviewAnchor; updatedAt: string }
   | { type: "feedback/next" }
   | { type: "feedback/previous" }
+  // One act stamps every open item, so the "was it handed off" line is drawn
+  // once for the review rather than per comment.
+  | { type: "feedback/handoff"; items: readonly { id: string; excerpt?: readonly string[] }[]; at: string; headOid: string }
+  | { type: "feedback/resolve"; id: string; at: string }
   | { type: "document/reconciled"; document: ReviewDocument; viewed: Readonly<Record<string, ViewedRecord>>; feedback: readonly ReviewFeedback[]; selection: ReviewSelection; lineSelection: ReviewLineSelection | null; expandedGaps: readonly ExpandedGap[] }

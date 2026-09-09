@@ -1,11 +1,14 @@
+import { feedbackRowCountForFile } from "../hunk-diff-row-model"
+import type { ReviewReplies } from "../../../review/core/ledger"
 import { useMemo } from "react"
 import type { ReviewState } from "../../../review/core/state"
 import type { HighlightPayload } from "../../../review/git/highlight/highlight-payload"
 import type { HunkReviewFile } from "../hunk-review-model"
-import { buildHunkSplitRows, buildHunkStackRows, hunkGapBefore, hunkDiffAddresses, type HunkDiffAddress, type HunkDiffRow } from "../hunk-diff-rows"
+import { buildHunkSplitRows, buildHunkStackRows, feedbackRowGroups, hunkGapBefore, hunkDiffAddresses, type HunkDiffAddress, type HunkDiffRow } from "../hunk-diff-rows"
 import { ReviewDiffRow } from "./ReviewDiffRow"
 
 export type ReviewDiffSectionProps = Readonly<{
+  replies?: ReviewReplies
   file: HunkReviewFile
   state: ReviewState
   layout: "split" | "stack"
@@ -46,11 +49,13 @@ function rowsFor(
   wrapLines: boolean,
   highlight: HighlightPayload | undefined,
   expandedSourceByGap: ReadonlyMap<string, readonly string[]> | undefined,
+  replies?: ReviewReplies,
 ): readonly HunkDiffRow[] {
   const options = {
     width,
     showLineNumbers,
     wrapLines,
+    ...(replies ? { replies } : {}),
     ...(expandedSourceByGap ? { expandedSourceByGap } : {}),
   }
   return layout === "split"
@@ -64,9 +69,10 @@ export function hunkSectionRowCount(
   state?: ReviewState,
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
   showDivider = false,
+  replies?: ReviewReplies,
 ): number {
   const dividerRows = showDivider ? 1 : 0
-  const feedbackCount = state?.feedback.filter((feedback) => feedback.anchor.fileKey === file.id).length ?? 0
+  const feedbackCount = state === undefined ? 0 : feedbackRowCountForFile(file, state, layout, replies)
   if (file.kind === "binary" || file.reviewFile.source === "binary" || file.reviewFile.source === "too-large") return dividerRows + 2 + feedbackCount
   let count = dividerRows + 1
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
@@ -99,6 +105,34 @@ function hunkBodyRowCount(hunk: HunkReviewFile["metadata"]["hunks"][number], lay
   }
   return count
 }
+function feedbackRowsBeforeHunk(
+  file: HunkReviewFile,
+  state: ReviewState,
+  layout: "split" | "stack",
+  hunkIndex: number,
+  replies?: ReviewReplies,
+): number {
+  let count = 0
+  for (const group of feedbackRowGroups(file, state, layout, replies)) {
+    const anchor = group.anchor
+    if (anchor.kind !== "range") continue
+    const ownerIndex = file.metadata.hunks.findIndex((hunk) => {
+      const start = anchor.side === "old" ? hunk.deletionStart : hunk.additionStart
+      const lineCount = anchor.side === "old" ? hunk.deletionCount : hunk.additionCount
+      return lineCount > 0
+        && anchor.startLine >= start
+        && anchor.endLine < start + lineCount
+    })
+    if (ownerIndex >= 0 && ownerIndex < hunkIndex) count += group.rows.length
+  }
+  return count
+}
+
+/**
+ * The row model appends an objection beneath the source row it names. Hunk
+ * headers after that row therefore move down by the whole group, including
+ * replies and addressed excerpts.
+ */
 
 export function hunkSectionRowOffset(
   file: HunkReviewFile,
@@ -107,6 +141,7 @@ export function hunkSectionRowOffset(
   state?: ReviewState,
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
   showDivider = false,
+  replies?: ReviewReplies,
 ): number {
   const dividerRows = showDivider ? 1 : 0
   if (hunkIndex <= 0) return dividerRows + 1
@@ -128,8 +163,39 @@ export function hunkSectionRowOffset(
     const source = expandedSourceByGap?.get(`${file.id}:${selectedGap.gapId}`)
     offset += expanded && source ? Math.min(selectedGap.lineCount, source.length) : 1
   }
+  if (state !== undefined) offset += feedbackRowsBeforeHunk(file, state, layout, hunkIndex, replies)
   return offset
 }
+/**
+ * Where an objection's own row sits inside its file section.
+ *
+ * Revealing used to aim at the objection's hunk header, which was close enough
+ * while objections were collected at the end of a file and is not close enough
+ * now that each sits under the line it was written against: a visible hunk
+ * header says nothing about whether the objection below it is on screen.
+ *
+ * Rows come from the same builder the section renders, so the answer cannot
+ * disagree with what is drawn. Returns -1 when the file holds no such row.
+ */
+export function feedbackSectionRowOffset(
+  file: HunkReviewFile,
+  layout: "split" | "stack",
+  feedbackId: string,
+  state: ReviewState,
+  expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
+  showDivider = false,
+  replies?: ReviewReplies,
+): number {
+  const rows = rowsFor(file, state, layout, 120, true, false, undefined, expandedSourceByGap, replies)
+  const index = rows.findIndex((row) => row.type === "feedback" && row.feedbackId === feedbackId)
+  if (index < 0) return -1
+  const hasExplanation = file.metadata.hunks.length === 0
+    || file.kind === "binary"
+    || file.reviewFile.source === "binary"
+    || file.reviewFile.source === "too-large"
+  return (showDivider ? 1 : 0) + (hasExplanation ? 2 : 1) + index
+}
+
 export function ReviewDiffSection({
   file,
   state,
@@ -148,19 +214,21 @@ export function ReviewDiffSection({
   onToggleGap,
   selectedFeedbackId,
   showDivider,
+  replies,
 }: ReviewDiffSectionProps) {
   const rows = useMemo(
-    () => rowsFor(file, state, layout, width, showLineNumbers, wrapLines, highlight, expandedSourceByGap),
-    [expandedSourceByGap, file, layout, highlight, showLineNumbers, state.expandedGaps, state.feedback, width, wrapLines],
+    () => rowsFor(file, state, layout, width, showLineNumbers, wrapLines, highlight, expandedSourceByGap, replies),
+    [expandedSourceByGap, file, layout, highlight, replies, showLineNumbers, state.expandedGaps, state.feedback, width, wrapLines],
   )
   const digits = lineDigits(file)
   const selectProps = onSelect ? { onMouseUp: () => onSelect() } : {}
-  const totalRows = hunkSectionRowCount(file, layout, state, expandedSourceByGap, showDivider)
+  const totalRows = hunkSectionRowCount(file, layout, state, expandedSourceByGap, showDivider, replies)
   const visibleStart = Math.max(0, Math.min(totalRows, Math.floor(rowStart)))
   const visibleEnd = Math.max(visibleStart, Math.min(totalRows, Math.ceil(rowEnd ?? totalRows)))
-  const hasDiffRows = rows.some((row) => row.type !== "feedback")
+  const hasDiffRows = rows.some((row) =>
+    row.type === "hunk-header" || row.type === "collapsed" || row.type === "split-line" || row.type === "stack-line")
   const sectionChromeRows = showDivider ? 1 : 0
-  const contentRows = hasDiffRows ? rows : rows.filter((row) => row.type === "feedback")
+  const contentRows = rows
   const visibleContentRows = contentRows.filter((_, index) => {
     const fullIndex = index + (hasDiffRows ? 1 : 2) + sectionChromeRows
     return fullIndex >= visibleStart && fullIndex < visibleEnd

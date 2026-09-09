@@ -80,6 +80,8 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
     controller.dispatch(create)
     cov = dialog.getCoverage()
     expect(cov.pending).toBe(1)
+    controller.dispatch({ type: "feedback/resolve", id: "f1", at: "2026-08-28T01:00:00.000Z" })
+    expect(dialog.getCoverage().pending).toBe(0)
   })
 
   test("all decision invariants with exact validation reason", async () => {
@@ -161,6 +163,7 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
     v = dialog.getValidation()
     expect(v.ok).toBe(false)
     expect(v.reason).toBe("feedback-needs-reanchor")
+    expect(v.message).toBe("Finish blocked: an objection no longer resolves — press Esc, select it, then press a to re-anchor or - to resolve it")
   })
 
   test("non-aggregate projection blocks Finish without switching", async () => {

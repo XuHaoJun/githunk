@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
+import { createFileAnchor, createLineSelection } from "../../../src/review/core/anchors"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { planReviewIntent } from "../../../src/review/core/intents"
@@ -88,6 +89,59 @@ describe("semantic-only state and explicit reveal tokens", () => {
     expect(s2.reveal.hunkToken).toBe(s1.reveal.hunkToken + 1)
   })
 
+  test("manual line selection clears feedback reveal mode", () => {
+    const hunk = createReviewHunk({ index: 0, oldStart: 1, oldCount: 0, newStart: 1, newCount: 2, lines: ["+x", "+y"] })
+    const file = makeFile({ key: "src/a.ts", path: "src/a.ts", hunks: [hunk] })
+    const state = createInitialReviewState(makeDoc([file]))
+    const revealed = reduceReviewState(state, {
+      type: "selection/viewport-anchor",
+      fileKey: file.key,
+      hunkIndex: 0,
+      reveal: "feedback",
+    })
+    const line = createLineSelection(file, { hunkIndex: 0, side: "new", line: 1 })
+
+    const selected = reduceReviewState(revealed, { type: "selection/set-line", selection: line })
+    expect(selected.reveal.scrollToFeedback).toBe(false)
+
+    const revealedWithLine = { ...revealed, lineSelection: line, selection: { fileKey: file.key, hunkIndex: 0 } }
+    const moved = reduceReviewState(revealedWithLine, { type: "selection/move-line", direction: "next" })
+    expect(moved.reveal.scrollToFeedback).toBe(false)
+  })
+  test("feedback navigation skips resolved entries", () => {
+    const first = makeFile({ key: "first", path: "first.ts" })
+    const second = makeFile({ key: "second", path: "second.ts" })
+    const state = {
+      ...createInitialReviewState(makeDoc([first, second])),
+      feedback: [
+        {
+          id: "open",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "still open",
+          anchor: createFileAnchor(first),
+          resolution: "active" as const,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z",
+        },
+        {
+          id: "resolved",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "already closed",
+          anchor: createFileAnchor(second),
+          resolution: "active" as const,
+          status: "resolved" as const,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z",
+        },
+      ],
+    }
+
+    const next = reduceReviewState(state, { type: "feedback/next" })
+
+    expect(next).toBe(state)
+  })
   test("filter normalization preserves document order and matches normalized paths", () => {
     const doc = makeDoc([
       makeFile({ key: "a", path: "src/foo.ts" }),
@@ -150,5 +204,113 @@ describe("semantic-only state and explicit reveal tokens", () => {
     expect(() => planReviewIntent(s0, { type: "projection/set", projection: { kind: "commit", oid: "nope" } })).toThrow()
     expect(() => planReviewIntent(s0, { type: "gap/toggle", fileKey: "missing", gapId: "g1" })).toThrow()
     expect(() => planReviewIntent(s0, { type: "gap/toggle", fileKey: "a", gapId: "" })).toThrow()
+  })
+})
+
+describe("ledger transitions", () => {
+  const anchor = { kind: "file" as const, fileKey: "a", contentId: "content-a" }
+  function feedback(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      kind: "note" as const,
+      severity: "comment" as const,
+      body: `body ${id}`,
+      anchor,
+      resolution: "active" as const,
+      createdAt: "2026-09-08T00:00:00.000Z",
+      updatedAt: "2026-09-08T00:00:00.000Z",
+      ...overrides,
+    }
+  }
+  function stateWith(items: ReturnType<typeof feedback>[]) {
+    const doc = createReviewDocument({
+      identity: makeIdentity(),
+      generation: makeGeneration(),
+      commits: [],
+      files: [makeFile({ key: "a", path: "a" })],
+    })
+    return { ...createInitialReviewState(doc), feedback: items }
+  }
+
+  test("one handoff stamps every listed item with the same checkpoint", () => {
+    const state = stateWith([feedback("one"), feedback("two")])
+    const next = reduceReviewState(state, {
+      type: "feedback/handoff",
+      items: [{ id: "one" }, { id: "two", excerpt: ["const x = 1"] }],
+      at: "2026-09-08T01:00:00.000Z",
+      headOid: "h1",
+    })
+    expect(next.feedback.map((f) => f.status)).toEqual(["handed-off", "handed-off"])
+    expect(next.feedback[0]!.handoff).toEqual({ at: "2026-09-08T01:00:00.000Z", headOid: "h1", contentId: "content-a" })
+    // The excerpt is the evidence of what was objected to, and only travels when captured.
+    expect(next.feedback[1]!.handoff?.excerpt).toEqual(["const x = 1"])
+    expect(next.feedback[0]!.handoff).not.toHaveProperty("excerpt")
+    expect(next.revision).toBe(state.revision + 1)
+  })
+  test("does not hand off feedback whose anchor is already stale", () => {
+    const state = stateWith([feedback("stale", { resolution: "stale" })])
+    const next = reduceReviewState(state, {
+      type: "feedback/handoff",
+      items: [{ id: "stale" }],
+      at: "2026-09-08T01:00:00.000Z",
+      headOid: "h1",
+    })
+    expect(next).toBe(state)
+  })
+  test("re-anchoring a handed-off objection opens a fresh round", () => {
+    const state = stateWith([feedback("one", {
+      resolution: "stale",
+      status: "handed-off",
+      handoff: { at: "2026-09-08T01:00:00.000Z", headOid: "old-head" },
+    })])
+    const next = reduceReviewState(state, {
+      type: "feedback/reanchor",
+      id: "one",
+      anchor: { ...anchor },
+      updatedAt: "2026-09-08T02:00:00.000Z",
+    })
+    expect(next.feedback[0]?.status).toBe("open")
+    expect(next.feedback[0]).not.toHaveProperty("handoff")
+    expect(next.feedback[0]?.resolution).toBe("active")
+  })
+
+  test("re-handing off keeps the original checkpoint, so the verdict keeps its baseline", () => {
+    const already = feedback("one", {
+      status: "handed-off",
+      handoff: { at: "2026-09-08T01:00:00.000Z", headOid: "first" },
+    })
+    const next = reduceReviewState(stateWith([already]), {
+      type: "feedback/handoff",
+      items: [{ id: "one" }],
+      at: "2026-09-08T09:00:00.000Z",
+      headOid: "second",
+    })
+    expect(next.feedback[0]!.handoff?.headOid).toBe("first")
+  })
+
+  test("a resolved objection is not dragged back into a handoff", () => {
+    const state = stateWith([feedback("one", { status: "resolved" })])
+    const next = reduceReviewState(state, {
+      type: "feedback/handoff",
+      items: [{ id: "one" }],
+      at: "t",
+      headOid: "h1",
+    })
+    expect(next).toBe(state)
+  })
+
+  test("handing off nothing, or an id that is not there, changes nothing", () => {
+    const state = stateWith([feedback("one")])
+    expect(reduceReviewState(state, { type: "feedback/handoff", items: [], at: "t", headOid: "h1" })).toBe(state)
+    expect(reduceReviewState(state, { type: "feedback/handoff", items: [{ id: "ghost" }], at: "t", headOid: "h1" })).toBe(state)
+  })
+
+  test("resolving is terminal and idempotent", () => {
+    const state = stateWith([feedback("one", { status: "handed-off" })])
+    const next = reduceReviewState(state, { type: "feedback/resolve", id: "one", at: "2026-09-08T02:00:00.000Z" })
+    expect(next.feedback[0]!.status).toBe("resolved")
+    expect(next.feedback[0]!.updatedAt).toBe("2026-09-08T02:00:00.000Z")
+    expect(reduceReviewState(next, { type: "feedback/resolve", id: "one", at: "later" })).toBe(next)
+    expect(reduceReviewState(next, { type: "feedback/resolve", id: "ghost", at: "later" })).toBe(next)
   })
 })

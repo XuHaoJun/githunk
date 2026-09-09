@@ -14,7 +14,7 @@ const REASON_MESSAGES: Record<string, string> = {
   "draft-open": "Finish blocked: composer is open — save or cancel the draft first",
   "commit-projection-invalid": "Finish blocked: only the aggregate projection can be submitted",
   "projection-invalid": "Finish blocked: only the aggregate projection can be submitted",
-  "feedback-needs-reanchor": "Finish blocked: some feedback is stale or orphaned — re-anchor or delete it",
+  "feedback-needs-reanchor": "Finish blocked: an objection no longer resolves — press Esc, select it, then press a to re-anchor or - to resolve it",
   "approve-has-blocking-feedback": "Finish blocked: Approve cannot have blocking feedback",
   "request-changes-requires-blocking": "Finish blocked: Request Changes requires at least one blocking item",
   "comment-has-blocking-feedback": "Finish blocked: Comment cannot have blocking feedback",
@@ -66,6 +66,7 @@ export class FinishDialog {
   }
 
   setDecision(decision: FinishDecision): void {
+    this.lastError = undefined
     this.decision = decision
   }
 
@@ -74,6 +75,7 @@ export class FinishDialog {
   }
 
   setSummary(summary: string): void {
+    this.lastError = undefined
     this.summary = summary
   }
 
@@ -98,7 +100,7 @@ export class FinishDialog {
       if (rec.path === file.path && rec.contentId === file.contentId) viewed++
       else changed++
     }
-    const pending = state.feedback.length
+    const pending = state.feedback.filter((feedback) => feedback.status !== "resolved").length
     return { viewed, total, pending, changed }
   }
 
@@ -111,6 +113,11 @@ export class FinishDialog {
   }
 
   getValidationMessage(): string {
+    // A failed submit records lastError and nothing read it, so a submission
+    // that threw left the dialog open showing "Ready to finish" — which is the
+    // one thing it was not. The last attempt outranks a fresh validation:
+    // validation describes what could happen, lastError describes what did.
+    if (this.lastError !== undefined) return this.lastError
     const v = this.getValidation()
     if (v.ok) return "Ready to finish"
     return v.message ?? `Finish blocked: ${v.reason}`
@@ -163,8 +170,12 @@ export class FinishDialog {
     copyResult?: CopyResult
     artifactId?: string
   }> {
+    this.lastError = undefined
     const state = this.controller.state
-    if (!state) return { ok: false, reason: "no-state", message: "No review state" }
+    if (!state) {
+      this.lastError = "No review state"
+      return { ok: false, reason: "no-state", message: this.lastError }
+    }
 
     const validation = validateFinishReview(state, { decision: this.decision, summary: this.summary })
     if (!validation.ok) {

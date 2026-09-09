@@ -1,6 +1,7 @@
 import { z } from "zod"
 import type { ReviewArtifactV1, SubmittedFeedback } from "../core/artifact"
-import type { ReviewIdentity, ReviewGeneration, ReviewAnchor, ReviewFeedback, ReviewFeedbackDraft } from "../core/types"
+import type { ReviewIdentity, ReviewGeneration, ReviewAnchor, ReviewFeedback, ReviewFeedbackDraft, ReviewFeedbackHandoff } from "../core/types"
+import { ANCHOR_EXCERPT_LINE_LIMIT } from "../core/anchors"
 import type { ViewedRecord, ExpandedGap, SubmittedReviewRef, ReviewSelection, ReviewLineSelection } from "../core/state"
 
 // ---------------------------------------------------------------------------
@@ -84,6 +85,22 @@ const rangeAnchorSchema = z
 
 const anchorSchema = z.discriminatedUnion("kind", [fileAnchorSchema, rangeAnchorSchema])
 
+// "retired" was this status's first name before it took code review's word for
+// the same act. Accepted on read and normalised, so a review written under the
+// old name still loads.
+const feedbackStatusSchema = z
+  .enum(["open", "handed-off", "resolved", "retired"])
+  .transform((value) => (value === "retired" ? "resolved" as const : value))
+
+const handoffSchema = z
+  .object({
+    at: timestampSchema,
+    headOid: z.string().min(1),
+    contentId: z.string().min(1).optional(),
+    excerpt: z.array(z.string()).max(ANCHOR_EXCERPT_LINE_LIMIT).optional(),
+  })
+  .strict()
+
 const feedbackSchema = z
   .object({
     id: z.string().min(1),
@@ -93,11 +110,21 @@ const feedbackSchema = z
     replacement: z.string().optional(),
     anchor: anchorSchema,
     resolution: z.enum(["active", "stale", "orphaned"]),
+    // Optional so a review written before
+    // the ledger existed still loads; absent reads as "open".
+    status: feedbackStatusSchema.optional(),
+    handoff: handoffSchema.optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
   })
   .strict()
   .superRefine((val, ctx) => {
+    if (val.status === "handed-off" && val.handoff === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "handed-off feedback requires handoff metadata", path: ["handoff"] })
+    }
+    if ((val.status === undefined || val.status === "open") && val.handoff !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "open feedback cannot contain handoff metadata", path: ["handoff"] })
+    }
     if (val.kind === "suggestion") {
       if (val.anchor.kind !== "range" || val.anchor.side !== "new") {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "suggestion requires new-side range anchor", path: ["anchor"] })
@@ -257,11 +284,21 @@ const submittedFeedbackSchema = z
     body: z.string(),
     replacement: z.string().optional(),
     anchor: anchorSchema,
+    // Optional so artifacts written before
+    // the ledger still parse.
+    status: feedbackStatusSchema.optional(),
+    handoff: handoffSchema.optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
   })
   .strict()
   .superRefine((val, ctx) => {
+    if (val.status === "handed-off" && val.handoff === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "handed-off feedback requires handoff metadata", path: ["handoff"] })
+    }
+    if ((val.status === undefined || val.status === "open") && val.handoff !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "open feedback cannot contain handoff metadata", path: ["handoff"] })
+    }
     if (val.kind === "suggestion") {
       if (val.anchor.kind !== "range" || val.anchor.side !== "new") {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "suggestion requires new-side range anchor", path: ["anchor"] })
@@ -327,6 +364,15 @@ function toAnchor(raw: z.infer<typeof anchorSchema>): ReviewAnchor {
   }
 }
 
+function toHandoff(raw: z.infer<typeof handoffSchema>): ReviewFeedbackHandoff {
+  return {
+    at: raw.at,
+    headOid: raw.headOid,
+    ...(raw.contentId === undefined ? {} : { contentId: raw.contentId }),
+    ...(raw.excerpt === undefined ? {} : { excerpt: raw.excerpt as readonly string[] }),
+  }
+}
+
 function toFeedback(raw: z.infer<typeof feedbackSchema>): ReviewFeedback {
   const base: ReviewFeedback = {
     id: raw.id,
@@ -335,6 +381,8 @@ function toFeedback(raw: z.infer<typeof feedbackSchema>): ReviewFeedback {
     body: raw.body,
     anchor: toAnchor(raw.anchor),
     resolution: raw.resolution,
+    ...(raw.status === undefined ? {} : { status: raw.status }),
+    ...(raw.handoff === undefined ? {} : { handoff: toHandoff(raw.handoff) }),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   }
@@ -409,6 +457,8 @@ function toSubmittedFeedback(raw: z.infer<typeof submittedFeedbackSchema>): Subm
     severity: raw.severity,
     body: raw.body,
     anchor: toAnchor(raw.anchor),
+    ...(raw.status === undefined ? {} : { status: raw.status }),
+    ...(raw.handoff === undefined ? {} : { handoff: toHandoff(raw.handoff) }),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   }

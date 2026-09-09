@@ -101,6 +101,17 @@ export class LocalStateFile {
     await unlink(temporary).catch(() => undefined)
   }
 
+  async remove(): Promise<void> {
+    const path = await this.resolvePath()
+    await assertNoSymlinkInPath(path, this.pathKind)
+    try {
+      await unlink(path)
+    } catch (error) {
+      if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") return
+      throw error
+    }
+  }
+
   async createTextExclusive(text: string): Promise<CreateExclusiveResult> {
     const path = await this.resolvePath()
     await assertNoSymlinkInPath(path, this.pathKind)

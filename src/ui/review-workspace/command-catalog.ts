@@ -1,10 +1,11 @@
 import type { ReviewState } from "../../review/core/state"
 import { canMarkViewedInProjection } from "../../review/core/selectors"
+import { reviewCheckpoint } from "../../review/core/ledger"
 
 export type ReviewFocus = "sidebar" | "stream" | "filter" | "composer" | "any" | "global"
 
 /** The slice of review state a command's availability may depend on. */
-export type ReviewCommandState = Pick<ReviewState, "projection" | "lastSubmission">
+export type ReviewCommandState = Pick<ReviewState, "projection" | "lastSubmission" | "feedback">
 
 export type ReviewCommand = Readonly<{
   id: string
@@ -248,12 +249,13 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
   },
   {
     id: "review.toggleSinceLastReview",
-    title: "Review only what changed since the last review",
+    title: "Review only what changed since the last review or handoff",
     keys: ["s"],
     focus: ["any"],
-    // Meaningless without a finished review to measure from, and always
-    // offered while a lens is open so there is a way back to the aggregate.
-    available: (state) => state.projection.kind !== "aggregate" || state.lastSubmission !== null,
+    // Meaningless without a checkpoint to measure from, and always offered
+    // while a lens is open so there is a way back to the aggregate. A handoff
+    // counts as a checkpoint: see ReviewWorkspaceController.enterSinceLastReview.
+    available: (state) => state.projection.kind !== "aggregate" || reviewCheckpoint(state) !== undefined,
     hint: "since",
   },
   {
@@ -271,6 +273,35 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["any"],
     available: always,
     hint: "close",
+  },
+  {
+    id: "review.handoffFeedback",
+    title: "Hand off open feedback to an agent",
+    // "A" for agent. "H" and "x" are reserved for lazygit parity (main-scroll-left
+    // and extension panes), which tests/ui/review-workspace/command-catalog.test.ts
+    // guards; "-" is free on both tables.
+    keys: ["A"],
+    focus: ["stream", "sidebar"],
+    available: always,
+    hint: "handoff",
+  },
+  {
+    id: "review.listObjections",
+    title: "List objections and jump to one",
+    // "L" for list. Lowercase l is the layout cycle, and H / x are reserved for
+    // lazygit parity.
+    keys: ["L"],
+    focus: ["any"],
+    available: (state) => state.feedback.length > 0,
+    hint: "list",
+  },
+  {
+    id: "review.resolveFeedback",
+    title: "Resolve selected feedback",
+    keys: ["-"],
+    focus: ["stream", "sidebar"],
+    available: always,
+    hint: "resolve",
   },
 ] as const
 

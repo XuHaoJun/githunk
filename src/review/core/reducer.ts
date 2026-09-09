@@ -13,7 +13,7 @@ function projectionsEqual(a: ReviewState["projection"], b: ReviewState["projecti
 
 function sortedFeedbackForNavigation(state: ReviewState) {
   const indexByKey = new Map(state.document.files.map((f, i) => [f.key, i] as const))
-  return [...state.feedback].sort((a, b) => {
+  return state.feedback.filter((feedback) => feedback.status !== "resolved").sort((a, b) => {
     const ia = indexByKey.get(a.anchor.fileKey) ?? Number.MAX_SAFE_INTEGER
     const ib = indexByKey.get(b.anchor.fileKey) ?? Number.MAX_SAFE_INTEGER
     if (ia !== ib) return ia - ib
@@ -91,12 +91,23 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
     case "selection/set-line": {
       const s = action.selection
       if (state.lineSelection && JSON.stringify(state.lineSelection) === JSON.stringify(s)) return state
-      return { ...state, selection: { fileKey: s.fileKey, hunkIndex: s.hunkIndex }, lineSelection: s, revision: state.revision + 1 }
+      return {
+        ...state,
+        selection: { fileKey: s.fileKey, hunkIndex: s.hunkIndex },
+        lineSelection: s,
+        reveal: { ...state.reveal, scrollToFeedback: false },
+        revision: state.revision + 1,
+      }
     }
     case "selection/move-line": {
       const next = moveReviewLineSelection(state, action.direction)
       if (!next) return state
-      return { ...state, lineSelection: next, revision: state.revision + 1 }
+      return {
+        ...state,
+        lineSelection: next,
+        reveal: { ...state.reveal, scrollToFeedback: false },
+        revision: state.revision + 1,
+      }
     }
     case "selection/move": {
       const target = moveReviewSelection(state, action.unit, action.direction)
@@ -114,9 +125,15 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (!file) return state
       const maxIndex = file.hunks.length === 0 ? 0 : file.hunks.length - 1
       const clamped = Math.min(Math.max(action.hunkIndex, 0), Math.max(0, maxIndex))
+      // `scrollToFeedback` decides which of the two scroll effects in
+      // ReviewDiffPane wins: false lets the file-top reveal run, true skips it
+      // so the selected row is what gets scrolled to. Jumping to an objection
+      // wants the row, not the top of its file.
       const reveal = action.reveal === "hunk"
         ? { ...state.reveal, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: false }
-        : state.reveal
+        : action.reveal === "feedback"
+          ? { ...state.reveal, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: true }
+          : state.reveal
       if (state.selection.fileKey === action.fileKey && state.selection.hunkIndex === clamped && reveal === state.reveal) {
         return state
       }
@@ -293,10 +310,12 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       const idx = state.feedback.findIndex((f) => f.id === action.id)
       if (idx < 0) return state
       const existing = state.feedback[idx]!
+      const { handoff: _handoff, ...withoutHandoff } = existing
       const updated = {
-        ...existing,
+        ...withoutHandoff,
         anchor: action.anchor,
         resolution: "active" as const,
+        status: existing.status === "resolved" ? "resolved" as const : "open" as const,
         updatedAt: action.updatedAt,
       }
       const copy = [...state.feedback]
@@ -306,6 +325,39 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         feedback: copy,
         revision: state.revision + 1,
       }
+    }
+    case "feedback/handoff": {
+      const excerptById = new Map(action.items.map((item) => [item.id, item.excerpt] as const))
+      if (excerptById.size === 0) return state
+      let changed = false
+      const copy = state.feedback.map((feedback) => {
+        if (!excerptById.has(feedback.id)) return feedback
+        if (feedback.status === "handed-off" || feedback.status === "resolved" || feedback.resolution !== "active") return feedback
+        changed = true
+        const excerpt = excerptById.get(feedback.id)
+        return {
+          ...feedback,
+          status: "handed-off" as const,
+          handoff: {
+            at: action.at,
+            headOid: action.headOid,
+            ...(feedback.anchor.kind === "file" ? { contentId: feedback.anchor.contentId } : {}),
+            ...(excerpt === undefined ? {} : { excerpt }),
+          },
+          updatedAt: action.at,
+        }
+      })
+      if (!changed) return state
+      return { ...state, feedback: copy, revision: state.revision + 1 }
+    }
+    case "feedback/resolve": {
+      const idx = state.feedback.findIndex((f) => f.id === action.id)
+      if (idx < 0) return state
+      const existing = state.feedback[idx]!
+      if (existing.status === "resolved") return state
+      const copy = [...state.feedback]
+      copy[idx] = { ...existing, status: "resolved" as const, updatedAt: action.at }
+      return { ...state, feedback: copy, revision: state.revision + 1 }
     }
     case "feedback/next": {
       const target = feedbackNavigationTarget(state, "next")

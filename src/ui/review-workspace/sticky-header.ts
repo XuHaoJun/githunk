@@ -1,4 +1,5 @@
 import type { ReviewState } from "../../review/core/state"
+import type { ReviewReplies } from "../../review/core/ledger"
 import type { HunkReviewFile } from "./hunk-review-model"
 import { hunkHeaderText } from "./hunk-diff-rows"
 import { hunkSectionRowOffset } from "./components/ReviewDiffSection"
@@ -32,6 +33,7 @@ export type StickyDiffHeaderRequest = Readonly<{
    */
   sectionOffsets: readonly number[]
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>
+  replies?: ReviewReplies
 }>
 
 /** First row of a section's own header: every section but the first leads with a divider. */
@@ -52,7 +54,7 @@ function sectionIndexAt(sectionOffsets: readonly number[], fileCount: number, to
 }
 
 export function resolveStickyDiffHeader(request: StickyDiffHeaderRequest): StickyDiffHeader | undefined {
-  const { files, state, layout, sectionOffsets, expandedSourceByGap } = request
+  const { files, state, layout, sectionOffsets, expandedSourceByGap, replies } = request
   if (files.length === 0) return undefined
 
   const top = Math.max(0, Math.floor(request.scrollTop))
@@ -66,7 +68,7 @@ export function resolveStickyDiffHeader(request: StickyDiffHeaderRequest): Stick
 
   let hunkIndex = -1
   for (let candidate = 0; candidate < file.metadata.hunks.length; candidate += 1) {
-    const headerRow = hunkSectionRowOffset(file, layout, candidate, state, expandedSourceByGap, showDivider)
+    const headerRow = hunkSectionRowOffset(file, layout, candidate, state, expandedSourceByGap, showDivider, replies)
     if (headerRow > localRow) break
     hunkIndex = candidate
   }

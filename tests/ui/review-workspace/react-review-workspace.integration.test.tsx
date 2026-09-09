@@ -700,6 +700,135 @@ describe("React review workspace", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("L lists objections with their verdicts and Enter jumps to one", async () => {
+    const first = makeFile("src/a.ts", ["-old", "+new"])
+    const second = makeFile("src/b.ts", ["-old", "+new"])
+    const feedback = [
+      {
+        id: "obj-a",
+        kind: "note" as const,
+        severity: "blocking" as const,
+        body: "first objection",
+        anchor: createFileAnchor(first),
+        resolution: "active" as const,
+        createdAt: "2026-09-08T00:00:00.000Z",
+        updatedAt: "2026-09-08T00:00:00.000Z",
+      },
+      {
+        id: "obj-b",
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "second objection",
+        anchor: createRangeAnchor(second, { side: "new", startLine: 1, endLine: 1 }),
+        resolution: "active" as const,
+        status: "handed-off" as const,
+        handoff: { at: "2026-09-08T00:00:00.000Z", headOid: "0".repeat(40) },
+        createdAt: "2026-09-08T00:00:00.000Z",
+        updatedAt: "2026-09-08T00:00:00.000Z",
+      },
+    ]
+    const { session, getState } = makeInteractiveSession([first, second], feedback)
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
+
+    try {
+      await flush(setup)
+      await act(async () => { await setup.mockInput.typeText("L"); await Bun.sleep(30) })
+      await flush(setup)
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("Objections")
+      expect(frame).toContain("first objection")
+      expect(frame).toContain("second objection")
+      // The verdict travels with the entry, so the list says what is left to do.
+      expect(frame).toContain("open")
+      expect(frame).toContain("UNTOUCHED")
+      expect(frame).toContain("Enter jump")
+
+      // j then Enter selects the second entry and lands on its file.
+      await act(async () => { await setup.mockInput.typeText("j"); await Bun.sleep(30) })
+      await flush(setup)
+      await act(async () => { await setup.mockInput.pressKey("RETURN"); await Bun.sleep(30) })
+      await flush(setup)
+      expect(setup.captureCharFrame()).not.toContain("Enter jump")
+      expect(getState().selection.fileKey).toBe(second.key)
+      // The jump has to land on the objection, not the top of its file.
+      // ReviewDiffPane picks between two scroll effects on this flag
+      // (components/ReviewDiffPane.tsx:163,193); false scrolls to the file head.
+      expect(getState().reveal.scrollToFeedback).toBe(true)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("keeps the selected objection visible while the list scrolls", async () => {
+    const file = makeFile("src/objections.ts", ["-old", "+new"])
+    const feedback = Array.from({ length: 20 }, (_, index) => ({
+      id: `objection-${String(index).padStart(2, "0")}`,
+      kind: "note" as const,
+      severity: "comment" as const,
+      body: `objection-${String(index).padStart(2, "0")}`,
+      anchor: createFileAnchor(file),
+      resolution: "active" as const,
+      createdAt: "2026-09-08T00:00:00.000Z",
+      updatedAt: "2026-09-08T00:00:00.000Z",
+    }))
+    const { session } = makeInteractiveSession([file], feedback)
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 12 })
+
+    try {
+      await flush(setup)
+      await act(async () => {
+        await setup.mockInput.typeText("L")
+        await Bun.sleep(30)
+      })
+      await act(async () => {
+        await setup.mockInput.typeText("j".repeat(15), 100)
+        await Bun.sleep(30)
+      })
+      await flush(setup)
+
+      expect(setup.captureCharFrame()).toContain("objection-15")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("jumping to an objection scrolls it into view, not just its file", async () => {
+    // Long enough that an objection near the bottom starts off screen at 30 rows.
+    const lines = Array.from({ length: 60 }, (_, index) => (index === 54 ? "+needle line" : ` context ${index}`))
+    const file = makeFile("src/long.ts", lines)
+    const feedback = [{
+      id: "deep-objection",
+      kind: "note" as const,
+      severity: "blocking" as const,
+      body: "OBJECTION-MARKER deep in the file",
+      anchor: createRangeAnchor(file, { side: "new", startLine: 55, endLine: 55 }),
+      resolution: "active" as const,
+      createdAt: "2026-09-08T00:00:00.000Z",
+      updatedAt: "2026-09-08T00:00:00.000Z",
+    }]
+    const { session } = makeInteractiveSession([file], feedback)
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
+
+    try {
+      await flush(setup)
+      expect(setup.captureCharFrame()).not.toContain("OBJECTION-MARKER")
+
+      await act(async () => { await setup.mockInput.typeText("L"); await Bun.sleep(30) })
+      await flush(setup)
+      await act(async () => { await setup.mockInput.pressKey("RETURN"); await Bun.sleep(60) })
+      await flush(setup)
+
+      const frame = setup.captureCharFrame()
+      expect(frame).not.toContain("Enter jump")
+      expect(frame).toContain("OBJECTION-MARKER")
+      // Not pinned to the very top: the code it is about has to be visible too.
+      const rows = frame.split("\n")
+      const at = rows.findIndex((row) => row.includes("OBJECTION-MARKER"))
+      expect(at).toBeGreaterThan(3)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
   test("documents numeric panel focus in the help dialog", async () => {
     const setup = await testRender(
       <ReviewWorkspaceApp session={makeSession([makeFile("src/help.ts", ["-old", "+new"])])} />,
@@ -772,6 +901,37 @@ describe("React review workspace", () => {
       })
       await flush(setup)
       expect(session.finishDialog.isOpen()).toBe(true)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("Enter in the finish summary submits the review", async () => {
+    const file = makeFile("src/finish.ts", ["-const old = 1", "+const next = 2"])
+    const session = makeSession([file])
+    let submits = 0
+    const realSubmit = session.finishDialog.submit.bind(session.finishDialog)
+    session.finishDialog.submit = async () => { submits += 1; return realSubmit() }
+    session.finishDialog.open()
+    session.invalidate()
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
+
+    try {
+      await flush(setup)
+      await act(async () => { await setup.mockInput.typeText("done"); await Bun.sleep(30) })
+      expect(session.finishDialog.getSummary()).toContain("done")
+      await act(async () => { await setup.mockInput.pressKey("RETURN"); await Bun.sleep(60) })
+      await flush(setup)
+      expect(submits).toBe(1)
+      // Enter must not have been swallowed as a newline in the summary instead.
+      expect(session.finishDialog.getSummary()).not.toContain("\n")
+
+      // This session has no artifact store, so the submission throws. A throw
+      // used to leave the dialog open still reading "Ready to finish", which is
+      // indistinguishable from the key doing nothing at all.
+      const message = session.finishDialog.getValidationMessage()
+      expect(message).not.toBe("Ready to finish")
+      expect(message.length).toBeGreaterThan(0)
+      expect(setup.captureCharFrame()).toContain(message.slice(0, 24))
     } finally {
       await act(async () => setup.renderer.destroy())
     }
@@ -943,6 +1103,29 @@ describe("React review workspace", () => {
       await flush(setup)
       expect(getState().draft).toBeNull()
       expect(getState().feedback[0]?.body).toContain("revised")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("does not show resolved orphaned feedback in recovery rows", async () => {
+    const file = makeFile("src/current.ts", ["-old", "+new"])
+    const feedback = [{
+      id: "resolved-orphan",
+      kind: "note" as const,
+      severity: "comment" as const,
+      body: "already closed",
+      anchor: { kind: "file" as const, fileKey: "src/deleted.ts", contentId: "gone" },
+      resolution: "active" as const,
+      status: "resolved" as const,
+      createdAt: "2026-08-28T00:00:00.000Z",
+      updatedAt: "2026-08-28T00:00:00.000Z",
+    }]
+    const { session } = makeInteractiveSession([file], feedback)
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
+
+    try {
+      await flush(setup)
+      expect(setup.renderer.root.findDescendantById("review-orphaned-feedback")).toBeUndefined()
     } finally {
       await act(async () => setup.renderer.destroy())
     }

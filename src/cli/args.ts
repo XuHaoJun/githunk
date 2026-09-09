@@ -4,6 +4,9 @@ import manifest from "../../package.json" with { type: "json" }
 export type CliParseResult =
   | { readonly kind: "start"; readonly startDirectory?: string }
   | { readonly kind: "update"; readonly version?: string; readonly check: boolean }
+  // The agent's read-only way in.
+  | { readonly kind: "handoff"; readonly json: boolean; readonly startDirectory?: string }
+  | { readonly kind: "handoff-reply"; readonly id: string; readonly body: string; readonly startDirectory?: string }
   | { readonly kind: "help"; readonly text: string }
   | { readonly kind: "version"; readonly text: string }
   | { readonly kind: "error"; readonly message: string; readonly exitCode: number }
@@ -15,6 +18,8 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
   let stdout = ""
   let stderr = ""
   let update: { readonly version?: string; readonly check: boolean } | undefined
+  let handoff: { readonly json: boolean } | undefined
+  let handoffReply: { readonly id: string; readonly body: string } | undefined
   const program = new Command()
   program
     .name("githunk")
@@ -47,6 +52,22 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
       }
     })
 
+  const handoffCommand = program
+    .command("handoff")
+    .description("print the open review objections githunk last handed off")
+    .option("--json", "print the raw mailbox JSON instead of markdown")
+    .action((options: { json?: boolean }) => {
+      handoff = { json: options.json ?? false }
+    })
+  handoffCommand
+    .command("reply")
+    .description("answer one objection; githunk shows it but the verdict stays its own")
+    .requiredOption("--id <id>", "objection id from the mailbox")
+    .requiredOption("--body <text>", "what to tell the reviewer")
+    .action((options: { id: string; body: string }) => {
+      handoffReply = { id: options.id, body: options.body }
+    })
+
   try {
     program.parse([...argv], { from: "user" })
   } catch (error) {
@@ -59,10 +80,28 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
     throw error
   }
 
-  if (update !== undefined) return { kind: "update", ...update }
-
   const options = program.opts<{ path?: string }>()
   const positional = program.args[0]
-  const startDirectory = options.path ?? positional
+  const startDirectory = options.path ?? (
+    update === undefined && handoff === undefined && handoffReply === undefined ? positional : undefined
+  )
+  if (update !== undefined) return { kind: "update", ...update }
+  if (handoffReply !== undefined) {
+    if (handoffReply.id.trim() === "" || handoffReply.body.trim() === "") {
+      return { kind: "error", message: "handoff reply requires a non-empty id and body", exitCode: 1 }
+    }
+    return {
+      kind: "handoff-reply",
+      ...handoffReply,
+      ...(startDirectory === undefined ? {} : { startDirectory }),
+    }
+  }
+  if (handoff !== undefined) {
+    return {
+      kind: "handoff",
+      ...handoff,
+      ...(startDirectory === undefined ? {} : { startDirectory }),
+    }
+  }
   return startDirectory === undefined ? { kind: "start" } : { kind: "start", startDirectory }
 }

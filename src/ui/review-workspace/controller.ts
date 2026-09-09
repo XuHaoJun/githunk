@@ -19,6 +19,19 @@ import { currentBranchRef, inferReviewBase, resolveRefOid, type ReviewBaseCandid
 import { emptyReviewDatabaseV2 } from "../../review/storage/schemas"
 import { sha256Tuple } from "../../review/core/identity"
 import { MutationQueue } from "../../app/mutation-queue"
+import { linesForAnchor } from "../../review/core/anchors"
+import { LocalStateFile } from "../../storage/local-state-file"
+import {
+  HANDOFF_JSON_PATH,
+  HANDOFF_MARKDOWN_PATH,
+  HANDOFF_REPLIES_PATH,
+  parseReviewReplies,
+  type ReviewReplies,
+  buildHandoffMailbox,
+  ledgerVerdict,
+  renderHandoffMarkdown,
+  reviewCheckpoint,
+} from "../../review/core/ledger"
 import type { ReviewDecision } from "../../review/core/artifact"
 import { buildReviewArtifact, validateFinishReview } from "../../review/core/artifact"
 import type { ReviewArtifactV1 } from "../../review/core/artifact"
@@ -35,6 +48,10 @@ function stableJson(value: unknown): string {
     return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`
   }
   return JSON.stringify(value)
+}
+async function restoreLocalStateFile(file: LocalStateFile, previous: string | undefined): Promise<void> {
+  if (previous === undefined) await file.remove()
+  else await file.writeText(previous)
 }
 
 function normalizeActiveProjection(
@@ -96,6 +113,8 @@ export class ReviewWorkspaceController {
   private gapRequestCounter = 0
   /** The aggregate document a projection lens was opened from, kept so exiting restores it. */
   private aggregateDocument: ReviewDocument | undefined
+  /** The agent's answers, reloaded with the document. Read-only to githunk. */
+  private _replies: ReviewReplies = new Map()
   constructor(options: ReviewWorkspaceControllerOptions) {
     this.runner = options.runner
     this.stateStore = options.stateStore
@@ -116,6 +135,33 @@ export class ReviewWorkspaceController {
 
   get state(): ReviewState | undefined {
     return this._state
+  }
+
+  /** What the agent said back, keyed by objection id; empty when it has said nothing. */
+  get replies(): ReviewReplies {
+    return this._replies
+  }
+
+  /**
+   * Re-read the agent's reply file. It belongs to the agent, so githunk polls it
+   * rather than tracking it: there is no write from this side to invalidate on.
+   */
+  private async loadReplies(): Promise<boolean> {
+    const previous = this._replies
+    let next: ReviewReplies
+    try {
+      const file = new LocalStateFile({ runner: this.runner, relativePath: HANDOFF_REPLIES_PATH, pathKind: "handoff" })
+      next = parseReviewReplies(await file.readText())
+    } catch {
+      next = new Map()
+    }
+    const changed = previous.size !== next.size
+      || [...previous].some(([id, reply]) => {
+        const current = next.get(id)
+        return current === undefined || current.body !== reply.body || current.at !== reply.at
+      })
+    this._replies = next
+    return changed
   }
 
   get error(): ReviewWorkspaceError | undefined {
@@ -236,6 +282,8 @@ export class ReviewWorkspaceController {
       const doc = await this.loadDocumentImpl(capturedBase)
       if (!ownsRequest()) return
       if (capturedReviewId !== undefined && doc.identity.id !== capturedReviewId) return
+      const repliesChanged = await this.loadReplies()
+      if (!ownsRequest()) return
       // A same-generation response is still useful after a failed load.
       // Storage errors require retrying the pending semantic write before
       // they may be cleared; load errors only need a successful response.
@@ -251,6 +299,8 @@ export class ReviewWorkspaceController {
         if (!ownsRequest()) return
         if (this._error !== undefined) {
           this._error = undefined
+          this.publish()
+        } else if (repliesChanged) {
           this.publish()
         }
         return
@@ -292,6 +342,7 @@ export class ReviewWorkspaceController {
   async open(baseRef?: string): Promise<ReviewState | undefined>
   async open(baseRef?: string): Promise<ReviewState | undefined> {
     if (this.destroyed) throw new Error("controller destroyed")
+    await this.loadReplies()
     const token = ++this.requestId
     let resolvedBase = baseRef
     // An explicit base supersedes an open picker. chooseBase drives its own
@@ -447,6 +498,27 @@ export class ReviewWorkspaceController {
       }
     }
   }
+  private async dispatchAndPersist(action: ReviewAction): Promise<boolean> {
+    const current = this._state
+    if (current === undefined || this._baseSelection !== undefined) return false
+    const next = reduceReviewState(current, action)
+    if (next === current) return false
+    this._state = next
+    this.publish()
+    try {
+      await this.persistState()
+      return this._state === next
+    } catch (error) {
+      // A normal dispatch may have advanced the state while persistence was
+      // in flight. Never roll that newer in-memory edit back to the snapshot
+      // this durable action started from.
+      if (this._state === next) {
+        this._state = current
+        this.publish()
+      }
+      throw error
+    }
+  }
 
   dispatchIntent(intent: ReviewIntent): boolean {
     const current = this._state
@@ -461,18 +533,26 @@ export class ReviewWorkspaceController {
   }
 
   /**
-   * Open the "what changed since I last finished a review" lens.
+   * Open the "what changed since my last checkpoint" lens.
    *
    * A projection renders a narrower file set over the same review generation,
    * so viewed records and feedback stay with the aggregate, which remains the
    * system of record: `validateFinishReview` refuses to submit from anywhere
    * else, and `persistedFromReviewState` always writes the aggregate back.
+   *
+   * A handoff is a checkpoint too, and a
+   * sharper one — it is the moment the reviewer asked someone to change things,
+   * which is exactly the range that answers "what did the agent do". Without
+   * this the lens needs a *finished* review, so a reviewer who handed off and
+   * came back had no way to see the agent's work apart from the whole branch.
+   * Both stamps carry an ISO timestamp from the same clock, so the later one
+   * wins without asking Git which commit is newer.
    */
   async enterSinceLastReview(): Promise<ProjectionSwitchResult> {
     const current = this._state
     if (current === undefined || this._baseSelection !== undefined) return { ok: false, reason: "unavailable" }
     if (current.projection.kind !== "aggregate") return { ok: false, reason: "already-projected" }
-    const fromHeadOid = current.lastSubmission?.headOid
+    const fromHeadOid = reviewCheckpoint(current)?.headOid
     if (fromHeadOid === undefined || fromHeadOid.trim() === "") return { ok: false, reason: "no-previous-review" }
 
     const aggregate = current.document
@@ -512,6 +592,115 @@ export class ReviewWorkspaceController {
     this.aggregateDocument = undefined
     this.dispatch({ type: "projection/apply", projection: { kind: "aggregate" }, document: aggregate })
     return true
+  }
+
+  /**
+   * Stamp every open item as handed off and write the mailbox. This is the act
+   * that draws the line the `untouched` verdict is measured from: before it an
+   * `active` anchor means nothing, after it means nobody touched those lines.
+   *
+   * The mailbox is written through LocalStateFile, so it inherits the atomic
+   * write, 0600 mode and symlink refusal, and lands under the git directory
+   * where it cannot dirty `git status`.
+   */
+  async handoffFeedback(): Promise<
+    | { ok: true; handedOff: number; total: number; path: string }
+    | { ok: false; reason: string }
+  > {
+    return this.reviewOperationQueue.run(() => this.handoffFeedbackSerialized())
+  }
+
+  private async handoffFeedbackSerialized(): Promise<
+    | { ok: true; handedOff: number; total: number; path: string }
+    | { ok: false; reason: string }
+  > {
+    const current = this._state
+    if (current === undefined || this._baseSelection !== undefined) return { ok: false, reason: "unavailable" }
+    const pending = current.feedback.filter((feedback) => feedback.resolution === "active" && ledgerVerdict(feedback) !== "resolved")
+    if (pending.length === 0) return { ok: false, reason: "nothing-to-hand-off" }
+
+    const reviewId = current.document.identity.id
+    const generationId = current.document.generation.id
+    const revision = current.revision
+    const isCurrent = (): boolean => {
+      const latest = this._state
+      return latest === current
+        && latest.revision === revision
+        && latest.document.identity.id === reviewId
+        && latest.document.generation.id === generationId
+    }
+    const handoffDocument = current.projection.kind === "aggregate" ? current.document : this.aggregateDocument
+    if (handoffDocument === undefined
+      || handoffDocument.identity.id !== reviewId
+      || handoffDocument.generation.id !== generationId) {
+      return { ok: false, reason: "stale" }
+    }
+    const at = this.nowImpl()
+    const headOid = current.document.generation.headOid
+    const mailbox = buildHandoffMailbox({ document: handoffDocument, feedback: pending }, { generatedAt: at, headOid })
+    const freshlyHandedOff = pending.filter((feedback) => feedback.status !== "handed-off")
+    const items = freshlyHandedOff.map((feedback) => {
+      // Capture what each objection points at now. Once the code changes the
+      // anchor can only say that it moved; the text is the only thing that can
+      // still show the reviewer what they objected to.
+      const excerpt = linesForAnchor(feedback.anchor, handoffDocument)
+      return { id: feedback.id, ...(excerpt === undefined ? {} : { excerpt }) }
+    })
+
+    const jsonFile = new LocalStateFile({ runner: this.runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
+    const markdownFile = new LocalStateFile({ runner: this.runner, relativePath: HANDOFF_MARKDOWN_PATH, pathKind: "handoff" })
+    let previousJson: string | undefined
+    let previousMarkdown: string | undefined
+    try {
+      previousJson = await jsonFile.readText()
+      previousMarkdown = await markdownFile.readText()
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) }
+    }
+    const handedOffIds = new Set(items.map((item) => item.id))
+    const rollbackHandoff = async (): Promise<void> => {
+      const latest = this._state
+      if (latest === undefined || handedOffIds.size === 0) return
+      let changed = false
+      const feedback = latest.feedback.map((entry) => {
+        if (!handedOffIds.has(entry.id)
+          || entry.status !== "handed-off"
+          || entry.resolution !== "active"
+          || entry.handoff?.at !== at
+          || entry.handoff.headOid !== headOid) return entry
+        const { status: _status, handoff: _handoff, ...reopened } = entry
+        changed = true
+        return reopened
+      })
+      if (!changed) return
+      this._state = { ...latest, feedback, revision: latest.revision + 1 }
+      this.publish()
+      await this.persistState().catch(() => undefined)
+    }
+    try {
+      await jsonFile.writeText(`${JSON.stringify(mailbox, null, 2)}\n`)
+      await markdownFile.writeText(renderHandoffMarkdown(mailbox))
+      if (!isCurrent()) throw new Error("review changed during handoff")
+      if (freshlyHandedOff.length > 0) {
+        const persisted = await this.dispatchAndPersist({ type: "feedback/handoff", items, at, headOid })
+        if (!persisted) throw new Error("review changed during handoff")
+      }
+      return { ok: true, handedOff: freshlyHandedOff.length, total: pending.length, path: jsonFile.path }
+    } catch (err) {
+      await restoreLocalStateFile(jsonFile, previousJson).catch(() => undefined)
+      await restoreLocalStateFile(markdownFile, previousMarkdown).catch(() => undefined)
+      await rollbackHandoff()
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  /** Close an item a human has looked at. */
+  resolveFeedback(id: string): boolean {
+    const current = this._state
+    if (current === undefined || this._baseSelection !== undefined) return false
+    const before = current.feedback
+    this.dispatch({ type: "feedback/resolve", id, at: this.nowImpl() })
+    return this._state?.feedback !== before
   }
 
   async flushDrafts(): Promise<void> {

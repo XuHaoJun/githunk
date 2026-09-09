@@ -464,7 +464,7 @@ On a new generation:
 
 Stale and orphaned feedback is visible in the Feedback filter. The application never silently deletes it.
 
-Finish Review is blocked while any pending feedback is stale or orphaned. The reviewer must re-anchor or delete it. This rule applies to notes and suggestions so the artifact cannot claim a precise location it no longer has.
+Finish Review is blocked while any live feedback is stale or orphaned. For a handed-off item this appears as `addressed`: that verdict records only that the original anchor no longer resolves, not that the agent's change is correct. The reviewer must re-anchor it if the request still stands, or resolve it after inspection; it must not be silently submitted.
 
 ### 10.3 Pending review
 

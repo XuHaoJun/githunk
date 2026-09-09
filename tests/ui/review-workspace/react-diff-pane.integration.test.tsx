@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import { act } from "react"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
+import { createFileAnchor } from "../../../src/review/core/anchors"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { toHunkReviewFile } from "../../../src/ui/review-workspace/hunk-review-model"
 import { ReviewDiffPane } from "../../../src/ui/review-workspace/components/ReviewDiffPane"
+import type { ReviewReplies } from "../../../src/review/core/ledger"
 import type { ReviewFile } from "../../../src/review/core/types"
 
 function makeFile(key: string, lines: readonly string[]): ReviewFile {
@@ -82,6 +84,49 @@ describe("React review diff pane", () => {
     }
   })
 
+  test("keeps supplemental feedback rows in a no-diff section", async () => {
+    const file = { ...makeFile("src/mode-only.ts", ["-old", "+new"]), hunks: [] }
+    const base = makeState([file])
+    const state = {
+      ...base,
+      feedback: [{
+        id: "feedback-1",
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "review the mode change",
+        anchor: createFileAnchor(file),
+        resolution: "active" as const,
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:00.000Z",
+      }],
+    }
+    const replies: ReviewReplies = new Map([
+      ["feedback-1", { id: "feedback-1", body: "response from agent", at: "2026-09-01T01:00:00.000Z" }],
+    ])
+    const setup = await testRender(
+      <ReviewDiffPane
+        files={[toHunkReviewFile(file)]}
+        state={state}
+        layout="stack"
+        width={120}
+        height={10}
+        selectedFileKey={file.key}
+        selectedHunkIndex={0}
+        replies={replies}
+      />,
+      { width: 120, height: 10 },
+    )
+
+    try {
+      await flush(setup)
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("No hunks — file mode change or empty diff.")
+      expect(frame).toContain("review the mode change")
+      expect(frame).toContain("response from agent")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
   test("keeps a large review windowed instead of mounting every diff row", async () => {
     const files = Array.from({ length: 120 }, (_, index) => makeFile(`src/file-${index}.ts`, ["-const old = 1", "+const next = 2"]))
     const state = makeState(files)
@@ -301,6 +346,43 @@ describe("React review diff pane", () => {
       expect(lines[0]).toContain("src/first.ts")
       // At the top of the stream no hunk has scrolled past yet.
       expect(lines[0]).not.toContain("@@")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("a pending reveal does not drag a reader back after they scroll away", async () => {
+    const file = makeFile("src/large.ts", Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`))
+    const setup = await testRender(
+      <ReviewDiffPane
+        files={[toHunkReviewFile(file)]}
+        state={makeState([file])}
+        layout="stack"
+        width={80}
+        height={10}
+        selectedFileKey={file.key}
+        selectedHunkIndex={0}
+      />,
+      { width: 80, height: 10, useMouse: true, enableMouseMovement: true },
+    )
+
+    try {
+      await flush(setup)
+      const scrollBox = setup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as { x: number; y: number; scrollTop: number }
+      await act(async () => {
+        await setup.mockMouse.scroll(scrollBox.x + 2, scrollBox.y + 2, "down")
+        await setup.renderOnce()
+      })
+      const afterScroll = scrollBox.scrollTop
+      expect(afterScroll).toBeGreaterThan(0)
+
+      // The mount's reveal retries land up to 48ms later. They must not undo a
+      // scroll the reader made in the meantime.
+      await act(async () => {
+        await Bun.sleep(80)
+        await setup.renderOnce()
+      })
+      expect(scrollBox.scrollTop).toBe(afterScroll)
     } finally {
       await act(async () => setup.renderer.destroy())
     }

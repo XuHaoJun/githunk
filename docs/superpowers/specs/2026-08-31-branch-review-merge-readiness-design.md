@@ -12,7 +12,7 @@ The branch does **not** need to clone every Hunk viewer feature before merging. 
 
 1. A comment or suggestion must remain attached to the exact intended file and line/range.
 2. Suggestions must never persist synthetic replacement text.
-3. Stale and orphaned feedback must be visible and must block Finish until re-anchored or deleted.
+3. Stale and orphaned feedback must be visible and must block Finish until the reviewer either re-anchors it or resolves it after inspection. For handed-off feedback, `addressed` means only that the original anchor no longer resolves; it is not an approval of the agent's change.
 4. Pending feedback, review decisions, and the finished artifact must survive the documented persistence lifecycle.
 5. The active runtime must expose only behavior that is actually implemented. Unsupported projections and duplicate UI paths must not remain silently callable.
 6. The Branch Review surface must remain read-only with respect to Git and the working tree.
@@ -171,13 +171,13 @@ On a new generation:
 - ambiguous or changed context makes it stale;
 - deleted or unmatched files make it orphaned.
 
-A stale or orphaned item must never be silently converted to a new hunk-wide anchor.
+A stale or orphaned item must never be silently converted to a new hunk-wide anchor. When a handed-off item reaches `addressed`, that verdict records only that its original anchor no longer resolves; it does not claim the agent's change is correct.
 
 The UI must provide an explicit path to:
 
 - inspect the item;
 - re-anchor it to a new semantic line/range;
-- delete it;
+- delete an item that should not remain, or resolve it after inspection;
 - cancel the re-anchor operation.
 
 ### 4.7 Finish flow
@@ -314,7 +314,7 @@ Branch Review must not call staging, discard, commit, reset, checkout, rebase, p
 
 - Re-anchor from an explicit semantic line/range selection.
 - Do not derive a replacement anchor from only `selection.hunkIndex`.
-- Keep stale/orphaned resolution visible until the user chooses re-anchor or delete.
+- Keep stale/orphaned resolution visible until the user chooses re-anchor or resolve.
 - Add tests for re-anchoring to a different line within the same hunk and to a different hunk.
 
 ### 8.4 Active command changes

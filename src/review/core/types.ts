@@ -78,6 +78,38 @@ export type ReviewAnchor =
       contextDigest: string
     }>
 
+/**
+ * `status` is the second axis `resolution` cannot carry. `resolution` answers
+ * "can this comment still find the lines it points at"; `status` answers "has
+ * anyone been asked to do something about it". Only the pair is a verdict:
+ * an `active` anchor is unremarkable before a handoff and damning after one,
+ * because it means the agent left those exact lines untouched.
+ *
+ * Absent `status` means "open" so no persisted review needs a migration.
+ */
+export type ReviewFeedbackStatus = "open" | "handed-off" | "resolved"
+
+export type ReviewFeedbackHandoff = Readonly<{
+  at: string
+  headOid: string
+  /**
+   * The file content identity at handoff time. File anchors otherwise update
+   * their `contentId` during reconciliation and lose the comparison baseline.
+   */
+  contentId?: string
+  /**
+   * The anchored lines as they read at the handoff.
+   *
+   * GitLab stores the diff a note was written against alongside the note
+   * (`note_diff_files.diff`, db/structure.sql:25690-25700, written by
+   * DiffNote#create_diff_file, app/models/diff_note.rb:66-80) precisely so an
+   * outdated discussion can still show what was objected to after the code is
+   * gone. A digest can only say the anchor moved; it cannot show the reader
+   * what moved.
+   */
+  excerpt?: readonly string[]
+}>
+
 export type ReviewFeedback = Readonly<{
   id: string
   kind: "note" | "suggestion"
@@ -86,6 +118,8 @@ export type ReviewFeedback = Readonly<{
   replacement?: string
   anchor: ReviewAnchor
   resolution: "active" | "stale" | "orphaned"
+  status?: ReviewFeedbackStatus
+  handoff?: ReviewFeedbackHandoff
   createdAt: string
   updatedAt: string
 }>

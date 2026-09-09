@@ -1,5 +1,7 @@
 import type { ReviewState } from "../../review/core/state"
+import type { ReviewReplies } from "../../review/core/ledger"
 import { reviewProgress } from "../../review/core/selectors"
+import { ledgerHeaderText, reviewCheckpoint } from "../../review/core/ledger"
 import { cellWidth } from "../cell-width"
 
 export type ReviewHeaderSpan = Readonly<{
@@ -57,7 +59,7 @@ function formatStat(value: number | null | undefined): string {
   return String(value)
 }
 
-export function reviewHeaderLines(state: ReviewState, width: number): readonly ReviewHeaderLine[] {
+export function reviewHeaderLines(state: ReviewState, width: number, replies?: ReviewReplies): readonly ReviewHeaderLine[] {
   const w = Math.max(0, Math.floor(width))
   const progress = reviewProgress(state)
   const doc = state.document
@@ -97,8 +99,10 @@ export function reviewHeaderLines(state: ReviewState, width: number): readonly R
   // Line 1: head → base  •  commits · files · stats  •  projection
   // The label is load-bearing: outside the aggregate the counts describe a
   // narrower range and finishing a review is refused.
+  // The lens can be measured from a finished review or from a handoff, so the
+  // label reads the checkpoint rather than assuming which one opened it.
   const projectionLabel = state.projection.kind === "since-last-review"
-    ? "Since last review"
+    ? (reviewCheckpoint(state)?.kind === "handoff" ? "Since handoff" : "Since last review")
     : state.projection.kind === "commit"
       ? `Commit ${state.projection.oid.slice(0, 7)}`
       : "Aggregate"
@@ -119,7 +123,10 @@ export function reviewHeaderLines(state: ReviewState, width: number): readonly R
   const pendingPart = progress.pending > 0 ? ` · ${progress.pending} pending` : progress.pending === 0 ? " · 0 pending" : ""
   // Also show reviewing count if any?
   const reviewingPart = progress.reviewing > 0 ? ` · ${progress.reviewing} reviewing` : ""
-  const line2Raw = `${reviewedLabel}${changedPart}${reviewingPart}${pendingPart}`
+  // The ledger verdict must not need hunting for: a filter is where you go
+  // looking, this is what you see on arrival.
+  const ledgerPart = ledgerHeaderText(state.feedback, doc.generation.headOid, replies)
+  const line2Raw = `${reviewedLabel}${changedPart}${reviewingPart}${pendingPart}${ledgerPart === "" ? "" : `  ·  ${ledgerPart}`}`
   const line2 = truncateCell(line2Raw, w)
 
   // Possibly a warning line if needed: generation-change etc. For now, empty if none.

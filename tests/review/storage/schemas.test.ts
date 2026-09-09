@@ -197,6 +197,28 @@ describe("schemas – rejected invalid ranges/decisions/timestamps", () => {
   })
 })
 
+describe("schemas – status and handoff consistency", () => {
+  test("rejects handed-off feedback without a checkpoint", () => {
+    const db = makeValidDatabase()
+    db.reviews["abc123"].feedback[0].status = "handed-off"
+    expect(parseReviewDatabaseV2(db).ok).toBe(false)
+  })
+
+  test("rejects open artifact feedback with a checkpoint", () => {
+    const artifact = makeValidArtifact()
+    const invalidFeedback = {
+      ...artifact.feedback[0]!,
+      status: "open" as const,
+      handoff: {
+        at: new Date().toISOString(),
+        headOid: "a".repeat(40),
+      },
+    }
+    const invalidArtifact: ReviewArtifactV1 = { ...artifact, feedback: [invalidFeedback] }
+    expect(parseReviewArtifactV1(invalidArtifact).ok).toBe(false)
+  })
+})
+
 describe("schemas – detached baseByHead keys", () => {
   test("accepts valid detached key", () => {
     const db: any = makeValidDatabase()
@@ -260,5 +282,63 @@ describe("schemas – no v1 artifact version", () => {
     const artifact: any = makeValidArtifact()
     artifact.version = 0
     expect(parseReviewArtifactV1(artifact).ok).toBe(false)
+  })
+})
+
+describe("schemas – ledger fields", () => {
+  const handoff = { at: "2026-09-08T01:00:00.000Z", headOid: "a".repeat(40), excerpt: ["const x = 1"] }
+
+  test("status, handoff and excerpt survive a database round trip", () => {
+    const db = makeValidDatabase()
+    db.reviews["abc123"].feedback[0].status = "handed-off"
+    db.reviews["abc123"].feedback[0].handoff = handoff
+    const parsed = parseReviewDatabaseV2(JSON.parse(serializeReviewDatabaseV2(db as any)))
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    const feedback = parsed.value.reviews["abc123"]!.feedback[0]!
+    expect(feedback.status).toBe("handed-off")
+    expect(feedback.handoff).toEqual(handoff)
+  })
+
+  test("a review written before the ledger existed still loads, and reads as open", () => {
+    const parsed = parseReviewDatabaseV2(makeValidDatabase())
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    const feedback = parsed.value.reviews["abc123"]!.feedback[0]!
+    expect(feedback.status).toBeUndefined()
+    expect(feedback.handoff).toBeUndefined()
+  })
+
+  test("the status's first name is accepted and normalised, so an early review is not stranded", () => {
+    const db = makeValidDatabase()
+    db.reviews["abc123"].feedback[0].status = "retired"
+    const parsed = parseReviewDatabaseV2(db)
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) expect(parsed.value.reviews["abc123"]!.feedback[0]!.status).toBe("resolved")
+  })
+
+  test("an unknown status is rejected rather than silently dropped", () => {
+    const db = makeValidDatabase()
+    db.reviews["abc123"].feedback[0].status = "whatever"
+    expect(parseReviewDatabaseV2(db).ok).toBe(false)
+  })
+
+  test("an excerpt longer than the cap is rejected, so one objection cannot bloat the file", () => {
+    const db = makeValidDatabase()
+    db.reviews["abc123"].feedback[0].status = "handed-off"
+    db.reviews["abc123"].feedback[0].handoff = { ...handoff, excerpt: Array.from({ length: 17 }, () => "x") }
+    expect(parseReviewDatabaseV2(db).ok).toBe(false)
+  })
+
+  test("the artifact keeps how an objection ended, not just that it was raised", () => {
+    const artifact = makeValidArtifact()
+    const feedback = artifact.feedback[0] as unknown as Record<string, unknown>
+    feedback.status = "resolved"
+    feedback.handoff = { at: handoff.at, headOid: handoff.headOid }
+    const parsed = parseReviewArtifactV1(JSON.parse(serializeReviewArtifactV1(artifact)))
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.feedback[0]!.status).toBe("resolved")
+    expect(parsed.value.feedback[0]!.handoff?.headOid).toBe(handoff.headOid)
   })
 })

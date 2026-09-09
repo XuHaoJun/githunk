@@ -1,6 +1,8 @@
 import type { ReviewState } from "../../review/core/state"
 import type { HighlightPayload, HighlightedLine } from "../../review/git/highlight/highlight-payload"
 import type { HunkReviewFile } from "./hunk-review-model"
+import { ledgerBadge, ledgerVerdict, replyAppliesToHandoff, type LedgerVerdict, type ReviewReplies } from "../../review/core/ledger"
+import { linesForAnchor } from "../../review/core/anchors"
 
 export type HunkRenderSpan = Readonly<{
   text: string
@@ -51,6 +53,23 @@ export type HunkDiffRow =
       feedbackId: string
       severity: "comment" | "blocking"
       resolution: "active" | "stale" | "orphaned"
+      text: string
+    }>
+  | Readonly<{
+      type: "feedback-reply"
+      key: string
+      fileKey: string
+      hunkIndex: number
+      feedbackId: string
+      text: string
+    }>
+  | Readonly<{
+      type: "feedback-excerpt"
+      key: string
+      fileKey: string
+      hunkIndex: number
+      feedbackId: string
+      side: "was" | "now"
       text: string
     }>
   | Readonly<{
@@ -118,6 +137,8 @@ export type HunkRowBuildOptions = Readonly<{
   wrapLines: boolean
   tabWidth?: number
   expandedSourceByGap?: ReadonlyMap<string, readonly string[]>
+  /** The agent's answers, so a replied-to objection can show one and read DISPUTED. */
+  replies?: ReviewReplies
 }>
 
 function plainSpans(line: string | undefined): readonly HunkRenderSpan[] {
@@ -268,13 +289,83 @@ function feedbackAnchorText(file: HunkReviewFile, feedback: ReviewState["feedbac
   return `${file.path} ${feedback.anchor.side}:${line}`
 }
 
-function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: ReviewState, mode: "split" | "stack"): void {
+/**
+ * The keys worth pressing on this row, not every key that works.
+ *
+ * `d` and `-` do different things and listing both on every row left the
+ * difference to the reader. Delete says the objection never happened; once it
+ * has been handed off that erases the fact that someone was asked to act, so
+ * past that point the honest close is `-`. Every binding still works when
+ * pressed — this is the recommendation, not the permission.
+ */
+function rowActions(verdict: LedgerVerdict): string {
+  if (verdict === "resolved") return "[e]dit [d]elete"
+  if (verdict === "open") return "[e]dit [d]elete [a]nchor"
+  return "[e]dit [a]nchor [-]resolve"
+}
+
+/**
+ * Where an objection's rows belong: immediately after the line it was written
+ * against, the way GitLab renders a discussion in the notes holder that follows
+ * its own diff row (app/assets/javascripts/diffs/components/diff_view.vue:224-250).
+ * Collecting them at the end of the file made the reader scroll away from the
+ * code to find out what was said about it.
+ *
+ * Returns -1 when no rendered row carries that line, which happens for file
+ * anchors and for lines that have dropped out of the diff; those rows fall back
+ * to the end of the file.
+ */
+function insertionIndexForAnchor(
+  rows: readonly HunkDiffRow[],
+  anchor: ReviewState["feedback"][number]["anchor"],
+): number {
+  if (anchor.kind !== "range") return -1
+  let found = -1
+  for (const [index, row] of rows.entries()) {
+    if (row.type === "split-line") {
+      if (row.isExpansionRow === true) continue
+      const cell = anchor.side === "old" ? row.left : row.right
+      if (cell.lineNumber === anchor.endLine) found = index
+    } else if (row.type === "stack-line") {
+      if (row.isExpansionRow === true) continue
+      const lineNumber = anchor.side === "old" ? row.cell.oldLineNumber : row.cell.newLineNumber
+      if (lineNumber === anchor.endLine) found = index
+    }
+  }
+  if (found === -1) return -1
+  // Step past anything already placed under this line so two objections on one
+  // line keep the order they were written in.
+  let after = found + 1
+  while (after < rows.length) {
+    const type = rows[after]!.type
+    if (type !== "feedback" && type !== "feedback-reply" && type !== "feedback-excerpt") break
+    after += 1
+  }
+  return after
+}
+
+/**
+ * The rows each objection contributes, grouped so the caller can place them
+ * and so row counting and row building cannot drift apart. They did: the
+ * section row count knew one row per objection while the builder had started
+ * emitting a `was`/`now` pair too, and every offset past that file was wrong.
+ */
+export function feedbackRowGroups(
+  file: HunkReviewFile,
+  state: ReviewState,
+  mode: "split" | "stack",
+  replies?: ReviewReplies,
+): readonly Readonly<{ feedbackId: string; anchor: ReviewState["feedback"][number]["anchor"]; rows: readonly HunkDiffRow[] }>[] {
+  const groups: { feedbackId: string; anchor: ReviewState["feedback"][number]["anchor"]; rows: readonly HunkDiffRow[] }[] = []
   for (const feedback of state.feedback) {
     if (feedback.anchor.fileKey !== file.id) continue
     const hunkIndex = feedback.anchor.kind === "range" ? feedback.anchor.ownerHunkIndex : -1
     const body = feedback.body.replace(/\s+/gu, " ").trim()
     const detail = body.length > 0 ? body : "(empty feedback)"
-    rows.push({
+    const reply = replies?.get(feedback.id)
+    const verdict = ledgerVerdict(feedback, state.document.generation.headOid, { replied: reply !== undefined && replyAppliesToHandoff(feedback, reply) })
+    const group: HunkDiffRow[] = []
+    group.push({
       type: "feedback",
       key: `${file.id}:${mode}:feedback:${feedback.id}`,
       fileKey: file.id,
@@ -282,9 +373,100 @@ function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: Re
       feedbackId: feedback.id,
       severity: feedback.severity,
       resolution: feedback.resolution,
-      text: `${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} [e]dit [d]elete [a]nchor`,
+      // The verdict leads, because after a
+      // handoff it is the only part of this row the reviewer has not already read.
+      text: `${ledgerBadge(verdict)} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} ${rowActions(verdict)}`,
+    })
+    if (reply !== undefined) {
+      // The agent's own words, kept visually distinct from the reviewer's row
+      // above them. Showing them settles nothing: the verdict beside them was
+      // computed from the code, not from this.
+      for (const [index, line] of reply.body.split("\n").entries()) {
+        group.push({
+          type: "feedback-reply",
+          key: `${file.id}:${mode}:feedback:${feedback.id}:reply:${index}`,
+          fileKey: file.id,
+          hunkIndex: feedback.anchor.kind === "range" ? feedback.anchor.ownerHunkIndex : -1,
+          feedbackId: feedback.id,
+          text: `    ${index === 0 ? "agent" : "     "} │ ${line}`,
+        })
+      }
+    }
+    appendFeedbackExcerptRows(group, file, state, feedback, verdict, mode)
+    groups.push({ feedbackId: feedback.id, anchor: feedback.anchor, rows: group })
+  }
+  return groups
+}
+
+/** How many rows this file's objections add, for section height maths. */
+export function feedbackRowCountForFile(
+  file: HunkReviewFile,
+  state: ReviewState,
+  mode: "split" | "stack",
+  replies?: ReviewReplies,
+): number {
+  let count = 0
+  for (const group of feedbackRowGroups(file, state, mode, replies)) count += group.rows.length
+  return count
+}
+
+function appendFeedbackRows(
+  rows: HunkDiffRow[],
+  file: HunkReviewFile,
+  state: ReviewState,
+  mode: "split" | "stack",
+  replies?: ReviewReplies,
+): void {
+  for (const group of feedbackRowGroups(file, state, mode, replies)) {
+    const at = insertionIndexForAnchor(rows, group.anchor)
+    if (at === -1) rows.push(...group.rows)
+    else rows.splice(at, 0, ...group.rows)
+  }
+}
+
+/**
+ * Show what an objection was written against, and what stands there now.
+ *
+ * Only for `addressed`: that is githunk's name for GitLab's "outdated"
+ * discussion — the anchor could not be relocated, so the lines the reviewer
+ * objected to are gone (`lib/gitlab/diff/position_tracer/line_strategy.rb:98-99`
+ * draws the same line: "If the line is still in the MR, we don't treat this as
+ * outdated"). Every other verdict either has nothing to compare (`open`,
+ * `waiting`) or compares equal by definition (`untouched`).
+ */
+function appendFeedbackExcerptRows(
+  rows: HunkDiffRow[],
+  file: HunkReviewFile,
+  state: ReviewState,
+  feedback: ReviewState["feedback"][number],
+  verdict: LedgerVerdict,
+  mode: "split" | "stack",
+): void {
+  if (verdict !== "addressed") return
+  const was = feedback.handoff?.excerpt
+  if (was === undefined || was.length === 0) return
+  const shortOid = (oid: string) => oid.slice(0, 7)
+  const push = (side: "was" | "now", label: string, line: string, index: number) => {
+    rows.push({
+      type: "feedback-excerpt",
+      key: `${file.id}:${mode}:feedback:${feedback.id}:${side}:${index}`,
+      fileKey: file.id,
+      hunkIndex: feedback.anchor.kind === "range" ? feedback.anchor.ownerHunkIndex : -1,
+      feedbackId: feedback.id,
+      side,
+      text: `    ${label} │ ${line}`,
     })
   }
+  const wasLabel = `was ${shortOid(feedback.handoff?.headOid ?? "")}`
+  was.forEach((line, index) => { push("was", index === 0 ? wasLabel : " ".repeat(wasLabel.length), line, index) })
+
+  const now = linesForAnchor(feedback.anchor, state.document)
+  const nowLabel = `now ${shortOid(state.document.generation.headOid)}`
+  if (now === undefined || now.length === 0) {
+    push("now", nowLabel, "(not in the diff any more — these lines now match the base)", 0)
+    return
+  }
+  now.forEach((line, index) => { push("now", index === 0 ? nowLabel : " ".repeat(nowLabel.length), line, index) })
 }
 
 export function buildHunkSplitRows(
@@ -349,7 +531,7 @@ export function buildHunkSplitRows(
       additionLine += content.additions
     }
   }
-  appendFeedbackRows(rows, file, state, "split")
+  appendFeedbackRows(rows, file, state, "split", options.replies)
   return rows
 }
 
@@ -419,6 +601,6 @@ export function buildHunkStackRows(
       additionLine += content.additions
     }
   }
-  appendFeedbackRows(rows, file, state, "stack")
+  appendFeedbackRows(rows, file, state, "stack", options.replies)
   return rows
 }

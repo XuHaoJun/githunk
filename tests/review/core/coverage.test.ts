@@ -108,6 +108,39 @@ describe("reviewProgress without scanning patch text", () => {
     expect(prog.changed).toBe(1)
     expect(prog.viewed).toBe(0)
   })
+  test("resolved feedback is not pending", () => {
+    const currentFile = file({ path: "src/a.ts", contentId: "c1" })
+    const state = createInitialReviewState(makeDoc([currentFile]))
+    const anchor = { kind: "file" as const, fileKey: currentFile.key, contentId: currentFile.contentId }
+    const progress = reviewProgress({
+      ...state,
+      feedback: [
+        {
+          id: "open",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "keep looking",
+          anchor,
+          resolution: "active" as const,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z",
+        },
+        {
+          id: "resolved",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "already closed",
+          anchor,
+          resolution: "active" as const,
+          status: "resolved" as const,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z",
+        },
+      ],
+    })
+
+    expect(progress.pending).toBe(1)
+  })
 })
 
 describe("active aggregate Viewed coverage", () => {

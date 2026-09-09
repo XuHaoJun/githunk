@@ -60,7 +60,7 @@ export function reviewProgress(state: Pick<ReviewState, "document" | "viewed" | 
     reviewing,
     changed,
     unreviewed,
-    pending: state.feedback.length,
+    pending: state.feedback.filter((feedback) => feedback.status !== "resolved").length,
   }
 }
 

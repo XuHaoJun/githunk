@@ -301,7 +301,7 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
 
     // Finish is visibly blocked until the stale item is re-anchored.
     await harness.pressKey("R")
-    expect(harness.frame()).toContain("Finish blocked: some feedback is stale or orphaned")
+    expect(harness.frame()).toContain("Finish blocked: an objection no longer res")
     await harness.pressKey("ESCAPE")
     const currentPayment = reopened.state!.document.files.find((file) => file.path === "src/payment.ts")!
     const currentPaymentRow = `${currentPayment.key}:split:0:change:0:0`

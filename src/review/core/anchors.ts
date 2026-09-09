@@ -152,6 +152,34 @@ export function createLineSelection(
   return { fileKey: file.key, hunkIndex: input.hunkIndex, side: input.side, line: input.line, contentId: anchor.contentId, contextDigest: anchor.contextDigest }
 }
 
+/**
+ * The lines an anchor currently points at, or undefined when it no longer
+ * resolves. Capped the way GitLab caps a note's rendered excerpt at 16 lines
+ * (NUMBER_OF_TRUNCATED_DIFF_LINES, app/models/concerns/discussion_on_diff.rb:7).
+ */
+export const ANCHOR_EXCERPT_LINE_LIMIT = 16
+
+export function linesForAnchor(anchor: ReviewAnchor, document: ReviewDocument): readonly string[] | undefined {
+  if (anchor.kind !== "range") return undefined
+  const file = document.files.find((f) => f.key === anchor.fileKey)
+  if (!file || file.source === "binary" || file.source === "too-large") return undefined
+  // Read the line numbers across every hunk rather than trusting
+  // `ownerHunkIndex`. At capture time the owner holds them either way; at read
+  // time the diff has moved on and hunk indices shift, so trusting the stored
+  // index reports "gone" for lines that are still right there.
+  const byNumber = new Map<number, string>()
+  for (const hunk of file.hunks) {
+    for (const entry of sideLinesForHunk(hunk, anchor.side)) byNumber.set(entry.lineNumber, entry.content)
+  }
+  const out: string[] = []
+  for (let line = anchor.startLine; line <= anchor.endLine && out.length < ANCHOR_EXCERPT_LINE_LIMIT; line++) {
+    const content = byNumber.get(line)
+    if (content === undefined) return undefined
+    out.push(content)
+  }
+  return out
+}
+
 export function reconcileAnchor(anchor: ReviewAnchor, document: ReviewDocument): AnchorReconciliation {
   if (anchor.kind === "file") {
     const file = document.files.find((f) => f.key === anchor.fileKey)

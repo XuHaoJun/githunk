@@ -5,6 +5,7 @@ import type { ReviewWorkspaceController } from "./controller"
 import type { ReviewState, ReviewLineSelection } from "../../review/core/state"
 import { reviewHeaderLines } from "./header"
 import { REVIEW_COMMANDS, resolveReviewCommand, reviewHelp } from "./command-catalog"
+import { ledgerHeaderText, objectionList } from "../../review/core/ledger"
 import { buildReviewSidebarEntries, getFileStateIcon, REVIEW_SIDEBAR_THEME, sidebarEntryStats, sidebarEntryStatsWidth } from "./review-sidebar"
 import { toHunkReviewFiles } from "./hunk-review-model"
 import { ReviewDiffPane } from "./components/ReviewDiffPane"
@@ -23,6 +24,18 @@ import { PANE_SCROLLBAR_GUTTER } from "../panes/common"
 export type ReviewWorkspaceAppProps = Readonly<{
   session: ReactReviewSession
 }>
+export function computeObjectionListWindow(
+  entryCount: number,
+  selectedIndex: number,
+  maxVisibleEntries: number,
+): Readonly<{ start: number; end: number }> {
+  const count = Math.max(0, entryCount)
+  if (count === 0) return { start: 0, end: 0 }
+  const selected = Math.min(Math.max(0, selectedIndex), count - 1)
+  const visible = Math.min(count, Math.max(1, maxVisibleEntries))
+  const start = Math.min(Math.max(0, selected - visible + 1), count - visible)
+  return { start, end: start + visible }
+}
 
 const REVIEW_SIDEBAR_DEFAULT_WIDTH = 30
 const REVIEW_SIDEBAR_MIN_WIDTH = 20
@@ -109,6 +122,8 @@ function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "str
     command("review.finishReview"),
     command("review.help"),
     command("review.close"),
+    command("review.handoffFeedback"),
+    command("review.resolveFeedback"),
   ]
   const trailer = `${focus} — ${selected}`
   return notice ? `${notice} | ${hints.join(" | ")} | ${trailer}` : `${hints.join(" | ")} | ${trailer}`
@@ -197,7 +212,7 @@ function nextUnreviewedFile(state: ReviewState, direction: "next" | "previous"):
 type FeedbackTarget = Readonly<{ feedbackId: string; fileKey: string; hunkIndex: number }>
 
 function feedbackTarget(state: ReviewState, direction: "next" | "previous", currentFeedbackId?: string | null): FeedbackTarget | null {
-  const feedback = sortedReviewFeedback(state)
+  const feedback = sortedReviewFeedback(state).filter((item) => item.status !== "resolved")
   if (feedback.length === 0) return null
   const currentIndex = currentFeedbackId
     ? feedback.findIndex((item) => item.id === currentFeedbackId)
@@ -276,6 +291,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const [reanchorFeedbackId, setReanchorFeedbackId] = useState<string | null>(null)
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [objectionListIndex, setObjectionListIndex] = useState<number | null>(null)
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null)
   const resizingSidebarRef = useRef(false)
   const resizeDraggedRef = useRef(false)
@@ -648,7 +664,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     if (!file) return
     controller.dispatchIntent({ type: "selection/select-file", fileKey: file.key })
     if (feedback.anchor.kind === "range") {
-      controller.dispatchIntent({ type: "selection/viewport-anchor", fileKey: file.key, hunkIndex: feedback.anchor.ownerHunkIndex, reveal: "hunk" })
+      controller.dispatchIntent({ type: "selection/viewport-anchor", fileKey: file.key, hunkIndex: feedback.anchor.ownerHunkIndex, reveal: "feedback" })
     }
     setFocus("stream")
     session.invalidate()
@@ -932,6 +948,38 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       if (file?.hunks[hunkIndex]) void toggleGap(file.key, `before:${hunkIndex}`)
       return true
     }
+    if (commandId === "review.handoffFeedback") {
+      void controller.handoffFeedback().then((result) => {
+        if (result.ok) {
+          setFeedbackMessage(
+            result.handedOff === 0
+              ? `Mailbox rewritten with ${result.total} open item(s) — ${result.path}`
+              : `Handed off ${result.handedOff} of ${result.total} item(s) → ${result.path}`,
+          )
+        } else if (result.reason === "nothing-to-hand-off") {
+          setFeedbackMessage("Nothing to hand off.")
+        } else {
+          setFeedbackMessage(`Handoff failed: ${result.reason}`)
+        }
+        session.invalidate()
+      })
+      return true
+    }
+    if (commandId === "review.listObjections") {
+      if (current.feedback.length === 0) return false
+      const entries = objectionList(current, current.document.generation.headOid, controller.replies)
+      const at = entries.findIndex((entry) => entry.id === selectedFeedbackId)
+      setObjectionListIndex(at >= 0 ? at : 0)
+      session.invalidate()
+      return true
+    }
+    if (commandId === "review.resolveFeedback" && selectedFeedbackId) {
+      if (controller.resolveFeedback(selectedFeedbackId)) {
+        setFeedbackMessage("Resolved.")
+        session.invalidate()
+      }
+      return true
+    }
     if (commandId === "review.cycleFilterScope") {
       const scopes = ["all", "unreviewed", "changed", "feedback"] as const
       const index = scopes.indexOf(current.filter.scope)
@@ -990,6 +1038,12 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         consume(event)
         return
       }
+      if (objectionListIndex !== null) {
+        setObjectionListIndex(null)
+        session.invalidate()
+        consume(event)
+        return
+      }
       if (helpOpen) {
         setHelpOpen(false)
         consume(event)
@@ -1038,6 +1092,24 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         consume(event)
         return
       }
+      return
+    }
+    if (objectionListIndex !== null && current) {
+      const entries = objectionList(current, current.document.generation.headOid, controller.replies)
+      const lower = name.toLowerCase()
+      if (lower === "j" || name === "down") {
+        setObjectionListIndex(Math.min(entries.length - 1, objectionListIndex + 1))
+        session.invalidate()
+      } else if (lower === "k" || name === "up") {
+        setObjectionListIndex(Math.max(0, objectionListIndex - 1))
+        session.invalidate()
+      } else if (name === "return" || name === "enter") {
+        const entry = entries[objectionListIndex]
+        setObjectionListIndex(null)
+        if (entry) selectFeedback(entry.id)
+        session.invalidate()
+      }
+      consume(event)
       return
     }
     if (helpOpen) {
@@ -1101,7 +1173,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     const command = resolveReviewCommand(normalized, focus)
     if (!command || (current && !command.available(current))) return
     if (executeCommand(command.id)) consume(event)
-  }, [active, baseSelection, cancelBaseSelection, composerControlIndex, composerFocus, controller, executeCommand, finishDialog, focus, helpOpen, onClose, pendingDeleteFeedbackId, pendingRangeAnchor, rangeStart, reanchorFeedbackId, saveDraft, session, submitFinish])
+  }, [active, baseSelection, cancelBaseSelection, composerControlIndex, composerFocus, controller, executeCommand, finishDialog, focus, helpOpen, objectionListIndex, onClose, pendingDeleteFeedbackId, pendingRangeAnchor, rangeStart, reanchorFeedbackId, saveDraft, selectFeedback, session, submitFinish])
   useKeyboard(handleKey)
 
   const basePicker = baseSelection ? (
@@ -1134,12 +1206,29 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
     && state.draft.anchor.side === "new"
     && state.document.files.some((file) => file.key === state.draft?.anchor.fileKey && file.source !== "binary" && file.source !== "too-large")
   const replacementInvalid = suggestionReplacementInvalid(state)
-  const orphanedFeedback = state.feedback.filter((feedback) => !state.document.files.some((file) => file.key === feedback.anchor.fileKey))
+  const orphanedFeedback = state.feedback.filter((feedback) =>
+    feedback.status !== "resolved" && !state.document.files.some((file) => file.key === feedback.anchor.fileKey))
+  const objectionListHeight = Math.min(27, Math.max(6, dimensions.height - 3))
+  const objectionEntries = objectionListIndex === null
+    ? []
+    : objectionList(state, state.document.generation.headOid, controller.replies)
+  const selectedObjectionIndex = objectionEntries.length === 0
+    ? 0
+    : Math.min(Math.max(0, objectionListIndex ?? 0), objectionEntries.length - 1)
+  const objectionWindow = computeObjectionListWindow(
+    objectionEntries.length,
+    selectedObjectionIndex,
+    Math.max(1, objectionListHeight - 4),
+  )
+  const visibleObjectionEntries = objectionEntries.slice(objectionWindow.start, objectionWindow.end)
+  const objectionRangeLabel = objectionEntries.length > visibleObjectionEntries.length
+    ? ` [${objectionWindow.start + 1}-${objectionWindow.end}/${objectionEntries.length}]`
+    : ""
 
   return (
     <box id="react-review-workspace" visible={active} onMouse={handleSidebarResizeMouse} style={{ position: "relative", width: "100%", height: "100%", flexDirection: "column", overflow: "hidden" }}>
       <box id="react-review-header" style={{ width: "100%", height: 3, flexShrink: 0, flexDirection: "column" }}>
-        {reviewHeaderLines(state, dimensions.width).map((line, lineIndex) => (
+        {reviewHeaderLines(state, dimensions.width, controller.replies).map((line, lineIndex) => (
           <box key={lineIndex} style={{ width: "100%", height: 1, flexShrink: 0, flexDirection: "row" }}>
             {line.map((span, spanIndex) => span.action === "choose-base" ? (
               <box
@@ -1345,6 +1434,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
             onSelectFeedback={(feedbackId) => { executeCommand("review.selectFeedback", feedbackId) }}
             onSelectDiffAddress={(address) => { executeCommand("review.selectDiffLine", address) }}
             selectedFeedbackId={selectedFeedbackId}
+            replies={controller.replies}
             onViewportChange={session.setViewportStart}
           />
         </box>
@@ -1520,6 +1610,20 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
               {replacementInvalid ? <text id="review-feedback-replacement-error" content="Invalid replacement: enter non-whitespace text." wrapMode="none" truncate={true} /> : null}
             </>
           ) : null}
+        </box>
+      ) : null}
+      {objectionListIndex !== null ? (
+        <box
+          id="review-objection-list"
+          style={{ position: "absolute", left: Math.max(1, Math.floor(dimensions.width / 10)), top: 2, width: Math.max(50, Math.floor(dimensions.width * 4 / 5)), height: objectionListHeight, zIndex: 70, border: true, flexDirection: "column", backgroundColor: "#202020" }}
+        >
+          <text
+            content={`Objections${objectionRangeLabel} — ${ledgerHeaderText(state.feedback, state.document.generation.headOid, controller.replies) || "none"}\n${visibleObjectionEntries
+              .map((entry, index) => `${index + objectionWindow.start === selectedObjectionIndex ? ">" : " "} ${entry.text}`)
+              .join("\n")}\nj/k move · Enter jump · Esc close`}
+            wrapMode="none"
+            truncate={true}
+          />
         </box>
       ) : null}
       {helpOpen ? (

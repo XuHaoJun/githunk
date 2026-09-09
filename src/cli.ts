@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parseCliArgs } from "./cli/args"
 import { runUpdate, type UpdateEnvironment } from "./cli/update"
+import { runHandoff, runHandoffReply } from "./cli/handoff"
 import { startApp } from "./main"
 
 const RELEASES_API = "https://api.github.com/repos/XuHaoJun/githunk/releases/latest"
@@ -80,6 +81,16 @@ if (result.kind === "help" || result.kind === "version") {
   )
   const stream = outcome.exitCode === 0 ? process.stdout : process.stderr
   stream.write(outcome.message.endsWith("\n") ? outcome.message : `${outcome.message}\n`)
+  process.exitCode = outcome.exitCode
+} else if (result.kind === "handoff-reply") {
+  const outcome = await runHandoffReply({ id: result.id, body: result.body, cwd: result.startDirectory ?? process.cwd() })
+  const stream = outcome.exitCode === 0 ? process.stdout : process.stderr
+  stream.write(outcome.text.endsWith("\n") ? outcome.text : `${outcome.text}\n`)
+  process.exitCode = outcome.exitCode
+} else if (result.kind === "handoff") {
+  const outcome = await runHandoff({ json: result.json, cwd: result.startDirectory ?? process.cwd() })
+  const stream = outcome.exitCode === 0 ? process.stdout : process.stderr
+  stream.write(outcome.text.endsWith("\n") ? outcome.text : `${outcome.text}\n`)
   process.exitCode = outcome.exitCode
 } else {
   process.exitCode = await startApp(
