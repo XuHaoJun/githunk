@@ -1,5 +1,6 @@
 import { StyledText, bold as boldChunk, dim as dimChunk, fg as fgChunk, type TextChunk, type TextRenderable } from "@opentui/core"
 import type { AnsiSpan } from "../ansi"
+import type { InstalledPaneText } from "./diff-text"
 import { paneTextBuffer, type PaneTextBuffer } from "./pane-text"
 import { createViewportHighlights, type ViewportHighlights } from "./viewport-highlights"
 
@@ -66,9 +67,9 @@ function countRows(value: string): number {
 }
 
 /** The preamble always ends at a row boundary, so the body's first row is its line count. */
-function joined(content: AnsiTextContent): { readonly text: string; readonly firstBodyRow: number } {
+function joined(content: AnsiTextContent): InstalledPaneText & { readonly firstBodyRow: number } {
   const preamble = content.preamble.length === 0 || content.preamble.endsWith("\n") ? content.preamble : `${content.preamble}\n`
-  return { text: `${preamble}${content.body}`, firstBodyRow: countRows(preamble) }
+  return { text: `${preamble}${content.body}`, preambleLength: preamble.length, firstBodyRow: countRows(preamble) }
 }
 
 function groupByRow(spans: readonly AnsiSpan[], offset: number): AnsiPaint {
@@ -86,8 +87,12 @@ function groupByRow(spans: readonly AnsiSpan[], offset: number): AnsiPaint {
  * Whole-document chunk rendering: correct, and what this module exists to avoid. Reached only if a
  * future OpenTUI stops exposing the buffer, so the pane degrades in speed rather than colour.
  */
-function paintAsChunks(text: TextRenderable, content: AnsiTextContent): void {
-  const { text: full, firstBodyRow } = joined(content)
+function paintAsChunks(
+  text: TextRenderable,
+  content: AnsiTextContent,
+  installed: InstalledPaneText & { readonly firstBodyRow: number },
+): InstalledPaneText {
+  const { text: full, firstBodyRow } = installed
   const spansByRow = groupByRow(content.spans, firstBodyRow)
   const rows = full.split("\n")
   const chunks: TextChunk[] = []
@@ -114,19 +119,20 @@ function paintAsChunks(text: TextRenderable, content: AnsiTextContent): void {
     if (cursor < codePoints.length) chunks.push({ __isChunk: true, text: codePoints.slice(cursor).join("") } as TextChunk)
   }
   text.content = new StyledText(chunks)
+  return { text: installed.text, preambleLength: installed.preambleLength }
 }
 
 /**
  * Installs `content` as the pane's text. Re-installing the same text is a no-op beyond refreshing
  * the paint description, which is what makes re-focusing a panel free.
  */
-export function installAnsiText(text: TextRenderable, content: AnsiTextContent): void {
+export function installAnsiText(text: TextRenderable, content: AnsiTextContent): InstalledPaneText {
+  const installed = joined(content)
   const buffer = paneTextBuffer(text)
   if (buffer === undefined) {
-    paintAsChunks(text, content)
-    return
+    return paintAsChunks(text, content, installed)
   }
-  const { text: full, firstBodyRow } = joined(content)
+  const { text: full, firstBodyRow } = installed
   const spansByRow = groupByRow(content.spans, firstBodyRow)
   let painter = painters.get(text)
   if (painter === undefined) {
@@ -147,6 +153,7 @@ export function installAnsiText(text: TextRenderable, content: AnsiTextContent):
     painters.set(text, painter)
   }
   painter.highlights.install(full, spansByRow)
+  return { text: installed.text, preambleLength: installed.preambleLength }
 }
 
 /**

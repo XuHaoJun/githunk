@@ -1,10 +1,11 @@
 import type { TextRenderable } from "@opentui/core"
 import type { DiffDocument } from "../../domain/diff/document"
 import { type DocumentSelection } from "../../domain/diff/selection"
+import type { MainSelectionProjection, MainSelectionProjectionSegment } from "../../domain/diff/selection-projection"
 import { createVirtualDiffLayout, VIRTUAL_DIFF_LINE_THRESHOLD, type VirtualDiffDisplayOffsets, type VirtualDiffLayout } from "../../domain/diff/virtual"
 import { cellWidth } from "../../domain/diff/cell-width"
 import { clearScrollbarViewportOverride, type PaneHandle } from "./common"
-import { installDiffText, releaseDiffText, statSpansForPreamble, type DiffStatSpan } from "./diff-text"
+import { installDiffText, releaseDiffText, statSpansForPreamble, type DiffStatSpan, type InstalledPaneText } from "./diff-text"
 import { onPaneLifecyclePass } from "./pane-text"
 
 const ACCESSORS = ["scrollY", "scrollHeight", "maxScrollY", "scrollX", "scrollWidth", "maxScrollX"] as const
@@ -13,6 +14,10 @@ type AccessorDescriptor = PropertyDescriptor | undefined
 
 const virtualPanes = new WeakMap<PaneHandle, VirtualMainPane>()
 
+export type VirtualMainPaneSelectionPort = {
+  readonly publishProjection: (draft: Omit<MainSelectionProjection, "generation">) => void
+  readonly currentDocumentSelection: () => DocumentSelection | undefined
+}
 export const VIRTUAL_MAIN_OVERSCAN_MIN = 10
 
 type VirtualState = {
@@ -24,8 +29,8 @@ type VirtualState = {
   scrollX: number
   viewportHeight: number
   viewportWidth: number
-  rawSelection: DocumentSelection | undefined
   renderedWindow: readonly [number, number] | undefined
+  renderedContentWidth: number | undefined
   preambleSpans: ReadonlyMap<number, readonly DiffStatSpan[]>
   originalDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
   originalOwnDescriptors: ReadonlyMap<AccessorName, AccessorDescriptor>
@@ -39,8 +44,6 @@ export type VirtualMainPane = {
   lineOffsets(startIndex: number, endIndex: number): VirtualDiffDisplayOffsets | undefined
   visualRowRange(startIndex: number, endIndex: number): { readonly startRow: number; readonly endRow: number } | undefined
   setLineSelection(startUtf16: number, endUtf16: number): void
-  setPointerSelection(startRow: number, startColumn: number, endRow: number, endColumn: number): DocumentSelection | undefined
-  selection(): DocumentSelection | undefined
   resetSelection(): void
   clampScroll(): void
 }
@@ -142,7 +145,7 @@ function installAccessors(pane: PaneHandle, state: VirtualState, rerender: () =>
   }
 }
 
-function createAdapter(pane: PaneHandle): VirtualMainPane {
+function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelectionPort): VirtualMainPane {
   const text = pane.text
   const originalOwnDescriptors = new Map<AccessorName, AccessorDescriptor>(ACCESSORS.map((name) => [name, Object.getOwnPropertyDescriptor(text, name)] as const))
   const originalDescriptors = new Map<AccessorName, AccessorDescriptor>(ACCESSORS.map((name) => [name, Object.getOwnPropertyDescriptor(text, name) ?? prototypeDescriptor(text, name)] as const))
@@ -155,13 +158,12 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     scrollX: 0,
     viewportHeight: Math.max(1, Math.floor(text.height)),
     viewportWidth: Math.max(0, Math.floor(text.width)),
-    rawSelection: undefined,
     renderedWindow: undefined,
+    renderedContentWidth: undefined,
     preambleSpans: new Map(),
     originalDescriptors,
     originalOwnDescriptors,
   }
-
   const restoreAccessors = (): void => {
     const target = text as unknown as Record<string, unknown>
     for (const name of ACCESSORS) {
@@ -172,7 +174,7 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
   }
 
   const visibleSelection = (): { readonly start: number; readonly end: number } | undefined => {
-    const selection = state.rawSelection
+    const selection = selectionPort.currentDocumentSelection()
     const layout = state.layout
     const window = state.renderedWindow
     if (selection === undefined || layout === undefined || window === undefined) return undefined
@@ -216,11 +218,27 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     if (state.scrollX > maxX) state.scrollX = maxX
     const overscan = Math.max(VIRTUAL_MAIN_OVERSCAN_MIN, state.viewportHeight)
     const window = state.layout.window(state.scrollY, state.viewportHeight, overscan)
+    const previousWindow = state.renderedWindow
+    const projectionWindowChanged = previousWindow === undefined
+      || previousWindow[0] !== window[0]
+      || previousWindow[1] !== window[1]
+    const projectionContentChanged = state.renderedContentWidth !== state.layout.contentWidth
     const localScrollY = state.scrollY - window[0]
     state.renderedWindow = window
+    state.renderedContentWidth = state.layout.contentWidth
     const rows: string[] = []
     const displays = [] as Array<{ readonly gutterCols: number; readonly style: "plain" | "addition" | "deletion" | "hunk-header" | "metadata" }>
     const preambleRows: string[] = []
+    const projectionSegments: MainSelectionProjectionSegment[] = []
+    let projectionCursor = 0
+    const appendSegment = (segment: MainSelectionProjectionSegment): void => {
+      if (segment.displayEndUtf16 <= segment.displayStartUtf16) return
+      projectionSegments.push(segment)
+      projectionCursor = segment.displayEndUtf16
+    }
+    const appendDecoration = (length: number): void => {
+      appendSegment({ kind: "decoration", displayStartUtf16: projectionCursor, displayEndUtf16: projectionCursor + length })
+    }
     const preambleSpans = new Map<number, readonly DiffStatSpan[]>()
     const first = window[0]
     const last = window[1]
@@ -228,7 +246,13 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       const preambleLast = Math.min(last, state.layout.preambleRows - 1)
       for (let row = first; row <= preambleLast; row += 1) {
         const value = state.layout.rowAt(row)
-        if (value !== undefined) preambleRows.push(padDisplayRow(value.text, state.layout.contentWidth))
+        if (value !== undefined) {
+          const padded = padDisplayRow(value.text, state.layout.contentWidth)
+          preambleRows.push(padded)
+          appendSegment({ kind: "text", displayStartUtf16: projectionCursor, displayEndUtf16: projectionCursor + value.text.length })
+          appendDecoration(padded.length - value.text.length)
+          appendSegment({ kind: "text", displayStartUtf16: projectionCursor, displayEndUtf16: projectionCursor + 1 })
+        }
         const spans = state.preambleSpans.get(row)
         if (spans !== undefined) preambleSpans.set(row - first, spans)
       }
@@ -237,12 +261,45 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
     for (let row = bodyFirst; row <= last; row += 1) {
       const value = state.layout.rowAt(row)
       if (value === undefined || value.lineIndex === undefined) continue
-      rows.push(padDisplayRow(value.text, state.layout.contentWidth))
+      const padded = padDisplayRow(value.text, state.layout.contentWidth)
+      rows.push(padded)
       displays.push({ gutterCols: value.gutterCols, style: value.style })
+      appendDecoration(value.gutterCols)
+      const line = state.document!.lines[value.lineIndex]!
+      const body = value.text.slice(value.gutterCols)
+      appendSegment({
+        kind: "document",
+        displayStartUtf16: projectionCursor,
+        displayEndUtf16: projectionCursor + body.length,
+        rawStartUtf16: line.startUtf16,
+        rawEndUtf16: line.startUtf16 + body.length,
+        lineIndex: value.lineIndex,
+      })
+      appendDecoration(padded.length - value.text.length)
+      if (row < last) {
+        const rawBodyEnd = line.startUtf16 + withoutLineEnding(line.raw).length
+        if (rawBodyEnd < line.endUtf16) {
+          appendSegment({
+            kind: "document",
+            displayStartUtf16: projectionCursor,
+            displayEndUtf16: projectionCursor + 1,
+            rawStartUtf16: rawBodyEnd,
+            rawEndUtf16: line.endUtf16,
+            lineIndex: value.lineIndex,
+          })
+        } else {
+          appendDecoration(1)
+        }
+      }
     }
     const preamble = preambleRows.length === 0 ? "" : `${preambleRows.join("\n")}\n`
-    installDiffText(text, { preamble, body: rows.join("\n"), displayLines: displays, highlightScrollY: () => localScrollY, preambleSpans })
+    const body = rows.join("\n")
+    const installed: InstalledPaneText = installDiffText(text, { preamble, body, displayLines: displays, highlightScrollY: () => localScrollY, preambleSpans })
+    if (projectionCursor !== installed.text.length) throw new Error("virtual main selection projection does not cover installed text")
     const originalScrollY = state.originalDescriptors.get("scrollY")?.set
+    if (projectionWindowChanged || projectionContentChanged) {
+      selectionPort.publishProjection({ document: state.document!, text: installed.text, segments: projectionSegments })
+    }
     originalScrollY?.call(text, localScrollY)
     const originalScrollX = state.originalDescriptors.get("scrollX")?.set
     originalScrollX?.call(text, state.scrollX)
@@ -267,6 +324,8 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       state.viewportHeight = current.height
       state.viewportWidth = current.width
       installAccessors(pane, state, rerender)
+      state.renderedWindow = undefined
+      state.renderedContentWidth = undefined
       text.wrapMode = "none"
       renderWindow()
     },
@@ -279,8 +338,6 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       state.active = false
       state.document = undefined
       state.layout = undefined
-      state.rawSelection = undefined
-      state.renderedWindow = undefined
       releaseDiffText(text)
       state.preambleSpans = new Map()
       restoreAccessors()
@@ -296,28 +353,11 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       const end = state.layout.preambleRows + Math.max(startIndex, endIndex)
       return { startRow: start, endRow: end }
     },
-    setLineSelection(startUtf16, endUtf16) {
-      if (!state.active || state.document === undefined) return
-      state.rawSelection = documentSelection(state.document, startUtf16, endUtf16)
+    setLineSelection(_startUtf16, _endUtf16) {
+      if (!state.active) return
       paintSelection()
     },
-    setPointerSelection(startRow, startColumn, endRow, endColumn) {
-      if (!state.active || state.layout === undefined || state.document === undefined) return undefined
-      const start = state.layout.rawOffsetAt(Math.max(0, Math.floor(state.scrollY + startRow)), Math.max(0, Math.floor(state.scrollX + startColumn)))
-      const end = state.layout.rawOffsetAt(Math.max(0, Math.floor(state.scrollY + endRow)), Math.max(0, Math.floor(state.scrollX + endColumn)))
-      if (start === undefined || end === undefined) {
-        state.rawSelection = undefined
-        paintSelection()
-        return undefined
-      }
-      const selection = documentSelection(state.document, Math.min(start, end), Math.max(start, end))
-      state.rawSelection = selection
-      paintSelection()
-      return selection
-    },
-    selection: () => state.rawSelection,
     resetSelection() {
-      state.rawSelection = undefined
       ;(text as unknown as { resetSelection?: () => void }).resetSelection?.()
     },
     clampScroll() {
@@ -330,8 +370,16 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
       }
       const maxY = Math.max(0, state.layout.totalRows - state.viewportHeight)
       const maxX = Math.max(0, state.layout.contentWidth - state.viewportWidth)
-      state.scrollY = Math.min(maxY, Math.max(0, state.scrollY))
-      state.scrollX = Math.min(maxX, Math.max(0, state.scrollX))
+      const nextY = Math.min(maxY, Math.max(0, state.scrollY))
+      const nextX = Math.min(maxX, Math.max(0, state.scrollX))
+      const current = dimensions(text)
+      const unchanged = nextY === state.scrollY
+        && nextX === state.scrollX
+        && current.height === state.viewportHeight
+        && current.width === state.viewportWidth
+      state.scrollY = nextY
+      state.scrollX = nextX
+      if (unchanged) return
       renderWindow()
     },
   }
@@ -343,10 +391,10 @@ function createAdapter(pane: PaneHandle): VirtualMainPane {
   return adapter
 }
 
-export function createVirtualMainPane(pane: PaneHandle): VirtualMainPane {
+export function createVirtualMainPane(pane: PaneHandle, selectionPort: VirtualMainPaneSelectionPort): VirtualMainPane {
   const existing = virtualPanes.get(pane)
   if (existing !== undefined) return existing
-  const adapter = createAdapter(pane)
+  const adapter = createAdapter(pane, selectionPort)
   virtualPanes.set(pane, adapter)
   return adapter
 }

@@ -61,11 +61,11 @@ import {
   type FileTreeState,
 } from "./file-tree"
 import { submoduleFullName, submoduleFullPath, type SubmoduleConfig } from "../domain/submodule"
-import { createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainPointerSelection, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainDiffVisualRowRange, moveMainCursor, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, virtualMainPaneFor, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
+import { clearMainSelection, createMainPane, changeLineIndexes, clampMainScroll, getMainCursorTarget, getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, getMainSelection, getMainRenderedText, installMainContent as installMainPaneContent, mainActionAvailability, mainCursorTargetLine, mainDiffVisualRowRange, moveMainCursor, resolveMainNativeSelection, scrollMainPane, setMainCursorTarget, setMainDiffLineRangeState, setMainLoading, virtualMainPaneFor, MAIN_TITLE_LOG, MAIN_TITLE_REMOTE, MAIN_TITLE_REMOTE_BRANCH, MAIN_TITLE_TAG, type MainCursorTarget, type MainPaneContent } from "./panes/main-pane"
 import { createStashPane, selectedStashEntryFromState, stashRows } from "./panes/stash-pane"
 import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { PANE_SCROLLBAR_GUTTER, paneScrollbar, scrollYToReveal, syncVerticalScrollbar, type PaneHandle } from "./panes/common"
-import { copySelection, selectionFromRenderable, type DocumentSelection } from "../domain/diff/selection"
+import { copySelection } from "../domain/diff/selection"
 import { clearDiffLineRange, diffLineSelectionRange, expandDiffLineRange, moveDiffLineSelection, toggleDiffLineRange } from "../domain/diff/line-selection"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
@@ -219,7 +219,7 @@ export type GestureOwner =
   | { readonly kind: "vertical-splitter" }
   | { readonly kind: "horizontal-splitter" }
   | { readonly kind: "scrollbar"; readonly paneId: FocusId }
-  | { readonly kind: "main-selection" }
+  | { readonly kind: "main-selection"; readonly selectable: boolean }
   | { readonly kind: "list-range"; readonly paneId: ListPaneId; readonly viewId: string; readonly anchorId: string }
 
 
@@ -245,7 +245,7 @@ export class RootView {
   private lastSplitterPress: { readonly axis: "vertical" | "horizontal"; readonly x: number; readonly y: number; readonly at: number } | undefined
   private activeSplitterDrag: SplitterAxis | undefined
   gestureOwner: GestureOwner | undefined
-  private mainPointerAnchor: { readonly row: number; readonly column: number } | undefined
+  private pendingNativeMainSelection = false
   private pendingClick: { readonly viewId: string; readonly stableId: string; readonly x: number; readonly y: number; readonly at: number; readonly arrowToggled?: boolean } | undefined
   private hoveredListRow: HoveredListRow | undefined
 
@@ -312,6 +312,7 @@ export class RootView {
   private readonly registry = createRegistry()
   private readonly filterInput = new FilterInput()
   private readonly handleResize: () => void
+  private readonly handleSelection: () => void
   private readonly handleKey: (key: KeyEvent) => void
   private destroyed = false
 
@@ -480,6 +481,13 @@ export class RootView {
       }
       this.recomputeLayout()
     }
+    this.handleSelection = () => {
+      if (!this.pendingNativeMainSelection) return
+      this.pendingNativeMainSelection = false
+      // OpenTUI emits `selection` after mouse-up has updated the native range. Defer until its
+      // final selectable notification completes, then consume the renderer-owned endpoint.
+      queueMicrotask(() => resolveMainNativeSelection(this.panes.main))
+    }
     this.handleKey = (key: KeyEvent) => {
       if (this.ports.host.isBranchReviewActive()) return
       const normalized = normalizeKey(key)
@@ -521,6 +529,7 @@ export class RootView {
       key.stopPropagation()
     }
     renderer.on("resize", this.handleResize)
+    renderer.on("selection", this.handleSelection)
     renderer.keyInput.on("keypress", this.handleKey)
     this.installMouseHandlers()
     this.applyFocus(this.focusManager.active)
@@ -808,16 +817,23 @@ export class RootView {
       height: Math.max(1, heightOf(win as unknown as never) - 2),
     }
   }
-  cancelGesture(): void {
-    // Cancelling an in-progress main drag discards its partial virtual range, mirroring how
-    // OpenTUI clears renderer selection on a non-selecting down (chunk-bun-da1keqyp.js:9181-9183).
-    // A completed selection (gestureOwner already undefined after mouse-up) survives focus/Escape,
-    // matching eager native selection and the Task 3 focus-preservation contract.
-    if (this.gestureOwner?.kind === "main-selection") {
-      virtualMainPaneFor(this.panes.main)?.resetSelection()
+  private resetMainNativeSelection(): void {
+    const view = this.panes.main.text
+    if (view !== null && typeof view === "object" && "resetSelection" in view) {
+      const reset = view.resetSelection
+      if (typeof reset === "function") reset.call(view)
     }
+  }
+  cancelGesture(): void {
+    // Cancelling an in-progress main drag clears semantic state and renderer paint, matching
+    // OpenTUI's selection reset while preserving completed selections after mouse-up.
+    if (this.gestureOwner?.kind === "main-selection") {
+      clearMainSelection(this.panes.main)
+      virtualMainPaneFor(this.panes.main)?.resetSelection()
+      this.resetMainNativeSelection()
+    }
+    this.pendingNativeMainSelection = false
     this.gestureOwner = undefined
-    this.mainPointerAnchor = undefined
     this.activeSplitterDrag = undefined
   }
   get activeBranchesTab(): "branches" | "remotes" | "tags" {
@@ -3540,14 +3556,12 @@ export class RootView {
   }
 
   private mainActionTarget(document: DiffDocument): MainCursorTarget | undefined {
-    const pointer = getMainPointerSelection(this.panes.main)
-    // A bare click stores a valid but zero-length pointer range; using its file/hunk here while
-    // mainChangeSelection falls back to the keyboard cursor would split target and indexes across
-    // files (e.g. click untracked file B with cursor on file A). Only a non-empty pointer acts.
-    if (pointer?.fileIndex !== undefined && pointer.valid && pointer.endUtf16 > pointer.startUtf16) {
+    const resolved = getMainSelection(this.panes.main)
+    if (resolved !== undefined) {
+      if (!resolved.valid || resolved.kind !== "document" || resolved.selection.fileIndex === undefined) return undefined
       return {
-        fileIndex: pointer.fileIndex,
-        ...(pointer.hunkIndex === undefined ? {} : { hunkIndex: pointer.hunkIndex }),
+        fileIndex: resolved.selection.fileIndex,
+        ...(resolved.selection.hunkIndex === undefined ? {} : { hunkIndex: resolved.selection.hunkIndex }),
       }
     }
     const selected = getMainDiffLineSelection(this.panes.main)
@@ -3561,45 +3575,16 @@ export class RootView {
     }
     return getMainCursorTarget(this.panes.main)
   }
-  /**
-   * Lazygit's `learn-projects/lazygit/pkg/gui/tasks_adapter.go:54-57` asks
-   * `learn-projects/lazygit/pkg/tasks/tasks.go:189-200` for an absolute `ReadLines` target as the viewport
-   * advances; this adapter keeps the raw document complete while painting only the bounded logical
-   */
-  private mainPointerCoordinates(event: MouseEvent): { readonly row: number; readonly column: number } | undefined {
-    const geometry = this.paneTextGeometry("main")
-    if (geometry === undefined) return undefined
-    const row = event.y - geometry.screenY
-    const column = event.x - geometry.screenX
-    if (!Number.isSafeInteger(row) || !Number.isSafeInteger(column) || row < 0 || row >= geometry.height || column < 0 || column >= geometry.width) return undefined
-    return { row, column }
-  }
-
-  private updateVirtualMainPointer(event: MouseEvent): void {
-    const virtual = virtualMainPaneFor(this.panes.main)
-    if (!virtual?.isActive()) return
-    const anchor = this.mainPointerAnchor
-    if (anchor === undefined) {
-      virtual.resetSelection()
-      return
-    }
-    const point = this.mainPointerCoordinates(event)
-    if (point === undefined) {
-      virtual.resetSelection()
-      return
-    }
-    virtual.setPointerSelection(anchor.row, anchor.column, point.row, point.column)
-  }
-
 
   private mainChangeSelection(): { readonly document: DiffDocument; readonly indexes: readonly number[] } | undefined {
     const document = getMainDocument(this.panes.main)
     if (!document) return undefined
-    const pointerSelection = getMainPointerSelection(this.panes.main)
-    if (pointerSelection?.valid && pointerSelection.endUtf16 > pointerSelection.startUtf16) {
+    const resolved = getMainSelection(this.panes.main)
+    if (resolved !== undefined) {
+      if (!resolved.valid || resolved.kind !== "document") return undefined
       return {
         document,
-        indexes: changeLineIndexes(document, pointerSelection.startUtf16, pointerSelection.endUtf16),
+        indexes: changeLineIndexes(document, resolved.selection.startUtf16, resolved.selection.endUtf16),
       }
     }
     const keyboardSelection = getMainDiffLineSelection(this.panes.main)
@@ -3607,13 +3592,6 @@ export class RootView {
       return {
         document,
         indexes: changeLineIndexes(document, keyboardSelection.startUtf16, keyboardSelection.endUtf16),
-      }
-    }
-    const nativeRange = this.panes.main.text.getSelection()
-    if (nativeRange) {
-      const selection = selectionFromRenderable(document, nativeRange, this.panes.main.text.getSelectedText())
-      if (selection.valid && selection.endUtf16 > selection.startUtf16) {
-        return { document, indexes: changeLineIndexes(document, selection.startUtf16, selection.endUtf16) }
       }
     }
     const target = getMainCursorTarget(this.panes.main)
@@ -4342,50 +4320,53 @@ export class RootView {
   }
   private copyMainMode(mode: CopyMode): void {
     const pane = this.panes.main
-    const document = getMainDocument(pane)
-    if (!document) {
-      pane.box.bottomTitle = "No text selected"
+    const resolved = getMainSelection(pane)
+    const reject = (): void => {
+      pane.box.bottomTitle = "Selection rejected: native/display selection mismatch"
       this.root.requestRender()
+    }
+    if (resolved !== undefined && !resolved.valid) {
+      reject()
       return
     }
-    const rawPointerSelection = getMainPointerSelection(pane)
-    // Same non-empty gate as mainActionTarget/mainChangeSelection: a zero-length click must not
-    // block the keyboard/native fallback for text copy.
-    const pointerSelection = rawPointerSelection !== undefined && rawPointerSelection.valid && rawPointerSelection.endUtf16 > rawPointerSelection.startUtf16
-      ? rawPointerSelection
-      : undefined
-    const keyboardSelection = getMainDiffLineSelection(pane)
-    const nativeRange = pane.text.getSelection()
-    let selection: DocumentSelection | undefined = mode === "hunk" || mode === "file"
-      ? undefined
-      : pointerSelection ?? (keyboardSelection === undefined ? undefined : {
-        valid: true as const,
-        startUtf16: keyboardSelection.startUtf16,
-        endUtf16: keyboardSelection.endUtf16,
-        active: true as const,
-      })
-    if (selection === undefined && pointerSelection === undefined && keyboardSelection === undefined && nativeRange) {
-      selection = selectionFromRenderable(document, nativeRange, pane.text.getSelectedText())
-    }
-    if (!selection && (mode === "hunk" || mode === "file")) {
-      const target = getMainCursorTarget(pane)
-      if (target) {
-        selection = {
-          valid: true,
-          startUtf16: 0,
-          endUtf16: 0,
-          fileIndex: target.fileIndex,
-          ...(target.hunkIndex === undefined ? {} : { hunkIndex: target.hunkIndex }),
-          active: false,
-        }
+    if (resolved?.valid && resolved.kind === "text") {
+      if (mode !== "text") {
+        reject()
+        return
       }
-    }
-    const text = copySelection(document, selection, mode)
-    if (selection && !selection.valid) {
-      pane.box.bottomTitle = `Selection rejected: ${selection.reason ?? "native/display mismatch"}`
+      pane.box.bottomTitle = formatCopyResult(this.clipboard.copy(resolved.text))
       this.root.requestRender()
       return
     }
+
+    const document = getMainDocument(pane)
+    const selection = resolved?.valid && resolved.kind === "document"
+      ? resolved.selection
+      : mode === "hunk" || mode === "file"
+        ? (() => {
+          if (document === undefined) return undefined
+          const target = getMainCursorTarget(pane)
+          if (target === undefined) return undefined
+          return {
+            valid: true as const,
+            startUtf16: 0,
+            endUtf16: 0,
+            fileIndex: target.fileIndex,
+            ...(target.hunkIndex === undefined ? {} : { hunkIndex: target.hunkIndex }),
+            active: false as const,
+          }
+        })()
+        : (() => {
+          const keyboardSelection = getMainDiffLineSelection(pane)
+          if (keyboardSelection === undefined) return undefined
+          return {
+            valid: true as const,
+            startUtf16: keyboardSelection.startUtf16,
+            endUtf16: keyboardSelection.endUtf16,
+            active: true as const,
+          }
+        })()
+    const text = document === undefined ? "" : copySelection(document, selection, mode)
     pane.box.bottomTitle = formatCopyResult(this.clipboard.copy(text))
     this.root.requestRender()
   }
@@ -4702,6 +4683,7 @@ export class RootView {
       }
     }
     this.renderer.off("resize", this.handleResize)
+    this.renderer.off("selection", this.handleSelection)
     this.renderer.keyInput.off("keypress", this.handleKey)
     this.root.destroyRecursively()
   }
@@ -4871,19 +4853,18 @@ export class RootView {
           return
         }
         if (owner.kind === "main-selection") {
-          const virtual = virtualMainPaneFor(this.panes.main)
           if (event.type === "drag") {
             this.pendingClick = undefined
             this.lastSplitterPress = undefined
-            if (virtual?.isActive()) this.updateVirtualMainPointer(event)
+            if (owner.selectable) resolveMainNativeSelection(this.panes.main)
             event.preventDefault()
             event.stopPropagation()
             return
           }
           if (event.type === "up" || (event.type as string) === "cancel") {
-            if (virtual?.isActive() && event.type === "up") this.updateVirtualMainPointer(event)
+            if (event.type === "up" && owner.selectable) this.pendingNativeMainSelection = true
+            if ((event.type as string) === "cancel" || !owner.selectable) clearMainSelection(this.panes.main)
             this.gestureOwner = undefined
-            this.mainPointerAnchor = undefined
             event.preventDefault()
             event.stopPropagation()
             return
@@ -5009,25 +4990,19 @@ export class RootView {
         if (paneId === "main") {
           const rangeState = getMainDiffLineRangeState(this.panes.main)
           if (rangeState !== undefined && rangeState.rangeMode !== "none") setMainDiffLineRangeState(this.panes.main, clearDiffLineRange(rangeState))
-        }
-        if (paneId === "main") {
+          clearMainSelection(this.panes.main)
+          this.pendingNativeMainSelection = false
           this.pendingClick = undefined
           this.lastSplitterPress = undefined
           if (this.focusManager.active !== "main") this.focusManager.focus("main")
-          const virtual = virtualMainPaneFor(this.panes.main)
-          // OpenTUI only starts a selection for left-button without Ctrl
-          // (chunk-bun-da1keqyp.js:9089); a right/middle/Ctrl down must not create a virtual raw
-          // range, and clears any prior one like the renderer's down-clear (chunk-bun-da1keqyp.js:9181-9183).
-          const canSelect = event.button === 0 && !event.modifiers.ctrl
-          const point = virtual?.isActive() && canSelect ? this.mainPointerCoordinates(event) : undefined
-          this.mainPointerAnchor = point
-          if (virtual?.isActive()) {
-            if (point === undefined) virtual.resetSelection()
-            else virtual.setPointerSelection(point.row, point.column, point.row, point.column)
+          // OpenTUI owns the native selection lifecycle. The semantic selection is captured from
+          // that native range on drag/up, so eager and virtual content share one path.
+          const selectable = event.button === 0 && event.modifiers.ctrl !== true
+          if (!selectable) {
+            this.resetMainNativeSelection()
           }
-          this.gestureOwner = { kind: "main-selection" }
+          this.gestureOwner = { kind: "main-selection", selectable }
           this.clearTransientMenus()
-          if (virtual?.isActive() && canSelect) event.preventDefault()
           event.stopPropagation()
           return
         }

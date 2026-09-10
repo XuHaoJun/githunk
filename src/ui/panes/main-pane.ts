@@ -2,6 +2,7 @@ import type { CliRenderer } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import type { DiffDocument, DiffFile } from "../../domain/diff/document"
 import type { DocumentSelection } from "../../domain/diff/selection"
+import { eagerDiffSelectionProjection, resolveMainSelection, textSelectionProjection, type MainSelection, type MainSelectionProjection, type NativeSelectionRange } from "../../domain/diff/selection-projection"
 import { renderDiff } from "../../domain/diff/render"
 import { changedIndexesInDiffLineRange, createDiffLineRangeState, diffLineSelectionRange, type DiffLineRangeState } from "../../domain/diff/line-selection"
 import type { AnsiText } from "../ansi"
@@ -20,6 +21,13 @@ const lineRanges = new WeakMap<PaneHandle, DiffLineRangeState>()
 const installedContents = new WeakMap<PaneHandle, MainPaneContent>()
 const renderedTexts = new WeakMap<PaneHandle, string>()
 const paneTitles = new WeakMap<PaneHandle, string>()
+const selectionProjections = new WeakMap<PaneHandle, MainSelectionProjection>()
+type StoredMainSelection = {
+  readonly projectionGeneration: number
+  readonly value: MainSelection
+}
+const storedSelections = new WeakMap<PaneHandle, StoredMainSelection>()
+let nextProjectionGeneration = 0
 
 export type MainCursorTarget = {
   readonly fileIndex: number
@@ -42,6 +50,7 @@ export type MainPaneContent = {
   readonly ansi?: AnsiText
   readonly plainText?: string
 }
+
 
 /**
  * The titles lazygit gives the main view per panel-3 selection. The panel, not the selected ref,
@@ -83,11 +92,101 @@ function ensureMainTextSelectionSurface(pane: PaneHandle): void {
     }
   }
 }
+
+function currentDocumentSelection(pane: PaneHandle): DocumentSelection | undefined {
+  const projection = selectionProjections.get(pane)
+  const stored = storedSelections.get(pane)
+  if (projection === undefined || stored === undefined || stored.projectionGeneration !== projection.generation) return undefined
+  if (!stored.value.valid || stored.value.kind !== "document") return undefined
+  return stored.value.selection
+}
+
+function publishProjection(
+  pane: PaneHandle,
+  draft: Omit<MainSelectionProjection, "generation">,
+): void {
+  const previous = selectionProjections.get(pane)
+  const stored = storedSelections.get(pane)
+  const generation = ++nextProjectionGeneration
+  selectionProjections.set(pane, { ...draft, generation })
+  if (
+    previous?.document !== undefined
+    && previous.document === draft.document
+    && stored?.value.valid === true
+    && stored.value.kind === "document"
+  ) {
+    storedSelections.set(pane, { projectionGeneration: generation, value: stored.value })
+  } else {
+    storedSelections.delete(pane)
+  }
+}
+
+export function getMainSelectionProjection(pane: PaneHandle): MainSelectionProjection | undefined {
+  return selectionProjections.get(pane)
+}
+
+export function resolveMainNativeSelection(pane: PaneHandle): MainSelection | undefined {
+  const projection = selectionProjections.get(pane)
+  if (projection === undefined) return undefined
+  const nativeRange = pane.text.getSelection() as NativeSelectionRange | null | undefined
+  if (nativeRange === null || nativeRange === undefined) {
+    storedSelections.delete(pane)
+    return undefined
+  }
+  const nativeStart = nativeRange.start ?? nativeRange.anchor ?? 0
+  const nativeEnd = nativeRange.end ?? nativeRange.focus ?? nativeStart
+  if (nativeStart === nativeEnd) {
+    storedSelections.delete(pane)
+    return undefined
+  }
+  const selectedText = pane.text.getSelectedText()
+  const selection = resolveMainSelection(projection, nativeRange, selectedText)
+  storedSelections.set(pane, { projectionGeneration: projection.generation, value: selection })
+  return selection
+}
+
+export function getMainSelection(pane: PaneHandle): MainSelection | undefined {
+  const projection = selectionProjections.get(pane)
+  const stored = storedSelections.get(pane)
+  if (projection === undefined || stored === undefined || stored.projectionGeneration !== projection.generation) return undefined
+  return stored.value
+}
+
+export function setMainDocumentSelection(pane: PaneHandle, selection: DocumentSelection): void {
+  const projection = selectionProjections.get(pane)
+  if (projection === undefined || projection.document === undefined || !selection.valid) {
+    storedSelections.delete(pane)
+    return
+  }
+  storedSelections.set(pane, {
+    projectionGeneration: projection.generation,
+    value: { valid: true, kind: "document", selection },
+  })
+}
+
+export function clearMainSelection(pane: PaneHandle): void {
+  storedSelections.delete(pane)
+}
+
+function publishTextProjection(pane: PaneHandle, text: string): void {
+  publishProjection(pane, textSelectionProjection(0, text))
+}
+
 export function createMainPane(renderer: CliRenderer, _model: AppModel): PaneHandle {
   const pane = createPane(renderer, "main", "0 Main", "", true)
   pane.text.selectionBg = SELECTED_LINE_BG
   ensureMainTextSelectionSurface(pane)
-  createVirtualMainPane(pane)
+  const nativeSelectionChanged = pane.text.onSelectionChanged.bind(pane.text)
+  pane.text.onSelectionChanged = (selection) => {
+    // Renderer-owned selection updates include Ctrl-clicks that never reach RootView's mouse
+    // handler. Invalidate the semantic snapshot before preserving OpenTUI's native paint.
+    if (selection !== null) clearMainSelection(pane)
+    return nativeSelectionChanged(selection)
+  }
+  createVirtualMainPane(pane, {
+    publishProjection: (draft) => publishProjection(pane, draft),
+    currentDocumentSelection: () => currentDocumentSelection(pane),
+  })
   // content will be installed via gate; keep placeholder until first install
   pane.box.title = "0 Main"
   paneTitles.set(pane, "0 Main")
@@ -212,13 +311,11 @@ function applyMainDiffLineVisualSelection(pane: PaneHandle, resetWhenInactive = 
   else if (resetWhenInactive) text.resetSelection?.()
 }
 
-export function getMainPointerSelection(pane: PaneHandle): DocumentSelection | undefined {
-  return virtualMainPaneFor(pane)?.selection()
-}
 export function setMainDiffLineRangeState(pane: PaneHandle, state: DiffLineRangeState): void {
   lineRanges.set(pane, state)
   const virtual = virtualMainPaneFor(pane)
   if (state.rangeMode === "none") {
+    clearMainSelection(pane)
     if (virtual?.isActive()) virtual.resetSelection()
     else applyMainDiffLineVisualSelection(pane)
     return
@@ -227,6 +324,18 @@ export function setMainDiffLineRangeState(pane: PaneHandle, state: DiffLineRange
   const range = diffLineSelectionRange(state)
   const start = document?.lines[range.startIndex]
   const end = document?.lines[range.endIndex]
+  if (start !== undefined && end !== undefined) {
+    setMainDocumentSelection(pane, {
+      valid: true,
+      startUtf16: start.startUtf16,
+      endUtf16: end.endUtf16,
+      fileIndex: start.fileIndex,
+      ...(start.hunkIndex === undefined ? {} : { hunkIndex: start.hunkIndex }),
+      active: true,
+    })
+  } else {
+    clearMainSelection(pane)
+  }
   if (virtual?.isActive() && start !== undefined && end !== undefined) {
     virtual.setLineSelection(start.startUtf16, end.endUtf16)
     return
@@ -361,9 +470,10 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
   const nextIdentity = `${content.source}:${content.stableId}`
 
   const sameIdentity = previousIdentity !== undefined && previousIdentity === nextIdentity
+  const sameDocument = content.document === undefined || previousContent?.document === content.document
   const identicalText = virtualDocument
-    ? previousContent?.document?.text === content.document?.text && previousContent?.preamble === content.preamble
-    : previousText !== undefined && previousText === nextText
+    ? sameDocument && previousContent?.document?.text === content.document?.text && previousContent?.preamble === content.preamble
+    : sameDocument && previousText !== undefined && previousText === nextText
   const previousWasDocument = documents.has(pane)
   const replacingDocument = previousWasDocument && content.document === undefined
   const enteringDocument = !previousWasDocument && content.document !== undefined
@@ -377,6 +487,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
 
   const previousRange = lineRanges.get(pane)
   const clearSelection = (): void => {
+    clearMainSelection(pane)
     virtualMainPaneFor(pane)?.resetSelection()
     const view = pane.text
     if (view !== null && typeof view === "object" && "resetSelection" in view) {
@@ -392,6 +503,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     updatePlain(pane, "Terminal too small")
     documents.delete(pane)
     clearSelection()
+    publishTextProjection(pane, pane.text.plainText)
     pane.text.scrollX = 0
     pane.text.scrollY = 0
     return
@@ -472,8 +584,14 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     releaseAnsiText(pane.text)
     if (enteringDocument || !sameIdentity || !identicalText) {
       const rendered = renderDiff(doc)
-      installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })
-
+      const installed = installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })
+      publishProjection(pane, eagerDiffSelectionProjection({
+        generation: 0,
+        document: doc,
+        text: installed.text,
+        preambleLength: installed.preambleLength,
+        bodySegments: rendered.segments,
+      }))
     }
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
@@ -488,7 +606,8 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     // wrap either (pkg/gui/views.go: the Normal view leaves `Wrap` false for command output).
     pane.text.wrapMode = "none"
     releaseDiffText(pane.text)
-    installAnsiText(pane.text, { preamble: content.preamble ?? "", body: content.ansi.text, spans: content.ansi.spans })
+    const installed = installAnsiText(pane.text, { preamble: content.preamble ?? "", body: content.ansi.text, spans: content.ansi.spans })
+    publishTextProjection(pane, installed.text)
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
     pane.syncScrollbar()
@@ -497,7 +616,10 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
   virtualMainPaneFor(pane)?.deactivate()
   documents.delete(pane)
   if (replacingDocument || leavingAnsi || !sameIdentity || !identicalText) clearSelection()
-  if (replacingDocument || leavingAnsi || !sameIdentity || !identicalText) updatePlain(pane, buildPlainContent(content))
+  if (replacingDocument || leavingAnsi || !sameIdentity || !identicalText) {
+    updatePlain(pane, buildPlainContent(content))
+    publishTextProjection(pane, pane.text.plainText)
+  }
   pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
   pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
   pane.syncScrollbar()
@@ -521,10 +643,12 @@ export function updateMainPane(pane: PaneHandle, _model: AppModel, tooSmall: boo
   if (tooSmall) {
     pane.box.title = "0 Main"
     pane.update("Terminal too small")
+    publishTextProjection(pane, pane.text.plainText)
     return
   }
   pane.box.title = "0 Main"
   pane.update("No patch loaded")
+  publishTextProjection(pane, pane.text.plainText)
 }
 
 /** Scrolls the main pane's text viewport, clamped to its content. */

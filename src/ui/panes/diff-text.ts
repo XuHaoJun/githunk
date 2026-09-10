@@ -33,6 +33,13 @@ export type DiffTextContent = {
   /** Optional stat spans precomputed against the full preamble and remapped to local rows. */
   readonly preambleSpans?: ReadonlyMap<number, readonly DiffStatSpan[]>
 }
+
+export type InstalledPaneText = {
+  /** Exact text written to the pane: the normalized preamble plus the body. */
+  readonly text: string
+  /** Length of the normalized preamble within `text`. */
+  readonly preambleLength: number
+}
 export type DiffStatSpan = {
   /** UTF-16 offsets used to split the fallback chunk text. */
   readonly start: number
@@ -167,9 +174,9 @@ function countRows(value: string): number {
  * always puts the patch on its own line; normalising here keeps that an invariant rather than an
  * assumption, because every row-to-style mapping below depends on it.
  */
-function joined(content: DiffTextContent): { readonly text: string; readonly firstDiffRow: number } {
+function joined(content: DiffTextContent): InstalledPaneText & { readonly firstDiffRow: number } {
   const preamble = content.preamble.length === 0 || content.preamble.endsWith("\n") ? content.preamble : `${content.preamble}\n`
-  return { text: `${preamble}${content.body}`, firstDiffRow: countRows(preamble) }
+  return { text: `${preamble}${content.body}`, preambleLength: preamble.length, firstDiffRow: countRows(preamble) }
 }
 
 function plainChunk(value: string): TextChunk {
@@ -188,8 +195,12 @@ function styledChunk(style: DiffDisplayLineStyle, value: string): TextChunk {
  * Whole-document chunk rendering: correct, and what this module exists to avoid. Reached only if a
  * future OpenTUI stops exposing the buffer, so the pane degrades in speed rather than colour.
  */
-function paintAsChunks(text: TextRenderable, content: DiffTextContent): void {
-  const { text: full, firstDiffRow } = joined(content)
+function paintAsChunks(
+  text: TextRenderable,
+  content: DiffTextContent,
+  installed: InstalledPaneText & { readonly firstDiffRow: number },
+): InstalledPaneText {
+  const { text: full, firstDiffRow } = installed
   const preambleSpans = content.preambleSpans ?? statSpansForPreamble(content.preamble)
   const rows = full.split("\n")
   const chunks: TextChunk[] = []
@@ -207,19 +218,20 @@ function paintAsChunks(text: TextRenderable, content: DiffTextContent): void {
     if (body.length > 0) chunks.push(styledChunk(display.style, body))
   }
   text.content = new StyledText(chunks)
+  return { text: installed.text, preambleLength: installed.preambleLength }
 }
 
 /**
  * Installs `content` as the pane's text. Re-installing the same text is a no-op beyond refreshing
  * the paint description, which is what makes re-focusing a panel free.
  */
-export function installDiffText(text: TextRenderable, content: DiffTextContent): void {
+export function installDiffText(text: TextRenderable, content: DiffTextContent): InstalledPaneText {
+  const installed = joined(content)
   const buffer = paneTextBuffer(text)
   if (buffer === undefined) {
-    paintAsChunks(text, content)
-    return
+    return paintAsChunks(text, content, installed)
   }
-  const { text: full, firstDiffRow } = joined(content)
+  const { text: full, firstDiffRow } = installed
   const paint: DiffPaint = {
     displayLines: content.displayLines,
     firstDiffRow,
@@ -248,6 +260,7 @@ export function installDiffText(text: TextRenderable, content: DiffTextContent):
     painters.set(text, painter)
   }
   painter.install(full, paint)
+  return { text: installed.text, preambleLength: installed.preambleLength }
 }
 
 /**

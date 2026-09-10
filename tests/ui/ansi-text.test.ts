@@ -61,6 +61,18 @@ describe("installAnsiText", () => {
       host.destroy()
     }
   })
+  test("returns the exact installed text and normalized preamble length", async () => {
+    const host = await pane()
+    try {
+      const parsed = parseAnsi("hello")
+      const installed = installAnsiText(host.text, { preamble: "commit abc", body: parsed.text, spans: parsed.spans })
+      await host.flush()
+      expect(installed.text).toBe(host.text.plainText)
+      expect(installed.preambleLength).toBe("commit abc\n".length)
+    } finally {
+      host.destroy()
+    }
+  })
 
   test("re-installing the same content leaves the scroll offset alone", async () => {
     const host = await pane()
