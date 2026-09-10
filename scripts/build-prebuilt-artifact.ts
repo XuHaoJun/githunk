@@ -4,6 +4,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 
 import path from "node:path"
 import {
   binaryFilenameForSpec,
+  copyBundledSkill,
   getHostPlatformPackageSpec,
   releaseArtifactsDir,
 } from "./prebuilt-package-helpers"
@@ -61,6 +62,7 @@ export function stagePrebuiltArtifact(options: StagePrebuiltArtifactOptions = {}
   if (spec.os !== "windows") {
     chmodSync(stagedBinary, 0o755)
   }
+  copyBundledSkill(repoRoot, outputDir)
 
   writeFileSync(
     path.join(outputDir, "metadata.json"),

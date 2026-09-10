@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { readdirSync } from "node:fs"
+import { cpSync, mkdirSync, readdirSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
@@ -15,6 +15,15 @@ export type PlatformPackageSpec = {
   readonly binaryRelativePath: string
 }
 
+
+export const BUNDLED_SKILL_RELATIVE_PATH = path.join("skills", "githunk-handoff", "SKILL.md")
+
+/** Copy only the public agent skill; repository maintainer skills never enter release payloads. */
+export function copyBundledSkill(sourceRoot: string, destinationRoot: string): void {
+  const destination = path.join(destinationRoot, "skills", "githunk-handoff")
+  mkdirSync(destination, { recursive: true })
+  cpSync(path.join(sourceRoot, BUNDLED_SKILL_RELATIVE_PATH), path.join(destination, "SKILL.md"))
+}
 const PLATFORM_NAME_MAP: Partial<Record<NodeJS.Platform, SupportedPlatform>> = {
   darwin: "darwin",
   linux: "linux",
@@ -141,7 +150,7 @@ export function buildPlatformPackageManifest(
     bin: {
       githunk: spec.binaryRelativePath,
     },
-    files: ["bin", "LICENSE"],
+    files: ["bin", "skills/githunk-handoff", "LICENSE"],
     ...(rootPackage.repository === undefined ? {} : { repository: rootPackage.repository }),
     ...(rootPackage.homepage === undefined ? {} : { homepage: rootPackage.homepage }),
     ...(rootPackage.bugs === undefined ? {} : { bugs: rootPackage.bugs }),

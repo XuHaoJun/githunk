@@ -68,6 +68,21 @@ githunk records each objection and computes whether its anchor moved or stayed
 byte-identical. It cannot decide whether a changed implementation satisfies the
 request; that remains your review.
 
+### Load the agent skill
+
+githunk ships its handoff skill with source, npm and standalone installs. For a
+one-off session, ask the agent to load the installed file:
+
+```text
+Run `githunk skill path`, read the returned SKILL.md, then process
+`githunk handoff --json` in the current repository.
+```
+
+`githunk skill show` prints the same document to stdout for sandboxes that
+cannot read the installed path. Loading the bundled file directly keeps the
+agent workflow in sync when githunk is upgraded; a project-local or global copy
+does not update automatically.
+
 ### A round
 
 Press `b` for Branch Review, `c` on a line to object, then `A` to hand off:

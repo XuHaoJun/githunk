@@ -7,9 +7,9 @@ function sha256Hex(data: Uint8Array): string {
 }
 
 function stubEnv(overrides: Partial<UpdateEnvironment> = {}): UpdateEnvironment & {
-  calls: { fetchTag: number; fetchAsset: number; replace: string[] }
+  calls: { fetchTag: number; fetchAsset: number; replace: { binary: string; skill: string | undefined; executable: string }[] }
 } {
-  const calls = { fetchTag: 0, fetchAsset: 0, replace: [] as string[] }
+  const calls = { fetchTag: 0, fetchAsset: 0, replace: [] as { binary: string; skill: string | undefined; executable: string }[] }
   const tarball = new TextEncoder().encode("fake-tarball-bytes")
   const asset = "githunk-linux-x64.tar.gz"
   return {
@@ -30,9 +30,13 @@ function stubEnv(overrides: Partial<UpdateEnvironment> = {}): UpdateEnvironment 
     writeFile: () => Promise.resolve(),
     extractTarball: () => Promise.resolve(),
     stagedBinary: (dir) => `${dir}/githunk-linux-x64/githunk`,
-    writeBinary: (staged, dest) => {
-      calls.replace.push(`${staged} -> ${dest}`)
-      return Promise.resolve()
+    stagedSkill: (dir) => `${dir}/githunk-linux-x64/skills/githunk-handoff/SKILL.md`,
+    writePayload: async (payload) => {
+      calls.replace.push({
+        binary: payload.stagedBinary,
+        skill: payload.stagedSkill,
+        executable: payload.executablePath,
+      })
     },
     ...overrides,
   }
@@ -61,20 +65,26 @@ describe("runUpdate", () => {
     expect(env.calls.replace).toEqual([])
   })
 
-  test("applies the update and replaces the installed binary", async () => {
+  test("applies the update as one binary and skill payload", async () => {
     const env = stubEnv()
     const result = await runUpdate({ check: false }, env)
     expect(result).toEqual({ exitCode: 0, message: "updated githunk 0.2.0 -> 0.3.0" })
-    expect(env.calls.replace).toEqual([
-      "/tmp/githunk-update-test/githunk-linux-x64/githunk -> /home/user/.local/bin/githunk",
-    ])
+    expect(env.calls.replace).toEqual([{
+      binary: "/tmp/githunk-update-test/githunk-linux-x64/githunk",
+      skill: "/tmp/githunk-update-test/githunk-linux-x64/skills/githunk-handoff/SKILL.md",
+      executable: "/home/user/.local/bin/githunk",
+    }])
   })
 
-  test("honors an explicit version, including downgrades", async () => {
-    const env = stubEnv()
+  test("honors a downgrade to an archive that predates the bundled skill", async () => {
+    const env = stubEnv({ stagedSkill: () => undefined })
     const result = await runUpdate({ version: "0.1.0", check: false }, env)
     expect(result.exitCode).toBe(0)
-    expect(env.calls.replace.length).toBe(1)
+    expect(env.calls.replace).toEqual([{
+      binary: "/tmp/githunk-update-test/githunk-linux-x64/githunk",
+      skill: undefined,
+      executable: "/home/user/.local/bin/githunk",
+    }])
   })
 
   test("refuses a checksum mismatch without replacing the binary", async () => {

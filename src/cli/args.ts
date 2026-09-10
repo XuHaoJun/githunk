@@ -4,6 +4,8 @@ import manifest from "../../package.json" with { type: "json" }
 export type CliParseResult =
   | { readonly kind: "start"; readonly startDirectory?: string }
   | { readonly kind: "update"; readonly version?: string; readonly check: boolean }
+  | { readonly kind: "skill-path" }
+  | { readonly kind: "skill-show" }
   // The agent's read-only way in.
   | { readonly kind: "handoff"; readonly json: boolean; readonly startDirectory?: string }
   | { readonly kind: "handoff-reply"; readonly id: string; readonly body: string; readonly startDirectory?: string }
@@ -18,6 +20,8 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
   let stdout = ""
   let stderr = ""
   let update: { readonly version?: string; readonly check: boolean } | undefined
+  let skillOperation: "path" | "show" | undefined
+  let skillError: string | undefined
   let handoff: { readonly json: boolean } | undefined
   let handoffReply: { readonly id: string; readonly body: string } | undefined
   const program = new Command()
@@ -52,6 +56,18 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
       }
     })
 
+  program
+    .command("skill")
+    .description("locate or print the bundled githunk-handoff agent skill")
+    .argument("<operation>", "operation: path or show")
+    .action((operation: string) => {
+      if (operation === "path" || operation === "show") {
+        skillOperation = operation
+      } else {
+        skillError = "Only `githunk skill path` and `githunk skill show` are supported."
+      }
+    })
+
   const handoffCommand = program
     .command("handoff")
     .description("print the open review objections githunk last handed off")
@@ -83,9 +99,17 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
   const options = program.opts<{ path?: string }>()
   const positional = program.args[0]
   const startDirectory = options.path ?? (
-    update === undefined && handoff === undefined && handoffReply === undefined ? positional : undefined
+    update === undefined
+      && skillOperation === undefined
+      && skillError === undefined
+      && handoff === undefined
+      && handoffReply === undefined
+      ? positional
+      : undefined
   )
   if (update !== undefined) return { kind: "update", ...update }
+  if (skillError !== undefined) return { kind: "error", message: skillError, exitCode: 1 }
+  if (skillOperation !== undefined) return { kind: skillOperation === "path" ? "skill-path" : "skill-show" }
   if (handoffReply !== undefined) {
     if (handoffReply.id.trim() === "" || handoffReply.body.trim() === "") {
       return { kind: "error", message: "handoff reply requires a non-empty id and body", exitCode: 1 }

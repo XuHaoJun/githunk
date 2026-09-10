@@ -9,6 +9,10 @@ function checkDirectory(directory: string): void {
   if (!existsSync(path.join(directory, "package.json"))) {
     throw new Error(`Missing package.json in ${directory}`)
   }
+  const skillPath = path.join(directory, "skills", "githunk-handoff", "SKILL.md")
+  if (!existsSync(skillPath)) {
+    throw new Error(`Missing bundled handoff skill in ${directory}`)
+  }
   const proc = Bun.spawnSync(["npm", "pack", "--dry-run"], {
     cwd: directory,
     stdout: "pipe",

@@ -82,10 +82,13 @@ try {
       ? path.join(installDir, "node_modules", "@xuhaojun", "githunk")
       : path.join(installDir, "lib", "node_modules", "@xuhaojun", "githunk")
   const installedLauncher = path.join(installedBinDir, process.platform === "win32" ? "githunk.cmd" : "githunk")
-  const installedPlatformBinary = path.join(
+  const installedPlatformRoot = path.join(
     installedPackageRoot,
     "node_modules",
     ...hostSpec.packageName.split("/"),
+  )
+  const installedPlatformBinary = path.join(
+    installedPlatformRoot,
     "bin",
     binaryFilenameForSpec(hostSpec),
   )
@@ -96,6 +99,13 @@ try {
       throw new Error(
         `Expected installed platform binary to keep execute bits, got mode ${installedBinaryMode.toString(8)} at ${installedPlatformBinary}`,
       )
+    }
+  }
+
+  for (const packageRoot of [installedPackageRoot, installedPlatformRoot]) {
+    const skillPath = path.join(packageRoot, "skills", "githunk-handoff", "SKILL.md")
+    if (!existsSync(skillPath)) {
+      throw new Error(`Expected the installed package to contain ${skillPath}`)
     }
   }
 
@@ -112,6 +122,18 @@ try {
   const help = run([installedLauncher, "--help"])
   if (!help.stdout.includes("Usage:")) {
     throw new Error(`Expected help output to include 'Usage:'.\n${help.stdout}`)
+  }
+
+  const skillPath = run([installedLauncher, "skill", "path"])
+  if (!skillPath.stdout.trim().endsWith(path.join("skills", "githunk-handoff", "SKILL.md"))) {
+    throw new Error(`Expected skill path to resolve the installed handoff skill.\n${skillPath.stdout}`)
+  }
+  if (!existsSync(skillPath.stdout.trim())) {
+    throw new Error(`Expected skill path to name a readable file.\n${skillPath.stdout}`)
+  }
+  const skill = run([installedLauncher, "skill", "show"])
+  if (!skill.stdout.includes("name: githunk-handoff")) {
+    throw new Error(`Expected skill show to print the handoff skill.\n${skill.stdout}`)
   }
 
   console.log(`Verified prebuilt npm install smoke test with ${hostSpec.packageName}`)

@@ -11,6 +11,7 @@ import {
 } from "node:fs"
 import path from "node:path"
 import {
+  copyBundledSkill,
   binaryFilenameForSpec,
   buildOptionalDependencyMap,
   buildPlatformPackageManifest,
@@ -87,6 +88,7 @@ function stageMetaPackage(
   cpSync(path.join(repoRoot, "dist", "githunk.js"), path.join(metaDir, "dist", "githunk.js"))
   cpSync(path.join(repoRoot, "README.md"), path.join(metaDir, "README.md"))
   cpSync(path.join(repoRoot, "LICENSE"), path.join(metaDir, "LICENSE"))
+  copyBundledSkill(repoRoot, metaDir)
 
   writeJson(path.join(metaDir, "package.json"), {
     name: rootPackage.name,
@@ -95,7 +97,7 @@ function stageMetaPackage(
     bin: {
       githunk: "bin/githunk.js",
     },
-    files: ["bin", "dist", "README.md", "LICENSE"],
+    files: ["bin", "dist", "skills/githunk-handoff", "README.md", "LICENSE"],
     ...(rootPackage.type === undefined ? {} : { type: rootPackage.type }),
     ...(rootPackage.keywords === undefined ? {} : { keywords: rootPackage.keywords }),
     ...(rootPackage.repository === undefined ? {} : { repository: rootPackage.repository }),
@@ -132,6 +134,7 @@ function stagePlatformPackage(
     chmodSync(stagedBinary, 0o755)
   }
   cpSync(path.join(repoRoot, "LICENSE"), path.join(packageDir, "LICENSE"))
+  copyBundledSkill(repoRoot, packageDir)
 
   writeJson(path.join(packageDir, "package.json"), buildPlatformPackageManifest(rootPackage, spec))
 }

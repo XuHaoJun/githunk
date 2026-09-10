@@ -37,11 +37,18 @@ async function run(
   return { exitCode, stdout, stderr }
 }
 
-async function fixtureRelease(releases: string, version: string): Promise<void> {
+async function fixtureRelease(releases: string, version: string, includeSkill = true): Promise<void> {
   const directory = join(releases, `v${version}`)
   await mkdir(join(directory, "githunk-linux-x64"), { recursive: true })
   await writeFile(join(directory, "githunk-linux-x64", "githunk"), `#!/bin/sh\necho "${version}"\n`)
   await chmod(join(directory, "githunk-linux-x64", "githunk"), 0o755)
+  if (includeSkill) {
+    await mkdir(join(directory, "githunk-linux-x64", "skills", "githunk-handoff"), { recursive: true })
+    await writeFile(
+      join(directory, "githunk-linux-x64", "skills", "githunk-handoff", "SKILL.md"),
+      `skill ${version}\n`,
+    )
+  }
   const tar = Bun.spawnSync(["tar", "-czf", "githunk-linux-x64.tar.gz", "githunk-linux-x64"], {
     cwd: directory,
     stdout: "ignore",
@@ -95,6 +102,31 @@ suite("install.sh", () => {
 
     const rc = await Bun.file(join(home, ".bashrc")).text()
     expect(rc).toContain(join(home, ".local", "bin"))
+
+    const installedSkill = join(
+      home,
+      ".local",
+      "bin",
+      "githunk-assets",
+      "skills",
+      "githunk-handoff",
+      "SKILL.md",
+    )
+    expect(await Bun.file(installedSkill).text()).toBe("skill 9.9.9\n")
+  })
+
+  test("installs historical archives that predate the bundled skill", async () => {
+    const { home, releases, workdir } = await setup()
+    await fixtureRelease(releases, "8.8.8", false)
+    const env = installerEnv(home, releases)
+
+    const install = await run("sh", [installer, "8.8.8", "--no-modify-path"], workdir, env)
+    expect(install.exitCode, `${install.stdout}${install.stderr}`).toBe(0)
+    expect(`${install.stdout}${install.stderr}`).toContain("does not include the bundled handoff skill")
+
+    const installed = join(home, ".local", "bin", "githunk")
+    const version = await run(installed, ["--version"], workdir, env)
+    expect(version.stdout.trim()).toBe("8.8.8")
   })
 
   test("reinstalling the current version is a no-op", async () => {
@@ -104,6 +136,20 @@ suite("install.sh", () => {
     const again = await run("sh", [installer, "9.9.9"], workdir, env)
     expect(again.exitCode).toBe(0)
     expect(`${again.stdout}${again.stderr}`).toMatch(/already|up to date|current/i)
+  })
+
+  test("reinstalling the current version repairs a missing skill", async () => {
+    const { home, releases, workdir } = await setup()
+    const env = installerEnv(home, releases)
+    expect((await run("sh", [installer, "9.9.9"], workdir, env)).exitCode).toBe(0)
+    await rm(join(home, ".local", "bin", "githunk-assets", "skills", "githunk-handoff", "SKILL.md"), { force: true })
+
+    const repair = await run("sh", [installer, "9.9.9"], workdir, env)
+    expect(repair.exitCode).toBe(0)
+    expect(`${repair.stdout}${repair.stderr}`).toMatch(/repairing|Installing to/)
+    expect(
+      await Bun.file(join(home, ".local", "bin", "githunk-assets", "skills", "githunk-handoff", "SKILL.md")).text(),
+    ).toBe("skill 9.9.9\n")
   })
 
   test("--no-modify-path leaves shell startup files alone", async () => {

@@ -20,7 +20,12 @@ export type UpdateEnvironment = {
   readonly writeFile: (path: string, data: Uint8Array) => Promise<void>
   readonly extractTarball: (archivePath: string, destDir: string) => Promise<void>
   readonly stagedBinary: (dir: string) => string
-  readonly writeBinary: (stagedPath: string, destPath: string) => Promise<void>
+  readonly stagedSkill: (dir: string) => string | undefined
+  readonly writePayload: (payload: {
+    readonly stagedBinary: string
+    readonly stagedSkill: string | undefined
+    readonly executablePath: string
+  }) => Promise<void>
 }
 
 export type UpdateResult = {
@@ -77,7 +82,11 @@ async function applyUpdate(target: string, asset: string, env: UpdateEnvironment
     const archivePath = join(dir, asset)
     await env.writeFile(archivePath, tarball)
     await env.extractTarball(archivePath, dir)
-    await env.writeBinary(env.stagedBinary(dir), env.executablePath)
+    await env.writePayload({
+      stagedBinary: env.stagedBinary(dir),
+      stagedSkill: env.stagedSkill(dir),
+      executablePath: env.executablePath,
+    })
   })
 }
 

@@ -252,8 +252,11 @@ main() {
   if [ -x "$binary" ]; then
     installed="$(normalize_version "$("$binary" --version 2>/dev/null || true)")"
     if [ -n "$installed" ] && [ "$installed" = "$version" ]; then
-      info "githunk $version is already installed at $binary"
-      return 0
+      if [ -f "$dir/githunk-assets/skills/githunk-handoff/SKILL.md" ] && [ -r "$dir/githunk-assets/skills/githunk-handoff/SKILL.md" ]; then
+        info "githunk $version is already installed at $binary"
+        return 0
+      fi
+      info "githunk $version binary is current but its handoff skill is missing; repairing the installation."
     fi
   fi
 
@@ -274,6 +277,15 @@ main() {
   staged="$work/githunk-${os}-${arch}/githunk"
   if [ ! -f "$staged" ]; then
     fail "release archive has no githunk-${os}-${arch}/githunk binary"
+  fi
+  staged_skill="$work/githunk-${os}-${arch}/skills/githunk-handoff/SKILL.md"
+  if [ -f "$staged_skill" ]; then
+    installed_skill_dir="$dir/githunk-assets/skills/githunk-handoff"
+    mkdir -p "$installed_skill_dir"
+    cp "$staged_skill" "$installed_skill_dir/SKILL.md.new"
+    mv -f "$installed_skill_dir/SKILL.md.new" "$installed_skill_dir/SKILL.md"
+  else
+    info "Warning: githunk ${version} does not include the bundled handoff skill; installing its binary only."
   fi
   cp "$staged" "$binary"
   chmod 755 "$binary"

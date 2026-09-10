@@ -1,11 +1,13 @@
 import { spawnSync } from "node:child_process"
-import { chmodSync, cpSync, mkdtempSync, renameSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parseCliArgs } from "./cli/args"
 import { runUpdate, type UpdateEnvironment } from "./cli/update"
 import { runHandoff, runHandoffReply } from "./cli/handoff"
+import { runSkillCommand } from "./cli/skill"
+import { replaceStandalonePayload } from "./cli/standalone-payload"
 import { startApp } from "./main"
 
 const RELEASES_API = "https://api.github.com/repos/XuHaoJun/githunk/releases/latest"
@@ -58,11 +60,17 @@ function productionUpdateEnv(): UpdateEnvironment {
       if (proc.status !== 0) throw new Error("could not extract the release archive (need tar on PATH)")
     },
     stagedBinary: (dir) => join(dir, `githunk-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}`, process.platform === "win32" ? "githunk.exe" : "githunk"),
-    writeBinary: async (stagedPath, destPath) => {
-      cpSync(stagedPath, `${destPath}.new`)
-      chmodSync(`${destPath}.new`, 0o755)
-      renameSync(`${destPath}.new`, destPath)
+    stagedSkill: (dir) => {
+      const candidate = join(
+        dir,
+        `githunk-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}`,
+        "skills",
+        "githunk-handoff",
+        "SKILL.md",
+      )
+      return existsSync(candidate) ? candidate : undefined
     },
+    writePayload: (payload) => replaceStandalonePayload(payload),
   }
 }
 
@@ -74,6 +82,11 @@ if (result.kind === "help" || result.kind === "version") {
 } else if (result.kind === "error") {
   process.stderr.write(result.message.endsWith("\n") ? result.message : `${result.message}\n`)
   process.exitCode = result.exitCode
+} else if (result.kind === "skill-path" || result.kind === "skill-show") {
+  const outcome = await runSkillCommand({ operation: result.kind === "skill-path" ? "path" : "show" })
+  const stream = outcome.exitCode === 0 ? process.stdout : process.stderr
+  stream.write(outcome.text.endsWith("\n") ? outcome.text : `${outcome.text}\n`)
+  process.exitCode = outcome.exitCode
 } else if (result.kind === "update") {
   const outcome = await runUpdate(
     { ...(result.version === undefined ? {} : { version: result.version }), check: result.check },

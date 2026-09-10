@@ -74,6 +74,21 @@ describe("parseCliArgs", () => {
   })
 })
 
+describe("skill — bundled agent guidance", () => {
+  test("selects the path and show operations", () => {
+    expect(parseCliArgs(["skill", "path"])).toEqual({ kind: "skill-path" })
+    expect(parseCliArgs(["skill", "show"])).toEqual({ kind: "skill-show" })
+  })
+
+  test("rejects unsupported skill operations", () => {
+    const result = parseCliArgs(["skill", "install"])
+    expect(result.kind).toBe("error")
+    if (result.kind !== "error") throw new Error("unreachable")
+    expect(result.message).toContain("skill path")
+    expect(result.message).toContain("skill show")
+  })
+})
+
 describe("handoff — the agent's contract", () => {
   test("reads the mailbox, in either shape", () => {
     expect(parseCliArgs(["handoff"])).toEqual({ kind: "handoff", json: false })

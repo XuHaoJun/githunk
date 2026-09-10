@@ -9,6 +9,7 @@
   "files": [
     "bin",
     "dist/githunk.js",
+    "skills/githunk-handoff",
     "README.md",
     "LICENSE"
   ],

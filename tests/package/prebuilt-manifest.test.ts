@@ -48,6 +48,14 @@ describe("prebuilt platform matrix", () => {
     })
   })
 
+  test("publishes the handoff skill with every platform binary", () => {
+    const linux = getPlatformPackageSpecByName("@xuhaojun/githunk-linux-x64")
+    if (linux === undefined) throw new Error("matrix incomplete")
+
+    const manifest = buildPlatformPackageManifest({ version: "0.3.3" }, linux)
+    expect(manifest.files).toEqual(["bin", "skills/githunk-handoff", "LICENSE"])
+  })
+
   test("pins every platform package to the release version", () => {
     expect(buildOptionalDependencyMap("0.2.0")).toEqual({
       "@xuhaojun/githunk-darwin-arm64": "0.2.0",
