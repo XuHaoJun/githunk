@@ -75,7 +75,7 @@ export function createPromptPopup(renderer: CliRenderer): PromptPopupHandle {
     width: 1,
     selectable: true,
     wrapMode: "none",
-    showCursor: true,
+    maxLength: Number.MAX_SAFE_INTEGER,
     textColor: POPUP_FOREGROUND,
     focusedTextColor: POPUP_FOREGROUND,
     backgroundColor: POPUP_BACKGROUND,

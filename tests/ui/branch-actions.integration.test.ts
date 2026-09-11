@@ -373,6 +373,18 @@ describe("branch action parity", () => {
 
     expect((await harness.repository.git(["stash", "list", "--format=%s"])).stdout).toContain("pasted stash message")
   })
+  test("stash prompt accepts messages longer than the input default", async () => {
+    harness = await createShellHarness()
+    const message = "x".repeat(1001)
+
+    await harness.pressKey("s")
+    await harness.typeText(message)
+
+    const input = harness.app.view!.root.findDescendantById("prompt-popup-input")
+    expect(input).toBeInstanceOf(InputRenderable)
+    if (!(input instanceof InputRenderable)) throw new Error("missing prompt input")
+    expect(input.value).toBe(message)
+  })
   test("new branch from a remote branch uses its ref and short name", async () => {
     harness = await createShellHarness({ setup: seedRemoteBranch })
 
