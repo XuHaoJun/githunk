@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { InputRenderable } from "@opentui/core"
+import { pasteBytes } from "@opentui/core/testing"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 
 async function seedRemoteBranch(repository: ShellHarness["repository"], remote: ShellHarness["fetchBare"]): Promise<void> {
@@ -356,6 +357,21 @@ describe("branch action parity", () => {
     await harness.pressKey("RETURN")
 
     expect(harness.frame()).toContain("Branch name cannot be empty")
+  })
+  test("stash prompt preserves pasted text when toggling untracked files", async () => {
+    harness = await createShellHarness()
+
+    await harness.pressKey("s")
+    const input = harness.app.view!.root.findDescendantById("prompt-popup-input")
+    expect(input).toBeInstanceOf(InputRenderable)
+    if (!(input instanceof InputRenderable)) throw new Error("missing prompt input")
+    input.handlePaste({ bytes: pasteBytes("pasted stash message") } as Parameters<InputRenderable["handlePaste"]>[0])
+    await harness.flush()
+    await harness.pressKey("u", { ctrl: true })
+    await harness.pressKey("RETURN")
+    await harness.settle()
+
+    expect((await harness.repository.git(["stash", "list", "--format=%s"])).stdout).toContain("pasted stash message")
   })
   test("new branch from a remote branch uses its ref and short name", async () => {
     harness = await createShellHarness({ setup: seedRemoteBranch })

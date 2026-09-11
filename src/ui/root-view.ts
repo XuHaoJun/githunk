@@ -1414,8 +1414,10 @@ export class RootView {
       if (mode === "stash") {
         if (this.mutationInFlight) return
         if (key.name === "u" && key.ctrl === true && !key.meta) {
+          const nextDialog = this.syncPromptDialog(this.commitDialog)
+          this.commitDialog = nextDialog
           this.stashIncludeUntracked = !this.stashIncludeUntracked
-          this.promptPopup.update(this.commitDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
+          this.promptPopup.update(nextDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
           this.recomputeLayout()
           this.root.requestRender()
           return
