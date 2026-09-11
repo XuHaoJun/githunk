@@ -1,4 +1,5 @@
 # githunk
+[![npm version](https://img.shields.io/npm/v/%40xuhaojun%2Fgithunk?logo=npm)](https://www.npmjs.com/package/@xuhaojun/githunk)
 
 A review-first Git TUI that mixes [lazygit](https://github.com/jesseduffield/lazygit)’s everyday Git workflow with [hunk](https://github.com/modem-dev/hunk)’s focused diff review.
 ![githunk — lazygit panels with hunk review](assets/demo/githunk-review-hunk.gif)
