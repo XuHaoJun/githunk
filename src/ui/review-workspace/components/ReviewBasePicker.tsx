@@ -13,6 +13,7 @@ export type ReviewBasePickerProps = Readonly<{
   onCancel: () => void
   onRetry: () => void
 }>
+const REVIEW_CURSOR_STYLE = { style: "block" as const, blinking: true }
 
 function consume(event: KeyEvent | MouseEvent): void {
   event.preventDefault()
@@ -50,7 +51,10 @@ export function ReviewBasePicker({ selection, width, height, active, warning, on
   }
   useLayoutEffect(() => { reveal(index) }, [index, candidates, listHeight])
   useLayoutEffect(() => {
-    inputRef.current?.blur()
+    const input = inputRef.current
+    if (!input) return
+    if (active && !busy) input.focus()
+    else input.blur()
   }, [active, busy])
 
   const move = (direction: "up" | "down"): void => {
@@ -94,26 +98,6 @@ export function ReviewBasePicker({ selection, width, height, active, warning, on
       consume(event)
       return true
     }
-    if (name === "backspace") {
-      consume(event)
-      setQuery((previous) => previous.length > 0 ? previous.slice(0, -1) : previous)
-      setSelectedIndex(0)
-      if (scrollRef.current) scrollRef.current.scrollTop = 0
-      return true
-    }
-    if (!event.ctrl && !event.meta) {
-      const char = name === "space" ? " " : name
-      if ([...char].length === 1) {
-        const code = char.codePointAt(0) ?? 0
-        if (code >= 0x20 && code !== 0x7f) {
-          consume(event)
-          setQuery((previous) => `${previous}${char}`)
-          setSelectedIndex(0)
-          if (scrollRef.current) scrollRef.current.scrollTop = 0
-          return true
-        }
-      }
-    }
     return false
   }
   useKeyboard((event) => {
@@ -129,7 +113,7 @@ export function ReviewBasePicker({ selection, width, height, active, warning, on
     <box id="review-base-backdrop" onMouse={consume} style={{ position: "absolute", left: 0, top: 0, width, height, zIndex: 100, backgroundColor: "#151515" }}>
       <box id="review-base-picker" style={{ position: "absolute", left: Math.floor((width - dialogWidth) / 2), top: Math.floor((height - dialogHeight) / 2), width: dialogWidth, height: dialogHeight, border, borderColor: "#b9ca4a", flexDirection: "column", backgroundColor: "#202020", overflow: "hidden" }}>
         <text content="Choose base branch" wrapMode="none" truncate={true} />
-        <input id="review-base-filter" ref={inputRef} width={contentWidth} value={query} placeholder="Filter branches…" focused={false} onInput={(value) => {
+        <input id="review-base-filter" ref={inputRef} width={contentWidth} value={query} placeholder="Filter branches…" focused={active && !busy} showCursor={true} cursorColor="#c5c8c6" cursorStyle={REVIEW_CURSOR_STYLE} onInput={(value) => {
           if (busy) return
           setQuery(value)
           setSelectedIndex(0)

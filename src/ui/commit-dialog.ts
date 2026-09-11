@@ -73,10 +73,26 @@ function stateWithoutError(state: CommitDialogState): CommitDialogState {
   return withoutError
 }
 
+/**
+ * lazygit submits its single-line Prompt view on plain Enter
+ * (`pkg/gui/controllers/prompt_controller.go:27-40`); multiline commit
+ * descriptions are the separate Ctrl+Enter editor flow
+ * (`pkg/gui/controllers/commit_description_controller.go:26-39`).
+ */
+function isSingleLineMode(mode: CommitDialogMode): boolean {
+  return mode === "stash" || mode === "branch-create" || mode === "branch-rename"
+}
+
 export function commitDialogKey(state: CommitDialogState, key: CommitDialogKey): { readonly state: CommitDialogState; readonly result?: CommitDialogResult } {
   if (key.name === "escape") return reduceCommitDialog(state, { kind: "cancel" })
-  if (key.name === "enter" && key.ctrl === true) return reduceCommitDialog(state, { kind: "confirm" })
-  if (key.name === "enter") return reduceCommitDialog(state, { kind: "newline" })
+  if (key.name === "enter" || (key.name === "kpenter" && isSingleLineMode(state.mode))) {
+    if (isSingleLineMode(state.mode)) {
+      if (key.ctrl === true || key.meta === true || key.shift === true) return { state }
+      return reduceCommitDialog(state, { kind: "confirm" })
+    }
+    if (key.ctrl === true) return reduceCommitDialog(state, { kind: "confirm" })
+    return reduceCommitDialog(state, { kind: "newline" })
+  }
   if (key.name === "backspace") return reduceCommitDialog(state, { kind: "backspace" })
   if (key.name === "space" && key.ctrl !== true && key.meta !== true) return reduceCommitDialog(state, { kind: "insert", text: " " })
   const text = printableText(key)
@@ -121,7 +137,8 @@ export function renderCommitDialog(state: CommitDialogState): string {
     const parts = splitCommitMessage(state.message)
     return `${title}\n\nCommit summary\n${parts.summary}\n\nCommit description\n${parts.description}\n\nEnter submit · Tab description · Esc cancel${error}`
   }
-  return `${title}\n\n${state.message}\n\nCtrl+Enter confirm · Esc cancel${error}`
+  const submitHint = isSingleLineMode(state.mode) ? "Enter confirm" : "Ctrl+Enter confirm"
+  return `${title}\n\n${state.message}\n\n${submitHint} · Esc cancel${error}`
 }
 
 export class CommitDialog {

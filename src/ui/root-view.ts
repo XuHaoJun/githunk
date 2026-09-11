@@ -74,7 +74,7 @@ import { discardConfirmation, stashApplyConfirmation, stashDropConfirmation, sta
 import { COPY_MENU_ITEMS } from "./copy-menu"
 import { branchCheckoutRequiresStash, type CheckoutRemoteTrackingResult, type CreateBranchOptions, type RemoteBranchSelection } from "../git/branches"
 import { worktreeRemovalRequiresForce } from "../git/worktrees"
-import { CommitDialog, commitDialogKey, renderCommitDialog } from "./commit-dialog"
+import { CommitDialog, renderCommitDialog } from "./commit-dialog"
 import { createCommitMessagePanel, type CommitMessagePanelHandle } from "./commit-message-panel"
 import { branchAutostashConfirmation, branchForceDeleteConfirmation, branchForceDeleteRangeConfirmation, branchLocalAndRemoteDeleteConfirmation, branchLocalAndRemoteDeleteRangeConfirmation, branchRemoteDeleteConfirmation, branchRemoteDeleteRangeConfirmation, branchRenameConfirmation, remoteTrackingMismatchConfirmation, worktreeForceRemoveConfirmation } from "./branch-dialogs"
 import { createPromptPopup, type PromptPopupHandle } from "./prompt-popup"
@@ -116,6 +116,16 @@ const PANE_TITLES: Readonly<Record<FocusId, string>> = {
   branches: "Branches", commits: "Commits", stash: "Stash",
   // `Tr.CommandLog` (pkg/i18n/english.go:1928) — lowercase "log", as the pane's own title reads.
   "command-log": "Command log",
+}
+
+function isPlainEnter(key: KeyEvent): boolean {
+  return (key.name === "enter" || key.name === "kpenter")
+    && key.ctrl !== true
+    && key.meta !== true
+    && key.shift !== true
+    && key.option !== true
+    && key.super !== true
+    && key.hyper !== true
 }
 
 function paneTitleFor(focus: FocusId): string {
@@ -1404,8 +1414,10 @@ export class RootView {
       if (mode === "stash") {
         if (this.mutationInFlight) return
         if (key.name === "u" && key.ctrl === true && !key.meta) {
+          const nextDialog = this.syncPromptDialog(this.commitDialog)
+          this.commitDialog = nextDialog
           this.stashIncludeUntracked = !this.stashIncludeUntracked
-          this.promptPopup.update(this.commitDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
+          this.promptPopup.update(nextDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
           this.recomputeLayout()
           this.root.requestRender()
           return
@@ -3609,12 +3621,18 @@ export class RootView {
     }
   }
 
+  private syncPromptDialog(dialog: CommitDialog, branchBase?: string): CommitDialog {
+    const message = this.promptPopup.input.value
+    const next = new CommitDialog(dialog.state.mode, message, branchBase)
+    if (message === dialog.state.message && dialog.state.error !== undefined) next.setError(dialog.state.error)
+    return next
+  }
+
   private handleBranchDialogKey(key: KeyEvent): boolean {
     const dialog = this.commitDialog
     const context = this.branchDialogContext
     if (dialog === undefined || context === undefined) return false
-    const result = commitDialogKey(dialog.state, key)
-    if (result.result?.kind === "cancelled") {
+    if (key.name === "escape") {
       this.commitDialog = undefined
       this.branchDialogContext = undefined
       this.promptPopup.close()
@@ -3623,34 +3641,44 @@ export class RootView {
       this.root.requestRender()
       return true
     }
-    if (result.result?.kind === "confirmed") {
-      const message = result.result.message
-      let branchName: string | undefined
-      let operation: (() => Promise<void>) | undefined
-      let autostashOperation: (() => Promise<void>) | undefined
-      if (context.mode === "branch-create") {
-        branchName = sanitizeBranchName(message)
-        const options = { track: context.suggestedBranchName.length > 0 && branchName === context.suggestedBranchName }
-        operation = () => this.ports.commands.onCreateBranch(context.startPoint, branchName, options)
-        {
-          autostashOperation = () => this.ports.commands.onCreateBranchWithAutostash(context.startPoint, branchName, options)
+    const branchBase = context.mode === "branch-create" ? context.branchBase : undefined
+    if (isPlainEnter(key)) {
+      const nextDialog = this.syncPromptDialog(dialog, branchBase)
+      const result = nextDialog.handleKey(key)
+      if (result?.kind === "confirmed") {
+        const message = result.message
+        let branchName: string | undefined
+        let operation: (() => Promise<void>) | undefined
+        let autostashOperation: (() => Promise<void>) | undefined
+        if (context.mode === "branch-create") {
+          branchName = sanitizeBranchName(message)
+          const options = { track: context.suggestedBranchName.length > 0 && branchName === context.suggestedBranchName }
+          operation = () => this.ports.commands.onCreateBranch(context.startPoint, branchName, options)
+          {
+            autostashOperation = () => this.ports.commands.onCreateBranchWithAutostash(context.startPoint, branchName, options)
+          }
+        } else {
+          operation = () => this.ports.commands.onRenameBranch(context.branch, message)
         }
-      } else {
-        operation = () => this.ports.commands.onRenameBranch(context.branch, message)
+        if (operation === undefined) return true
+        const isBranchCreate = context.mode === "branch-create"
+        this.commitDialog = undefined
+        this.branchDialogContext = undefined
+        this.promptPopup.close()
+        this.recomputeLayout()
+        if (isBranchCreate) this.runBranchCreate(operation, autostashOperation, branchName ?? "")
+        else this.runUiMutation(operation)
+        return true
       }
-      if (operation === undefined) return true
-      const isBranchCreate = context.mode === "branch-create"
-      this.commitDialog = undefined
-      this.branchDialogContext = undefined
-      this.promptPopup.close()
+      this.commitDialog = nextDialog
+      this.promptPopup.update(nextDialog.state)
       this.recomputeLayout()
-      if (isBranchCreate) this.runBranchCreate(operation, autostashOperation, branchName ?? "")
-      else this.runUiMutation(operation)
+      this.root.requestRender()
       return true
     }
-    const next = result
-    const nextDialog = new CommitDialog(next.state.mode, next.state.message, context.mode === "branch-create" ? context.branchBase : undefined)
-    nextDialog.setError(next.state.error)
+    if (key.name === "enter") return true
+    if (!this.promptPopup.handleKey(key)) return true
+    const nextDialog = this.syncPromptDialog(dialog, branchBase)
     this.commitDialog = nextDialog
     this.promptPopup.update(nextDialog.state)
     this.recomputeLayout()
@@ -3661,40 +3689,52 @@ export class RootView {
   private handleStashDialogKey(key: KeyEvent): boolean {
     const dialog = this.commitDialog
     if (dialog === undefined || dialog.state.mode !== "stash") return false
-    const result = commitDialogKey(dialog.state, key)
-    if (result.result?.kind === "cancelled") {
+    if (key.name === "escape") {
       this.commitDialog = undefined
       this.promptPopup.close()
       this.recomputeLayout()
       this.root.requestRender()
       return true
     }
-    if (result.result?.kind === "confirmed") {
-      this.mutationInFlight = true
-      void this.ports.commands.onCreateStash(result.result.message, this.stashIncludeUntracked).then(() => {
-        if (this.commitDialog === dialog) {
-          this.commitDialog = undefined
-          this.promptPopup.close()
+    if (isPlainEnter(key)) {
+      const nextDialog = this.syncPromptDialog(dialog)
+      const result = nextDialog.handleKey(key)
+      if (result?.kind === "confirmed") {
+        const activeDialog = nextDialog
+        this.commitDialog = activeDialog
+        this.mutationInFlight = true
+        void this.ports.commands.onCreateStash(result.message, this.stashIncludeUntracked).then(() => {
+          if (this.commitDialog === activeDialog) {
+            this.commitDialog = undefined
+            this.promptPopup.close()
+            this.recomputeLayout()
+          }
+        }).catch((error: unknown) => {
+          activeDialog.setError(error instanceof Error ? error.message : String(error))
+          this.promptPopup.update(activeDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
           this.recomputeLayout()
-        }
-      }).catch((error: unknown) => {
-        dialog.setError(error instanceof Error ? error.message : String(error))
-        this.promptPopup.update(dialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
-        this.recomputeLayout()
-      }).finally(() => {
-        this.mutationInFlight = false
-        this.root.requestRender()
-      })
+        }).finally(() => {
+          this.mutationInFlight = false
+          this.root.requestRender()
+        })
+        return true
+      }
+      this.commitDialog = nextDialog
+      this.promptPopup.update(nextDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
+      this.recomputeLayout()
+      this.root.requestRender()
       return true
     }
-    const next = commitDialogKey(dialog.state, key)
-    this.commitDialog = new CommitDialog("stash", next.state.message)
-    this.commitDialog.setError(next.state.error)
-    this.promptPopup.update(this.commitDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
+    if (key.name === "enter") return true
+    if (!this.promptPopup.handleKey(key)) return true
+    const nextDialog = this.syncPromptDialog(dialog)
+    this.commitDialog = nextDialog
+    this.promptPopup.update(nextDialog.state, `Include untracked: ${this.stashIncludeUntracked ? "yes" : "no"} (Ctrl+u toggles)`)
     this.recomputeLayout()
     this.root.requestRender()
     return true
   }
+
 
   private invalidateRemoteCheckout(): void {
     this.remoteCheckoutGeneration += 1
