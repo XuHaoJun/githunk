@@ -43,17 +43,38 @@ if (import.meta.main) {
 
   const target = compileTargetForHost(process.platform, process.arch)
 
-  const proc = Bun.spawnSync(["bun", "build", "--compile", "--no-compile-autoload-bunfig", ...(target === null ? [] : [`--target=${target}`]), path.join(repoRoot, "src", "cli.ts"), "--outfile", outfile], {
-    cwd: repoRoot,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-    env: {
-      ...process.env,
-      BUN_TMPDIR: path.join(repoRoot, ".bun-tmp"),
-      BUN_INSTALL: path.join(repoRoot, ".bun-install")
+  const proc = Bun.spawnSync(
+    [
+      "bun",
+      "build",
+      "--compile",
+      "--no-compile-autoload-bunfig",
+      // `--compile` puts the embedded module graph in an ELF `.bun` section that the kernel maps
+      // as a PT_LOAD segment during execve (oven-sh/bun#26923), so a bundled-but-unimported module
+      // is charged to RSS unconditionally. Without `--splitting` a dynamic import changes nothing:
+      // converting one to `await import()` produced a byte-identical binary and identical RSS.
+      // `--splitting` is supported with `--compile` and keeps deferred chunks uninstantiated at
+      // startup, which is what makes the lazy Branch Review chunk actually pay off.
+      // https://bun.com/docs/bundler/executables
+      "--splitting",
+      "--minify",
+      ...(target === null ? [] : [`--target=${target}`]),
+      path.join(repoRoot, "src", "cli.ts"),
+      "--outfile",
+      outfile
+    ],
+    {
+      cwd: repoRoot,
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+      env: {
+        ...process.env,
+        BUN_TMPDIR: path.join(repoRoot, ".bun-tmp"),
+        BUN_INSTALL: path.join(repoRoot, ".bun-install")
+      }
     }
-  })
+  )
 
   if (proc.exitCode !== 0) {
     // Bun fetches a non-host target runtime instead of reusing the installed one, so the first
