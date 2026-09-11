@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
 test("the published npm package contains the agent-readable handoff skill", async () => {
-  const child = Bun.spawn(["npm", "pack", "--dry-run", "--json", "--ignore-scripts"], {
+  const child = Bun.spawn(["npm", "pack", "--dry-run", "--json", "--loglevel=error", "--ignore-scripts"], {
     cwd: root,
     stdin: "ignore",
     stdout: "pipe",
