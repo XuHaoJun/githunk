@@ -3,6 +3,8 @@ import { testRender } from "@opentui/react/test-utils"
 import type { TestRendererSetup } from "@opentui/core/testing"
 import { act } from "react"
 import { RGBA } from "@opentui/core"
+import type { InputRenderable } from "@opentui/core"
+
 import { createTempRepository } from "../../helpers/temp-repository"
 import { GitRunner } from "../../../src/git/runner"
 import { loadReviewDocument } from "../../../src/review/git/load-review-document"
@@ -120,6 +122,30 @@ describe("review base picker interactions", () => {
       await repository.cleanup()
     }
   })
+  test("edits filter text at the focused cursor position", async () => {
+    const repository = await repositoryWithBases()
+    const controller = new ReviewWorkspaceController({ runner: new GitRunner(repository.path) })
+    await controller.open()
+    const setup = await testRender(<ReviewBasePicker selection={{ candidates: controller.baseSelection?.candidates ?? [], loading: false, selecting: false }} width={100} height={24} active={true} onChoose={() => {}} onCancel={() => {}} onRetry={() => {}} />, { width: 100, height: 24, useMouse: true, kittyKeyboard: true })
+    try {
+      await flush(setup)
+      await act(async () => { await setup.mockInput.typeText("main") })
+      await flush(setup)
+      await act(async () => { setup.mockInput.pressArrow("left") })
+      await flush(setup)
+      await act(async () => { await setup.mockInput.typeText("x") })
+      await flush(setup)
+      expect((element(setup, "review-base-filter") as InputRenderable).value).toBe("maixn")
+      await act(async () => { setup.mockInput.pressBackspace() })
+      await flush(setup)
+      expect((element(setup, "review-base-filter") as InputRenderable).value).toBe("main")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+      await controller.destroy()
+      await repository.cleanup()
+    }
+  })
+
 
   test("keeps keyboard selection visible in a short terminal and makes the visible row clickable", async () => {
     const repository = await repositoryWithBases(20)

@@ -98,26 +98,6 @@ export function ReviewBasePicker({ selection, width, height, active, warning, on
       consume(event)
       return true
     }
-    if (name === "backspace") {
-      consume(event)
-      setQuery((previous) => previous.length > 0 ? previous.slice(0, -1) : previous)
-      setSelectedIndex(0)
-      if (scrollRef.current) scrollRef.current.scrollTop = 0
-      return true
-    }
-    if (!event.ctrl && !event.meta) {
-      const char = name === "space" ? " " : name
-      if ([...char].length === 1) {
-        const code = char.codePointAt(0) ?? 0
-        if (code >= 0x20 && code !== 0x7f) {
-          consume(event)
-          setQuery((previous) => `${previous}${char}`)
-          setSelectedIndex(0)
-          if (scrollRef.current) scrollRef.current.scrollTop = 0
-          return true
-        }
-      }
-    }
     return false
   }
   useKeyboard((event) => {
