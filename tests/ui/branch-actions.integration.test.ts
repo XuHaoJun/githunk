@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { InputRenderable } from "@opentui/core"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 
 async function seedRemoteBranch(repository: ShellHarness["repository"], remote: ShellHarness["fetchBare"]): Promise<void> {
@@ -294,6 +295,68 @@ describe("branch action parity", () => {
     expect(harness.app.view!.actionMenuOpen).toBe(false)
     expect(harness.frame()).toContain("Rename branch")
   })
+
+  test("new branch prompt focuses an editable input and shows its cursor", async () => {
+    harness = await createShellHarness()
+
+    await harness.pressKey("3")
+    await harness.pressKey("n")
+
+    const input = harness.app.view!.root.findDescendantById("prompt-popup-input")
+    expect(input).toBeInstanceOf(InputRenderable)
+    const promptInput = input instanceof InputRenderable ? input : undefined
+    expect(promptInput?.focused).toBe(true)
+    const cursor = harness.renderer.getCursorState()
+    expect(cursor.visible).toBe(true)
+    expect(cursor.x).toBeGreaterThan(promptInput?.screenX ?? -1)
+    expect(cursor.x).toBeLessThan((promptInput?.screenX ?? 0) + (promptInput?.width ?? 0))
+    expect(cursor.y).toBeGreaterThanOrEqual(promptInput?.screenY ?? -1)
+    expect(cursor.y).toBeLessThan((promptInput?.screenY ?? 0) + (promptInput?.height ?? 0) + 2)
+  })
+
+  test("new branch prompt advertises Enter confirmation", async () => {
+    harness = await createShellHarness()
+
+    await harness.pressKey("3")
+    await harness.pressKey("n")
+
+    const frame = harness.frame()
+    expect(frame).toMatch(/(?:^|[│ ])Enter confirm · Esc cancel/u)
+    expect(frame).not.toContain("Ctrl+Enter confirm")
+  })
+  test("new branch prompt submits with plain Enter", async () => {
+    harness = await createShellHarness()
+
+    await harness.pressKey("3")
+    await harness.pressKey("n")
+    for (const key of "child") await harness.pressKey(key)
+    await harness.pressKey("RETURN")
+    await harness.settle()
+
+    expect((await harness.repository.git(["branch", "--show-current"])).stdout.trim()).toBe("child")
+  })
+
+  test("Ctrl+Enter does not submit a single-line branch prompt", async () => {
+    harness = await createShellHarness()
+
+    await harness.pressKey("3")
+    await harness.pressKey("n")
+    for (const key of "child") await harness.pressKey(key)
+    await harness.pressKey("RETURN", { ctrl: true })
+
+    expect(harness.frame()).toContain("New branch name")
+    expect((await harness.repository.git(["show-ref", "--verify", "--quiet", "refs/heads/child"])).exitCode).not.toBe(0)
+  })
+
+  test("empty branch prompt keeps its validation error visible", async () => {
+    harness = await createShellHarness()
+
+    await harness.pressKey("3")
+    await harness.pressKey("n")
+    await harness.pressKey("RETURN")
+
+    expect(harness.frame()).toContain("Branch name cannot be empty")
+  })
   test("new branch from a remote branch uses its ref and short name", async () => {
     harness = await createShellHarness({ setup: seedRemoteBranch })
 
@@ -353,7 +416,7 @@ describe("branch action parity", () => {
     await harness.pressKey("3")
     await harness.pressKey("n")
     for (const key of ["c", "h", "i", "l", "d"]) await harness.pressKey(key)
-    await harness.pressKey("RETURN", { ctrl: true })
+    await harness.pressKey("RETURN")
     await harness.settle()
 
     expect((await harness.repository.git(["branch", "--show-current"])).stdout.trim()).toBe("child")
@@ -369,7 +432,7 @@ describe("branch action parity", () => {
     await harness.pressKey("RETURN")
     await harness.settle()
     await harness.pressKey("n")
-    await harness.pressKey("RETURN", { ctrl: true })
+    await harness.pressKey("RETURN")
     await harness.settle()
     expect(harness.app.view!.branchesPanel.child).toBeUndefined()
     expect(harness.app.view!.activeBranchesTab).toBe("branches")
@@ -391,7 +454,7 @@ describe("branch action parity", () => {
     for (const letter of "custom") await harness.pressKey(letter)
     await harness.pressKey(" ")
     for (const letter of "name") await harness.pressKey(letter)
-    await harness.pressKey("RETURN", { ctrl: true })
+    await harness.pressKey("RETURN")
     await harness.settle()
 
     expect((await harness.repository.git(["branch", "--show-current"])).stdout.trim()).toBe("custom-name")
@@ -406,7 +469,7 @@ describe("branch action parity", () => {
     await harness.pressKey("RETURN")
     await harness.settle()
     await harness.pressKey("n")
-    await harness.pressKey("RETURN", { ctrl: true })
+    await harness.pressKey("RETURN")
     await harness.settle()
 
     expect(harness.frame()).toContain("Autostash?")
@@ -433,7 +496,7 @@ describe("branch action parity", () => {
     await harness.pressKey("RETURN")
     await harness.settle()
     await harness.pressKey("n")
-    await harness.pressKey("RETURN", { ctrl: true })
+    await harness.pressKey("RETURN")
     await harness.settle()
     expect(harness.frame()).toContain("Autostash?")
 
@@ -450,7 +513,7 @@ describe("branch action parity", () => {
     await harness.pressKey("RETURN")
     await harness.settle()
     await harness.pressKey("n")
-    await harness.pressKey("RETURN", { ctrl: true })
+    await harness.pressKey("RETURN")
     await harness.settle()
 
     expect(harness.frame()).toContain("Autostash?")

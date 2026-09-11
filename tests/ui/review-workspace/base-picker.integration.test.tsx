@@ -72,6 +72,9 @@ describe("review base picker interactions", () => {
     const setup = await testRender(<ReviewWorkspaceApp session={new ReactReviewSession(controller, () => { closes += 1 })} />, { width: 100, height: 24, useMouse: true, kittyKeyboard: true })
     try {
       await flush(setup)
+      const filter = element(setup, "review-base-filter")
+      expect(filter.focused).toBe(true)
+      expect(setup.renderer.getCursorState().visible).toBe(true)
       expect(controller.state).toBeUndefined()
       await act(async () => { await setup.mockInput.typeText("main") })
       await flush(setup)

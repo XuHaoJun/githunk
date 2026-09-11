@@ -28,7 +28,7 @@ describe("commit dialog", () => {
 
   test("collects non-empty names for branch create and rename dialogs", () => {
     const create = new CommitDialog("branch-create")
-    expect(create.handleKey({ name: "enter", ctrl: true })).toBeUndefined()
+    expect(create.handleKey({ name: "enter" })).toBeUndefined()
     expect(create.state.error).toContain("Branch name")
     expect(create.handleKey({ name: "f" })).toBeUndefined()
     expect(create.handleKey({ name: "e" })).toBeUndefined()
@@ -37,9 +37,19 @@ describe("commit dialog", () => {
     expect(create.handleKey({ name: "u" })).toBeUndefined()
     expect(create.handleKey({ name: "r" })).toBeUndefined()
     expect(create.handleKey({ name: "e" })).toBeUndefined()
-    expect(create.handleKey({ name: "enter", ctrl: true })).toEqual({ kind: "confirmed", message: "feature" })
+    expect(create.handleKey({ name: "enter" })).toEqual({ kind: "confirmed", message: "feature" })
     const rename = new CommitDialog("branch-rename", "release")
-    expect(rename.handleKey({ name: "enter", ctrl: true })).toEqual({ kind: "confirmed", message: "release" })
+    expect(rename.handleKey({ name: "enter" })).toEqual({ kind: "confirmed", message: "release" })
+  })
+
+  test("single-line prompts confirm on Enter and ignore Ctrl+Enter", () => {
+    for (const mode of ["stash", "branch-create", "branch-rename"] as const) {
+      const dialog = new CommitDialog(mode)
+      expect(dialog.handleKey({ name: "x" })).toBeUndefined()
+      expect(dialog.handleKey({ name: "enter", ctrl: true })).toBeUndefined()
+      expect(dialog.state.message).toBe("x")
+      expect(dialog.handleKey({ name: "enter" })).toEqual({ kind: "confirmed", message: "x" })
+    }
   })
 
   test("Esc cancels without producing a message", () => {
