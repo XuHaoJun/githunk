@@ -23,18 +23,18 @@ const PLATFORM_PACKAGES = [
   { packageName: "@xuhaojun/githunk-darwin-x64", binary: "bin/githunk" },
   { packageName: "@xuhaojun/githunk-linux-arm64", binary: "bin/githunk" },
   { packageName: "@xuhaojun/githunk-linux-x64", binary: "bin/githunk" },
-  { packageName: "@xuhaojun/githunk-windows-x64", binary: "bin/githunk.exe" },
+  { packageName: "@xuhaojun/githunk-windows-x64", binary: "bin/githunk.exe" }
 ]
 
 function hostCandidates() {
   const platformMap = {
     darwin: "darwin",
     linux: "linux",
-    win32: "windows",
+    win32: "windows"
   }
   const archMap = {
     x64: "x64",
-    arm64: "arm64",
+    arm64: "arm64"
   }
   const platform = platformMap[process.platform]
   const arch = archMap[process.arch]
@@ -61,7 +61,9 @@ function launch(target, args) {
   const child = spawn(target, args, { stdio: "inherit" })
 
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"]) {
-    process.once(signal, () => { child.kill(signal) })
+    process.once(signal, () => {
+      child.kill(signal)
+    })
   }
 
   child.once("error", (error) => {

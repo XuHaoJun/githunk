@@ -27,7 +27,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream", "sidebar"],
     available: always,
     intent: "selection/move",
-    hint: "next row",
+    hint: "next row"
   },
   {
     id: "review.moveUp",
@@ -36,7 +36,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream", "sidebar"],
     available: always,
     intent: "selection/move",
-    hint: "prev row",
+    hint: "prev row"
   },
   {
     id: "review.nextHunk",
@@ -45,7 +45,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream"],
     available: always,
     intent: "selection/move",
-    hint: "hunk",
+    hint: "hunk"
   },
   {
     id: "review.prevHunk",
@@ -54,7 +54,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream"],
     available: always,
     hint: "hunk",
-    intent: "selection/move",
+    intent: "selection/move"
   },
   {
     id: "review.nextFile",
@@ -63,7 +63,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream", "sidebar"],
     available: always,
     intent: "selection/move",
-    hint: "file",
+    hint: "file"
   },
   {
     id: "review.prevFile",
@@ -72,7 +72,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream", "sidebar"],
     available: always,
     intent: "selection/move",
-    hint: "file",
+    hint: "file"
   },
   {
     id: "review.nextUnreviewed",
@@ -81,7 +81,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     focus: ["stream", "sidebar"],
     available: always,
     intent: "selection/select-file",
-    hint: "unreviewed",
+    hint: "unreviewed"
   },
   {
     id: "review.prevUnreviewed",
@@ -89,7 +89,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["N"],
     focus: ["stream", "sidebar"],
     available: always,
-    hint: "unreviewed",
+    hint: "unreviewed"
   },
   {
     id: "review.nextFeedback",
@@ -97,7 +97,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["}"],
     focus: ["stream", "sidebar"],
     available: always,
-    hint: "feedback",
+    hint: "feedback"
   },
   {
     id: "review.prevFeedback",
@@ -105,7 +105,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["{"],
     focus: ["stream", "sidebar"],
     available: always,
-    hint: "feedback",
+    hint: "feedback"
   },
   {
     id: "review.focusFilter",
@@ -113,28 +113,28 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["/"],
     focus: ["sidebar", "stream"],
     available: always,
-    hint: "filter",
+    hint: "filter"
   },
   {
     id: "review.focusDiff",
     title: "Diff",
     keys: ["0"],
     focus: ["any"],
-    available: always,
+    available: always
   },
   {
     id: "review.focusFiles",
     title: "Files",
     keys: ["1"],
     focus: ["any"],
-    available: always,
+    available: always
   },
   {
     id: "review.toggleFocus",
     title: "cycle panels",
     keys: ["tab"],
     focus: ["any"],
-    available: always,
+    available: always
   },
   {
     id: "review.toggleRange",
@@ -142,7 +142,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["v"],
     focus: ["stream"],
     available: always,
-    hint: "range",
+    hint: "range"
   },
   {
     id: "review.createFeedback",
@@ -150,7 +150,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["c"],
     focus: ["stream"],
     available: always,
-    hint: "comment",
+    hint: "comment"
   },
   {
     id: "review.markViewed",
@@ -158,14 +158,14 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["r"],
     focus: ["stream", "sidebar"],
     available: (state) => canMarkViewedInProjection(state),
-    hint: "viewed",
+    hint: "viewed"
   },
   {
     id: "review.layoutCycle",
     title: "layout",
     keys: ["l"],
     focus: ["any"],
-    available: always,
+    available: always
   },
   {
     id: "review.selectFile",
@@ -173,7 +173,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: [],
     focus: ["sidebar", "stream"],
     available: always,
-    intent: "selection/select-file",
+    intent: "selection/select-file"
   },
   {
     id: "review.selectDiffLine",
@@ -181,7 +181,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: [],
     focus: ["stream"],
     available: always,
-    intent: "selection/line",
+    intent: "selection/line"
   },
   {
     id: "review.selectFeedback",
@@ -189,7 +189,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: [],
     focus: ["stream"],
     available: always,
-    intent: "feedback/select",
+    intent: "feedback/select"
   },
   {
     id: "review.editFeedback",
@@ -197,7 +197,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["e"],
     focus: ["stream", "sidebar"],
     available: always,
-    hint: "edit",
+    hint: "edit"
   },
   {
     id: "review.deleteFeedback",
@@ -205,7 +205,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["d"],
     focus: ["stream", "sidebar"],
     available: always,
-    hint: "delete",
+    hint: "delete"
   },
   {
     id: "review.reanchorFeedback",
@@ -213,7 +213,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["a"],
     focus: ["stream", "sidebar"],
     available: always,
-    hint: "reanchor",
+    hint: "reanchor"
   },
   {
     id: "review.expandGap",
@@ -221,7 +221,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["z"],
     focus: ["stream"],
     available: always,
-    hint: "expand",
+    hint: "expand"
   },
   {
     id: "review.cycleFilterScope",
@@ -229,7 +229,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["f"],
     focus: ["stream", "sidebar"],
     available: always,
-    hint: "filter scope",
+    hint: "filter scope"
   },
   {
     id: "review.finishReview",
@@ -237,7 +237,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["R"],
     focus: ["any"],
     available: always,
-    hint: "finish",
+    hint: "finish"
   },
   {
     id: "review.help",
@@ -245,7 +245,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["?"],
     focus: ["any"],
     available: always,
-    hint: "help",
+    hint: "help"
   },
   {
     id: "review.toggleSinceLastReview",
@@ -256,7 +256,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     // while a lens is open so there is a way back to the aggregate. A handoff
     // counts as a checkpoint: see ReviewWorkspaceController.enterSinceLastReview.
     available: (state) => state.projection.kind !== "aggregate" || reviewCheckpoint(state) !== undefined,
-    hint: "since",
+    hint: "since"
   },
   {
     id: "review.chooseBase",
@@ -264,7 +264,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["B"],
     focus: ["any"],
     available: always,
-    hint: "base",
+    hint: "base"
   },
   {
     id: "review.close",
@@ -272,7 +272,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["escape", "b"],
     focus: ["any"],
     available: always,
-    hint: "close",
+    hint: "close"
   },
   {
     id: "review.handoffFeedback",
@@ -283,7 +283,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["A"],
     focus: ["stream", "sidebar"],
     available: always,
-    hint: "handoff",
+    hint: "handoff"
   },
   {
     id: "review.listObjections",
@@ -293,7 +293,7 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["L"],
     focus: ["any"],
     available: (state) => state.feedback.length > 0,
-    hint: "list",
+    hint: "list"
   },
   {
     id: "review.resolveFeedback",
@@ -301,8 +301,8 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     keys: ["-"],
     focus: ["stream", "sidebar"],
     available: always,
-    hint: "resolve",
-  },
+    hint: "resolve"
+  }
 ] as const
 
 const keyToCommand = new Map<string, ReviewCommand>()
@@ -319,10 +319,7 @@ for (const cmd of REVIEW_COMMANDS) {
 }
 
 function commandSupportsFocus(command: ReviewCommand, focus: ReviewFocus | undefined): boolean {
-  return focus === undefined
-    || command.focus.includes(focus)
-    || command.focus.includes("any")
-    || command.focus.includes("global")
+  return focus === undefined || command.focus.includes(focus) || command.focus.includes("any") || command.focus.includes("global")
 }
 
 export function resolveReviewCommand(key: string, focus?: ReviewFocus): ReviewCommand | undefined {
@@ -335,8 +332,7 @@ export function resolveReviewCommand(key: string, focus?: ReviewFocus): ReviewCo
 }
 
 export function reviewHints(focus: ReviewFocus, state: ReviewCommandState): string {
-  const available = REVIEW_COMMANDS.filter((c) => c.focus.includes(focus) || c.focus.includes("any"))
-    .filter((c) => c.available(state))
+  const available = REVIEW_COMMANDS.filter((c) => c.focus.includes(focus) || c.focus.includes("any")).filter((c) => c.available(state))
   // Build a short hint list prioritized for this focus
   const parts: string[] = []
   for (const cmd of available) {
@@ -368,9 +364,9 @@ export function reviewHelp(focus: ReviewFocus, state: ReviewCommandState): strin
     "review.focusFiles": 1,
     "review.toggleFocus": 2,
     "review.layoutCycle": 3,
-    "review.chooseBase": 4,
+    "review.chooseBase": 4
   }
   const ordered = [...available].sort((a, b) => (panelPriority[a.id] ?? 99) - (panelPriority[b.id] ?? 99))
-  const lines = ordered.map((c) => `${c.keys.map((key) => key === "tab" ? "Tab" : key).join("/")} ${c.title}`)
+  const lines = ordered.map((c) => `${c.keys.map((key) => (key === "tab" ? "Tab" : key)).join("/")} ${c.title}`)
   return lines.join("\n")
 }

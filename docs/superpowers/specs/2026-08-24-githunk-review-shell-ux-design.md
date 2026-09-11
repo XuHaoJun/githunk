@@ -60,7 +60,7 @@ on — `s` stash, `b`/`w` mode switch, `d` discard, `a` stage-all, `r` reviewed,
 `n` new branch, `g` pop, `o` open — appear only in that second, unenumerable
 set.
 
-lazygit renders its bottom line by *reading its own binding declarations*
+lazygit renders its bottom line by _reading its own binding declarations_
 (`pkg/gui/options_map.go` filters `types.Binding` values by `DisplayOnScreen`).
 A hints bar built on a hand-written string table would be a second source of
 truth for the same facts, and would drift. A hints bar that lies is worse than
@@ -93,12 +93,12 @@ consumes arranged dimensions instead of computing them.
 
 ```ts
 export type Binding = {
-  readonly keys: readonly (string | KeyLike)[]  // keys[0] is what the hints bar shows
+  readonly keys: readonly (string | KeyLike)[] // keys[0] is what the hints bar shows
   readonly action: Action
-  readonly description: string                  // hints bar: short ("stage", "reviewed")
-  readonly menuDescription?: string             // ? menu: long; falls back to description
+  readonly description: string // hints bar: short ("stage", "reviewed")
+  readonly menuDescription?: string // ? menu: long; falls back to description
   readonly contexts?: readonly BindingContext[] // omitted means global
-  readonly displayOnScreen?: boolean            // default false; true to reach the hints bar
+  readonly displayOnScreen?: boolean // default false; true to reach the hints bar
   readonly available?: (model: AppModel, ui: UiState) => boolean
 }
 ```
@@ -110,11 +110,11 @@ in, so `available` stays a pure predicate.
 
 ### 4.2 Consumers
 
-| Consumer | Function | Behaviour |
-| --- | --- | --- |
-| Dispatch | `resolve(key, { context, modal })` | Keeps the existing modal > context > global precedence from `Keymap.resolve`. |
-| Hints bar | `hintsFor(context, model, ui, width)` | Keeps bindings where `displayOnScreen` and `available`; renders `description: key`; joins with ` \| `; truncates with ` \| …` when the width is exceeded. Mirrors lazygit's `formatBindingInfos`. |
-| `?` menu | `menuFor(context, model, ui)` | Groups current-context bindings first, then global bindings whose keys the context has not overridden. Uses `menuDescription`. |
+| Consumer  | Function                              | Behaviour                                                                                                                                                                                       |
+| --------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dispatch  | `resolve(key, { context, modal })`    | Keeps the existing modal > context > global precedence from `Keymap.resolve`.                                                                                                                   |
+| Hints bar | `hintsFor(context, model, ui, width)` | Keeps bindings where `displayOnScreen` and `available`; renders `description: key`; joins with `\|`; truncates with ` \| …` when the width is exceeded. Mirrors lazygit's `formatBindingInfos`. |
+| `?` menu  | `menuFor(context, model, ui)`         | Groups current-context bindings first, then global bindings whose keys the context has not overridden. Uses `menuDescription`.                                                                  |
 
 ### 4.3 Why `available` matters
 
@@ -125,7 +125,7 @@ be pressed right now" into a property of the binding, which the hints bar reads
 for free: in Branch Review, `space` / `d` / `a` simply do not appear rather than
 appearing and then rejecting the keypress.
 
-Refusal messages that explain *how to proceed* (for example "press Tab to choose
+Refusal messages that explain _how to proceed_ (for example "press Tab to choose
 staged or unstaged") remain valuable and stay as `bottomTitle` feedback; the
 `available` predicate governs hints-bar membership and menu greying, not the
 removal of those messages.
@@ -158,21 +158,21 @@ This is the only existing githunk binding whose meaning changes.
 
 ### 5.2 Additions
 
-| Keys | Action | Context | Notes |
-| --- | --- | --- | --- |
-| `h` `←` | Previous pane | global | lazygit's `h`/`l` cycle panes; they are not vim-style drill in/out. |
-| `l` `→` | Next pane | global | |
-| `h` `l` | Previous / next hunk | main | Context override, matching lazygit's staging context. |
-| `tab` `shift+tab` | Next / previous pane | global | |
-| `[` `]` | Previous / next scope tab | main | Replaces the former `tab`. |
-| `,` `.` | Previous / next page | list panes, main | |
-| `<` `>` `home` `end` | Jump to top / bottom | list panes, main | |
-| `J` `K` | Scroll main pane down / up | global | Works while focus is on a left pane. |
-| `H` `L` | Scroll main pane left / right | global | For long diff lines. |
-| `ctrl+d` `ctrl+u` | Scroll main half page | global | |
-| `pgdn` `pgup` | Scroll main pane | global | |
-| `+` `_` | Next / previous screen mode | global | |
-| `?` | Keybinding menu | global | |
+| Keys                 | Action                        | Context          | Notes                                                               |
+| -------------------- | ----------------------------- | ---------------- | ------------------------------------------------------------------- |
+| `h` `←`              | Previous pane                 | global           | lazygit's `h`/`l` cycle panes; they are not vim-style drill in/out. |
+| `l` `→`              | Next pane                     | global           |                                                                     |
+| `h` `l`              | Previous / next hunk          | main             | Context override, matching lazygit's staging context.               |
+| `tab` `shift+tab`    | Next / previous pane          | global           |                                                                     |
+| `[` `]`              | Previous / next scope tab     | main             | Replaces the former `tab`.                                          |
+| `,` `.`              | Previous / next page          | list panes, main |                                                                     |
+| `<` `>` `home` `end` | Jump to top / bottom          | list panes, main |                                                                     |
+| `J` `K`              | Scroll main pane down / up    | global           | Works while focus is on a left pane.                                |
+| `H` `L`              | Scroll main pane left / right | global           | For long diff lines.                                                |
+| `ctrl+d` `ctrl+u`    | Scroll main half page         | global           |                                                                     |
+| `pgdn` `pgup`        | Scroll main pane              | global           |                                                                     |
+| `+` `_`              | Next / previous screen mode   | global           |                                                                     |
+| `?`                  | Keybinding menu               | global           |                                                                     |
 
 ### 5.3 Preserved
 
@@ -208,7 +208,7 @@ type Box = {
   readonly window?: string
   readonly direction?: "row" | "column"
   readonly conditionalDirection?: (width: number, height: number) => "row" | "column"
-  readonly weight?: number   // mutually exclusive with size
+  readonly weight?: number // mutually exclusive with size
   readonly size?: number
   readonly children?: readonly Box[]
   readonly conditionalChildren?: (width: number, height: number) => readonly Box[]
@@ -277,13 +277,13 @@ than a second coordinate calculation maintained in parallel with the layout.
 
 ### 7.3 Left stack: accordion (enabled by default)
 
-| Pane | Unfocused | Focused |
-| --- | --- | --- |
-| 1 Status / Review | `size 3` | `size 3` (never expands) |
-| 2 Files | `weight 1` | `weight 2` |
-| 3 Branches | `weight 1` | `weight 2` |
-| 4 Commits | `weight 1` | `weight 2` |
-| 5 Stash | `size 3` (folded) | `weight 2` |
+| Pane              | Unfocused         | Focused                  |
+| ----------------- | ----------------- | ------------------------ |
+| 1 Status / Review | `size 3`          | `size 3` (never expands) |
+| 2 Files           | `weight 1`        | `weight 2`               |
+| 3 Branches        | `weight 1`        | `weight 2`               |
+| 4 Commits         | `weight 1`        | `weight 2`               |
+| 5 Stash           | `size 3` (folded) | `weight 2`               |
 
 This differs from lazygit's shipped defaults in one respect: lazygit defaults
 `gui.expandFocusedSidePanel` to false, and githunk enables it. The rest — Status
@@ -306,11 +306,11 @@ Without this, five panes plus accordion is unusable on a 24-row terminal.
 `+` advances and `_` retreats through `normal` -> `half` -> `full`. Following
 `getMidSectionWeights`, the effect depends on where focus is:
 
-| Mode | Focus in main | Focus in a left pane |
-| --- | --- | --- |
-| `normal` | Per `ratio` | Per `ratio` |
-| `half` | Side region collapsed | Side and main each take half; **only the focused left pane is shown** |
-| `full` | Side region collapsed | Main collapsed; the focused left pane takes the full width |
+| Mode     | Focus in main         | Focus in a left pane                                                  |
+| -------- | --------------------- | --------------------------------------------------------------------- |
+| `normal` | Per `ratio`           | Per `ratio`                                                           |
+| `half`   | Side region collapsed | Side and main each take half; **only the focused left pane is shown** |
+| `full`   | Side region collapsed | Main collapsed; the focused left pane takes the full width            |
 
 Screen mode is transient, like lazygit's: it is not persisted.
 
@@ -330,12 +330,12 @@ rewrite:
 
 ## 8. Divider UX
 
-| State | Presentation |
-| --- | --- |
-| Idle | A dim `│` glyph per row, in the theme's border colour. |
-| `onMouseOver` | Brightened, with `⇔` at the midpoint (`⇕` for the horizontal divider). |
+| State         | Presentation                                                                   |
+| ------------- | ------------------------------------------------------------------------------ |
+| Idle          | A dim `│` glyph per row, in the theme's border colour.                         |
+| `onMouseOver` | Brightened, with `⇔` at the midpoint (`⇕` for the horizontal divider).         |
 | `onMouseDrag` | `ratio = x / terminalWidth`, clamped per §7.2, then re-arranged and persisted. |
-| Double-click | See below. |
+| Double-click  | See below.                                                                     |
 
 Double-click is defined per divider, because "collapse this axis" is otherwise
 ambiguous once screen mode already depends on where focus is:
@@ -394,8 +394,7 @@ context: it consumes input ahead of pane and global bindings, and `escape` and
 `src/app/controller.ts:124`:
 
 ```ts
-this.automaticCommitHistory = options instanceof GitRunner
-  || options.loadCommits !== undefined || options.commitsLoader !== undefined
+this.automaticCommitHistory = options instanceof GitRunner || options.loadCommits !== undefined || options.commitsLoader !== undefined
 ```
 
 `src/main.ts:23` constructs `new AppController({ repositoryRoot, runner })`,
@@ -438,12 +437,12 @@ no change to base inference is required or intended.
 
 ## 12. Testing
 
-| Layer | File | Covers |
-| --- | --- | --- |
-| Pure | `tests/ui/boxlayout.test.ts` | `calcSizes`, `normalizeWeights`, remainder distribution, nesting, `conditionalChildren`, `conditionalDirection` |
-| Pure | `tests/ui/layout.test.ts` (rewritten) | Ratio, minimum clamping, accordion heights, all three screen modes for both focus locations, short-terminal fallbacks, `tooSmall`, and the existing partition-sum property test |
-| Pure | `tests/ui/bindings.test.ts` | No collisions, every binding has a description, every action has a handler, hints formatting and truncation, `available` filtering |
-| Real git, real wiring | `tests/app/create-app.integration.test.ts` | Temp repository with several commits through `createApp`: commits, branches, and stashes are all populated |
+| Layer                    | File                                            | Covers                                                                                                                                                                                                                                                                                                                      |
+| ------------------------ | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pure                     | `tests/ui/boxlayout.test.ts`                    | `calcSizes`, `normalizeWeights`, remainder distribution, nesting, `conditionalChildren`, `conditionalDirection`                                                                                                                                                                                                             |
+| Pure                     | `tests/ui/layout.test.ts` (rewritten)           | Ratio, minimum clamping, accordion heights, all three screen modes for both focus locations, short-terminal fallbacks, `tooSmall`, and the existing partition-sum property test                                                                                                                                             |
+| Pure                     | `tests/ui/bindings.test.ts`                     | No collisions, every binding has a description, every action has a handler, hints formatting and truncation, `available` filtering                                                                                                                                                                                          |
+| Real git, real wiring    | `tests/app/create-app.integration.test.ts`      | Temp repository with several commits through `createApp`: commits, branches, and stashes are all populated                                                                                                                                                                                                                  |
 | Real git, real rendering | `tests/ui/acceptance/shell.integration.test.ts` | `createTestRenderer` plus temp repository plus `createApp`: `captureCharFrame()` contains commit subjects; the hints bar changes with focus; accordion heights respond to focus; `mockMouse.drag` changes the side width; `+`/`_` change screen mode; `h`/`l` move focus between panes; `resize()` leaves the layout intact |
 
 The last row is the regression gate. It asserts on the rendered text of the

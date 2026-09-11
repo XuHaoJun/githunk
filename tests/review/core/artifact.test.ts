@@ -30,7 +30,7 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [],
     source: "available",
-    ...overrides,
+    ...overrides
   } as unknown as ReviewFile
 }
 function makeDoc(files: ReviewFile[], headOid = "h1"): ReviewDocument {
@@ -68,34 +68,40 @@ describe("artifact finish and markdown", () => {
     const file = makeFile({ key: "a", path: "src/a.ts", contentId: "content-before" })
     const doc = makeDoc([file])
     let state = createInitialReviewState(doc)
-    state = reduceReviewState(state, planReviewIntent(state, {
-      type: "feedback/start-draft",
-      anchor: createFileAnchor(file),
-      kind: "note",
-      severity: "comment",
-      body: "review this file",
-    }))
-    state = reduceReviewState(state, planReviewIntent(state, {
-      type: "feedback/create",
-      id: "f1",
-      createdAt: "2026-08-27T00:00:00.000Z",
-    }))
+    state = reduceReviewState(
+      state,
+      planReviewIntent(state, {
+        type: "feedback/start-draft",
+        anchor: createFileAnchor(file),
+        kind: "note",
+        severity: "comment",
+        body: "review this file"
+      })
+    )
+    state = reduceReviewState(
+      state,
+      planReviewIntent(state, {
+        type: "feedback/create",
+        id: "f1",
+        createdAt: "2026-08-27T00:00:00.000Z"
+      })
+    )
     state = reduceReviewState(state, {
       type: "feedback/handoff",
       items: [{ id: "f1" }],
       at: "2026-08-27T01:00:00.000Z",
-      headOid: "h1",
+      headOid: "h1"
     })
 
     const changedDocument = makeDoc([makeFile({ key: "a", path: "src/a.ts", contentId: "content-after" })], "h2")
     const addressedState = {
       ...state,
       document: changedDocument,
-      feedback: state.feedback.map((feedback) => ({ ...feedback, anchor: createFileAnchor(changedDocument.files[0]!) })),
+      feedback: state.feedback.map((feedback) => ({ ...feedback, anchor: createFileAnchor(changedDocument.files[0]!) }))
     }
     expect(validateFinishReview(addressedState, { decision: "approve", summary: "done" })).toEqual({
       ok: false,
-      reason: "feedback-needs-reanchor",
+      reason: "feedback-needs-reanchor"
     })
   })
 
@@ -139,7 +145,7 @@ describe("artifact finish and markdown", () => {
     // ordering checks
     expect(idxDecision).toBeGreaterThanOrEqual(0)
     expect(idxDecision).toBeLessThan(idxSummary)
-    expect(idxCoverage).toBeGreaterThan(idxGen >=0 ? idxGen : idxSummary)
+    expect(idxCoverage).toBeGreaterThan(idxGen >= 0 ? idxGen : idxSummary)
     expect(idxBlocking).toBeGreaterThan(idxCoverage)
     expect(idxComment).toBeGreaterThan(idxBlocking)
     expect(idxFence).toBeGreaterThan(idxBlocking)
@@ -152,30 +158,36 @@ describe("artifact finish and markdown", () => {
     const doc = makeDoc([file])
     let state = createInitialReviewState(doc)
     const anchor = createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 })
-    state = reduceReviewState(state, planReviewIntent(state, {
-      type: "feedback/start-draft",
-      anchor,
-      kind: "note",
-      severity: "comment",
-      body: "please reconsider",
-    }))
-    state = reduceReviewState(state, planReviewIntent(state, {
-      type: "feedback/create",
-      id: "f1",
-      createdAt: "2026-08-27T00:00:00.000Z",
-    }))
+    state = reduceReviewState(
+      state,
+      planReviewIntent(state, {
+        type: "feedback/start-draft",
+        anchor,
+        kind: "note",
+        severity: "comment",
+        body: "please reconsider"
+      })
+    )
+    state = reduceReviewState(
+      state,
+      planReviewIntent(state, {
+        type: "feedback/create",
+        id: "f1",
+        createdAt: "2026-08-27T00:00:00.000Z"
+      })
+    )
     state = reduceReviewState(state, {
       type: "feedback/handoff",
       items: [{ id: "f1", excerpt: ["a"] }],
       at: "2026-08-27T01:00:00.000Z",
-      headOid: "h1",
+      headOid: "h1"
     })
     state = reduceReviewState(state, { type: "feedback/resolve", id: "f1", at: "2026-08-27T02:00:00.000Z" })
     const artifact = buildReviewArtifact(state, {
       id: "art-2",
       submittedAt: "2026-08-27T03:00:00.000Z",
       decision: "approve",
-      summary: "closed after review",
+      summary: "closed after review"
     })
     const markdown = renderReviewArtifactMarkdown(artifact)
     expect(markdown).toContain("- Status: resolved")

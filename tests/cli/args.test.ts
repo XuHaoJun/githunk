@@ -30,7 +30,7 @@ describe("parseCliArgs", () => {
   test("prefers the explicit --path over a positional path", () => {
     expect(parseCliArgs(["--path", "/tmp/explicit", "/tmp/positional"])).toEqual({
       kind: "start",
-      startDirectory: "/tmp/explicit",
+      startDirectory: "/tmp/explicit"
     })
   })
 
@@ -98,10 +98,9 @@ describe("handoff — the agent's contract", () => {
     expect(parseCliArgs(["--path", "/tmp/repo", "handoff"])).toEqual({
       kind: "handoff",
       json: false,
-      startDirectory: "/tmp/repo",
+      startDirectory: "/tmp/repo"
     })
-    expect(parseCliArgs(["--path", "/tmp/repo", "handoff", "reply", "--id", "fb-1", "--body", "why not"]))
-      .toEqual({ kind: "handoff-reply", id: "fb-1", body: "why not", startDirectory: "/tmp/repo" })
+    expect(parseCliArgs(["--path", "/tmp/repo", "handoff", "reply", "--id", "fb-1", "--body", "why not"])).toEqual({ kind: "handoff-reply", id: "fb-1", body: "why not", startDirectory: "/tmp/repo" })
   })
 
   test("refuses empty reply id and body values", () => {
@@ -109,8 +108,7 @@ describe("handoff — the agent's contract", () => {
     expect(parseCliArgs(["handoff", "reply", "--id=fb-1", "--body=   "]).kind).toBe("error")
   })
   test("answers one objection by id", () => {
-    expect(parseCliArgs(["handoff", "reply", "--id", "fb-1", "--body", "why not"]))
-      .toEqual({ kind: "handoff-reply", id: "fb-1", body: "why not" })
+    expect(parseCliArgs(["handoff", "reply", "--id", "fb-1", "--body", "why not"])).toEqual({ kind: "handoff-reply", id: "fb-1", body: "why not" })
   })
 
   test("a reply without an id or a body is refused rather than half-written", () => {

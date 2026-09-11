@@ -11,7 +11,7 @@ export const COPY_MENU_ITEMS: readonly CopyMenuItem[] = [
   { label: "Removed code", mode: "removed" },
   { label: "As patch", mode: "patch" },
   { label: "Whole hunk", mode: "hunk" },
-  { label: "File patch", mode: "file" },
+  { label: "File patch", mode: "file" }
 ]
 
 export type CopyMenu = {

@@ -31,64 +31,30 @@ class FakeRunner {
         durationMs: 0,
         exitCode: 0,
         stdout: response.stdout,
-        stderr: "",
-      },
+        stderr: ""
+      }
     }
   }
 }
 
-const revParseRepoPaths = [
-  "rev-parse",
-  "--path-format=absolute",
-  "--show-toplevel",
-  "--absolute-git-dir",
-  "--git-common-dir",
-  "--show-superproject-working-tree",
-]
+const revParseRepoPaths = ["rev-parse", "--path-format=absolute", "--show-toplevel", "--absolute-git-dir", "--git-common-dir", "--show-superproject-working-tree"]
 
-const revParseGitDir = (path: string): readonly string[] => [
-  "-C",
-  path,
-  "rev-parse",
-  "--path-format=absolute",
-  "--absolute-git-dir",
-]
+const revParseGitDir = (path: string): readonly string[] => ["-C", path, "rev-parse", "--path-format=absolute", "--absolute-git-dir"]
 
 describe("worktree porcelain parsing", () => {
   test("parses records separated by blank lines and strips the refs/heads prefix", () => {
-    const raw = [
-      "worktree /path/to/repo",
-      "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d",
-      "branch refs/heads/feature/one",
-      "",
-      "worktree /path/to/detached",
-      "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de",
-      "detached",
-      "",
-    ].join("\n")
+    const raw = ["worktree /path/to/repo", "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d", "branch refs/heads/feature/one", "", "worktree /path/to/detached", "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de", "detached", ""].join("\n")
 
     expect(parseWorktreeList(raw)).toEqual([
       { path: "/path/to/repo", head: "d85cc9d281fa6ae1665c68365fc70e75e82a042d", branch: "feature/one" },
-      { path: "/path/to/detached", head: "775955775e79b8f5b4c4b56f82fbf657e2d5e4de" },
+      { path: "/path/to/detached", head: "775955775e79b8f5b4c4b56f82fbf657e2d5e4de" }
     ])
   })
 
   test("skips bare repositories, tolerates crlf, and ignores unknown attribute lines", () => {
-    const raw = [
-      "worktree /path/to/bare",
-      "bare",
-      "",
-      "worktree /path/to/repo",
-      "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de",
-      "branch refs/heads/master",
-      "locked",
-      "prunable gitdir file points to non-existent location",
-      "",
-    ].join("\r\n")
+    const raw = ["worktree /path/to/bare", "bare", "", "worktree /path/to/repo", "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de", "branch refs/heads/master", "locked", "prunable gitdir file points to non-existent location", ""].join("\r\n")
 
-    expect(parseWorktreeList(raw)).toEqual([
-      { path: "/path/to/repo", head: "775955775e79b8f5b4c4b56f82fbf657e2d5e4de", branch: "master" },
-    ])
+    expect(parseWorktreeList(raw)).toEqual([{ path: "/path/to/repo", head: "775955775e79b8f5b4c4b56f82fbf657e2d5e4de", branch: "master" }])
   })
 
   test("returns nothing for empty output", () => {
@@ -101,12 +67,7 @@ describe("unique worktree names", () => {
     expect(uniqueWorktreeNames([])).toEqual([])
     expect(uniqueWorktreeNames(["/my/path/feature/one"])).toEqual(["one"])
     expect(uniqueWorktreeNames(["/my/path/feature/one/"])).toEqual(["one"])
-    expect(uniqueWorktreeNames(["/a/b/c/d", "/a/b/c/e", "/a/b/f/d", "/a/e/c/d"])).toEqual([
-      "b/c/d",
-      "e",
-      "f/d",
-      "e/c/d",
-    ])
+    expect(uniqueWorktreeNames(["/a/b/c/d", "/a/b/c/e", "/a/b/f/d", "/a/e/c/d"])).toEqual(["b/c/d", "e", "f/d", "e/c/d"])
   })
 })
 
@@ -134,23 +95,14 @@ describe("worktree loader", () => {
     const runner = new FakeRunner([
       {
         args: revParseRepoPaths,
-        stdout: `${repository}\n${repositoryGitDir}\n${repositoryGitDir}\n`,
+        stdout: `${repository}\n${repositoryGitDir}\n${repositoryGitDir}\n`
       },
       {
         args: ["worktree", "list", "--porcelain"],
-        stdout: [
-          `worktree ${repository}`,
-          "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d",
-          "branch refs/heads/master",
-          "",
-          `worktree ${linked}`,
-          "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de",
-          "branch refs/heads/feature",
-          "",
-        ].join("\n"),
+        stdout: [`worktree ${repository}`, "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d", "branch refs/heads/master", "", `worktree ${linked}`, "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de", "branch refs/heads/feature", ""].join("\n")
       },
       { args: revParseGitDir(repository), stdout: `${repositoryGitDir}\n` },
-      { args: revParseGitDir(linked), stdout: `${linkedGitDir}\n` },
+      { args: revParseGitDir(linked), stdout: `${linkedGitDir}\n` }
     ])
 
     const worktrees = await listWorktrees(runner)
@@ -164,7 +116,7 @@ describe("worktree loader", () => {
         shortHead: "d85cc9d2",
         isMain: true,
         isCurrent: true,
-        isPathMissing: false,
+        isPathMissing: false
       },
       {
         path: linked,
@@ -175,8 +127,8 @@ describe("worktree loader", () => {
         shortHead: "77595577",
         isMain: false,
         isCurrent: false,
-        isPathMissing: false,
-      },
+        isPathMissing: false
+      }
     ])
   })
 
@@ -192,29 +144,20 @@ describe("worktree loader", () => {
     const runner = new FakeRunner([
       {
         args: revParseRepoPaths,
-        stdout: `${linked}\n${linkedGitDir}\n${repositoryGitDir}\n`,
+        stdout: `${linked}\n${linkedGitDir}\n${repositoryGitDir}\n`
       },
       {
         args: ["worktree", "list", "--porcelain"],
-        stdout: [
-          `worktree ${repository}`,
-          "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d",
-          "branch refs/heads/master",
-          "",
-          `worktree ${linked}`,
-          "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de",
-          "branch refs/heads/feature",
-          "",
-        ].join("\n"),
+        stdout: [`worktree ${repository}`, "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d", "branch refs/heads/master", "", `worktree ${linked}`, "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de", "branch refs/heads/feature", ""].join("\n")
       },
       { args: revParseGitDir(repository), stdout: `${repositoryGitDir}\n` },
-      { args: revParseGitDir(linked), stdout: `${linkedGitDir}\n` },
+      { args: revParseGitDir(linked), stdout: `${linkedGitDir}\n` }
     ])
 
     const worktrees = await listWorktrees(runner)
     expect(worktrees.map((worktree) => [worktree.name, worktree.isCurrent, worktree.isMain])).toEqual([
       ["linked", true, false],
-      ["repo", false, true],
+      ["repo", false, true]
     ])
   })
 
@@ -228,23 +171,13 @@ describe("worktree loader", () => {
     const runner = new FakeRunner([
       {
         args: revParseRepoPaths,
-        stdout: `${repository}\n${repositoryGitDir}\n${repositoryGitDir}\n`,
+        stdout: `${repository}\n${repositoryGitDir}\n${repositoryGitDir}\n`
       },
       {
         args: ["worktree", "list", "--porcelain"],
-        stdout: [
-          `worktree ${repository}`,
-          "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d",
-          "branch refs/heads/master",
-          "",
-          `worktree ${missing}`,
-          "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de",
-          "branch refs/heads/gone",
-          "prunable gitdir file points to non-existent location",
-          "",
-        ].join("\n"),
+        stdout: [`worktree ${repository}`, "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d", "branch refs/heads/master", "", `worktree ${missing}`, "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de", "branch refs/heads/gone", "prunable gitdir file points to non-existent location", ""].join("\n")
       },
-      { args: revParseGitDir(repository), stdout: `${repositoryGitDir}\n` },
+      { args: revParseGitDir(repository), stdout: `${repositoryGitDir}\n` }
     ])
 
     const worktrees = await listWorktrees(runner)
@@ -256,7 +189,7 @@ describe("worktree loader", () => {
       shortHead: "77595577",
       isMain: false,
       isCurrent: false,
-      isPathMissing: true,
+      isPathMissing: true
     })
     expect(runner.calls.some((call) => call.includes(missing))).toBe(false)
   })
@@ -270,17 +203,12 @@ describe("worktree loader", () => {
     const runner = new FakeRunner([
       {
         args: revParseRepoPaths,
-        stdout: `${repository}\n${repositoryGitDir}\n${repositoryGitDir}\n`,
+        stdout: `${repository}\n${repositoryGitDir}\n${repositoryGitDir}\n`
       },
       {
         args: ["worktree", "list", "--porcelain"],
-        stdout: [
-          `worktree ${repository}`,
-          "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d",
-          "branch refs/heads/master",
-          "",
-        ].join("\n"),
-      },
+        stdout: [`worktree ${repository}`, "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d", "branch refs/heads/master", ""].join("\n")
+      }
     ])
 
     const worktrees = await listWorktrees(runner)
@@ -306,35 +234,22 @@ describe("worktree loader", () => {
     const runner = new FakeRunner([
       {
         args: revParseRepoPaths,
-        stdout: `${repository}\n${repositoryGitDir}\n${repositoryGitDir}\n`,
+        stdout: `${repository}\n${repositoryGitDir}\n${repositoryGitDir}\n`
       },
       {
         args: ["worktree", "list", "--porcelain"],
-        stdout: [
-          `worktree ${repository}`,
-          "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d",
-          "branch refs/heads/master",
-          "",
-          `worktree ${rebasing}`,
-          "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de",
-          "detached",
-          "",
-          `worktree ${bisecting}`,
-          "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de",
-          "detached",
-          "",
-        ].join("\n"),
+        stdout: [`worktree ${repository}`, "HEAD d85cc9d281fa6ae1665c68365fc70e75e82a042d", "branch refs/heads/master", "", `worktree ${rebasing}`, "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de", "detached", "", `worktree ${bisecting}`, "HEAD 775955775e79b8f5b4c4b56f82fbf657e2d5e4de", "detached", ""].join("\n")
       },
       { args: revParseGitDir(repository), stdout: `${repositoryGitDir}\n` },
       { args: revParseGitDir(rebasing), stdout: `${rebasingGitDir}\n` },
-      { args: revParseGitDir(bisecting), stdout: `${bisectingGitDir}\n` },
+      { args: revParseGitDir(bisecting), stdout: `${bisectingGitDir}\n` }
     ])
 
     const worktrees = await listWorktrees(runner)
     expect(worktrees.map((worktree) => [worktree.name, worktree.branch])).toEqual([
       ["repo", "master"],
       ["rebasing", "wip"],
-      ["bisecting", "hunted"],
+      ["bisecting", "hunted"]
     ])
   })
 })

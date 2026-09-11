@@ -1,14 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { writeFile } from "node:fs/promises"
-import { join } from "node:path"
 import { createTempRepository, type TempRepository } from "../../helpers/temp-repository"
 import { GitRunner } from "../../../src/git/runner"
 import { loadReviewDocument } from "../../../src/review/git/load-review-document"
-import {
-  isAncestor,
-  loadCommitProjection,
-  loadSinceLastReviewProjection,
-} from "../../../src/review/git/load-review-projection"
+import { isAncestor, loadCommitProjection, loadSinceLastReviewProjection } from "../../../src/review/git/load-review-projection"
 import { planReviewIntent } from "../../../src/review/core/intents"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { canMarkViewedInProjection } from "../../../src/review/core/selectors"
@@ -30,15 +24,15 @@ describe("future projection loaders — isolated direct tests", () => {
     const repo = await createTempRepository()
     try {
       await repo.write("base.txt", "base\n")
-      const baseOid = await commitAll(repo, "base")
+      await commitAll(repo, "base")
       await repo.git(["checkout", "-b", "feature"])
 
       await repo.write("a.txt", "one\n")
       const c1 = await commitAll(repo, "c1")
       await repo.write("a.txt", "one\ntwo\n")
-      const c2 = await commitAll(repo, "c2")
+      await commitAll(repo, "c2")
       await repo.write("b.txt", "b\n")
-      const c3 = await commitAll(repo, "c3")
+      await commitAll(repo, "c3")
 
       const runner = new GitRunner(repo.path)
       const doc = await loadReviewDocument(runner, "master")
@@ -123,7 +117,7 @@ describe("future projection loaders — isolated direct tests", () => {
       await repo.write("only-c2.txt", "c2\n")
       const c2 = await commitAll(repo, "c2")
       await repo.write("only-c3.txt", "c3\n")
-      const c3 = await commitAll(repo, "c3")
+      await commitAll(repo, "c3")
 
       const runner = new GitRunner(repo.path)
       const doc = await loadReviewDocument(runner, "master")
@@ -155,7 +149,7 @@ describe("future projection loaders — isolated direct tests", () => {
       await commitAll(repo, "base")
       await repo.git(["checkout", "-b", "feature"])
       await repo.write("f.txt", "one\n")
-      const c1 = await commitAll(repo, "c1")
+      await commitAll(repo, "c1")
       await repo.write("f.txt", "two\n")
       const c2 = await commitAll(repo, "c2")
       const oldHead = c2
@@ -182,7 +176,6 @@ describe("future projection loaders — isolated direct tests", () => {
       await repo.write("f.txt", "three\n")
       await repo.git(["add", "-A"])
       await repo.git(["commit", "--quiet", "-m", "c3 new"])
-      const afterResetHead = (await repo.git(["rev-parse", "HEAD"])).stdout.trim()
       const doc2 = await loadReviewDocument(runner, "master")
       const result2 = await loadSinceLastReviewProjection(runner, doc2, oldHead)
       expect(result2.kind).toBe("history-rewritten")
@@ -234,12 +227,11 @@ describe("future projection loaders — isolated direct tests", () => {
     const repo = await createTempRepository()
     try {
       await repo.write("root.txt", "root\n")
-      const rootOid = await commitAll(repo, "root")
+      await commitAll(repo, "root")
       await repo.write("second.txt", "second\n")
-      const second = await commitAll(repo, "second")
+      await commitAll(repo, "second")
       // base is root, feature is second? Need to test root projection from document where root is only commit
       // Create a new repo where root is the commit to project
-      const runner = new GitRunner(repo.path)
       // Create a feature branch from root and add another commit, aggregate will be root..HEAD which is second
       // But we want to test commit projection for root itself from a document that includes root
       // So create a document with base being its parent (empty tree) ??? Instead, test directly loadCommitProjection for rootOid
@@ -263,7 +255,7 @@ describe("future projection loaders — isolated direct tests", () => {
           identity,
           generation,
           commits: [{ oid: onlyRoot, parents: [], author: "a", timestamp: 1, subject: "only", body: "" }] as unknown as ReviewDocument["commits"],
-          files: [],
+          files: []
         })
         const proj = await loadCommitProjection(runner2, dummyDoc, onlyRoot)
         expect(proj.files.map((f) => f.path)).toContain("only.txt")

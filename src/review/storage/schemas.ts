@@ -61,7 +61,7 @@ const fileAnchorSchema = z
   .object({
     kind: z.literal("file"),
     fileKey: z.string().min(1),
-    contentId: z.string().min(1),
+    contentId: z.string().min(1)
   })
   .strict()
 
@@ -74,7 +74,7 @@ const rangeAnchorSchema = z
     startLine: z.number().int().min(1),
     endLine: z.number().int().min(1),
     ownerHunkIndex: z.number().int().min(0),
-    contextDigest: z.string().min(1),
+    contextDigest: z.string().min(1)
   })
   .strict()
   .superRefine((val, ctx) => {
@@ -88,16 +88,14 @@ const anchorSchema = z.discriminatedUnion("kind", [fileAnchorSchema, rangeAnchor
 // "retired" was this status's first name before it took code review's word for
 // the same act. Accepted on read and normalised, so a review written under the
 // old name still loads.
-const feedbackStatusSchema = z
-  .enum(["open", "handed-off", "resolved", "retired"])
-  .transform((value) => (value === "retired" ? "resolved" as const : value))
+const feedbackStatusSchema = z.enum(["open", "handed-off", "resolved", "retired"]).transform((value) => (value === "retired" ? ("resolved" as const) : value))
 
 const handoffSchema = z
   .object({
     at: timestampSchema,
     headOid: z.string().min(1),
     contentId: z.string().min(1).optional(),
-    excerpt: z.array(z.string()).max(ANCHOR_EXCERPT_LINE_LIMIT).optional(),
+    excerpt: z.array(z.string()).max(ANCHOR_EXCERPT_LINE_LIMIT).optional()
   })
   .strict()
 
@@ -115,7 +113,7 @@ const feedbackSchema = z
     status: feedbackStatusSchema.optional(),
     handoff: handoffSchema.optional(),
     createdAt: timestampSchema,
-    updatedAt: timestampSchema,
+    updatedAt: timestampSchema
   })
   .strict()
   .superRefine((val, ctx) => {
@@ -141,7 +139,7 @@ const draftSchema = z
     kind: z.enum(["note", "suggestion"]),
     severity: z.enum(["comment", "blocking"]),
     body: z.string(),
-    replacement: z.string().optional(),
+    replacement: z.string().optional()
   })
   .strict()
   .superRefine((val, ctx) => {
@@ -158,7 +156,7 @@ const viewedRecordSchema = z
     path: z.string().min(1),
     contentId: z.string().min(1),
     generationId: z.string().min(1),
-    viewedAt: timestampSchema,
+    viewedAt: timestampSchema
   })
   .strict()
 
@@ -166,7 +164,7 @@ const expandedGapSchema = z
   .object({
     fileKey: z.string().min(1),
     gapId: z.string().min(1),
-    expanded: z.boolean(),
+    expanded: z.boolean()
   })
   .strict()
 
@@ -175,45 +173,43 @@ const submittedReviewRefSchema = z
     artifactId: z.string().min(1),
     generationId: z.string().min(1),
     headOid: z.string().min(1),
-    submittedAt: timestampSchema,
+    submittedAt: timestampSchema
   })
   .strict()
 
 const submissionInProgressSchema = z
   .object({
     artifactId: z.string().min(1),
-    digest: z.string().min(1),
+    digest: z.string().min(1)
   })
   .strict()
 
-const lineSelectionSchema = z.object({
-  fileKey: z.string().min(1),
-  hunkIndex: z.number().int().min(0),
-  side: z.enum(["old", "new"]),
-  line: z.number().int().min(1),
-  contentId: z.string().min(1),
-  contextDigest: z.string().min(1),
-}).strict()
+const lineSelectionSchema = z
+  .object({
+    fileKey: z.string().min(1),
+    hunkIndex: z.number().int().min(0),
+    side: z.enum(["old", "new"]),
+    line: z.number().int().min(1),
+    contentId: z.string().min(1),
+    contextDigest: z.string().min(1)
+  })
+  .strict()
 
 const selectionSchema = z
   .object({
     fileKey: z.string().nullable(),
-    hunkIndex: z.number().int().min(0),
+    hunkIndex: z.number().int().min(0)
   })
   .strict()
 
 const filterSchema = z
   .object({
     query: z.string(),
-    scope: z.enum(["all", "unreviewed", "changed", "feedback"]),
+    scope: z.enum(["all", "unreviewed", "changed", "feedback"])
   })
   .strict()
 
-const projectionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("aggregate") }).strict(),
-  z.object({ kind: z.literal("since-last-review"), fromHeadOid: z.string().min(1) }).strict(),
-  z.object({ kind: z.literal("commit"), oid: z.string().min(1) }).strict(),
-])
+const projectionSchema = z.discriminatedUnion("kind", [z.object({ kind: z.literal("aggregate") }).strict(), z.object({ kind: z.literal("since-last-review"), fromHeadOid: z.string().min(1) }).strict(), z.object({ kind: z.literal("commit"), oid: z.string().min(1) }).strict()])
 
 const persistedReviewStateSchema = z
   .object({
@@ -226,7 +222,7 @@ const persistedReviewStateSchema = z
     draft: draftSchema.nullable(),
     expandedGaps: z.array(expandedGapSchema),
     lastSubmission: submittedReviewRefSchema.nullable(),
-    submissionInProgress: submissionInProgressSchema.nullable().optional(),
+    submissionInProgress: submissionInProgressSchema.nullable().optional()
   })
   .strict()
 
@@ -242,7 +238,7 @@ const reviewDatabaseV2Schema = z
   .object({
     version: z.literal(2),
     baseByHead: baseByHeadSchema,
-    reviews: z.record(z.string(), persistedReviewStateSchema),
+    reviews: z.record(z.string(), persistedReviewStateSchema)
   })
   .strict()
 
@@ -253,7 +249,7 @@ const reviewIdentitySchema = z
     id: z.string().min(1),
     headRef: z.string().nullable(),
     baseRef: z.string().min(1),
-    detachedHeadOid: z.string().nullable(),
+    detachedHeadOid: z.string().nullable()
   })
   .strict()
   .superRefine((val, ctx) => {
@@ -272,7 +268,7 @@ const reviewGenerationSchema = z
     id: z.string().min(1),
     baseOid: z.string().min(1),
     mergeBaseOid: z.string().min(1),
-    headOid: z.string().min(1),
+    headOid: z.string().min(1)
   })
   .strict()
 
@@ -289,7 +285,7 @@ const submittedFeedbackSchema = z
     status: feedbackStatusSchema.optional(),
     handoff: handoffSchema.optional(),
     createdAt: timestampSchema,
-    updatedAt: timestampSchema,
+    updatedAt: timestampSchema
   })
   .strict()
   .superRefine((val, ctx) => {
@@ -312,7 +308,7 @@ const submittedFeedbackSchema = z
 const artifactCoverageSchema = z
   .object({
     viewed: z.array(z.object({ fileKey: z.string().min(1), path: z.string().min(1), contentId: z.string().min(1) }).strict()),
-    notViewed: z.array(z.object({ fileKey: z.string().min(1), path: z.string().min(1) }).strict()),
+    notViewed: z.array(z.object({ fileKey: z.string().min(1), path: z.string().min(1) }).strict())
   })
   .strict()
 
@@ -325,12 +321,9 @@ const reviewArtifactV1Schema = z
     submittedAt: timestampSchema,
     decision: z.enum(["comment", "approve", "request-changes"]),
     summary: z.string(),
-    projection: z.discriminatedUnion("kind", [
-      z.object({ kind: z.literal("aggregate") }).strict(),
-      z.object({ kind: z.literal("since-last-review"), fromHeadOid: z.string().min(1) }).strict(),
-    ]),
+    projection: z.discriminatedUnion("kind", [z.object({ kind: z.literal("aggregate") }).strict(), z.object({ kind: z.literal("since-last-review"), fromHeadOid: z.string().min(1) }).strict()]),
     coverage: artifactCoverageSchema,
-    feedback: z.array(submittedFeedbackSchema),
+    feedback: z.array(submittedFeedbackSchema)
   })
   .strict()
 
@@ -344,7 +337,7 @@ function toViewedRecord(raw: z.infer<typeof viewedRecordSchema>): ViewedRecord {
     path: raw.path,
     contentId: raw.contentId,
     generationId: raw.generationId,
-    viewedAt: raw.viewedAt,
+    viewedAt: raw.viewedAt
   }
 }
 
@@ -360,7 +353,7 @@ function toAnchor(raw: z.infer<typeof anchorSchema>): ReviewAnchor {
     startLine: raw.startLine,
     endLine: raw.endLine,
     ownerHunkIndex: raw.ownerHunkIndex,
-    contextDigest: raw.contextDigest,
+    contextDigest: raw.contextDigest
   }
 }
 
@@ -369,7 +362,7 @@ function toHandoff(raw: z.infer<typeof handoffSchema>): ReviewFeedbackHandoff {
     at: raw.at,
     headOid: raw.headOid,
     ...(raw.contentId === undefined ? {} : { contentId: raw.contentId }),
-    ...(raw.excerpt === undefined ? {} : { excerpt: raw.excerpt as readonly string[] }),
+    ...(raw.excerpt === undefined ? {} : { excerpt: raw.excerpt as readonly string[] })
   }
 }
 
@@ -384,7 +377,7 @@ function toFeedback(raw: z.infer<typeof feedbackSchema>): ReviewFeedback {
     ...(raw.status === undefined ? {} : { status: raw.status }),
     ...(raw.handoff === undefined ? {} : { handoff: toHandoff(raw.handoff) }),
     createdAt: raw.createdAt,
-    updatedAt: raw.updatedAt,
+    updatedAt: raw.updatedAt
   }
   if (raw.replacement !== undefined) {
     return { ...base, replacement: raw.replacement }
@@ -397,7 +390,7 @@ function toDraft(raw: z.infer<typeof draftSchema>): ReviewFeedbackDraft {
     anchor: toAnchor(raw.anchor),
     kind: raw.kind,
     severity: raw.severity,
-    body: raw.body,
+    body: raw.body
   } as ReviewFeedbackDraft
   if (raw.replacement !== undefined) {
     return { ...base, replacement: raw.replacement }
@@ -428,7 +421,7 @@ function toPersistedReviewState(raw: z.infer<typeof persistedReviewStateSchema>)
     draft: raw.draft ? toDraft(raw.draft) : null,
     expandedGaps,
     lastSubmission: raw.lastSubmission ? toSubmittedRef(raw.lastSubmission) : null,
-    submissionInProgress: raw.submissionInProgress ?? null,
+    submissionInProgress: raw.submissionInProgress ?? null
   }
 }
 
@@ -460,7 +453,7 @@ function toSubmittedFeedback(raw: z.infer<typeof submittedFeedbackSchema>): Subm
     ...(raw.status === undefined ? {} : { status: raw.status }),
     ...(raw.handoff === undefined ? {} : { handoff: toHandoff(raw.handoff) }),
     createdAt: raw.createdAt,
-    updatedAt: raw.updatedAt,
+    updatedAt: raw.updatedAt
   }
   if (raw.replacement !== undefined) return { ...base, replacement: raw.replacement }
   return base
@@ -478,9 +471,9 @@ function toArtifact(raw: z.infer<typeof reviewArtifactV1Schema>): ReviewArtifact
     projection: raw.projection,
     coverage: {
       viewed: raw.coverage.viewed.map((v) => ({ fileKey: v.fileKey, path: v.path, contentId: v.contentId })),
-      notViewed: raw.coverage.notViewed.map((v) => ({ fileKey: v.fileKey, path: v.path })),
+      notViewed: raw.coverage.notViewed.map((v) => ({ fileKey: v.fileKey, path: v.path }))
     },
-    feedback: raw.feedback.map(toSubmittedFeedback),
+    feedback: raw.feedback.map(toSubmittedFeedback)
   }
 }
 
@@ -533,10 +526,10 @@ export function serializeReviewDatabaseV2(database: ReviewDatabaseV2): string {
           draft: v.draft,
           expandedGaps: v.expandedGaps,
           lastSubmission: v.lastSubmission,
-          submissionInProgress: v.submissionInProgress,
-        },
-      ]),
-    ),
+          submissionInProgress: v.submissionInProgress
+        }
+      ])
+    )
   }
   const result = reviewDatabaseV2Schema.safeParse(raw)
   if (!result.success) throw result.error
@@ -554,7 +547,7 @@ export function serializeReviewArtifactV1(artifact: ReviewArtifactV1): string {
     summary: artifact.summary,
     projection: artifact.projection,
     coverage: artifact.coverage,
-    feedback: artifact.feedback,
+    feedback: artifact.feedback
   }
   const result = reviewArtifactV1Schema.safeParse(raw)
   if (!result.success) throw result.error
@@ -567,5 +560,5 @@ export const __internal = {
   reviewArtifactV1Schema,
   persistedReviewStateSchema,
   isValidTimestamp,
-  isValidBaseByHeadKey,
+  isValidBaseByHeadKey
 }

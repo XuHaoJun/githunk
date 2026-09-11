@@ -2,13 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { LocalBranch } from "../../src/domain/branch"
 import { branchStatus, formatRecency } from "../../src/ui/branch-status"
 import { SPINNER_FRAMES, SPINNER_RATE_MS, loaderFrame } from "../../src/ui/loader"
-import {
-  BRANCH_DIVERGED_FG,
-  BRANCH_ITEM_OPERATION_FG,
-  BRANCH_MATCHES_UPSTREAM_FG,
-  BRANCH_UPSTREAM_GONE_FG,
-  BRANCH_UPSTREAM_NOT_LOCAL_FG,
-} from "../../src/ui/theme"
+import { BRANCH_DIVERGED_FG, BRANCH_ITEM_OPERATION_FG, BRANCH_MATCHES_UPSTREAM_FG, BRANCH_UPSTREAM_GONE_FG, BRANCH_UPSTREAM_NOT_LOCAL_FG } from "../../src/ui/theme"
 
 function branch(overrides: Partial<LocalBranch> = {}): LocalBranch {
   return { name: "feature", isCurrent: false, ...overrides }
@@ -81,11 +75,8 @@ describe("branchStatus", () => {
   })
 
   test("divergence reads as behind-then-ahead arrows", () => {
-    expect(branchStatus(branch({ upstreamRemote: "origin", aheadForPull: "3", behindForPull: "7" }), undefined, now))
-      .toEqual({ text: "↓7↑3", color: BRANCH_DIVERGED_FG })
-    expect(branchStatus(branch({ upstreamRemote: "origin", aheadForPull: "0", behindForPull: "7" }), undefined, now))
-      .toEqual({ text: "↓7", color: BRANCH_DIVERGED_FG })
-    expect(branchStatus(branch({ upstreamRemote: "origin", aheadForPull: "3", behindForPull: "0" }), undefined, now))
-      .toEqual({ text: "↑3", color: BRANCH_DIVERGED_FG })
+    expect(branchStatus(branch({ upstreamRemote: "origin", aheadForPull: "3", behindForPull: "7" }), undefined, now)).toEqual({ text: "↓7↑3", color: BRANCH_DIVERGED_FG })
+    expect(branchStatus(branch({ upstreamRemote: "origin", aheadForPull: "0", behindForPull: "7" }), undefined, now)).toEqual({ text: "↓7", color: BRANCH_DIVERGED_FG })
+    expect(branchStatus(branch({ upstreamRemote: "origin", aheadForPull: "3", behindForPull: "0" }), undefined, now)).toEqual({ text: "↑3", color: BRANCH_DIVERGED_FG })
   })
 })

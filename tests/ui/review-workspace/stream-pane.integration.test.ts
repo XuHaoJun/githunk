@@ -28,7 +28,7 @@ function makeFile(key: string, lines: readonly string[]): ReviewFile {
     patchDigest: `patch-${key}`,
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount, newStart: 1, newCount, lines })],
-    source: "available",
+    source: "available"
   }
 }
 
@@ -38,9 +38,14 @@ function makeSession(files: readonly ReviewFile[]): { session: ReactReviewSessio
   let state = createInitialReviewState(createReviewDocument({ identity, generation, commits: [], files }))
   const listeners = new Set<() => void>()
   const controller = {
-    get state() { return state },
+    get state() {
+      return state
+    },
     error: undefined,
-    subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener) },
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
     dispatch(action: Parameters<typeof reduceReviewState>[1]) {
       state = reduceReviewState(state, action)
       for (const listener of listeners) listener()
@@ -55,7 +60,7 @@ function makeSession(files: readonly ReviewFile[]): { session: ReactReviewSessio
       }
     },
     getExpandedSourceByGap: () => new Map(),
-    expandGap: async () => undefined,
+    expandGap: async () => undefined
   } as unknown as ReviewWorkspaceController
   return { session: new ReactReviewSession(controller, () => undefined), getState: () => state }
 }
@@ -70,7 +75,10 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>): Promise<voi
 
 describe("React review stream surface", () => {
   test("renders the continuous diff stream and scrolls through it with real input", async () => {
-    const file = makeFile("src/stream.ts", Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`))
+    const file = makeFile(
+      "src/stream.ts",
+      Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`)
+    )
     const setup = await testRender(createElement(ReviewWorkspaceApp, { session: makeSession([file]).session }), { width: 100, height: 10 })
     try {
       await flush(setup)

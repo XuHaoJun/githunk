@@ -21,13 +21,13 @@ export function runProcess(command: string, args: readonly string[], options: Pr
         cwd: options.cwd,
         stdio: ["pipe", "pipe", "pipe"],
         ...(options.env === undefined ? {} : { env: options.env }),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.signal === undefined ? {} : { signal: options.signal })
       })
     } catch (error) {
       resolve({
         exitCode: -1,
         stdout: "",
-        stderr: error instanceof Error ? error.message : String(error),
+        stderr: error instanceof Error ? error.message : String(error)
       })
       return
     }
@@ -36,7 +36,9 @@ export function runProcess(command: string, args: readonly string[], options: Pr
     const stdoutStream = child.stdout
     const stderrStream = child.stderr
     if (stdin === null || stdoutStream === null || stderrStream === null) {
-      try { child.kill() } catch {}
+      try {
+        child.kill()
+      } catch {}
       resolve({ exitCode: -1, stdout: "", stderr: "child process did not expose piped standard streams" })
       return
     }
@@ -50,14 +52,18 @@ export function runProcess(command: string, args: readonly string[], options: Pr
       resolve({
         exitCode,
         stdout,
-        stderr: error === undefined ? stderr : error instanceof Error ? error.message : String(error),
+        stderr: error === undefined ? stderr : error instanceof Error ? error.message : String(error)
       })
     }
 
     stdoutStream.setEncoding("utf8")
     stderrStream.setEncoding("utf8")
-    stdoutStream.on("data", (chunk: string) => { stdout += chunk })
-    stderrStream.on("data", (chunk: string) => { stderr += chunk })
+    stdoutStream.on("data", (chunk: string) => {
+      stdout += chunk
+    })
+    stderrStream.on("data", (chunk: string) => {
+      stderr += chunk
+    })
     child.once("error", (error) => finish(-1, error))
     child.once("close", (exitCode) => finish(exitCode ?? -1))
     stdin.once("error", () => {})
@@ -71,18 +77,14 @@ export type InteractiveProcessOptions = {
   readonly env?: NodeJS.ProcessEnv
 }
 
-export function runInteractiveProcess(
-  command: string,
-  args: readonly string[],
-  options: InteractiveProcessOptions,
-): Promise<number> {
+export function runInteractiveProcess(command: string, args: readonly string[], options: InteractiveProcessOptions): Promise<number> {
   return new Promise((resolve, reject) => {
     let child: ChildProcess
     try {
       child = spawn(command, [...args], {
         cwd: options.cwd,
         stdio: "inherit",
-        ...(options.env === undefined ? {} : { env: options.env }),
+        ...(options.env === undefined ? {} : { env: options.env })
       })
     } catch (error) {
       reject(error)

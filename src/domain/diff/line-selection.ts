@@ -26,12 +26,7 @@ function withSelection(state: DiffLineRangeState, selectedIndex: number): DiffLi
 }
 
 function hasActiveRange(state: DiffLineRangeState): boolean {
-  return state.rangeMode !== "none"
-    && state.rangeStartIndex !== undefined
-    && state.rangeStartIndex >= 0
-    && state.rangeStartIndex < state.lineCount
-    && state.selectedIndex >= 0
-    && state.selectedIndex < state.lineCount
+  return state.rangeMode !== "none" && state.rangeStartIndex !== undefined && state.rangeStartIndex >= 0 && state.rangeStartIndex < state.lineCount && state.selectedIndex >= 0 && state.selectedIndex < state.lineCount
 }
 
 export function createDiffLineRangeState(document: DiffDocument): DiffLineRangeState {
@@ -39,7 +34,7 @@ export function createDiffLineRangeState(document: DiffDocument): DiffLineRangeS
   return {
     lineCount: document.lines.length,
     selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-    rangeMode: "none",
+    rangeMode: "none"
   }
 }
 
@@ -48,7 +43,7 @@ export function toggleDiffLineRange(state: DiffLineRangeState): DiffLineRangeSta
     return {
       lineCount: state.lineCount,
       selectedIndex: clampIndex(state.selectedIndex, state.lineCount),
-      rangeMode: "none",
+      rangeMode: "none"
     }
   }
   if (state.lineCount <= 0) return state
@@ -56,7 +51,7 @@ export function toggleDiffLineRange(state: DiffLineRangeState): DiffLineRangeSta
     ...state,
     selectedIndex: clampIndex(state.selectedIndex, state.lineCount),
     rangeMode: "sticky",
-    rangeStartIndex: clampIndex(state.selectedIndex, state.lineCount),
+    rangeStartIndex: clampIndex(state.selectedIndex, state.lineCount)
   }
 }
 
@@ -74,7 +69,7 @@ export function expandDiffLineRange(state: DiffLineRangeState, direction: "next"
     ...state,
     selectedIndex: nextIndex,
     rangeMode: "non-sticky",
-    rangeStartIndex: current,
+    rangeStartIndex: current
   }
 }
 
@@ -91,7 +86,7 @@ export function moveDiffLineSelection(state: DiffLineRangeState, direction: "nex
     return {
       lineCount: state.lineCount,
       selectedIndex: nextIndex,
-      rangeMode: "none",
+      rangeMode: "none"
     }
   }
   if (nextIndex === current) return state
@@ -103,7 +98,7 @@ export function clearDiffLineRange(state: DiffLineRangeState): DiffLineRangeStat
   return {
     lineCount: state.lineCount,
     selectedIndex: clampIndex(state.selectedIndex, state.lineCount),
-    rangeMode: "none",
+    rangeMode: "none"
   }
 }
 
@@ -111,9 +106,7 @@ export function diffLineSelectionRange(state: DiffLineRangeState): { readonly st
   const selectedIndex = clampIndex(state.selectedIndex, state.lineCount)
   if (!hasActiveRange(state)) return { startIndex: selectedIndex, endIndex: selectedIndex }
   const startIndex = clampIndex(state.rangeStartIndex!, state.lineCount)
-  return startIndex <= selectedIndex
-    ? { startIndex, endIndex: selectedIndex }
-    : { startIndex: selectedIndex, endIndex: startIndex }
+  return startIndex <= selectedIndex ? { startIndex, endIndex: selectedIndex } : { startIndex: selectedIndex, endIndex: startIndex }
 }
 
 export function changedIndexesInDiffLineRange(document: DiffDocument, state: DiffLineRangeState): readonly number[] {

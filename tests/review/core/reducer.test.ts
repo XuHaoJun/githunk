@@ -26,7 +26,7 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [],
     source: "available",
-    ...overrides,
+    ...overrides
   }
 }
 function makeDoc(files: ReviewFile[], commits: readonly { oid: string; parents: readonly string[]; author: string; timestamp: number; subject: string; body: string }[] = [{ oid: "c1", parents: [], author: "a", timestamp: 1, subject: "s", body: "" }]): ReviewDocument {
@@ -73,19 +73,25 @@ describe("semantic-only state and explicit reveal tokens", () => {
     const hunk = createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["+x"] })
     const doc = makeDoc([makeFile({ key: "src/a.ts", path: "src/a.ts", hunks: [hunk] })])
     const s0 = createInitialReviewState(doc)
-    const s1 = reduceReviewState(s0, planReviewIntent(s0, {
-      type: "selection/viewport-anchor",
-      fileKey: "src/a.ts",
-      hunkIndex: 0,
-      reveal: "hunk",
-    }))
+    const s1 = reduceReviewState(
+      s0,
+      planReviewIntent(s0, {
+        type: "selection/viewport-anchor",
+        fileKey: "src/a.ts",
+        hunkIndex: 0,
+        reveal: "hunk"
+      })
+    )
     expect(s1.reveal.hunkToken).toBe(s0.reveal.hunkToken + 1)
-    const s2 = reduceReviewState(s1, planReviewIntent(s1, {
-      type: "selection/viewport-anchor",
-      fileKey: "src/a.ts",
-      hunkIndex: 0,
-      reveal: "hunk",
-    }))
+    const s2 = reduceReviewState(
+      s1,
+      planReviewIntent(s1, {
+        type: "selection/viewport-anchor",
+        fileKey: "src/a.ts",
+        hunkIndex: 0,
+        reveal: "hunk"
+      })
+    )
     expect(s2.reveal.hunkToken).toBe(s1.reveal.hunkToken + 1)
   })
 
@@ -97,7 +103,7 @@ describe("semantic-only state and explicit reveal tokens", () => {
       type: "selection/viewport-anchor",
       fileKey: file.key,
       hunkIndex: 0,
-      reveal: "feedback",
+      reveal: "feedback"
     })
     const line = createLineSelection(file, { hunkIndex: 0, side: "new", line: 1 })
 
@@ -122,7 +128,7 @@ describe("semantic-only state and explicit reveal tokens", () => {
           anchor: createFileAnchor(first),
           resolution: "active" as const,
           createdAt: "2026-09-01T00:00:00.000Z",
-          updatedAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z"
         },
         {
           id: "resolved",
@@ -133,9 +139,9 @@ describe("semantic-only state and explicit reveal tokens", () => {
           resolution: "active" as const,
           status: "resolved" as const,
           createdAt: "2026-09-01T00:00:00.000Z",
-          updatedAt: "2026-09-01T00:00:00.000Z",
-        },
-      ],
+          updatedAt: "2026-09-01T00:00:00.000Z"
+        }
+      ]
     }
 
     const next = reduceReviewState(state, { type: "feedback/next" })
@@ -143,11 +149,7 @@ describe("semantic-only state and explicit reveal tokens", () => {
     expect(next).toBe(state)
   })
   test("filter normalization preserves document order and matches normalized paths", () => {
-    const doc = makeDoc([
-      makeFile({ key: "a", path: "src/foo.ts" }),
-      makeFile({ key: "b", path: "src/Bar.ts" }),
-      makeFile({ key: "c", path: "src/baz.ts", previousPath: "src/OldBaz.ts" }),
-    ])
+    const doc = makeDoc([makeFile({ key: "a", path: "src/foo.ts" }), makeFile({ key: "b", path: "src/Bar.ts" }), makeFile({ key: "c", path: "src/baz.ts", previousPath: "src/OldBaz.ts" })])
     const s0 = createInitialReviewState(doc)
     const s1 = reduceReviewState(s0, planReviewIntent(s0, { type: "filter/set-query", query: "  bar  " }))
     expect(s1.filter.query).toBe("bar")
@@ -219,7 +221,7 @@ describe("ledger transitions", () => {
       resolution: "active" as const,
       createdAt: "2026-09-08T00:00:00.000Z",
       updatedAt: "2026-09-08T00:00:00.000Z",
-      ...overrides,
+      ...overrides
     }
   }
   function stateWith(items: ReturnType<typeof feedback>[]) {
@@ -227,7 +229,7 @@ describe("ledger transitions", () => {
       identity: makeIdentity(),
       generation: makeGeneration(),
       commits: [],
-      files: [makeFile({ key: "a", path: "a" })],
+      files: [makeFile({ key: "a", path: "a" })]
     })
     return { ...createInitialReviewState(doc), feedback: items }
   }
@@ -238,7 +240,7 @@ describe("ledger transitions", () => {
       type: "feedback/handoff",
       items: [{ id: "one" }, { id: "two", excerpt: ["const x = 1"] }],
       at: "2026-09-08T01:00:00.000Z",
-      headOid: "h1",
+      headOid: "h1"
     })
     expect(next.feedback.map((f) => f.status)).toEqual(["handed-off", "handed-off"])
     expect(next.feedback[0]!.handoff).toEqual({ at: "2026-09-08T01:00:00.000Z", headOid: "h1", contentId: "content-a" })
@@ -253,21 +255,23 @@ describe("ledger transitions", () => {
       type: "feedback/handoff",
       items: [{ id: "stale" }],
       at: "2026-09-08T01:00:00.000Z",
-      headOid: "h1",
+      headOid: "h1"
     })
     expect(next).toBe(state)
   })
   test("re-anchoring a handed-off objection opens a fresh round", () => {
-    const state = stateWith([feedback("one", {
-      resolution: "stale",
-      status: "handed-off",
-      handoff: { at: "2026-09-08T01:00:00.000Z", headOid: "old-head" },
-    })])
+    const state = stateWith([
+      feedback("one", {
+        resolution: "stale",
+        status: "handed-off",
+        handoff: { at: "2026-09-08T01:00:00.000Z", headOid: "old-head" }
+      })
+    ])
     const next = reduceReviewState(state, {
       type: "feedback/reanchor",
       id: "one",
       anchor: { ...anchor },
-      updatedAt: "2026-09-08T02:00:00.000Z",
+      updatedAt: "2026-09-08T02:00:00.000Z"
     })
     expect(next.feedback[0]?.status).toBe("open")
     expect(next.feedback[0]).not.toHaveProperty("handoff")
@@ -277,13 +281,13 @@ describe("ledger transitions", () => {
   test("re-handing off keeps the original checkpoint, so the verdict keeps its baseline", () => {
     const already = feedback("one", {
       status: "handed-off",
-      handoff: { at: "2026-09-08T01:00:00.000Z", headOid: "first" },
+      handoff: { at: "2026-09-08T01:00:00.000Z", headOid: "first" }
     })
     const next = reduceReviewState(stateWith([already]), {
       type: "feedback/handoff",
       items: [{ id: "one" }],
       at: "2026-09-08T09:00:00.000Z",
-      headOid: "second",
+      headOid: "second"
     })
     expect(next.feedback[0]!.handoff?.headOid).toBe("first")
   })
@@ -294,7 +298,7 @@ describe("ledger transitions", () => {
       type: "feedback/handoff",
       items: [{ id: "one" }],
       at: "t",
-      headOid: "h1",
+      headOid: "h1"
     })
     expect(next).toBe(state)
   })

@@ -15,7 +15,6 @@ import { ReviewBasePicker } from "../../../src/ui/review-workspace/components/Re
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-
 async function flush(setup: TestRendererSetup): Promise<void> {
   await act(async () => {
     await setup.renderOnce()
@@ -26,7 +25,9 @@ async function flush(setup: TestRendererSetup): Promise<void> {
 
 async function settle(setup: TestRendererSetup, ready: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 100 && !ready(); attempt += 1) {
-    await act(async () => { await Bun.sleep(10) })
+    await act(async () => {
+      await Bun.sleep(10)
+    })
     await flush(setup)
   }
   expect(ready()).toBe(true)
@@ -71,49 +72,78 @@ describe("review base picker interactions", () => {
     const controller = new ReviewWorkspaceController({ runner: new GitRunner(repository.path) })
     await controller.open()
     let closes = 0
-    const setup = await testRender(<ReviewWorkspaceApp session={new ReactReviewSession(controller, () => { closes += 1 })} />, { width: 100, height: 24, useMouse: true, kittyKeyboard: true })
+    const setup = await testRender(
+      <ReviewWorkspaceApp
+        session={
+          new ReactReviewSession(controller, () => {
+            closes += 1
+          })
+        }
+      />,
+      { width: 100, height: 24, useMouse: true, kittyKeyboard: true }
+    )
     try {
       await flush(setup)
       const filter = element(setup, "review-base-filter")
       expect(filter.focused).toBe(true)
       expect(setup.renderer.getCursorState().visible).toBe(true)
       expect(controller.state).toBeUndefined()
-      await act(async () => { await setup.mockInput.typeText("main") })
+      await act(async () => {
+        await setup.mockInput.typeText("main")
+      })
       await flush(setup)
       const recommended = element(setup, "review-base-row:refs/heads/main")
       const alternate = element(setup, "review-base-row:refs/heads/aaa-main-copy")
       expect(recommended.y).toBeLessThan(alternate.y)
-      await act(async () => { setup.mockInput.pressEnter() })
+      await act(async () => {
+        setup.mockInput.pressEnter()
+      })
       await settle(setup, () => controller.state !== undefined && controller.baseSelection === undefined)
       expect(controller.state?.document.identity.baseRef).toBe("refs/heads/main")
       const header = element(setup, "react-review-header")
-      await act(async () => { await setup.mockMouse.click(header.x, header.y) })
+      await act(async () => {
+        await setup.mockMouse.click(header.x, header.y)
+      })
       await flush(setup)
       expect(controller.baseSelection).toBeUndefined()
       expect(setup.captureCharFrame()).toContain("feature → [main ▾]")
       const base = element(setup, "review-base-selector")
       // The base reads as a button: accent text at rest, the shared control background on hover.
       expect(spanAt(setup, base.x, base.y).fg.toString()).toBe(RGBA.fromHex("#81a2be").toString())
-      await act(async () => { await setup.mockMouse.moveTo(base.x, base.y) })
+      await act(async () => {
+        await setup.mockMouse.moveTo(base.x, base.y)
+      })
       await flush(setup)
       expect(spanAt(setup, base.x, base.y).bg.toString()).toBe(RGBA.fromHex("#365f8a").toString())
-      await act(async () => { await setup.mockMouse.click(base.x, base.y) })
+      await act(async () => {
+        await setup.mockMouse.click(base.x, base.y)
+      })
       await settle(setup, () => controller.baseSelection?.loading === false)
-      await act(async () => { await setup.mockInput.typeText("release") })
+      await act(async () => {
+        await setup.mockInput.typeText("release")
+      })
       await flush(setup)
       expect(controller.state?.filter.query).toBe("")
       const release = element(setup, "review-base-row:refs/heads/release")
-      await act(async () => { await setup.mockMouse.click(release.x + 1, release.y) })
+      await act(async () => {
+        await setup.mockMouse.click(release.x + 1, release.y)
+      })
       await settle(setup, () => controller.baseSelection === undefined)
       expect(controller.state?.document.identity.baseRef).toBe("refs/heads/release")
-      await act(async () => { setup.mockInput.pressKey("B", { shift: true }) })
+      await act(async () => {
+        setup.mockInput.pressKey("B", { shift: true })
+      })
       await settle(setup, () => controller.baseSelection?.loading === false)
-      await act(async () => { setup.mockInput.pressEscape() })
+      await act(async () => {
+        setup.mockInput.pressEscape()
+      })
       await flush(setup)
       expect(controller.baseSelection).toBeUndefined()
       expect(controller.state?.document.identity.baseRef).toBe("refs/heads/release")
       expect(closes).toBe(0)
-      await act(async () => { setup.mockInput.pressKey("?") })
+      await act(async () => {
+        setup.mockInput.pressKey("?")
+      })
       await flush(setup)
       expect(setup.captureCharFrame()).toContain("B Change base branch")
     } finally {
@@ -126,17 +156,30 @@ describe("review base picker interactions", () => {
     const repository = await repositoryWithBases()
     const controller = new ReviewWorkspaceController({ runner: new GitRunner(repository.path) })
     await controller.open()
-    const setup = await testRender(<ReviewBasePicker selection={{ candidates: controller.baseSelection?.candidates ?? [], loading: false, selecting: false }} width={100} height={24} active={true} onChoose={() => {}} onCancel={() => {}} onRetry={() => {}} />, { width: 100, height: 24, useMouse: true, kittyKeyboard: true })
+    const setup = await testRender(<ReviewBasePicker selection={{ candidates: controller.baseSelection?.candidates ?? [], loading: false, selecting: false }} width={100} height={24} active={true} onChoose={() => {}} onCancel={() => {}} onRetry={() => {}} />, {
+      width: 100,
+      height: 24,
+      useMouse: true,
+      kittyKeyboard: true
+    })
     try {
       await flush(setup)
-      await act(async () => { await setup.mockInput.typeText("main") })
+      await act(async () => {
+        await setup.mockInput.typeText("main")
+      })
       await flush(setup)
-      await act(async () => { setup.mockInput.pressArrow("left") })
+      await act(async () => {
+        setup.mockInput.pressArrow("left")
+      })
       await flush(setup)
-      await act(async () => { await setup.mockInput.typeText("x") })
+      await act(async () => {
+        await setup.mockInput.typeText("x")
+      })
       await flush(setup)
       expect((element(setup, "review-base-filter") as InputRenderable).value).toBe("maixn")
-      await act(async () => { setup.mockInput.pressBackspace() })
+      await act(async () => {
+        setup.mockInput.pressBackspace()
+      })
       await flush(setup)
       expect((element(setup, "review-base-filter") as InputRenderable).value).toBe("main")
     } finally {
@@ -146,7 +189,6 @@ describe("review base picker interactions", () => {
     }
   })
 
-
   test("keeps keyboard selection visible in a short terminal and makes the visible row clickable", async () => {
     const repository = await repositoryWithBases(20)
     const controller = new ReviewWorkspaceController({ runner: new GitRunner(repository.path) })
@@ -154,10 +196,14 @@ describe("review base picker interactions", () => {
     const setup = await testRender(<ReviewWorkspaceApp session={new ReactReviewSession(controller, () => undefined)} />, { width: 50, height: 12, useMouse: true, kittyKeyboard: true })
     try {
       await flush(setup)
-      await act(async () => { await setup.mockInput.typeText("candidate-") })
+      await act(async () => {
+        await setup.mockInput.typeText("candidate-")
+      })
       await flush(setup)
       for (let index = 0; index < 15; index += 1) {
-        await act(async () => { setup.mockInput.pressArrow("down") })
+        await act(async () => {
+          setup.mockInput.pressArrow("down")
+        })
         await flush(setup)
       }
       const selected = element(setup, "review-base-row:refs/heads/candidate-15")
@@ -167,7 +213,9 @@ describe("review base picker interactions", () => {
       expect(picker.x + picker.width).toBeLessThanOrEqual(50)
       expect(picker.y + picker.height).toBeLessThanOrEqual(12)
       expect(setup.captureCharFrame()).toContain("candidate-15")
-      await act(async () => { await setup.mockMouse.click(selected.x + 1, selected.y) })
+      await act(async () => {
+        await setup.mockMouse.click(selected.x + 1, selected.y)
+      })
       await settle(setup, () => controller.baseSelection === undefined)
       expect(controller.state?.document.identity.baseRef).toBe("refs/heads/candidate-15")
     } finally {
@@ -181,19 +229,35 @@ describe("review base picker interactions", () => {
     const repository = await repositoryWithBases()
     const runner = new GitRunner(repository.path)
     let releaseLoad!: () => void
-    const pendingLoad = new Promise<void>((resolve) => { releaseLoad = resolve })
+    const pendingLoad = new Promise<void>((resolve) => {
+      releaseLoad = resolve
+    })
     let fail = true
-    const controller = new ReviewWorkspaceController({ runner, loadDocument: async (ref) => {
-      await pendingLoad
-      if (fail) throw new Error("base became unavailable")
-      return loadReviewDocument(runner, ref)
-    } })
+    const controller = new ReviewWorkspaceController({
+      runner,
+      loadDocument: async (ref) => {
+        await pendingLoad
+        if (fail) throw new Error("base became unavailable")
+        return loadReviewDocument(runner, ref)
+      }
+    })
     await controller.open()
     let closes = 0
-    const setup = await testRender(<ReviewWorkspaceApp session={new ReactReviewSession(controller, () => { closes += 1 })} />, { width: 100, height: 24, useMouse: true, kittyKeyboard: true })
+    const setup = await testRender(
+      <ReviewWorkspaceApp
+        session={
+          new ReactReviewSession(controller, () => {
+            closes += 1
+          })
+        }
+      />,
+      { width: 100, height: 24, useMouse: true, kittyKeyboard: true }
+    )
     try {
       await flush(setup)
-      await act(async () => { setup.mockInput.pressEnter() })
+      await act(async () => {
+        setup.mockInput.pressEnter()
+      })
       await settle(setup, () => controller.baseSelection?.selecting === true)
       await act(async () => {
         await setup.mockInput.typeText("/rRc")
@@ -207,9 +271,13 @@ describe("review base picker interactions", () => {
       expect(setup.captureCharFrame()).toContain("base became unavailable")
       fail = false
       const retry = element(setup, "review-base-retry")
-      await act(async () => { await setup.mockMouse.click(retry.x, retry.y) })
+      await act(async () => {
+        await setup.mockMouse.click(retry.x, retry.y)
+      })
       await settle(setup, () => controller.baseSelection?.loading === false && controller.baseSelection.error === undefined)
-      await act(async () => { setup.mockInput.pressEscape() })
+      await act(async () => {
+        setup.mockInput.pressEscape()
+      })
       await flush(setup)
       expect(closes).toBe(1)
       expect(controller.state).toBeUndefined()

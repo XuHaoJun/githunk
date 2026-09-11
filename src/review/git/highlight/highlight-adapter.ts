@@ -1,10 +1,4 @@
-import {
-  getHighlighterOptions,
-  getSharedHighlighter,
-  renderDiffWithHighlighter,
-  parsePatchFiles,
-  getFiletypeFromFileName,
-} from "@pierre/diffs"
+import { getHighlighterOptions, getSharedHighlighter, renderDiffWithHighlighter, parsePatchFiles, getFiletypeFromFileName } from "@pierre/diffs"
 import { syntaxThemeForAppearance } from "../../../ui/review-workspace/syntax-theme"
 import { sanitizePatch } from "../patch-adapter"
 import { hastLinesToTokens } from "./highlight-hast"
@@ -14,11 +8,7 @@ function isBinaryPatch(patch: string): boolean {
   return patch.includes("GIT binary patch") || patch.includes("Binary files ")
 }
 
-export async function loadHighlightForPatch(
-  patchText: string,
-  fileKey: string,
-  appearance: "dark" | "light" = "dark",
-): Promise<HighlightPayload | null> {
+export async function loadHighlightForPatch(patchText: string, fileKey: string, appearance: "dark" | "light" = "dark"): Promise<HighlightPayload | null> {
   if (!patchText || patchText.trim().length === 0) return null
   if (isBinaryPatch(patchText)) return null
 
@@ -79,7 +69,7 @@ export async function loadHighlightForPatch(
     useTokenTransformer: false as const,
     tokenizeMaxLineLength: 1_000,
     lineDiffType: "word-alt" as const,
-    maxLineDiffLength: 10_000,
+    maxLineDiffLength: 10_000
   } as const
 
   try {
@@ -88,8 +78,8 @@ export async function loadHighlightForPatch(
     const deletionLinesHast = (code.deletionLines ?? []) as unknown as Array<import("./highlight-hast").HastNode | undefined>
     const additionLinesHast = (code.additionLines ?? []) as unknown as Array<import("./highlight-hast").HastNode | undefined>
 
-    const deletionTokens = hastLinesToTokens(deletionLinesHast, appearance)
-    const additionTokens = hastLinesToTokens(additionLinesHast, appearance)
+    const deletionTokens = hastLinesToTokens(deletionLinesHast)
+    const additionTokens = hastLinesToTokens(additionLinesHast)
 
     if (language) {
       return {
@@ -97,14 +87,14 @@ export async function loadHighlightForPatch(
         language,
         deletionLines: deletionTokens,
         additionLines: additionTokens,
-        theme: appearance,
+        theme: appearance
       }
     }
     return {
       fileKey,
       deletionLines: deletionTokens,
       additionLines: additionTokens,
-      theme: appearance,
+      theme: appearance
     }
   } catch {
     return null

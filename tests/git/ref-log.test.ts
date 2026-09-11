@@ -17,20 +17,7 @@ describe("refLogFullName", () => {
 
 describe("refLogArgs", () => {
   test("matches lazygit's branchLogCmd, with the ref behind --end-of-options", () => {
-    expect(refLogArgs("refs/heads/main", 300)).toEqual([
-      "log",
-      "--graph",
-      "--color=always",
-      "--abbrev-commit",
-      "--decorate",
-      "--date=relative",
-      "--pretty=medium",
-      "-n",
-      "300",
-      "--end-of-options",
-      "refs/heads/main",
-      "--",
-    ])
+    expect(refLogArgs("refs/heads/main", 300)).toEqual(["log", "--graph", "--color=always", "--abbrev-commit", "--decorate", "--date=relative", "--pretty=medium", "-n", "300", "--end-of-options", "refs/heads/main", "--"])
   })
 
   test("a ref that looks like an option cannot become one", () => {

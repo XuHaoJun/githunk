@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { AppScreenController, type ActiveScreen } from "../../src/app/screen-controller"
+import { AppScreenController } from "../../src/app/screen-controller"
 import type { RootView } from "../../src/ui/root-view"
 import type { AppController } from "../../src/app/controller"
 import type { ReviewScreenView } from "../../src/app/screen-controller"
@@ -14,17 +14,33 @@ function stubRepoView() {
   const root = { visible: true }
   return {
     root,
-    get destroyedFlag() { return destroyed },
-    get hiddenFlag() { return hidden },
-    get focusId() { return focusId },
-    get selectionId() { return selectionId },
-    setFocus(v: string | undefined) { focusId = v },
-    hide() { hidden = true },
-    show() { hidden = false },
+    get destroyedFlag() {
+      return destroyed
+    },
+    get hiddenFlag() {
+      return hidden
+    },
+    get focusId() {
+      return focusId
+    },
+    get selectionId() {
+      return selectionId
+    },
+    setFocus(v: string | undefined) {
+      focusId = v
+    },
+    hide() {
+      hidden = true
+    },
+    show() {
+      hidden = false
+    },
 
-    destroy() { destroyed = true },
-    update() {},
-  } as unknown as import('../../src/ui/root-view').RootView
+    destroy() {
+      destroyed = true
+    },
+    update() {}
+  } as unknown as import("../../src/ui/root-view").RootView
 }
 function stubRepositoryController() {
   return { refresh: async () => undefined } as unknown as AppController
@@ -33,9 +49,13 @@ function stubRepositoryController() {
 function stubReviewView() {
   let destroyed = false
   return {
-    get destroyedFlag() { return destroyed },
-    destroy() { destroyed = true },
-    __isReviewWorkspace: true,
+    get destroyedFlag() {
+      return destroyed
+    },
+    destroy() {
+      destroyed = true
+    },
+    __isReviewWorkspace: true
   } as unknown as ReviewScreenView & { destroyedFlag: boolean }
 }
 
@@ -44,9 +64,15 @@ function stubReviewController(opts: { openImpl?: () => Promise<void>; destroyImp
   let destroyStarted = false
   let openCalls = 0
   return {
-    get destroyedFlag() { return destroyed },
-    get destroyStartedFlag() { return destroyStarted },
-    get openCalls() { return openCalls },
+    get destroyedFlag() {
+      return destroyed
+    },
+    get destroyStartedFlag() {
+      return destroyStarted
+    },
+    get openCalls() {
+      return openCalls
+    },
     state: undefined as unknown as ReviewState,
     open: async () => {
       openCalls += 1
@@ -61,7 +87,7 @@ function stubReviewController(opts: { openImpl?: () => Promise<void>; destroyImp
       destroyStarted = true
       if (opts.destroyImpl) await opts.destroyImpl()
       destroyed = true
-    },
+    }
   } as unknown as ReviewWorkspaceController & { destroyedFlag: boolean; destroyStartedFlag: boolean; openCalls: number }
 }
 
@@ -72,9 +98,9 @@ describe("AppScreenController lifecycle", () => {
     const reviewController = stubReviewController()
     const controller = new AppScreenController({
       repositoryController: stubRepositoryController(),
-      repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
+      repositoryView: repoView as unknown as import("../../src/ui/root-view").RootView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
-      createReviewView: () => reviewView as unknown as ReviewScreenView,
+      createReviewView: () => reviewView as unknown as ReviewScreenView
     })
 
     expect(controller.active.kind).toBe("repository")
@@ -88,15 +114,15 @@ describe("AppScreenController lifecycle", () => {
 
   test("Escape restores same repository focus/selection", async () => {
     const repoViewUntyped = stubRepoView()
-    const repoView = repoViewUntyped as unknown as import('../../src/ui/root-view').RootView & { setFocus: (v: string) => void; hiddenFlag: boolean; destroyedFlag: boolean; focusId: string | undefined; selectionId: string | undefined }
+    const repoView = repoViewUntyped as unknown as import("../../src/ui/root-view").RootView & { setFocus: (v: string) => void; hiddenFlag: boolean; destroyedFlag: boolean; focusId: string | undefined; selectionId: string | undefined }
     repoView.setFocus("branches")
     const reviewView = stubReviewView()
     const reviewController = stubReviewController()
     const controller = new AppScreenController({
       repositoryController: stubRepositoryController(),
-      repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
+      repositoryView: repoView as unknown as import("../../src/ui/root-view").RootView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
-      createReviewView: () => reviewView as unknown as ReviewScreenView,
+      createReviewView: () => reviewView as unknown as ReviewScreenView
     })
     await controller.openBranchReview()
     await controller.closeBranchReview()
@@ -109,15 +135,17 @@ describe("AppScreenController lifecycle", () => {
   test("opening failure restores repository screen with visible error", async () => {
     const repoView = stubRepoView()
     const failingController = stubReviewController({
-      openImpl: async () => { throw new Error("base not found") },
+      openImpl: async () => {
+        throw new Error("base not found")
+      }
     })
     const repoController: any = { state: { banner: undefined }, currentBanner: undefined }
     // allow screen controller to set banner via repositoryController
     const controller = new AppScreenController({
       repositoryController: repoController,
-      repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
+      repositoryView: repoView as unknown as import("../../src/ui/root-view").RootView,
       createReviewController: () => failingController as unknown as ReviewWorkspaceController,
-      createReviewView: () => stubReviewView() as unknown as ReviewScreenView,
+      createReviewView: () => stubReviewView() as unknown as ReviewScreenView
     })
     await expect(controller.openBranchReview()).rejects.toThrow("base not found")
     expect(controller.active.kind).toBe("repository")
@@ -131,9 +159,9 @@ describe("AppScreenController lifecycle", () => {
     const repoView = stubRepoView()
     const controller = new AppScreenController({
       repositoryController: stubRepositoryController(),
-      repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
+      repositoryView: repoView as unknown as import("../../src/ui/root-view").RootView,
       createReviewController: () => stubReviewController() as unknown as ReviewWorkspaceController,
-      createReviewView: () => stubReviewView() as unknown as ReviewScreenView,
+      createReviewView: () => stubReviewView() as unknown as ReviewScreenView
     })
     for (let i = 0; i < 5; i++) {
       await controller.openBranchReview()
@@ -155,7 +183,9 @@ describe("AppScreenController lifecycle", () => {
       repositoryController,
       repositoryView: repoView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
-      createReviewView: () => { throw new Error("view construction failed") },
+      createReviewView: () => {
+        throw new Error("view construction failed")
+      }
     })
 
     await expect(controller.openBranchReview()).rejects.toThrow("view construction failed")
@@ -170,17 +200,28 @@ describe("AppScreenController lifecycle", () => {
   test("view construction failure awaits review controller cleanup", async () => {
     const repoView = stubRepoView()
     let releaseDestroy!: () => void
-    const destroyGate = new Promise<void>((resolve) => { releaseDestroy = resolve })
+    const destroyGate = new Promise<void>((resolve) => {
+      releaseDestroy = resolve
+    })
     const reviewController = stubReviewController({ destroyImpl: async () => destroyGate })
     const controller = new AppScreenController({
       repositoryController: stubRepositoryController(),
       repositoryView: repoView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
-      createReviewView: () => { throw new Error("view construction failed") },
+      createReviewView: () => {
+        throw new Error("view construction failed")
+      }
     })
     const opening = controller.openBranchReview()
     let settled = false
-    opening.then(() => { settled = true }, () => { settled = true })
+    opening.then(
+      () => {
+        settled = true
+      },
+      () => {
+        settled = true
+      }
+    )
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
     const reviewLifecycle = reviewController as unknown as { destroyedFlag: boolean; destroyStartedFlag: boolean }
@@ -197,14 +238,16 @@ describe("AppScreenController lifecycle", () => {
   test("background updates do not render over workspace", async () => {
     const repoView = stubRepoView()
     let updateCalls = 0
-    repoView.update = () => { updateCalls += 1 }
+    repoView.update = () => {
+      updateCalls += 1
+    }
     const reviewView = stubReviewView()
     const reviewController = stubReviewController()
     const controller = new AppScreenController({
       repositoryController: { state: {} } as any,
-      repositoryView: repoView as unknown as import('../../src/ui/root-view').RootView,
+      repositoryView: repoView as unknown as import("../../src/ui/root-view").RootView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
-      createReviewView: () => reviewView as unknown as ReviewScreenView,
+      createReviewView: () => reviewView as unknown as ReviewScreenView
     })
     await controller.openBranchReview()
     // simulate background refresh trying to update repo view
@@ -220,19 +263,23 @@ describe("AppScreenController lifecycle", () => {
   test("destroy awaits an in-flight review open and cleans up its controller", async () => {
     const repoView = stubRepoView()
     let releaseOpen!: () => void
-    const openGate = new Promise<void>((resolve) => { releaseOpen = resolve })
+    const openGate = new Promise<void>((resolve) => {
+      releaseOpen = resolve
+    })
     const reviewController = stubReviewController({ openImpl: async () => openGate })
     const controller = new AppScreenController({
       repositoryController: stubRepositoryController(),
       repositoryView: repoView,
       createReviewController: () => reviewController as unknown as ReviewWorkspaceController,
-      createReviewView: () => stubReviewView() as unknown as ReviewScreenView,
+      createReviewView: () => stubReviewView() as unknown as ReviewScreenView
     })
 
     const opening = controller.openBranchReview()
     await Promise.resolve()
     let destroyed = false
-    const destroying = controller.destroy().then(() => { destroyed = true })
+    const destroying = controller.destroy().then(() => {
+      destroyed = true
+    })
     await Promise.resolve()
     expect(destroyed).toBe(false)
     releaseOpen()

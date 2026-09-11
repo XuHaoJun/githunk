@@ -131,12 +131,7 @@ export type ReviewFeedbackDraft = Readonly<{
   body: string
   replacement?: string
 }>
-export type ReviewProjection = Readonly<
-  | { kind: "aggregate" }
-  | { kind: "since-last-review"; fromHeadOid: string }
-  | { kind: "commit"; oid: string }
->
-
+export type ReviewProjection = Readonly<{ kind: "aggregate" } | { kind: "since-last-review"; fromHeadOid: string } | { kind: "commit"; oid: string }>
 
 export type ReviewProjectionDocument = Readonly<{
   reviewId: string

@@ -20,7 +20,7 @@ export async function listStashes(runner: CommandRunner): Promise<readonly Stash
   return parseNulFields(result.stdout, 3).map(([ref, message, oid]) => ({
     ref: ref ?? "",
     message: message ?? "",
-    oid: oid ?? "",
+    oid: oid ?? ""
   }))
 }
 
@@ -32,11 +32,7 @@ export async function loadStash(runner: CommandRunner, ref: string): Promise<Sta
   return { stash, patch: result.stdout }
 }
 
-export async function createStash(
-  runner: CommandRunner,
-  message: string,
-  options: StashCreateOptions,
-): Promise<StashEntry | undefined> {
+export async function createStash(runner: CommandRunner, message: string, options: StashCreateOptions): Promise<StashEntry | undefined> {
   if (typeof message !== "string" || message.trim().length === 0) throw new Error("stash message must not be empty")
   if (options === undefined || typeof options.includeUntracked !== "boolean") throw new Error("includeUntracked choice is required")
   const args = ["stash", "push"]

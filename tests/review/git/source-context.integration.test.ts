@@ -5,9 +5,6 @@ import { createTempRepository, type TempRepository } from "../../helpers/temp-re
 import { GitRunner } from "../../../src/git/runner"
 import { loadReviewDocument } from "../../../src/review/git/load-review-document"
 import { loadSourceContext } from "../../../src/review/git/load-source-context"
-import { createReviewDocument } from "../../../src/review/core/document"
-import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
-import type { ReviewFile } from "../../../src/review/core/types"
 
 async function commitAll(repo: TempRepository, message: string): Promise<string> {
   const added = await repo.git(["add", "-A"])
@@ -52,7 +49,7 @@ describe("source-context integration", () => {
         fileKey: file.key,
         side: "new" as const,
         startLine: 1,
-        endLine: 4,
+        endLine: 4
       }
       const outcome = await loadSourceContext(runner, doc, req)
       expect(outcome.ok).toBe(true)
@@ -89,7 +86,7 @@ describe("source-context integration", () => {
         fileKey: file.key,
         side: "new" as const,
         startLine: 4,
-        endLine: 10,
+        endLine: 10
       }
       const outcome = await loadSourceContext(runner, doc, req)
       expect(outcome.ok).toBe(true)
@@ -128,7 +125,7 @@ describe("source-context integration", () => {
         fileKey: deleted.key,
         side: "old" as const,
         startLine: 1,
-        endLine: 2,
+        endLine: 2
       }
       const oldOut = await loadSourceContext(runner, doc, oldReq)
       expect(oldOut.ok).toBe(true)
@@ -140,7 +137,7 @@ describe("source-context integration", () => {
         fileKey: deleted.key,
         side: "new" as const,
         startLine: 1,
-        endLine: 1,
+        endLine: 1
       }
       const newOutDeleted = await loadSourceContext(runner, doc, newReqDeleted)
       expect(newOutDeleted.ok).toBe(false)
@@ -153,7 +150,7 @@ describe("source-context integration", () => {
         fileKey: added.key,
         side: "new" as const,
         startLine: 1,
-        endLine: 2,
+        endLine: 2
       }
       const newOutAdded = await loadSourceContext(runner, doc, newReqAdded)
       expect(newOutAdded.ok).toBe(true)
@@ -165,7 +162,7 @@ describe("source-context integration", () => {
         fileKey: added.key,
         side: "old" as const,
         startLine: 1,
-        endLine: 1,
+        endLine: 1
       }
       const oldOutAdded = await loadSourceContext(runner, doc, oldReqAdded)
       expect(oldOutAdded.ok).toBe(false)
@@ -196,7 +193,7 @@ describe("source-context integration", () => {
         fileKey: binary.key,
         side: "new" as const,
         startLine: 1,
-        endLine: 1,
+        endLine: 1
       }
       const out = await loadSourceContext(runner, doc, req)
       expect(out.ok).toBe(false)
@@ -208,7 +205,7 @@ describe("source-context integration", () => {
         fileKey: binary.key,
         side: "old" as const,
         startLine: 1,
-        endLine: 1,
+        endLine: 1
       }
       const outOld = await loadSourceContext(runner, doc, oldReq)
       // old side for binary added file is unavailable, but may also be binary/unavailable; we accept either unavailable or binary
@@ -239,7 +236,7 @@ describe("source-context integration", () => {
         fileKey: large.key,
         side: "new" as const,
         startLine: 1,
-        endLine: 1,
+        endLine: 1
       }
       const out = await loadSourceContext(runner, doc, req, { maxBytes: 1_000_000 })
       expect(out.ok).toBe(false)
@@ -266,7 +263,7 @@ describe("source-context integration", () => {
         fileKey: file1.key,
         side: "new" as const,
         startLine: 1,
-        endLine: 2,
+        endLine: 2
       }
       const ok = await loadSourceContext(runner, doc1, reqOk)
       expect(ok.ok).toBe(true)
@@ -293,7 +290,7 @@ describe("source-context integration", () => {
         fileKey: file1.key,
         side: "new" as const,
         startLine: 1,
-        endLine: 1,
+        endLine: 1
       }
       const badReview = await loadSourceContext(runner, doc2, badReviewReq)
       expect(badReview.ok).toBe(false)
@@ -319,7 +316,7 @@ describe("source-context integration", () => {
         reviewId: doc.identity.id,
         generationId: doc.generation.id,
         fileKey: file.key,
-        side: "new" as const,
+        side: "new" as const
       } as const
 
       // start <1
@@ -344,7 +341,7 @@ describe("source-context integration", () => {
         fileKey: "nonexistent",
         side: "new",
         startLine: 1,
-        endLine: 1,
+        endLine: 1
       })
       expect(r4.ok).toBe(false)
       if (!r4.ok) expect(r4.error.kind).toBe("file-not-found")
@@ -377,7 +374,7 @@ describe("source-context integration", () => {
         fileKey: file.key,
         side: "old" as const,
         startLine: 2,
-        endLine: 3,
+        endLine: 3
       }
       const oldOut = await loadSourceContext(runner, doc, oldReq)
       expect(oldOut.ok).toBe(true)
@@ -389,7 +386,7 @@ describe("source-context integration", () => {
         fileKey: file.key,
         side: "new" as const,
         startLine: 2,
-        endLine: 2,
+        endLine: 2
       }
       const newOut = await loadSourceContext(runner, doc, newReq)
       expect(newOut.ok).toBe(true)

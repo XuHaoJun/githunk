@@ -1,7 +1,5 @@
 export type CommitDialogMode = "commit" | "amend" | "stash" | "branch-create" | "branch-rename"
-export type CommitDialogResult =
-  | { readonly kind: "confirmed"; readonly message: string }
-  | { readonly kind: "cancelled" }
+export type CommitDialogResult = { readonly kind: "confirmed"; readonly message: string } | { readonly kind: "cancelled" }
 
 export type CommitDialogState = {
   readonly mode: CommitDialogMode
@@ -18,12 +16,7 @@ export type CommitDialogKey = {
   readonly sequence?: string
 }
 
-export type CommitDialogEvent =
-  | { readonly kind: "insert"; readonly text: string }
-  | { readonly kind: "backspace" }
-  | { readonly kind: "newline" }
-  | { readonly kind: "confirm" }
-  | { readonly kind: "cancel" }
+export type CommitDialogEvent = { readonly kind: "insert"; readonly text: string } | { readonly kind: "backspace" } | { readonly kind: "newline" } | { readonly kind: "confirm" } | { readonly kind: "cancel" }
 export function createCommitDialog(mode: CommitDialogMode, initialMessage = "", branchBase?: string): CommitDialogState {
   return { mode, message: initialMessage, ...(branchBase === undefined ? {} : { branchBase }) }
 }
@@ -47,12 +40,11 @@ export function joinCommitMessage(summary: string, description: string): string 
   return description.length === 0 ? summary : `${summary}\n\n${description}`
 }
 
-
 export function reduceCommitDialog(state: CommitDialogState, event: CommitDialogEvent): { readonly state: CommitDialogState; readonly result?: CommitDialogResult } {
   if (event.kind === "cancel") return { state, result: { kind: "cancelled" } }
-  if (event.kind === "insert") return { state: stateWithoutError({ ...state, message: state.message + event.text }), }
-  if (event.kind === "newline") return { state: stateWithoutError({ ...state, message: `${state.message}\n` }), }
-  if (event.kind === "backspace") return { state: stateWithoutError({ ...state, message: removeLastGrapheme(state.message) }), }
+  if (event.kind === "insert") return { state: stateWithoutError({ ...state, message: state.message + event.text }) }
+  if (event.kind === "newline") return { state: stateWithoutError({ ...state, message: `${state.message}\n` }) }
+  if (event.kind === "backspace") return { state: stateWithoutError({ ...state, message: removeLastGrapheme(state.message) }) }
   if (state.message.trim().length === 0) {
     return { state: { ...state, error: `${state.mode === "branch-create" || state.mode === "branch-rename" ? "Branch name" : state.mode === "stash" ? "Stash message" : "Commit message"} cannot be empty` } }
   }
@@ -103,17 +95,45 @@ const NON_PRINTABLE_KEY_NAMES: Record<string, true> = {
   // `key.name === "enter"` above already covers the normalized case (see keymap.ts's
   // return -> enter alias), so this dialog never sees a raw "return" today. Kept here as
   // defense in depth in case an un-normalized key event ever reaches this function directly.
-  tab: true, linefeed: true, left: true, right: true, up: true, down: true, home: true, end: true, insert: true, delete: true,
-  pageup: true, pagedown: true, "page-up": true, "page-down": true, escape: true, enter: true, return: true, backspace: true,
-  clear: true, shift: true, ctrl: true, alt: true, meta: true, capslock: true, numlock: true, printscreen: true, pause: true, menu: true,
-  scrolllock: true, media: true, play: true, pausemedia: true, volumeup: true, volumedown: true, volumemute: true,
+  tab: true,
+  linefeed: true,
+  left: true,
+  right: true,
+  up: true,
+  down: true,
+  home: true,
+  end: true,
+  insert: true,
+  delete: true,
+  pageup: true,
+  pagedown: true,
+  "page-up": true,
+  "page-down": true,
+  escape: true,
+  enter: true,
+  return: true,
+  backspace: true,
+  clear: true,
+  shift: true,
+  ctrl: true,
+  alt: true,
+  meta: true,
+  capslock: true,
+  numlock: true,
+  printscreen: true,
+  pause: true,
+  menu: true,
+  scrolllock: true,
+  media: true,
+  play: true,
+  pausemedia: true,
+  volumeup: true,
+  volumedown: true,
+  volumemute: true
 }
 
 function isNamedControl(name: string): boolean {
-  return NON_PRINTABLE_KEY_NAMES[name] === true
-    || /^f\d+$/u.test(name)
-    || /^kp(?:enter|page(?:up|down)|left|right|up|down|home|end|insert|delete)$/u.test(name)
-    || /^(?:media|volume|scroll)/u.test(name)
+  return NON_PRINTABLE_KEY_NAMES[name] === true || /^f\d+$/u.test(name) || /^kp(?:enter|page(?:up|down)|left|right|up|down|home|end|insert|delete)$/u.test(name) || /^(?:media|volume|scroll)/u.test(name)
 }
 
 function printableText(key: CommitDialogKey): string | undefined {
@@ -127,11 +147,8 @@ function printableText(key: CommitDialogKey): string | undefined {
 }
 
 export function renderCommitDialog(state: CommitDialogState): string {
-  const title = state.mode === "amend" ? "Amend commit"
-    : state.mode === "stash" ? "Create stash"
-      : state.mode === "branch-create" ? state.branchBase === undefined ? "Create branch" : `New branch name (branch is off of '${state.branchBase}')`
-        : state.mode === "branch-rename" ? "Rename branch"
-          : "Commit staged changes"
+  const title =
+    state.mode === "amend" ? "Amend commit" : state.mode === "stash" ? "Create stash" : state.mode === "branch-create" ? (state.branchBase === undefined ? "Create branch" : `New branch name (branch is off of '${state.branchBase}')`) : state.mode === "branch-rename" ? "Rename branch" : "Commit staged changes"
   const error = state.error === undefined ? "" : `\n! ${state.error}`
   if (state.mode === "commit" || state.mode === "amend") {
     const parts = splitCommitMessage(state.message)

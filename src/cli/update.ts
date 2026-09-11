@@ -12,7 +12,10 @@ export type UpdateEnvironment = {
   readonly arch: string
   readonly installedVersion: () => string
   readonly fetchReleaseTag: () => Promise<string>
-  readonly fetchAsset: (tag: string, asset: string) => Promise<{
+  readonly fetchAsset: (
+    tag: string,
+    asset: string
+  ) => Promise<{
     readonly tarball: Uint8Array
     readonly checksums: string
   }>
@@ -21,11 +24,7 @@ export type UpdateEnvironment = {
   readonly extractTarball: (archivePath: string, destDir: string) => Promise<void>
   readonly stagedBinary: (dir: string) => string
   readonly stagedSkill: (dir: string) => string | undefined
-  readonly writePayload: (payload: {
-    readonly stagedBinary: string
-    readonly stagedSkill: string | undefined
-    readonly executablePath: string
-  }) => Promise<void>
+  readonly writePayload: (payload: { readonly stagedBinary: string; readonly stagedSkill: string | undefined; readonly executablePath: string }) => Promise<void>
 }
 
 export type UpdateResult = {
@@ -85,7 +84,7 @@ async function applyUpdate(target: string, asset: string, env: UpdateEnvironment
     await env.writePayload({
       stagedBinary: env.stagedBinary(dir),
       stagedSkill: env.stagedSkill(dir),
-      executablePath: env.executablePath,
+      executablePath: env.executablePath
     })
   })
 }
@@ -95,14 +94,14 @@ export async function runUpdate(request: UpdateRequest, env: UpdateEnvironment):
     if (!isSelfManagedBinary(env.executablePath)) {
       return {
         exitCode: 1,
-        message: "githunk was installed via npm — update it with `npm update --global @xuhaojun/githunk`",
+        message: "githunk was installed via npm — update it with `npm update --global @xuhaojun/githunk`"
       }
     }
     const asset = assetNameFor(env.platform, env.arch)
     if (asset === null) {
       return {
         exitCode: 1,
-        message: `no prebuilt githunk binary ships for ${env.platform}-${env.arch} — install with \`npm install -g @xuhaojun/githunk\``,
+        message: `no prebuilt githunk binary ships for ${env.platform}-${env.arch} — install with \`npm install -g @xuhaojun/githunk\``
       }
     }
     const current = normalizeVersion(env.installedVersion())

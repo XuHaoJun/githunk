@@ -64,12 +64,7 @@ export type PaneHandle = {
  * no clamping here because every caller assigns through TextRenderable's own clamping
  * `scrollY` setter.
  */
-export function scrollYToReveal(
-  firstVisibleLine: number,
-  lastVisibleLine: number,
-  viewportLines: number,
-  currentScrollY: number,
-): number {
+export function scrollYToReveal(firstVisibleLine: number, lastVisibleLine: number, viewportLines: number, currentScrollY: number): number {
   const viewport = Math.max(1, Math.floor(viewportLines))
   const first = Math.max(0, Math.floor(firstVisibleLine))
 
@@ -110,7 +105,7 @@ export function attachVerticalScrollbar(box: BoxRenderable, text: TextRenderable
       text.scrollY = Math.max(0, Math.min(text.maxScrollY, position))
       syncVerticalScrollbar(bar, text)
       box.requestRender()
-    },
+    }
   })
   // Yoga lays out asynchronously: reading text.height straight after constructing or
   // resizing is unreliable. Only `box.onSizeChange` is a reliable hook for "real dimensions
@@ -159,14 +154,7 @@ export function clearScrollbarViewportOverride(text: TextRenderable): void {
   syncVerticalScrollbar(bar, text)
 }
 
-export function createPane(
-  renderer: CliRenderer,
-  id: FocusId,
-  title: string,
-  content: string,
-  selectable = false,
-  options: CreatePaneOptions = {},
-): PaneHandle {
+export function createPane(renderer: CliRenderer, id: FocusId, title: string, content: string, selectable = false, options: CreatePaneOptions = {}): PaneHandle {
   const tabsConfig = options.tabs
   // Tabbed panes need a box that can overdraw its own border row with per-tab colours; the
   // rest keep the plain BoxRenderable, so nothing about them changes.
@@ -181,7 +169,7 @@ export function createPane(
     position: "absolute",
     width: "100%",
     height: "100%",
-    overflow: "hidden",
+    overflow: "hidden"
   })
   const text = new TextRenderable(renderer, {
     id: `${id}-text`,
@@ -190,7 +178,7 @@ export function createPane(
     selectable,
     wrapMode: "none",
     width: "100%",
-    height: "100%",
+    height: "100%"
   })
   box.add(text)
   const originalTextMouseEvent = (text as unknown as { onMouseEvent?: (event: MouseEvent) => void }).onMouseEvent?.bind(text)
@@ -232,20 +220,22 @@ export function createPane(
       box.titleColor = focused && tabsConfig === undefined ? ANSI_GREEN : DEFAULT_FOREGROUND
       box.requestRender()
     },
-    ...(tabsConfig === undefined ? {} : {
-      setTabs(update: PaneTabsUpdate) {
-        paintTabs(update)
-      },
-      setPlainTitle(title: string) {
-        if (!(box instanceof PaneTabsBoxRenderable)) return
-        // Drop the remembered strip too, so the next setTabs repaints from the config's labels
-        // rather than resurrecting whatever was active before the drill-down.
-        tabState = undefined
-        box.title = title
-        box.setTabStrip(undefined)
-        box.requestRender()
-      },
-    }),
+    ...(tabsConfig === undefined
+      ? {}
+      : {
+          setTabs(update: PaneTabsUpdate) {
+            paintTabs(update)
+          },
+          setPlainTitle(title: string) {
+            if (!(box instanceof PaneTabsBoxRenderable)) return
+            // Drop the remembered strip too, so the next setTabs repaints from the config's labels
+            // rather than resurrecting whatever was active before the drill-down.
+            tabState = undefined
+            box.title = title
+            box.setTabStrip(undefined)
+            box.requestRender()
+          }
+        }),
     syncScrollbar(viewportHeight?: number) {
       syncVerticalScrollbar(bar, text, viewportHeight)
     },
@@ -261,6 +251,6 @@ export function createPane(
     },
     maxScrollY() {
       return text.maxScrollY
-    },
+    }
   }
 }

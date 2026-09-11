@@ -86,7 +86,7 @@ export class BackgroundRefresher {
   constructor(private readonly options: BackgroundRefresherOptions) {
     this.timers = options.timers ?? {
       setTimeout: (callback, ms) => setTimeout(callback, ms),
-      clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
+      clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout)
     }
     this.onError = options.onError
     this.now = options.now ?? (() => Date.now())
@@ -96,7 +96,7 @@ export class BackgroundRefresher {
         run: options.fetch,
         intervalMs: options.fetchIntervalMs ?? DEFAULT_FETCH_INTERVAL_MS,
         handle: undefined,
-        running: false,
+        running: false
       })
     }
     if (options.autoRefresh !== false) {
@@ -105,7 +105,7 @@ export class BackgroundRefresher {
         run: options.refresh,
         intervalMs: options.refreshIntervalMs ?? DEFAULT_REFRESH_INTERVAL_MS,
         handle: undefined,
-        running: false,
+        running: false
       })
     }
     if (options.autoDetectExternalChanges !== false && options.detectExternalChanges !== undefined) {
@@ -114,7 +114,7 @@ export class BackgroundRefresher {
         run: options.detectExternalChanges,
         intervalMs: options.externalChangeIntervalMs ?? DEFAULT_EXTERNAL_CHANGE_INTERVAL_MS,
         handle: undefined,
-        running: false,
+        running: false
       })
     }
   }

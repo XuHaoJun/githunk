@@ -10,28 +10,28 @@ Nothing here has been implemented, and nothing here is a committed roadmap.
 
 ## Demand clusters in lazygit
 
-| Cluster | Issues (👍 / comments at survey time) |
-| --- | --- |
-| Diff reading experience | #1113 fullscreen diff (43 / 22, highest-voted feature request); #2659 Improved diff UX (opened by the maintainer, concedes the ref-compare flow is unintuitive and A..B vs A...B is confusing); #5836 sticky file/hunk header; #3967 and #5775 select/copy text from the patch panel; #1707 page scroll; #2032 `C-d`/`C-u`; #2117 pager during interactive staging; #1274 diff blinking; #2128 tree-sitter (32) |
-| Compare against arbitrary base | #3767 relative diff (14); #3792 `git log A...B` (18 comments); #4211; #4477 multi-commit diff |
-| Search | #3279 Git-based commit log search (38) — wants message body, author, path and **diff content**, with a repo-vs-branch scope switch; #3904 search inside filter-by-path mode; #3265; #1489 |
-| Review / PR workflow | #2527 stacked PRs (40); #5833 GitHub stack (22); #3639 review PRs in the TUI; #4950 PR integration; #2914 IDEA-style changelists (23 comments); #4767 commit-wise review — **closed as not planned**, maintainers redirected to interactive rebase |
-| Commit message | #941 suggest from history (20); #1670 conventional-commit lint; #2581 syntax highlight; #1307 gitmoji; #4995 `prepare-commit-msg` hook; #4627 non-modal commit panel; #3212 / #2579 AI commit messages (maintainers redirect to custom commands, will not build in) |
-| Patch in/out | #3396 apply patch from clipboard (17) — notes lazygit can copy a patch out but has no binding to use one; #4894 export a commit as a patch file |
-| Large-repo performance | #5163 nixpkgs unusably slow; #4591 checking out thousands of files; #3907 large files freeze; #2460 memory reached 9.6GB |
-| Ecosystem signal | #4655 "Stepping back as maintainer" (188) — the highest-reaction issue in the repository |
+| Cluster                        | Issues (👍 / comments at survey time)                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Diff reading experience        | #1113 fullscreen diff (43 / 22, highest-voted feature request); #2659 Improved diff UX (opened by the maintainer, concedes the ref-compare flow is unintuitive and A..B vs A...B is confusing); #5836 sticky file/hunk header; #3967 and #5775 select/copy text from the patch panel; #1707 page scroll; #2032 `C-d`/`C-u`; #2117 pager during interactive staging; #1274 diff blinking; #2128 tree-sitter (32) |
+| Compare against arbitrary base | #3767 relative diff (14); #3792 `git log A...B` (18 comments); #4211; #4477 multi-commit diff                                                                                                                                                                                                                                                                                                                   |
+| Search                         | #3279 Git-based commit log search (38) — wants message body, author, path and **diff content**, with a repo-vs-branch scope switch; #3904 search inside filter-by-path mode; #3265; #1489                                                                                                                                                                                                                       |
+| Review / PR workflow           | #2527 stacked PRs (40); #5833 GitHub stack (22); #3639 review PRs in the TUI; #4950 PR integration; #2914 IDEA-style changelists (23 comments); #4767 commit-wise review — **closed as not planned**, maintainers redirected to interactive rebase                                                                                                                                                              |
+| Commit message                 | #941 suggest from history (20); #1670 conventional-commit lint; #2581 syntax highlight; #1307 gitmoji; #4995 `prepare-commit-msg` hook; #4627 non-modal commit panel; #3212 / #2579 AI commit messages (maintainers redirect to custom commands, will not build in)                                                                                                                                             |
+| Patch in/out                   | #3396 apply patch from clipboard (17) — notes lazygit can copy a patch out but has no binding to use one; #4894 export a commit as a patch file                                                                                                                                                                                                                                                                 |
+| Large-repo performance         | #5163 nixpkgs unusably slow; #4591 checking out thousands of files; #3907 large files freeze; #2460 memory reached 9.6GB                                                                                                                                                                                                                                                                                        |
+| Ecosystem signal               | #4655 "Stepping back as maintainer" (188) — the highest-reaction issue in the repository                                                                                                                                                                                                                                                                                                                        |
 
 ## Already covered in githunk — do not rebuild
 
-| lazygit demand | githunk today |
-| --- | --- |
-| #1113 fullscreen diff | Two distinct mechanisms, see below |
-| #3967 / #5775 patch selection and copy | Product core, `src/domain/diff/` |
-| #4740 runtime side-panel width | Draggable splitters |
-| #4767 commit-wise review | `ReviewProjection` has `{ kind: "commit"; oid }` (`src/review/core/types.ts:103`) — model only, see gap 1 |
-| Line-anchored review comments | `ReviewFeedback` with range anchor and `stale` / `orphaned` resolution (`src/review/core/types.ts:81-90`) |
-| Arbitrary compare base | Commit `4ebc628` |
-| lazygit `{` / `}` diff context size | Superseded by workspace `z` expand context gap, which reads real source between hunks (`src/ui/review-workspace/controller.ts:521-540`) |
+| lazygit demand                         | githunk today                                                                                                                           |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| #1113 fullscreen diff                  | Two distinct mechanisms, see below                                                                                                      |
+| #3967 / #5775 patch selection and copy | Product core, `src/domain/diff/`                                                                                                        |
+| #4740 runtime side-panel width         | Draggable splitters                                                                                                                     |
+| #4767 commit-wise review               | `ReviewProjection` has `{ kind: "commit"; oid }` (`src/review/core/types.ts:103`) — model only, see gap 1                               |
+| Line-anchored review comments          | `ReviewFeedback` with range anchor and `stale` / `orphaned` resolution (`src/review/core/types.ts:81-90`)                               |
+| Arbitrary compare base                 | Commit `4ebc628`                                                                                                                        |
+| lazygit `{` / `}` diff context size    | Superseded by workspace `z` expand context gap, which reads real source between hunks (`src/ui/review-workspace/controller.ts:521-540`) |
 
 ## Fullscreen diff vs the Branch Review workspace
 
@@ -45,14 +45,14 @@ parity.
 **The Branch Review workspace** is a separate screen, swapped wholesale by `AppScreenController`
 (`src/app/screen-controller.ts:48,157,218`):
 
-| | Repository screen | Branch Review workspace |
-| --- | --- | --- |
-| Renderer | OpenTUI panes | React (`ReactReviewHost`) |
-| Keys | `GITHUNK_BINDINGS` | `src/ui/review-workspace/command-catalog.ts` |
-| Focus | Pane focus manager | `sidebar \| stream \| filter \| composer` |
-| Layout | `computeLayout` + splitters | `l` cycles `auto \| split \| stack`, auto picks on `diffWidth >= 64` (`ReviewWorkspaceApp.tsx:245,287,725`) |
-| Data | `AppModel` | `ReviewProjection` / `ReviewFeedback` / artifacts |
-| Diff | One file at a time | Continuous cross-file stream, `]` / `[` hunk, `.` / `,` file |
+|          | Repository screen           | Branch Review workspace                                                                                     |
+| -------- | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Renderer | OpenTUI panes               | React (`ReactReviewHost`)                                                                                   |
+| Keys     | `GITHUNK_BINDINGS`          | `src/ui/review-workspace/command-catalog.ts`                                                                |
+| Focus    | Pane focus manager          | `sidebar \| stream \| filter \| composer`                                                                   |
+| Layout   | `computeLayout` + splitters | `l` cycles `auto \| split \| stack`, auto picks on `diffWidth >= 64` (`ReviewWorkspaceApp.tsx:245,287,725`) |
+| Data     | `AppModel`                  | `ReviewProjection` / `ReviewFeedback` / artifacts                                                           |
+| Diff     | One file at a time          | Continuous cross-file stream, `]` / `[` hunk, `.` / `,` file                                                |
 
 The workspace's `stack` layout plus the `0` / `1` tabs already provides a fullscreen diff by a
 different mechanism. So #1113 is satisfied twice over, by two unrelated code paths.
@@ -67,14 +67,15 @@ different mechanism. So #1113 is satisfied twice over, by two unrelated code pat
    "what did the agent change since my last review" (PRD §22's loop) both existed in the model
    with no key bound to them.
 
-   *Correction to an earlier revision of this line:* it claimed the catalog's
+   _Correction to an earlier revision of this line:_ it claimed the catalog's
    `available` gate was unused. It was not — `command-catalog.ts:156` gates the
    mark-viewed command on `canMarkViewedInProjection`, which deliberately permits
    marking viewed inside a `since-last-review` lens and refuses it inside a
    `commit` one.
 
-   *Status:* the `since-last-review` half shipped (`s` in the workspace); the `commit` half
+   _Status:_ the `since-last-review` half shipped (`s` in the workspace); the `commit` half
    still needs a commit-list UI the sidebar does not have.
+
 2. **The workspace filter has no content dimension.** `/` matches file paths only
    (`reviewFileMatchesFilter`, `src/review/core/selectors.ts:80-100`) and `f` cycles review
    status (`all | unreviewed | changed | feedback`, `src/review/core/state.ts:33`). lazygit

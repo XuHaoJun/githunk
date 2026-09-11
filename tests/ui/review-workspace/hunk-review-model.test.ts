@@ -22,17 +22,11 @@ function makeFile(overrides: Partial<ReviewFile> = {}): ReviewFile {
         oldCount: 4,
         newStart: 10,
         newCount: 3,
-        lines: [
-          " context before",
-          "-const oldA = 1",
-          "-const oldB = 2",
-          "+const next = 3",
-          " context after",
-        ],
-      }),
+        lines: [" context before", "-const oldA = 1", "-const oldB = 2", "+const next = 3", " context after"]
+      })
     ],
     source: "available",
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -48,13 +42,15 @@ describe("Hunk review model adapter", () => {
   })
 
   test("preserves rename identity and side availability", () => {
-    const adapted = toHunkReviewFile(makeFile({
-      key: "src/new.ts",
-      path: "src/new.ts",
-      previousPath: "src/old.ts",
-      kind: "renamed",
-      newBlobOid: "3".repeat(40),
-    }))
+    const adapted = toHunkReviewFile(
+      makeFile({
+        key: "src/new.ts",
+        path: "src/new.ts",
+        previousPath: "src/old.ts",
+        kind: "renamed",
+        newBlobOid: "3".repeat(40)
+      })
+    )
 
     expect(adapted.path).toBe("src/new.ts")
     expect(adapted.previousPath).toBe("src/old.ts")
@@ -62,13 +58,15 @@ describe("Hunk review model adapter", () => {
   })
 
   test("keeps binary files out of line rendering", () => {
-    const adapted = toHunkReviewFile(makeFile({
-      key: "image.png",
-      path: "image.png",
-      kind: "binary",
-      source: "binary",
-      hunks: [],
-    }))
+    const adapted = toHunkReviewFile(
+      makeFile({
+        key: "image.png",
+        path: "image.png",
+        kind: "binary",
+        source: "binary",
+        hunks: []
+      })
+    )
 
     expect(adapted.kind).toBe("binary")
     expect(adapted.metadata.hunks).toHaveLength(0)
@@ -76,22 +74,24 @@ describe("Hunk review model adapter", () => {
     expect(adapted.metadata.additionLines).toHaveLength(0)
   })
   test("keeps deleted files on the old side only", () => {
-    const adapted = toHunkReviewFile(makeFile({
-      key: "src/removed.ts",
-      path: "src/removed.ts",
-      kind: "deleted",
-      newBlobOid: null,
-      hunks: [
-        createReviewHunk({
-          index: 0,
-          oldStart: 1,
-          oldCount: 2,
-          newStart: 0,
-          newCount: 0,
-          lines: ["-const gone = true", "-export default gone"],
-        }),
-      ],
-    }))
+    const adapted = toHunkReviewFile(
+      makeFile({
+        key: "src/removed.ts",
+        path: "src/removed.ts",
+        kind: "deleted",
+        newBlobOid: null,
+        hunks: [
+          createReviewHunk({
+            index: 0,
+            oldStart: 1,
+            oldCount: 2,
+            newStart: 0,
+            newCount: 0,
+            lines: ["-const gone = true", "-export default gone"]
+          })
+        ]
+      })
+    )
 
     expect(adapted.metadata.type).toBe("deleted")
     expect(adapted.metadata.deletionLines).toHaveLength(2)

@@ -56,12 +56,14 @@
 ### Task 1: Shared Stable List and Panel State
 
 **Files:**
+
 - Create: `src/ui/list-view.ts`
 - Create: `src/ui/panel-state.ts`
 - Test: `tests/ui/list-view.test.ts`
 - Test: `tests/ui/panel-state.test.ts`
 
 **Interfaces:**
+
 - Produces: `ListColumn`, `ListRow`, `ListDisplayRow`, `ListState`, `createListState`, `setListRows`, `moveListSelection`, `selectListRow`, `listRowAtPoint`, `renderListRows`.
 - Produces: `PanelState<TTab, TChild>`, `createPanelState`, `updatePanelView`, `cyclePanelTab`, `enterPanelChild`, `leavePanelChild`.
 - `ListRow.id` is the only persistent selection identity. `ListState.displayRows` explicitly maps item rows and excludes headers, blank states, and loading/error rows from selection.
@@ -76,7 +78,7 @@ import { createListState, listRowAtPoint, moveListSelection, selectListRow, setL
 const rows = [
   { id: "a", columns: [{ text: "alpha", priority: 0 }] },
   { id: "b", columns: [{ text: "beta", priority: 0 }] },
-  { id: "c", columns: [{ text: "gamma", priority: 0 }] },
+  { id: "c", columns: [{ text: "gamma", priority: 0 }] }
 ] as const
 
 describe("stable list state", () => {
@@ -111,7 +113,7 @@ import { createListState, selectListRow } from "../../src/ui/list-view"
 
 const panelRows = [
   { id: "a", columns: [{ text: "alpha", priority: 0 }] },
-  { id: "b", columns: [{ text: "beta", priority: 0 }] },
+  { id: "b", columns: [{ text: "beta", priority: 0 }] }
 ] as const
 
 describe("panel state", () => {
@@ -160,9 +162,7 @@ export type ListColumn = {
   readonly style?: "default" | "dim" | "cyan" | "green" | "yellow" | "magenta"
 }
 export type ListRow = { readonly id: string; readonly columns: readonly ListColumn[] }
-export type ListDisplayRow =
-  | { readonly kind: "item"; readonly id: string }
-  | { readonly kind: "header" | "message"; readonly text: string }
+export type ListDisplayRow = { readonly kind: "item"; readonly id: string } | { readonly kind: "header" | "message"; readonly text: string }
 
 export type ListState = {
   readonly rows: readonly ListRow[]
@@ -189,7 +189,6 @@ export function renderListRows(state: ListState, focused: boolean, width: number
 ```
 
 `setListRows` first searches for `selectedId`; if absent it retains `selectedIndex` when in range, otherwise clamps to the final row. Empty rows produce index `0` with no ID. `renderListRows` resolves `displayRows`, allocates columns by ascending priority, maps style tokens to OpenTUI chunks, pads the selected line to `width`, and applies `bgBlue`; it never adds a selection glyph.
-
 
 ```ts
 // src/ui/panel-state.ts
@@ -227,6 +226,7 @@ git commit -m "feat: add stable list and panel state"
 ### Task 2: Rich Git Read Models for Branches, Remotes, Tags, and Commit Preambles
 
 **Files:**
+
 - Create: `src/domain/tag.ts`
 - Create: `src/git/tags.ts`
 - Modify: `src/domain/branch.ts`
@@ -241,6 +241,7 @@ git commit -m "feat: add stable list and panel state"
 - Test: `tests/git/tags.test.ts`
 
 **Interfaces:**
+
 - Produces `TagSummary`, `TagPreview`, `listTags(runner)`, and `loadTagPreview(runner, tag)`.
 - Extends `LocalBranch` with `committedAt`, `subject`, and `upstreamTrack`; extends `Remote` with `fetchUrl` and `pushUrl`.
 - Extends `CommitDetails` with `preamble`; `preamble` is the exact text before the first `diff --git`/`diff --cc` and includes metadata, message, and stat.
@@ -260,7 +261,7 @@ test("loads branch recency, subject, upstream track, and remote URLs", async () 
   expect(listing.remotes[0]).toMatchObject({
     name: "origin",
     fetchUrl: expect.any(String),
-    pushUrl: expect.any(String),
+    pushUrl: expect.any(String)
   })
 })
 ```
@@ -302,7 +303,7 @@ describe("tag loaders", () => {
     const tags = await listTags(runner)
     expect(tags.map((tag) => [tag.name, tag.kind])).toEqual([
       ["annotated", "annotated"],
-      ["light", "lightweight"],
+      ["light", "lightweight"]
     ])
     const preview = await loadTagPreview(runner, tags[0]!)
     expect(preview.message).toContain("release message")
@@ -318,7 +319,7 @@ test("refresh publishes the real tag list", async () => {
   const tags = [{ name: "v1", ref: "refs/tags/v1", kind: "lightweight", objectOid: "a", targetOid: "a", subject: "release" }] as const
   const controller = new AppController({
     load: async (target) => snapshot(target.scope, ""),
-    loadTags: async () => tags,
+    loadTags: async () => tags
   })
   await controller.refresh()
   expect(controller.state.tags).toEqual(tags)
@@ -355,12 +356,7 @@ export type TagPreview = TagSummary & { readonly targetCommit: CommitSummary }
 Use one `for-each-ref` command with NUL fields:
 
 ```ts
-[
-  "for-each-ref",
-  "--sort=refname",
-  "--format=%(refname:short)%00%(refname)%00%(objecttype)%00%(objectname)%00%(*objectname)%00%(subject)%00%(taggername)%00%(taggerdate:iso-strict)%00%(contents)%00",
-  "refs/tags",
-]
+;["for-each-ref", "--sort=refname", "--format=%(refname:short)%00%(refname)%00%(objecttype)%00%(objectname)%00%(*objectname)%00%(subject)%00%(taggername)%00%(taggerdate:iso-strict)%00%(contents)%00", "refs/tags"]
 ```
 
 For annotated tags, `targetOid` is `*objectname`; for lightweight tags it is `objectname`. Resolve the target commit with `listCommits(runner, `${targetOid}^!`)` and require exactly one result.
@@ -399,12 +395,14 @@ git commit -m "feat: load lazygit panel metadata"
 ### Task 3: Compact Commit Graph and Full-Row Commit Rendering
 
 **Files:**
+
 - Create: `src/ui/commit-graph.ts`
 - Modify: `src/ui/panes/commits-pane.ts`
 - Test: `tests/ui/commit-graph.test.ts`
 - Test: `tests/ui/commits-pane.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1 `ListState`/`renderListRows` and existing `CommitSummary.parentOids`.
 - Produces: `commitGraphRows(commits): readonly string[]` with one fixed-width graph segment per commit.
 - Commits pane returns the shared `ListState`; RootView uses Task 1 `selectListRow` and `listRowAtPoint` directly, so keyboard and mouse cannot diverge.
@@ -417,7 +415,13 @@ import { describe, expect, test } from "bun:test"
 import { commitGraphRows } from "../../src/ui/commit-graph"
 
 const commit = (oid: string, parentOids: readonly string[]) => ({
-  oid, shortOid: oid, parentOids, authorName: "A", authoredAt: "2026-01-01T00:00:00Z", subject: oid, body: "",
+  oid,
+  shortOid: oid,
+  parentOids,
+  authorName: "A",
+  authoredAt: "2026-01-01T00:00:00Z",
+  subject: oid,
+  body: ""
 })
 
 describe("commit graph", () => {
@@ -429,17 +433,13 @@ describe("commit graph", () => {
   })
 
   test("opens and converges lanes for a merge", () => {
-    const rows = commitGraphRows([
-      commit("m", ["left", "right"]), commit("right", ["base"]), commit("left", ["base"]), commit("base", []),
-    ])
+    const rows = commitGraphRows([commit("m", ["left", "right"]), commit("right", ["base"]), commit("left", ["base"]), commit("base", [])])
     expect(rows.join("\n")).toContain("┬")
     expect(rows.at(-1)).toContain("●")
   })
 
   test("keeps a side branch in a distinct lane until convergence", () => {
-    const rows = commitGraphRows([
-      commit("tip", ["main"]), commit("side", ["base"]), commit("main", ["base"]), commit("base", []),
-    ])
+    const rows = commitGraphRows([commit("tip", ["main"]), commit("side", ["base"]), commit("main", ["base"]), commit("base", [])])
     expect(rows[1]).not.toBe(rows[2])
     expect(rows.at(-1)?.trim()).toBe("●")
   })
@@ -450,12 +450,9 @@ describe("commit graph", () => {
 
 ```ts
 // tests/ui/commits-pane.test.ts
-expect(renderCommitRows(commits, { selectedId: commits[0]!.oid, focused: true, width: 80 }).plainText)
-  .toContain("Author Name")
-expect(renderCommitRows(commits, { selectedId: commits[0]!.oid, focused: true, width: 80 }).plainText)
-  .not.toContain("▸")
-expect(renderCommitRows(commits, { selectedId: commits[0]!.oid, focused: false, width: 30 }).plainText.length)
-  .toBeLessThanOrEqual(30 * commits.length)
+expect(renderCommitRows(commits, { selectedId: commits[0]!.oid, focused: true, width: 80 }).plainText).toContain("Author Name")
+expect(renderCommitRows(commits, { selectedId: commits[0]!.oid, focused: true, width: 80 }).plainText).not.toContain("▸")
+expect(renderCommitRows(commits, { selectedId: commits[0]!.oid, focused: false, width: 30 }).plainText.length).toBeLessThanOrEqual(30 * commits.length)
 ```
 
 Also inspect the selected row's chunks and assert a background style exists only when `focused` is true.
@@ -473,10 +470,7 @@ Use an ordered `lanes: string[]`. For each commit, select or create its lane, re
 Expose:
 
 ```ts
-export function renderCommitRows(
-  commits: readonly CommitSummary[],
-  options: { readonly selectedId?: string; readonly focused: boolean; readonly width: number },
-): { readonly content: StyledText; readonly plainText: string; readonly state: ListState }
+export function renderCommitRows(commits: readonly CommitSummary[], options: { readonly selectedId?: string; readonly focused: boolean; readonly width: number }): { readonly content: StyledText; readonly plainText: string; readonly state: ListState }
 ```
 
 Allocate width in this order: graph, hash, subject, author, relative time. Drop time then author before truncating subject. Use `Intl.RelativeTimeFormat("en", { numeric: "auto" })` with a fixed injected `now` in unit tests.
@@ -499,6 +493,7 @@ git commit -m "feat: render lazygit commit rows"
 ### Task 4: Branches, Remotes, Tags Tabs and Remote Child
 
 **Files:**
+
 - Create: `src/ui/panes/remotes-pane.ts`
 - Create: `src/ui/panes/tags-pane.ts`
 - Modify: `src/ui/panes/branches-pane.ts`
@@ -511,6 +506,7 @@ git commit -m "feat: render lazygit commit rows"
 - Test: `tests/app/remote-checkout.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1 panel/list state and Task 2 `AppModel.tags`, `TagSummary`, and enriched `BranchListing`.
 - Produces RootView `branchesPanel: PanelState<"branches" | "remotes" | "tags", { kind: "remote-branches"; remote: string }>`.
 - Adds actions `tab-next` and `tab-previous`; deletes `scope-next` and `scope-previous` from `ACTIONS`, bindings, handlers, menus, and hints.
@@ -590,6 +586,7 @@ git commit -m "feat: add lazygit branch panel tabs"
 ### Task 5: Global Main Preview Gate and CommitFiles Transient Context
 
 **Files:**
+
 - Create: `src/ui/main-preview.ts`
 - Create: `src/ui/panes/commit-files-pane.ts`
 - Modify: `src/domain/repository.ts`
@@ -609,6 +606,7 @@ git commit -m "feat: add lazygit branch panel tabs"
 - Test: `tests/ui/preview-generation.test.ts`
 
 **Interfaces:**
+
 - Consumes Task 2 inspection loaders, Task 4 panel tabs, and Task 1 transient panel state.
 - RootView owns `commitsPanel: PanelState<"commits", { kind: "commit-files"; oid: string; details: CommitDetails }>`.
 - Produces `MainPaneContent` and `MainPreviewGate`.
@@ -652,7 +650,7 @@ const errors: unknown[] = []
 const gate = new MainPreviewGate({
   install: (content) => installed.push(content),
   setLoading: (value) => loading.push(value),
-  reportError: (error) => errors.push(error),
+  reportError: (error) => errors.push(error)
 })
 const first = deferred<CommitDetails>()
 const second = deferred<CommitDetails>()
@@ -727,11 +725,13 @@ export class MainPreviewGate {
   private generation = 0
   private requestedIdentity = ""
 
-  constructor(private readonly sink: {
-    readonly install: (content: MainPaneContent) => void
-    readonly setLoading: (loading: boolean) => void
-    readonly reportError: (error: unknown) => void
-  }) {}
+  constructor(
+    private readonly sink: {
+      readonly install: (content: MainPaneContent) => void
+      readonly setLoading: (loading: boolean) => void
+      readonly reportError: (error: unknown) => void
+    }
+  ) {}
 
   installSynchronous(content: MainPaneContent): void {
     this.generation += 1
@@ -740,12 +740,7 @@ export class MainPreviewGate {
     this.sink.install(content)
   }
 
-  async request<T>(
-    source: MainPaneContent["source"],
-    stableId: string,
-    load: () => Promise<T>,
-    present: (value: T) => MainPaneContent,
-  ): Promise<void> {
+  async request<T>(source: MainPaneContent["source"], stableId: string, load: () => Promise<T>, present: (value: T) => MainPaneContent): Promise<void> {
     const identity = `${source}:${stableId}`
     const generation = ++this.generation
     this.requestedIdentity = identity
@@ -808,6 +803,7 @@ git commit -m "feat: add global read-only inspection flow"
 ### Task 6: Lazygit Stash Folding and Current-Side-Window Layout
 
 **Files:**
+
 - Modify: `src/ui/focus.ts`
 - Modify: `src/ui/layout.ts`
 - Modify: `src/ui/root-view.ts`
@@ -815,6 +811,7 @@ git commit -m "feat: add global read-only inspection flow"
 - Modify: `tests/ui/layout.test.ts`
 
 **Interfaces:**
+
 - FocusManager produces `currentSideWindow: SideWindow`, initialized to `files` and updated only when a side window receives focus.
 - `LayoutRequest` consumes `currentSideWindow`; compact sizing no longer infers the absorber only from current global focus.
 
@@ -874,6 +871,7 @@ git commit -m "fix: match lazygit side panel folding"
 ### Task 7: Mouse Row Selection, Wheel Routing, and Interactive Scrollbars
 
 **Files:**
+
 - Modify: `src/ui/panes/common.ts`
 - Modify: `src/ui/panes/main-pane.ts`
 - Modify: `src/ui/panes/command-log-pane.ts`
@@ -884,6 +882,7 @@ git commit -m "fix: match lazygit side panel folding"
 - Test: `tests/ui/scrollbar.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes Task 1 `listRowAtPoint`/`selectListRow`, Task 4 tab panes, and Task 5 CommitFiles selection.
 - `PaneHandle` adds `scrollBy(delta: number): void`, `scrollTo(position: number): void`, and `maxScrollY(): number`.
 - RootView exposes `paneTextGeometry(id)` for mouse tests and owns `gestureOwner: { kind: "vertical-splitter" } | { kind: "horizontal-splitter" } | { kind: "scrollbar"; paneId: FocusId } | { kind: "main-selection" } | undefined`.
@@ -997,6 +996,7 @@ git commit -m "fix: align mouse and scrollbar behavior"
 ### Task 8: Migrate Remaining Lists to Full-Row Selection
 
 **Files:**
+
 - Modify: `src/ui/panes/files-pane.ts`
 - Modify: `src/ui/panes/branches-pane.ts`
 - Modify: `src/ui/panes/remotes-pane.ts`
@@ -1008,6 +1008,7 @@ git commit -m "fix: align mouse and scrollbar behavior"
 - Test: `tests/ui/list-selection.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes Task 1 shared list state and Task 7 shared mouse selection path.
 - Removes pane-specific cursor WeakMaps and RootView numeric cursors once every caller uses a stable `ListState`.
 
@@ -1066,11 +1067,13 @@ git commit -m "refactor: unify lazygit list selection"
 ### Task 9: Compatibility Matrix and End-to-End TUI Acceptance
 
 **Files:**
+
 - Modify: `docs/lazygit-compatibility-v0.1.md`
 - Modify: `tests/helpers/shell-harness.ts`
 - Create: `tests/acceptance/lazygit-core-ui.test.ts`
 
 **Interfaces:**
+
 - Produces one repository-backed acceptance scenario covering keyboard, mouse, tabs, transient children, graph rows, Main preview lifecycle, layout, scrollbars, splitters, and Main copy.
 - Compatibility statuses are exactly `compatible`, `githunk review extension`, `not yet implemented`, or `blocked by an identified external limitation`.
 

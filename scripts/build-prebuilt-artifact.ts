@@ -2,12 +2,7 @@
 
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import {
-  binaryFilenameForSpec,
-  copyBundledSkill,
-  getHostPlatformPackageSpec,
-  releaseArtifactsDir,
-} from "./prebuilt-package-helpers"
+import { binaryFilenameForSpec, copyBundledSkill, getHostPlatformPackageSpec, releaseArtifactsDir } from "./prebuilt-package-helpers"
 
 function parseArgs(argv: readonly string[]): { outputRoot: string | undefined; expectedPackage: string | undefined } {
   let outputRoot: string | undefined
@@ -49,9 +44,7 @@ export function stagePrebuiltArtifact(options: StagePrebuiltArtifactOptions = {}
   }
 
   if (!existsSync(compiledBinary)) {
-    throw new Error(
-      `Missing compiled binary at ${compiledBinary}. Run \`bun run build:bin\` first.`,
-    )
+    throw new Error(`Missing compiled binary at ${compiledBinary}. Run \`bun run build:bin\` first.`)
   }
 
   rmSync(outputDir, { recursive: true, force: true })
@@ -64,10 +57,7 @@ export function stagePrebuiltArtifact(options: StagePrebuiltArtifactOptions = {}
   }
   copyBundledSkill(repoRoot, outputDir)
 
-  writeFileSync(
-    path.join(outputDir, "metadata.json"),
-    `${JSON.stringify({ packageName: spec.packageName, version: 1 }, null, 2)}\n`,
-  )
+  writeFileSync(path.join(outputDir, "metadata.json"), `${JSON.stringify({ packageName: spec.packageName, version: 1 }, null, 2)}\n`)
 
   return outputDir
 }
@@ -76,7 +66,7 @@ if (import.meta.main) {
   const options = parseArgs(process.argv.slice(2))
   const outputDir = stagePrebuiltArtifact({
     ...(options.outputRoot === undefined ? {} : { outputRoot: options.outputRoot }),
-    ...(options.expectedPackage === undefined ? {} : { expectedPackage: options.expectedPackage }),
+    ...(options.expectedPackage === undefined ? {} : { expectedPackage: options.expectedPackage })
   })
   console.log(`Staged prebuilt artifact in ${outputDir}`)
 }

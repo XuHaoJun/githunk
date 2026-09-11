@@ -20,7 +20,7 @@ function reviewFile(path: string, lines: readonly string[]): ReviewFile {
     oldCount,
     newStart: 1,
     newCount,
-    lines,
+    lines
   })
   return {
     key: path,
@@ -34,7 +34,7 @@ function reviewFile(path: string, lines: readonly string[]): ReviewFile {
     patchDigest: sha256Tuple(lines),
     stats: { additions: lines.filter((line) => line.startsWith("+")).length, deletions: lines.filter((line) => line.startsWith("-")).length },
     hunks: [hunk],
-    source: "available",
+    source: "available"
   }
 }
 
@@ -46,11 +46,7 @@ function documentForSurface(): ReviewDocument {
     identity,
     generation,
     commits: [],
-    files: [
-      reviewFile("src/first.ts", longFirstFile),
-      reviewFile("src/second.ts", ["+export const second = true"]),
-      reviewFile("src/third.ts", ["+export const third = true"]),
-    ],
+    files: [reviewFile("src/first.ts", longFirstFile), reviewFile("src/second.ts", ["+export const second = true"]), reviewFile("src/third.ts", ["+export const third = true"])]
   })
 }
 
@@ -69,7 +65,7 @@ describe("review workspace real surface", () => {
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
       renderer: setup.renderer as unknown as CliRenderer,
-      reviewLoaders: { loadDocument: async () => documentForSurface() },
+      reviewLoaders: { loadDocument: async () => documentForSurface() }
     } as unknown as Parameters<typeof createApp>[0])
 
     try {
@@ -106,7 +102,7 @@ describe("review workspace real surface", () => {
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
       renderer: setup.renderer as unknown as CliRenderer,
-      reviewLoaders: { loadDocument: async () => documentForSurface() },
+      reviewLoaders: { loadDocument: async () => documentForSurface() }
     } as unknown as Parameters<typeof createApp>[0])
 
     try {
@@ -144,7 +140,7 @@ describe("review workspace real surface", () => {
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
       renderer: setup.renderer as unknown as CliRenderer,
-      reviewLoaders: { loadDocument: async () => documentForSurface() },
+      reviewLoaders: { loadDocument: async () => documentForSurface() }
     } as unknown as Parameters<typeof createApp>[0])
 
     try {
@@ -182,7 +178,7 @@ describe("review workspace real surface", () => {
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
       renderer: setup.renderer as unknown as CliRenderer,
-      reviewLoaders: { loadDocument: async () => documentForSurface() },
+      reviewLoaders: { loadDocument: async () => documentForSurface() }
     } as unknown as Parameters<typeof createApp>[0])
 
     try {
@@ -221,15 +217,18 @@ describe("review workspace real surface", () => {
       files: [
         base.files[0]!,
         base.files[1]!,
-        reviewFile("src/tail.ts", Array.from({ length: 60 }, (_, index) => `+export const tail${index + 1} = ${index + 1}`)),
-      ],
+        reviewFile(
+          "src/tail.ts",
+          Array.from({ length: 60 }, (_, index) => `+export const tail${index + 1} = ${index + 1}`)
+        )
+      ]
     }
     const setup = await createTestRenderer({ width: 100, height: 30, useMouse: true, enableMouseMovement: true })
     const app = createApp({
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
       renderer: setup.renderer as unknown as CliRenderer,
-      reviewLoaders: { loadDocument: async () => document },
+      reviewLoaders: { loadDocument: async () => document }
     } as unknown as Parameters<typeof createApp>[0])
 
     try {
@@ -265,7 +264,7 @@ describe("review workspace real surface", () => {
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
       renderer: setup.renderer as unknown as CliRenderer,
-      reviewLoaders: { loadDocument: async () => documentForSurface() },
+      reviewLoaders: { loadDocument: async () => documentForSurface() }
     } as unknown as Parameters<typeof createApp>[0])
 
     try {
@@ -318,7 +317,7 @@ describe("review workspace real surface", () => {
           oldCount: 10,
           newStart: index * 20 + 1,
           newCount: 10,
-          lines,
+          lines
         })
       })
       return {
@@ -333,7 +332,7 @@ describe("review workspace real surface", () => {
         patchDigest: sha256Tuple([path, "patch"]),
         stats: { additions: 12, deletions: 12 },
         hunks,
-        source: "available",
+        source: "available"
       }
     }
     const first = makeMultiHunkFile("src/first.ts")
@@ -341,14 +340,14 @@ describe("review workspace real surface", () => {
     const base = documentForSurface()
     const document = createReviewDocument({
       ...base,
-      files: [first, second],
+      files: [first, second]
     })
     const setup = await createTestRenderer({ width: 100, height: 12, useMouse: true, enableMouseMovement: true })
     const app = createApp({
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
       renderer: setup.renderer as unknown as CliRenderer,
-      reviewLoaders: { loadDocument: async () => document },
+      reviewLoaders: { loadDocument: async () => document }
     } as unknown as Parameters<typeof createApp>[0])
 
     try {
@@ -401,7 +400,7 @@ describe("review workspace real surface", () => {
       repositoryRoot: "/tmp/does-not-exist",
       runner: new GitRunner("/tmp/does-not-exist"),
       renderer: setup.renderer as unknown as CliRenderer,
-      reviewLoaders: { loadDocument: async () => documentForSurface() },
+      reviewLoaders: { loadDocument: async () => documentForSurface() }
     } as unknown as Parameters<typeof createApp>[0])
 
     try {
@@ -411,22 +410,7 @@ describe("review workspace real surface", () => {
       })
       await setup.flush()
       expect(screen.active.kind).toBe("branch-review")
-      const deferred = [
-        /since last/iu,
-        /individual commit/iu,
-        /trailing final hunk/iu,
-        /\bpage\b/iu,
-        /half-page/iu,
-        /horizontal scroll/iu,
-        /current-line/iu,
-        /\btheme\b/iu,
-        /\bcopy(?:[- ](?:selection|decorations?))\b/iu,
-        /agent annotations/iu,
-        /extension panes/iu,
-        /\bpager\b/iu,
-        /\beditor\b/iu,
-        /git mutation/iu,
-      ]
+      const deferred = [/since last/iu, /individual commit/iu, /trailing final hunk/iu, /\bpage\b/iu, /half-page/iu, /horizontal scroll/iu, /current-line/iu, /\btheme\b/iu, /\bcopy(?:[- ](?:selection|decorations?))\b/iu, /agent annotations/iu, /extension panes/iu, /\bpager\b/iu, /\beditor\b/iu, /git mutation/iu]
       const footer = setup.captureCharFrame()
       for (const pattern of deferred) expect(footer).not.toMatch(pattern)
 

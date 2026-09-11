@@ -173,22 +173,22 @@ The workspace uses semantic commands with one command catalog. Menus, hints, key
 
 Required defaults:
 
-| Keys | Command |
-| --- | --- |
-| `j` / `k`, arrows | move/scroll by review row |
-| `]` / `[` | next/previous hunk |
-| `.` / `,` | next/previous file |
-| `n` / `N` | next/previous unreviewed or invalidated file |
-| `}` / `{` | next/previous pending feedback anchor |
-| `/` | focus file filter |
-| `tab` | switch sidebar/stream/composer focus |
-| `v` | begin/end range selection |
-| `c` | create feedback at selection |
-| `r` | mark current file Viewed |
-| `0` / `1` / `2` | auto/split/stack layout |
-| `R` | finish review |
-| `?` | context-aware command help |
-| `Escape` | close overlay/composer, otherwise leave workspace |
+| Keys              | Command                                           |
+| ----------------- | ------------------------------------------------- |
+| `j` / `k`, arrows | move/scroll by review row                         |
+| `]` / `[`         | next/previous hunk                                |
+| `.` / `,`         | next/previous file                                |
+| `n` / `N`         | next/previous unreviewed or invalidated file      |
+| `}` / `{`         | next/previous pending feedback anchor             |
+| `/`               | focus file filter                                 |
+| `tab`             | switch sidebar/stream/composer focus              |
+| `v`               | begin/end range selection                         |
+| `c`               | create feedback at selection                      |
+| `r`               | mark current file Viewed                          |
+| `0` / `1` / `2`   | auto/split/stack layout                           |
+| `R`               | finish review                                     |
+| `?`               | context-aware command help                        |
+| `Escape`          | close overlay/composer, otherwise leave workspace |
 
 Mouse support includes sidebar selection, stream scrolling, line/range selection, gap expansion, feedback selection, and menu/dialog actions. Keyboard-only use must expose every operation.
 
@@ -720,16 +720,16 @@ The redesign is complete only when all statements are true:
 
 ## 18. Risks and chosen responses
 
-| Risk | Decision |
-| --- | --- |
+| Risk                                           | Decision                                                                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Pierre parsing differs from the current parser | Prove supported behavior with one adversarial conformance corpus, then delete the old parser; no dual runtime. |
-| Continuous stream consumes excessive memory | Keep semantic hunks, window terminal rows, lazy-load expanded source, benchmark real large changesets. |
-| New commits invalidate all progress | Stable review identity plus per-file content identity; generation records provenance only. |
-| Range feedback silently points at wrong code | Context-qualified anchors with explicit active/stale/orphaned reconciliation; block invalid submission. |
-| Local decisions look like fake GitHub controls | Decisions produce immutable, consumable artifacts with enforced invariants; no remote claim is shown. |
-| Future provider integration distorts core | Keep artifacts provider-neutral, but do not create a provider interface until a real provider is implemented. |
-| Breaking cutover leaves dead paths | Migrate every caller and delete old symbols/tests/state handling in the same implementation. |
-| Draft persistence writes on every key | Serialized persistence with a bounded trailing debounce and explicit flush points. |
+| Continuous stream consumes excessive memory    | Keep semantic hunks, window terminal rows, lazy-load expanded source, benchmark real large changesets.         |
+| New commits invalidate all progress            | Stable review identity plus per-file content identity; generation records provenance only.                     |
+| Range feedback silently points at wrong code   | Context-qualified anchors with explicit active/stale/orphaned reconciliation; block invalid submission.        |
+| Local decisions look like fake GitHub controls | Decisions produce immutable, consumable artifacts with enforced invariants; no remote claim is shown.          |
+| Future provider integration distorts core      | Keep artifacts provider-neutral, but do not create a provider interface until a real provider is implemented.  |
+| Breaking cutover leaves dead paths             | Migrate every caller and delete old symbols/tests/state handling in the same implementation.                   |
+| Draft persistence writes on every key          | Serialized persistence with a bounded trailing debounce and explicit flush points.                             |
 
 ## 19. Final product boundary
 

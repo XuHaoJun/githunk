@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  disposeHighlightWorker,
-  highlightInWorker,
-  registerHighlightWorker,
-} from "../../../src/review/git/highlight/highlight-worker-client"
+import { disposeHighlightWorker, highlightInWorker, registerHighlightWorker } from "../../../src/review/git/highlight/highlight-worker-client"
 
 type WorkerHarness = Worker & { terminated: boolean }
 
@@ -20,7 +16,9 @@ function silentWorker(): WorkerHarness {
     onerror: null,
     addEventListener() {},
     removeEventListener() {},
-    dispatchEvent() { return false },
+    dispatchEvent() {
+      return false
+    }
   } as unknown as WorkerHarness
   return worker
 }

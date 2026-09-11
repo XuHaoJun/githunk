@@ -23,10 +23,12 @@
 ### Task 1: Establish the semantic color token contract
 
 **Files:**
+
 - Modify: `src/ui/theme.ts`
 - Modify: `src/main.ts`
 
 **Interfaces:**
+
 - Produces `ANSI_BLACK`, `ANSI_RED`, `ANSI_GREEN`, `ANSI_YELLOW`, `ANSI_BLUE`, `ANSI_MAGENTA`, `ANSI_CYAN`, `ANSI_WHITE` as indexed `RGBA` values with slots 0-7.
 - Produces `ANSI_BRIGHT_BLACK` through `ANSI_BRIGHT_WHITE` as indexed slots 8-15.
 - Produces `DEFAULT_FOREGROUND` and `DEFAULT_BACKGROUND` as default-intent `RGBA` values.
@@ -55,6 +57,7 @@
 ### Task 2: Preserve indexed colors through ANSI parsing and diff painting
 
 **Files:**
+
 - Modify: `src/ui/ansi.ts`
 - Modify: `src/ui/panes/ansi-text.ts`
 - Modify: `src/ui/panes/pane-text.ts`
@@ -64,6 +67,7 @@
 - Modify: `tests/ui/main-diff.integration.test.ts`
 
 **Interfaces:**
+
 - `AnsiSpan.fg` is `RGBA` rather than `string`.
 - `PaneStyleDefinition.fg` accepts OpenTUI `ColorInput`; `registerStyle` passes it unchanged to OpenTUI.
 - SGR 30-37, 90-97, and 38;5;n produce indexed `RGBA`; SGR 38;2;r;g;b produces RGB-intent `RGBA`.
@@ -97,6 +101,7 @@
 ### Task 3: Migrate list rows, graph, and semantic color callsites
 
 **Files:**
+
 - Modify: `src/ui/list-view.ts`
 - Modify: `src/ui/commit-graph.ts`
 - Modify: `src/ui/branch-status.ts`
@@ -115,6 +120,7 @@
 - Modify: `tests/ui/reflog-tab.integration.test.ts`
 
 **Interfaces:**
+
 - `ListColumn.color`, `ListColumnSegment.color`, `GraphSegment.color`, and branch/icon color fields accept `ColorInput`.
 - `styleToChunk` maps list style names to shared ANSI tokens; `dim` remains an attribute-only style.
 - Selected-row highlighting applies `brightenAnsiForeground` to indexed `RGBA` values and uses `SELECTED_LINE_BG` as indexed ANSI blue.
@@ -144,9 +150,11 @@
   Expected: PASS.
 
 ---
+
 ### Task 4: Align pane defaults, borders, and remaining standard chrome
 
 **Files:**
+
 - Modify: `src/ui/panes/common.ts`
 - Modify: `src/ui/panes/command-log-pane.ts`
 - Modify: `src/ui/keybinding-menu.ts`
@@ -159,6 +167,7 @@
 - Create: `tests/ui/pane-colors.test.ts`
 
 **Interfaces:**
+
 - Base pane text renderables use `DEFAULT_FOREGROUND`.
 - Unfocused pane border/title use `DEFAULT_FOREGROUND`; focused pane border/title use `ANSI_GREEN`; active-tab text remains indexed green plus bold.
 - Keybinding menu standard background uses `DEFAULT_BACKGROUND` and standard border/text use terminal defaults.
@@ -193,10 +202,12 @@
 ### Task 5: Run repository verification and actual TUI smoke
 
 **Files:**
+
 - Verify: all changed source and test files from Tasks 1-4
 - Verify: `docs/lazygit-compatibility-v0.1.md` remains accurate because config-file loading is still out of scope
 
 **Interfaces:**
+
 - No new interfaces; this task verifies the migrated semantic color contract end to end.
 
 - [ ] **Step 1: Run the full typecheck**

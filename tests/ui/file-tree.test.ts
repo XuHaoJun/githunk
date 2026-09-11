@@ -30,7 +30,7 @@ import {
   toggleFileTreeMode,
   type FileTreeAccessors,
   type FileTreeRow,
-  type FileTreeSortOrder,
+  type FileTreeSortOrder
 } from "../../src/ui/file-tree"
 
 type TestFile = {
@@ -50,7 +50,7 @@ const accessors: FileTreeAccessors<TestFile> = {
   getPreviousPath: (item) => item.previousPath,
   getShortStatus: (item) => item.shortStatus,
   hasMergeConflicts: (item) => item.conflicted,
-  isTracked: (item) => item.tracked,
+  isTracked: (item) => item.tracked
 }
 
 /** Reconstructs lazygit's rendered line so the tests read like its own presentation output. */
@@ -101,11 +101,7 @@ describe("tree building", () => {
   test("keeps the root item when more than one file sits at top level", () => {
     const root = buildTreeFromFiles([file("a"), file("b")], { ...accessors, showRootItem: true })
     expect(root.children.map((child) => child.path)).toEqual(["."])
-    expect(lines(renderFileTreeRows(root, emptyCollapsedPaths(), { ...accessors, showRootItem: true }))).toEqual([
-      `${EXPANDED_ARROW} /`,
-      "  M  a",
-      "  M  b",
-    ])
+    expect(lines(renderFileTreeRows(root, emptyCollapsedPaths(), { ...accessors, showRootItem: true }))).toEqual([`${EXPANDED_ARROW} /`, "  M  a", "  M  b"])
   })
 
   test("groups files that share a directory", () => {
@@ -137,13 +133,7 @@ describe("compression", () => {
     const root = buildTreeFromFiles([file("a/b/c/one"), file("a/b/d/two")], accessors)
     expect(root.children[0]!.path).toBe("a/b")
     expect(root.children[0]!.compressionLevel).toBe(1)
-    expect(lines(renderFileTreeRows(root, emptyCollapsedPaths(), accessors))).toEqual([
-      `${EXPANDED_ARROW} a/b`,
-      `  ${EXPANDED_ARROW} c`,
-      "    M  one",
-      `  ${EXPANDED_ARROW} d`,
-      "    M  two",
-    ])
+    expect(lines(renderFileTreeRows(root, emptyCollapsedPaths(), accessors))).toEqual([`${EXPANDED_ARROW} a/b`, `  ${EXPANDED_ARROW} c`, "    M  one", `  ${EXPANDED_ARROW} d`, "    M  two"])
   })
 
   test("the shown root item is compressed into its only child directory", () => {
@@ -160,7 +150,7 @@ describe("tree depth versus visual depth", () => {
       ["dir1/dir3", 0, 0, 0],
       ["a", 2, 1, 2],
       ["dir2/dir4", 0, 0, 0],
-      ["b", 2, 1, 2],
+      ["b", 2, 1, 2]
     ])
   })
 
@@ -197,12 +187,7 @@ describe("row contents", () => {
 
   test("a collapsed directory hides its whole subtree", () => {
     const files = [file("dir/sub/a"), file("dir/sub/b"), file("top")]
-    expect(lines(rowsFor(files))).toEqual([
-      `${EXPANDED_ARROW} dir/sub`,
-      "  M  a",
-      "  M  b",
-      "M  top",
-    ])
+    expect(lines(rowsFor(files))).toEqual([`${EXPANDED_ARROW} dir/sub`, "  M  a", "  M  b", "M  top"])
     expect(lines(rowsFor(files, { collapsed: new Set(["dir/sub"]) }))).toEqual([`${COLLAPSED_ARROW} dir/sub`, "M  top"])
   })
 
@@ -238,7 +223,7 @@ describe("sorting", () => {
     { sortOrder: "filesFirst", caseSensitive: true, expected: ["Z-file", "b-file", "Dir", "Dir/inner"] },
     { sortOrder: "filesFirst", caseSensitive: false, expected: ["b-file", "Z-file", "Dir", "Dir/inner"] },
     { sortOrder: "foldersFirst", caseSensitive: true, expected: ["Dir", "Dir/inner", "Z-file", "b-file"] },
-    { sortOrder: "foldersFirst", caseSensitive: false, expected: ["Dir", "Dir/inner", "b-file", "Z-file"] },
+    { sortOrder: "foldersFirst", caseSensitive: false, expected: ["Dir", "Dir/inner", "b-file", "Z-file"] }
   ]
 
   for (const scenario of scenarios) {
@@ -275,14 +260,7 @@ describe("flat mode", () => {
   })
 
   test("puts merge conflicts first, then tracked files, then untracked ones", () => {
-    const files = [
-      file("a2", { tracked: false }),
-      file("a1", { tracked: false }),
-      file("c2", { conflicted: true }),
-      file("c1", { conflicted: true }),
-      file("b2", { tracked: true }),
-      file("b1", { tracked: true }),
-    ]
+    const files = [file("a2", { tracked: false }), file("a1", { tracked: false }), file("c2", { conflicted: true }), file("c1", { conflicted: true }), file("b2", { tracked: true }), file("b1", { tracked: true })]
     const root = buildFlatTreeFromFiles(files, { ...accessors, showRootItem: true })
     expect(root.children.map((child) => child.payload?.path)).toEqual(["c1", "c2", "b1", "b2", "a1", "a2"])
   })
@@ -343,12 +321,7 @@ describe("file tree state", () => {
 
   test("expanding to a path reveals a file inside a collapsed directory", () => {
     const state = toggleFileTreeCollapsedPath(createFileTreeState(files, accessors), "dir/sub")
-    expect(fileTreeRows(expandFileTreeToPath(state, "dir/sub/a")).map((row) => row.id)).toEqual([
-      "dir:dir/sub",
-      "file:dir/sub/a",
-      "file:dir/sub/b",
-      "file:top",
-    ])
+    expect(fileTreeRows(expandFileTreeToPath(state, "dir/sub/a")).map((row) => row.id)).toEqual(["dir:dir/sub", "file:dir/sub/a", "file:dir/sub/b", "file:top"])
   })
 
   test("flattening a tree skips the children of collapsed directories", () => {
@@ -362,13 +335,7 @@ describe("file tree state", () => {
     const next = setFileTreeItems(state, [...files, file("dir/sub/c")])
     expect(next.mode).toBe("tree")
     expect(lines(fileTreeRows(next))).toEqual([`${COLLAPSED_ARROW} dir/sub`, "M  top"])
-    expect(lines(fileTreeRows(toggleFileTreeCollapsedPath(next, "dir/sub")))).toEqual([
-      `${EXPANDED_ARROW} dir/sub`,
-      "  M  a",
-      "  M  b",
-      "  M  c",
-      "M  top",
-    ])
+    expect(lines(fileTreeRows(toggleFileTreeCollapsedPath(next, "dir/sub")))).toEqual([`${EXPANDED_ARROW} dir/sub`, "  M  a", "  M  b", "  M  c", "M  top"])
   })
 })
 
@@ -402,7 +369,7 @@ describe("generic over the leaf payload", () => {
   test("works with a payload that is not a changed file", () => {
     const commitFiles: readonly CommitFile[] = [
       { newPath: "src/ui/list-view.ts", changeStatus: "M" },
-      { newPath: "src/ui/file-tree.ts", changeStatus: "A" },
+      { newPath: "src/ui/file-tree.ts", changeStatus: "A" }
     ]
     const options = { getPath: (item: CommitFile) => item.newPath, getShortStatus: (item: CommitFile) => item.changeStatus }
     const root = buildTreeFromFiles(commitFiles, options)

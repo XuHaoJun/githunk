@@ -52,7 +52,7 @@ export function createPromptPopup(renderer: CliRenderer): PromptPopupHandle {
     position: "absolute",
     overflow: "hidden",
     backgroundColor: POPUP_BACKGROUND,
-    zIndex: POPUP_Z_INDEX,
+    zIndex: POPUP_Z_INDEX
   })
   const footer = new TextRenderable(renderer, {
     id: "prompt-popup-footer",
@@ -65,7 +65,7 @@ export function createPromptPopup(renderer: CliRenderer): PromptPopupHandle {
     fg: POPUP_FOREGROUND,
     bg: POPUP_BACKGROUND,
     selectable: false,
-    wrapMode: "none",
+    wrapMode: "none"
   })
   const input = new InputRenderable(renderer, {
     id: "prompt-popup-input",
@@ -84,7 +84,7 @@ export function createPromptPopup(renderer: CliRenderer): PromptPopupHandle {
     selectionFg: POPUP_FOREGROUND,
     cursorColor: POPUP_FOREGROUND,
     cursorStyle: POPUP_CURSOR_STYLE,
-    zIndex: 1,
+    zIndex: 1
   })
   input.height = 1
   input.focusable = true
@@ -184,6 +184,6 @@ export function createPromptPopup(renderer: CliRenderer): PromptPopupHandle {
       footer.height = contentHeight
       box.visible = true
       paint()
-    },
+    }
   }
 }

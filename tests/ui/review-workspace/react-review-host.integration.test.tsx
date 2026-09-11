@@ -23,7 +23,9 @@ function silentWorker(): SilentWorker {
     onerror: null,
     addEventListener() {},
     removeEventListener() {},
-    dispatchEvent() { return false },
+    dispatchEvent() {
+      return false
+    }
   } as unknown as SilentWorker
   return worker
 }
@@ -40,14 +42,14 @@ function controllerWithReviewState(): ReviewWorkspaceController {
     patchDigest: "patch-leak",
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+new"] })],
-    source: "available" as const,
+    source: "available" as const
   }
   const identity = createReviewIdentity({ headRef: "refs/heads/feature", headOid: "a".repeat(40), baseRef: "refs/heads/main" })
   const generation = createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "c".repeat(40), headOid: "a".repeat(40) })
   const document = createReviewDocument({ identity, generation, commits: [], files: [file] })
   return new ReviewWorkspaceController({
     runner: {} as never,
-    loadDocument: async () => document,
+    loadDocument: async () => document
   })
 }
 
@@ -58,7 +60,7 @@ describe("React review host lifecycle", () => {
       state: undefined,
       error: undefined,
       subscribe: () => () => undefined,
-      getExpandedSourceByGap: () => new Map(),
+      getExpandedSourceByGap: () => new Map()
     } as unknown as ReviewWorkspaceController
     let host!: ReactReviewHost
 
@@ -90,7 +92,7 @@ describe("React review host lifecycle", () => {
       state: undefined,
       error: undefined,
       subscribe: () => () => undefined,
-      getExpandedSourceByGap: () => new Map(),
+      getExpandedSourceByGap: () => new Map()
     } as unknown as ReviewWorkspaceController
     const worker = silentWorker()
     registerHighlightWorker(worker)
@@ -128,7 +130,7 @@ describe("React review host lifecycle", () => {
         selection: renderer.listenerCount("selection"),
         resize: renderer.listenerCount("resize"),
         destroy: renderer.listenerCount("destroy"),
-        keypress: renderer.keyInput.listenerCount("keypress"),
+        keypress: renderer.keyInput.listenerCount("keypress")
       }
       for (let index = 0; index < 11; index += 1) {
         await act(async () => {

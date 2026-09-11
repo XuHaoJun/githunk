@@ -32,7 +32,6 @@ Behavior references from `learn-projects/hunk/`:
 
 ## Task 1: Lock the aggregate projection and active command contract
 
-
 **Files:**
 
 - Modify `src/ui/review-workspace/command-catalog.ts`.
@@ -65,9 +64,7 @@ Behavior references from `learn-projects/hunk/`:
 - [ ] Normalize persisted projection metadata at the active boundary. Define a local helper with this contract in `src/ui/review-workspace/controller.ts`:
 
   ```ts
-  function normalizeActiveProjection(
-    projection: ReviewProjection,
-  ): Extract<ReviewProjection, { kind: "aggregate" }> {
+  function normalizeActiveProjection(projection: ReviewProjection): Extract<ReviewProjection, { kind: "aggregate" }> {
     return { kind: "aggregate" }
   }
   ```
@@ -124,10 +121,7 @@ bun test tests/ui/review-workspace/command-catalog.test.ts tests/ui/review-works
 - [ ] Extract or expose the existing `sideLinesForHunk()` logic in `src/review/core/anchors.ts` as a shared core helper. Add a constructor with this contract:
 
   ```ts
-  export function createLineSelection(
-    file: ReviewFile,
-    input: { hunkIndex: number; side: "old" | "new"; line: number },
-  ): ReviewLineSelection
+  export function createLineSelection(file: ReviewFile, input: { hunkIndex: number; side: "old" | "new"; line: number }): ReviewLineSelection
   ```
 
   It must locate the requested source line in the requested hunk, call the canonical range-anchor digest path for `startLine === endLine`, and copy the resulting `contentId` and `contextDigest`. It must reject invalid side/line/hunk, binary files, oversized files, and a line absent from the selected side.
@@ -148,19 +142,20 @@ bun test tests/ui/review-workspace/command-catalog.test.ts tests/ui/review-works
 - [ ] Add optional-on-read persistence compatibility for the new field without changing the database version. The Zod field must accept a missing `lineSelection` and produce `null`; it must strictly validate present values. Every fresh persisted record in `saveDraftDebounced()`, `flush()`, `persistedFromReviewState()`, and Finish marker construction must write `lineSelection`.
 
   ```ts
-  const lineSelectionSchema = z.object({
-    fileKey: z.string().min(1),
-    hunkIndex: z.number().int().min(0),
-    side: z.enum(["old", "new"]),
-    line: z.number().int().min(1),
-    contentId: z.string().min(1),
-    contextDigest: z.string().min(1),
-  }).strict()
+  const lineSelectionSchema = z
+    .object({
+      fileKey: z.string().min(1),
+      hunkIndex: z.number().int().min(0),
+      side: z.enum(["old", "new"]),
+      line: z.number().int().min(1),
+      contentId: z.string().min(1),
+      contextDigest: z.string().min(1)
+    })
+    .strict()
   ```
 
 - [ ] Separate interactive draft shape validation from save validation in `src/review/core/intents.ts`. A suggestion draft may temporarily contain an absent or whitespace-only replacement so the UI can display an invalid field; `feedback/create`, `feedback/edit`, and `feedback/reanchor` must still require non-empty replacement text. Keep target checks mandatory for every suggestion draft. Add a shared `validateSuggestionTarget()` and a `requireSuggestionReplacement()` path so no reducer action can create a persisted invalid suggestion.
 - [ ] Make `draftSchema` accept an absent or whitespace-only suggestion replacement while the draft is open; keep `feedbackSchema` strict. This allows the invalid draft to survive debounce, close, and restart without quarantining the whole review, while `feedback/create`, artifact construction, and Finish remain strict.
-
 
 - [ ] Extend `validateFinishReview()` and `buildReviewArtifact()` to validate every in-memory suggestion's replacement, anchor side/kind, target capability, and content identity before Finish. Return a stable reason such as `suggestion-invalid` and add a matching `FinishDialog` message. This protects Finish even if state was assembled outside the normal composer path.
 - [ ] Make `buildReviewArtifact()` reject every non-aggregate projection for this release instead of serializing a Since Last or Commit variant. Keep the union types only for isolated future-loader tests; no active Finish path may produce those artifact projections.
@@ -246,7 +241,7 @@ bun test tests/ui/review-workspace/react-review-workspace.integration.test.tsx t
 
   ```ts
   const artifact = buildReviewArtifact(state, input) // throws before writes
-  await ensureArtifactExistsOrMatches(artifact)       // immutable write first
+  await ensureArtifactExistsOrMatches(artifact) // immutable write first
   await stateStore.saveSemanticChange(writeMarker(artifact))
   await stateStore.saveSemanticChange(finalizeSubmission(artifact))
   ```
@@ -319,7 +314,6 @@ bun test tests/review/core/reconcile.test.ts tests/review/core/artifact.test.ts 
     }>[]
   }>
   ```
-
 
   `ReviewDiffHunk` must expose only normalized starts/counts, line indexes, optional header text, collapse count, and normalized `hunkContent` groups. Preserve the current malformed-patch fallback and stable identity behavior inside the adapter.
 

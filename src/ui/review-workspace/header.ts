@@ -54,11 +54,6 @@ function truncateBase(label: string, maxWidth: number): string {
   return decorateBase(truncateCell(label, maxWidth - BASE_DECORATION_WIDTH))
 }
 
-function formatStat(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—"
-  return String(value)
-}
-
 export function reviewHeaderLines(state: ReviewState, width: number, replies?: ReviewReplies): readonly ReviewHeaderLine[] {
   const w = Math.max(0, Math.floor(width))
   const progress = reviewProgress(state)
@@ -75,11 +70,9 @@ export function reviewHeaderLines(state: ReviewState, width: number, replies?: R
   // Alternative: if all stats null? Show —. We'll implement: totalAdditions = sum of non-null, totalDeletions similarly, but if all null -> —
   let totalAdditions: number | null = 0
   let totalDeletions: number | null = 0
-  let hasBinary = false
   let allAddNull = true
   let allDelNull = true
   for (const f of doc.files) {
-    if (f.stats.additions === null || f.stats.deletions === null) hasBinary = true
     if (f.stats.additions !== null) {
       totalAdditions = (totalAdditions as number) + f.stats.additions
       allAddNull = false
@@ -101,17 +94,11 @@ export function reviewHeaderLines(state: ReviewState, width: number, replies?: R
   // narrower range and finishing a review is refused.
   // The lens can be measured from a finished review or from a handoff, so the
   // label reads the checkpoint rather than assuming which one opened it.
-  const projectionLabel = state.projection.kind === "since-last-review"
-    ? (reviewCheckpoint(state)?.kind === "handoff" ? "Since handoff" : "Since last review")
-    : state.projection.kind === "commit"
-      ? `Commit ${state.projection.oid.slice(0, 7)}`
-      : "Aggregate"
+  const projectionLabel = state.projection.kind === "since-last-review" ? (reviewCheckpoint(state)?.kind === "handoff" ? "Since handoff" : "Since last review") : state.projection.kind === "commit" ? `Commit ${state.projection.oid.slice(0, 7)}` : "Aggregate"
 
   // Keep the base reachable even when the current branch name fills the terminal.
   const baseBudget = Math.min(cellWidth(decorateBase(baseLabel)), Math.max(1, Math.floor(w / 2)))
-  const headPrefix = w > baseBudget + 3
-    ? `${truncateCell(headLabel, w - baseBudget - 3)} → `
-    : ""
+  const headPrefix = w > baseBudget + 3 ? `${truncateCell(headLabel, w - baseBudget - 3)} → ` : ""
   const baseText = truncateBase(baseLabel, Math.max(0, w - cellWidth(headPrefix)))
   const suffix = `  ·  ${commits} commits · ${files} files · ${additionsText} ${deletionsText}  [${projectionLabel}]`
   const suffixText = truncateCell(suffix, Math.max(0, w - cellWidth(headPrefix) - cellWidth(baseText)))
@@ -136,7 +123,7 @@ export function reviewHeaderLines(state: ReviewState, width: number, replies?: R
   const line1Spans: ReviewHeaderLine = [
     { text: headPrefix, style: "strong" },
     { text: baseText, style: "strong", action: "choose-base" },
-    { text: suffixText, style: "strong" },
+    { text: suffixText, style: "strong" }
   ]
   const line2Spans: ReviewHeaderLine = [{ text: line2, style: "dim" }]
 

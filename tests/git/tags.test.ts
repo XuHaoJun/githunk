@@ -18,7 +18,7 @@ describe("tag loaders", () => {
     const tags = await listTags(runner)
     expect(tags.map((tag) => [tag.name, tag.kind])).toEqual([
       ["annotated", "annotated"],
-      ["light", "lightweight"],
+      ["light", "lightweight"]
     ])
     const preview = await loadTagPreview(runner, tags[0]!)
     expect(preview.message).toContain("release message")

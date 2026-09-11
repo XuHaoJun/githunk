@@ -6,15 +6,7 @@ import { parseNulFields } from "./parse"
 type CommandRunner = Pick<GitRunner, "run">
 
 export async function listTags(runner: CommandRunner): Promise<readonly TagSummary[]> {
-  const result = await runner.run(
-    [
-      "for-each-ref",
-      "--sort=refname",
-      "--format=%(refname:short)%00%(refname)%00%(objecttype)%00%(objectname)%00%(*objectname)%00%(subject)%00%(taggername)%00%(taggerdate:iso-strict)%00%(contents)%00",
-      "refs/tags",
-    ],
-    { readOnly: true },
-  )
+  const result = await runner.run(["for-each-ref", "--sort=refname", "--format=%(refname:short)%00%(refname)%00%(objecttype)%00%(objectname)%00%(*objectname)%00%(subject)%00%(taggername)%00%(taggerdate:iso-strict)%00%(contents)%00", "refs/tags"], { readOnly: true })
   const records = parseNulFields(result.stdout, 9)
   return records.map((fields) => {
     const name = fields[0] ?? ""
@@ -37,7 +29,7 @@ export async function listTags(runner: CommandRunner): Promise<readonly TagSumma
       subject,
       ...(taggerName.length === 0 ? {} : { taggerName }),
       ...(taggedAt.length === 0 ? {} : { taggedAt }),
-      ...(contents.length === 0 ? {} : { message: contents }),
+      ...(contents.length === 0 ? {} : { message: contents })
     }
     return summary
   })
@@ -48,6 +40,6 @@ export async function loadTagPreview(runner: CommandRunner, tag: TagSummary): Pr
   if (commits.length !== 1) throw new Error(`tag target not found: ${tag.targetOid}`)
   return {
     ...tag,
-    targetCommit: commits[0]!,
+    targetCommit: commits[0]!
   }
 }

@@ -6,7 +6,9 @@ import { DEFAULT_LOG_HEIGHT } from "../../src/ui/layout"
 
 describe("UiStateStore", () => {
   let repository: TempRepository | undefined
-  afterEach(async () => { await repository?.cleanup() })
+  afterEach(async () => {
+    await repository?.cleanup()
+  })
 
   test("returns defaults when nothing has been saved", async () => {
     repository = await createTempRepository()
@@ -89,13 +91,13 @@ describe("UiStateStore", () => {
       version: 1,
       sidePanelRatio: 0.33992094861660077,
       commandLogHeight: 8,
-      commandLogVisible: false,
+      commandLogVisible: false
     }
     await Bun.write(await store.path(), JSON.stringify(ownersFile))
     expect(await store.load()).toEqual({
       commandLogVisible: true,
       commandLogHeight: DEFAULT_LOG_HEIGHT,
-      sidePanelRatio: 0.33992094861660077,
+      sidePanelRatio: 0.33992094861660077
     })
   })
 
@@ -104,10 +106,7 @@ describe("UiStateStore", () => {
     repository = await createTempRepository()
     const runner = new GitRunner(repository.path)
     const store = new UiStateStore(runner)
-    await Bun.write(
-      await store.path(),
-      JSON.stringify({ version: 1, sidePanelRatio: 9, commandLogHeight: 8, commandLogVisible: false }),
-    )
+    await Bun.write(await store.path(), JSON.stringify({ version: 1, sidePanelRatio: 9, commandLogHeight: 8, commandLogVisible: false }))
     expect(await store.load()).toEqual(defaultUiState())
   })
 
@@ -120,10 +119,7 @@ describe("UiStateStore", () => {
     repository = await createTempRepository()
     const runner = new GitRunner(repository.path)
     const store = new UiStateStore(runner)
-    await Bun.write(
-      await store.path(),
-      JSON.stringify({ version: 2, sidePanelRatio: 0.4, commandLogHeight: 11, commandLogHidden: true }),
-    )
+    await Bun.write(await store.path(), JSON.stringify({ version: 2, sidePanelRatio: 0.4, commandLogHeight: 11, commandLogHidden: true }))
     expect(await store.load()).toEqual({ sidePanelRatio: 0.4, commandLogHeight: 11, commandLogVisible: false })
   })
 
@@ -131,10 +127,7 @@ describe("UiStateStore", () => {
     repository = await createTempRepository()
     const runner = new GitRunner(repository.path)
     const store = new UiStateStore(runner)
-    await Bun.write(
-      await store.path(),
-      JSON.stringify({ version: 2, sidePanelRatio: 0.4, commandLogHeight: 11 }),
-    )
+    await Bun.write(await store.path(), JSON.stringify({ version: 2, sidePanelRatio: 0.4, commandLogHeight: 11 }))
     expect(await store.load()).toEqual(defaultUiState())
   })
 })

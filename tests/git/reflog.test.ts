@@ -10,7 +10,7 @@ function fakeRunner(stdout: string, exitCode = 0) {
     run: async (args: readonly string[], options: unknown) => {
       calls.push({ args: [...args], options })
       return { exitCode, stdout, stderr: "", record: {} as never }
-    },
+    }
   }
   return { runner, calls }
 }
@@ -21,9 +21,7 @@ function record(oid: string, unix: string, subject: string, parents: string): st
 
 describe("reflog parsing", () => {
   test("parses hash, commit timestamp, reflog subject, and parents", () => {
-    const raw =
-      record("a".repeat(40), "1700000000", "checkout: moving from main to feature", `${"b".repeat(40)}`) +
-      record("b".repeat(40), "1699999999", "commit (initial): root", "")
+    const raw = record("a".repeat(40), "1700000000", "checkout: moving from main to feature", `${"b".repeat(40)}`) + record("b".repeat(40), "1699999999", "commit (initial): root", "")
     const entries = parseReflog(raw)
     expect(entries).toHaveLength(2)
     expect(entries[0]?.oid).toBe("a".repeat(40))
@@ -55,9 +53,7 @@ describe("reflog parsing", () => {
     // `%ct` is the COMMIT timestamp, so consecutive entries can share hash and
     // timestamp; identical subjects are possible too (two hops back and forth).
     const subject = "checkout: moving from main to feature"
-    const raw =
-      record("a".repeat(40), "1700000000", subject, "") +
-      record("a".repeat(40), "1700000000", subject, "")
+    const raw = record("a".repeat(40), "1700000000", subject, "") + record("a".repeat(40), "1700000000", subject, "")
     const entries = parseReflog(raw)
     expect(entries[0]?.id).not.toBe(entries[1]?.id)
     expect(entries[0]?.id).toBe(reflogEntryId("a".repeat(40), subject, 0))

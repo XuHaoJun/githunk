@@ -40,7 +40,7 @@ export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandl
     position: "absolute",
     overflow: "hidden",
     backgroundColor: POPUP_BACKGROUND,
-    zIndex: POPUP_Z_INDEX,
+    zIndex: POPUP_Z_INDEX
   })
   const text = new TextRenderable(renderer, {
     id: "keybinding-menu-text",
@@ -50,7 +50,7 @@ export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandl
     selectable: false,
     wrapMode: "none",
     width: "100%",
-    height: "100%",
+    height: "100%"
   })
   box.add(text)
   box.visible = false
@@ -78,6 +78,6 @@ export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandl
       box.width = geom.width
       box.height = geom.height
       box.visible = true
-    },
+    }
   }
 }

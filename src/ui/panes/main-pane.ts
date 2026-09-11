@@ -51,7 +51,6 @@ export type MainPaneContent = {
   readonly plainText?: string
 }
 
-
 /**
  * The titles lazygit gives the main view per panel-3 selection. The panel, not the selected ref,
  * names the view: `self.c.Tr.LogTitle` for a local branch (branches_controller.go:221,
@@ -101,20 +100,12 @@ function currentDocumentSelection(pane: PaneHandle): DocumentSelection | undefin
   return stored.value.selection
 }
 
-function publishProjection(
-  pane: PaneHandle,
-  draft: Omit<MainSelectionProjection, "generation">,
-): void {
+function publishProjection(pane: PaneHandle, draft: Omit<MainSelectionProjection, "generation">): void {
   const previous = selectionProjections.get(pane)
   const stored = storedSelections.get(pane)
   const generation = ++nextProjectionGeneration
   selectionProjections.set(pane, { ...draft, generation })
-  if (
-    previous?.document !== undefined
-    && previous.document === draft.document
-    && stored?.value.valid === true
-    && stored.value.kind === "document"
-  ) {
+  if (previous?.document !== undefined && previous.document === draft.document && stored?.value.valid === true && stored.value.kind === "document") {
     storedSelections.set(pane, { projectionGeneration: generation, value: stored.value })
   } else {
     storedSelections.delete(pane)
@@ -160,7 +151,7 @@ export function setMainDocumentSelection(pane: PaneHandle, selection: DocumentSe
   }
   storedSelections.set(pane, {
     projectionGeneration: projection.generation,
-    value: { valid: true, kind: "document", selection },
+    value: { valid: true, kind: "document", selection }
   })
 }
 
@@ -185,7 +176,7 @@ export function createMainPane(renderer: CliRenderer, _model: AppModel): PaneHan
   }
   createVirtualMainPane(pane, {
     publishProjection: (draft) => publishProjection(pane, draft),
-    currentDocumentSelection: () => currentDocumentSelection(pane),
+    currentDocumentSelection: () => currentDocumentSelection(pane)
   })
   // content will be installed via gate; keep placeholder until first install
   pane.box.title = "0 Main"
@@ -216,12 +207,19 @@ function renderedLineStarts(text: string): readonly number[] {
   return starts
 }
 
-function mainDiffLineOffsets(document: DiffDocument, startIndex: number, endIndex: number, preamble: string): {
-  readonly startUtf16: number
-  readonly endUtf16: number
-  readonly displayStartUtf16: number
-  readonly displayEndUtf16: number
-} | undefined {
+function mainDiffLineOffsets(
+  document: DiffDocument,
+  startIndex: number,
+  endIndex: number,
+  preamble: string
+):
+  | {
+      readonly startUtf16: number
+      readonly endUtf16: number
+      readonly displayStartUtf16: number
+      readonly displayEndUtf16: number
+    }
+  | undefined {
   const first = document.lines[startIndex]
   const last = document.lines[endIndex]
   if (first === undefined || last === undefined) return undefined
@@ -242,15 +240,11 @@ function mainDiffLineOffsets(document: DiffDocument, startIndex: number, endInde
     startUtf16: first.startUtf16,
     endUtf16: last.endUtf16,
     displayStartUtf16: preambleLength + firstStart,
-    displayEndUtf16: preambleLength + lastStart + lastLength,
+    displayEndUtf16: preambleLength + lastStart + lastLength
   }
 }
 
-export function mainDiffVisualRowRange(
-  pane: PaneHandle,
-  startIndex: number,
-  endIndex: number,
-): { readonly startRow: number; readonly endRow: number } | undefined {
+export function mainDiffVisualRowRange(pane: PaneHandle, startIndex: number, endIndex: number): { readonly startRow: number; readonly endRow: number } | undefined {
   const document = documents.get(pane)
   if (document === undefined) return undefined
   const virtual = virtualMainPaneFor(pane)
@@ -280,21 +274,23 @@ export function getMainDiffLineSelection(pane: PaneHandle): MainDiffLineSelectio
   const virtual = virtualMainPaneFor(pane)
   const offsets = virtual?.isActive()
     ? (() => {
-      const value = virtual.lineOffsets(range.startIndex, range.endIndex + 1)
-      return value === undefined ? undefined : {
-        startUtf16: value.rawStartUtf16,
-        endUtf16: value.rawEndUtf16,
-        displayStartUtf16: value.displayStartUtf16,
-        displayEndUtf16: value.displayEndUtf16,
-      }
-    })()
+        const value = virtual.lineOffsets(range.startIndex, range.endIndex + 1)
+        return value === undefined
+          ? undefined
+          : {
+              startUtf16: value.rawStartUtf16,
+              endUtf16: value.rawEndUtf16,
+              displayStartUtf16: value.displayStartUtf16,
+              displayEndUtf16: value.displayEndUtf16
+            }
+      })()
     : mainDiffLineOffsets(document, range.startIndex, range.endIndex, installedContents.get(pane)?.preamble ?? "")
   if (offsets === undefined) return undefined
   return {
     document,
     state,
     indexes: changedIndexesInDiffLineRange(document, state),
-    ...offsets,
+    ...offsets
   }
 }
 
@@ -331,7 +327,7 @@ export function setMainDiffLineRangeState(pane: PaneHandle, state: DiffLineRange
       endUtf16: end.endUtf16,
       fileIndex: start.fileIndex,
       ...(start.hunkIndex === undefined ? {} : { hunkIndex: start.hunkIndex }),
-      active: true,
+      active: true
     })
   } else {
     clearMainSelection(pane)
@@ -360,7 +356,7 @@ function targetWithIdentity(document: DiffDocument, target: MainCursorTarget): M
   return {
     ...target,
     ...(filePath === undefined ? {} : { filePath }),
-    ...(target.hunkIndex === undefined || file.hunks[target.hunkIndex] === undefined ? {} : { hunkKey: hunkKey(file.hunks[target.hunkIndex]!) }),
+    ...(target.hunkIndex === undefined || file.hunks[target.hunkIndex] === undefined ? {} : { hunkKey: hunkKey(file.hunks[target.hunkIndex]!) })
   }
 }
 
@@ -373,9 +369,7 @@ export function setMainCursorTarget(pane: PaneHandle, target: MainCursorTarget):
 }
 
 export function moveMainCursor(document: DiffDocument, current: MainCursorTarget | undefined, direction: "next" | "previous"): MainCursorTarget | undefined {
-  const targets: MainCursorTarget[] = document.files.flatMap((file) => file.hunks.length > 0
-    ? file.hunks.map((_, hunkIndex) => ({ fileIndex: file.fileIndex, hunkIndex }))
-    : [{ fileIndex: file.fileIndex }])
+  const targets: MainCursorTarget[] = document.files.flatMap((file) => (file.hunks.length > 0 ? file.hunks.map((_, hunkIndex) => ({ fileIndex: file.fileIndex, hunkIndex })) : [{ fileIndex: file.fileIndex }]))
   if (targets.length === 0) return undefined
   const currentIndex = current ? targets.findIndex((target) => target.fileIndex === current.fileIndex && target.hunkIndex === current.hunkIndex) : -1
   const nextIndex = Math.max(0, Math.min(targets.length - 1, currentIndex + (direction === "next" ? 1 : -1)))
@@ -389,9 +383,7 @@ export function moveMainCursor(document: DiffDocument, current: MainCursorTarget
  * the on-screen row to reveal.
  */
 export function mainCursorTargetLine(document: DiffDocument, target: MainCursorTarget): number | undefined {
-  const index = document.lines.findIndex((line) =>
-    line.fileIndex === target.fileIndex
-    && (target.hunkIndex === undefined || line.hunkIndex === target.hunkIndex))
+  const index = document.lines.findIndex((line) => line.fileIndex === target.fileIndex && (target.hunkIndex === undefined || line.hunkIndex === target.hunkIndex))
   return index < 0 ? undefined : index
 }
 
@@ -407,7 +399,6 @@ export function mainActionAvailability(document: DiffDocument | undefined, targe
   if (file.hunks.length === 0) return { canStageLines: false, canDiscardLines: false, reason: "line actions disabled: binary or conflicted file" }
   return { canStageLines: true, canDiscardLines: true }
 }
-
 
 export function changeLineIndexes(document: DiffDocument, startUtf16: number, endUtf16: number): readonly number[] {
   return document.lines.flatMap((line, index) => {
@@ -471,9 +462,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
 
   const sameIdentity = previousIdentity !== undefined && previousIdentity === nextIdentity
   const sameDocument = content.document === undefined || previousContent?.document === content.document
-  const identicalText = virtualDocument
-    ? sameDocument && previousContent?.document?.text === content.document?.text && previousContent?.preamble === content.preamble
-    : sameDocument && previousText !== undefined && previousText === nextText
+  const identicalText = virtualDocument ? sameDocument && previousContent?.document?.text === content.document?.text && previousContent?.preamble === content.preamble : sameDocument && previousText !== undefined && previousText === nextText
   const previousWasDocument = documents.has(pane)
   const replacingDocument = previousWasDocument && content.document === undefined
   const enteringDocument = !previousWasDocument && content.document !== undefined
@@ -539,10 +528,13 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     if (sameIdentity && identicalText && previousTarget !== undefined && previousDocument !== undefined) {
       const oldFile = previousDocument.files[previousTarget.fileIndex]
       const filePath = previousTarget.filePath ?? (oldFile?.newPath !== undefined && oldFile.newPath !== "/dev/null" ? oldFile.newPath : oldFile?.oldPath)
-      const newFileIndex = filePath === undefined ? -1 : doc.files.findIndex((file) => {
-        const path = file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
-        return path === filePath
-      })
+      const newFileIndex =
+        filePath === undefined
+          ? -1
+          : doc.files.findIndex((file) => {
+              const path = file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
+              return path === filePath
+            })
       if (newFileIndex >= 0) {
         const newFile = doc.files[newFileIndex]!
         if (previousTarget.hunkIndex === undefined) {
@@ -551,16 +543,14 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
           const key = previousTarget.hunkKey ?? (oldFile?.hunks[previousTarget.hunkIndex] === undefined ? undefined : hunkKey(oldFile.hunks[previousTarget.hunkIndex]!))
           const newHunkIndex = key === undefined ? -1 : newFile.hunks.findIndex((hunk) => hunkKey(hunk) === key)
           if (newHunkIndex >= 0) preservedTarget = { fileIndex: newFileIndex, hunkIndex: newHunkIndex, ...(filePath === undefined ? {} : { filePath }), ...(key === undefined ? {} : { hunkKey: key }) }
+        }
       }
     }
-      }
     // If not preserved, pick first hunk
-    const initialTarget = preservedTarget ?? (!sameIdentity || !identicalText ? moveMainCursor(doc, undefined, "next") : previousTarget ?? moveMainCursor(doc, undefined, "next"))
+    const initialTarget = preservedTarget ?? (!sameIdentity || !identicalText ? moveMainCursor(doc, undefined, "next") : (previousTarget ?? moveMainCursor(doc, undefined, "next")))
     const shouldKeepTarget = sameIdentity && identicalText
     documents.set(pane, doc)
-    const nextRange = !enteringDocument && sameIdentity && identicalText && previousRange?.lineCount === doc.lines.length
-      ? previousRange
-      : createDiffLineRangeState(doc)
+    const nextRange = !enteringDocument && sameIdentity && identicalText && previousRange?.lineCount === doc.lines.length ? previousRange : createDiffLineRangeState(doc)
     lineRanges.set(pane, nextRange)
     if (shouldKeepTarget && initialTarget) {
       cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
@@ -585,13 +575,16 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     if (enteringDocument || !sameIdentity || !identicalText) {
       const rendered = renderDiff(doc)
       const installed = installDiffText(pane.text, { preamble: content.preamble ?? "", body: rendered.displayText, displayLines: rendered.displayLines })
-      publishProjection(pane, eagerDiffSelectionProjection({
-        generation: 0,
-        document: doc,
-        text: installed.text,
-        preambleLength: installed.preambleLength,
-        bodySegments: rendered.segments,
-      }))
+      publishProjection(
+        pane,
+        eagerDiffSelectionProjection({
+          generation: 0,
+          document: doc,
+          text: installed.text,
+          preambleLength: installed.preambleLength,
+          bodySegments: rendered.segments
+        })
+      )
     }
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))

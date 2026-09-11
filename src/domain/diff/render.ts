@@ -30,7 +30,8 @@ export type RenderedDiff = DisplayOffsetMap
  * of the row they label.
  */
 function buildDisplayToRaw(document: DiffDocument, displayText: string, segments: readonly DisplaySourceSegment[]): readonly number[] {
-  const map = new Array<number>(displayText.length + 1)
+  const map: number[] = []
+  map.length = displayText.length + 1
   let cursor = 0
   for (const segment of segments) {
     for (; cursor < segment.displayStartUtf16; cursor++) map[cursor] = segment.rawStartUtf16
@@ -80,8 +81,8 @@ export function renderDiff(document: DiffDocument): RenderedDiff {
     segments,
     displayLines,
     get displayToRaw(): readonly number[] {
-      return displayToRaw ??= buildDisplayToRaw(document, displayText, segments)
-    },
+      return (displayToRaw ??= buildDisplayToRaw(document, displayText, segments))
+    }
   }
   document.rendered = rendered
   return rendered

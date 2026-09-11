@@ -10,21 +10,12 @@
 import { GitRunner } from "../git/runner"
 import { z } from "zod"
 import { LocalStateFile } from "../storage/local-state-file"
-import {
-  HANDOFF_JSON_PATH,
-  HANDOFF_MARKDOWN_PATH,
-  HANDOFF_REPLIES_PATH,
-  parseReviewReplies,
-  renderHandoffMarkdown,
-  serializeReviewReplies,
-  type HandoffMailbox,
-  type ReviewReply,
-} from "../review/core/ledger"
+import { HANDOFF_JSON_PATH, HANDOFF_MARKDOWN_PATH, HANDOFF_REPLIES_PATH, parseReviewReplies, renderHandoffMarkdown, serializeReviewReplies, type HandoffMailbox, type ReviewReply } from "../review/core/ledger"
 
 export type HandoffOutcome = { readonly text: string; readonly exitCode: number }
 const handoffMailboxSchema = z
   .object({
-    items: z.array(z.object({ id: z.string().min(1) }).passthrough()),
+    items: z.array(z.object({ id: z.string().min(1) }).passthrough())
   })
   .passthrough()
 const canonicalHandoffSchema = z
@@ -34,17 +25,21 @@ const canonicalHandoffSchema = z
     reviewId: z.string(),
     headOid: z.string(),
     baseRef: z.string().nullable(),
-    items: z.array(z.object({
-      id: z.string().min(1),
-      path: z.string(),
-      side: z.enum(["old", "new"]).nullable(),
-      startLine: z.number().int().nullable(),
-      endLine: z.number().int().nullable(),
-      severity: z.enum(["comment", "blocking"]),
-      kind: z.enum(["note", "suggestion"]),
-      body: z.string(),
-      replacement: z.string().optional(),
-    }).strict()),
+    items: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          path: z.string(),
+          side: z.enum(["old", "new"]).nullable(),
+          startLine: z.number().int().nullable(),
+          endLine: z.number().int().nullable(),
+          severity: z.enum(["comment", "blocking"]),
+          kind: z.enum(["note", "suggestion"]),
+          body: z.string(),
+          replacement: z.string().optional()
+        })
+        .strict()
+    )
   })
   .strict()
 
@@ -57,18 +52,23 @@ function parseCanonicalHandoff(raw: string | undefined): HandoffMailbox | undefi
     return undefined
   }
   const result = canonicalHandoffSchema.safeParse(parsed)
-  return result.success ? result.data as HandoffMailbox : undefined
+  return result.success ? (result.data as HandoffMailbox) : undefined
 }
 const replyFileSchema = z
   .object({
     version: z.literal(1).optional(),
     replies: z.array(
-      z.object({
-        id: z.string().min(1).refine((id) => id.trim() !== ""),
-        body: z.string().refine((body) => body.trim() !== ""),
-        at: z.string().optional(),
-      }).strict(),
-    ),
+      z
+        .object({
+          id: z
+            .string()
+            .min(1)
+            .refine((id) => id.trim() !== ""),
+          body: z.string().refine((body) => body.trim() !== ""),
+          at: z.string().optional()
+        })
+        .strict()
+    )
   })
   .strict()
 
@@ -109,7 +109,7 @@ export async function runHandoff(input: { json: boolean; cwd: string }): Promise
   if (text === undefined) {
     return {
       text: "No handoff yet. Open githunk, review the branch, and press A to hand off open feedback.",
-      exitCode: 1,
+      exitCode: 1
     }
   }
   return { text, exitCode: 0 }

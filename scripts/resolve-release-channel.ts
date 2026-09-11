@@ -45,7 +45,7 @@ if (import.meta.main) {
     event: readFlag(argv, "--event"),
     ref: readFlag(argv, "--ref"),
     requestedTag: requestedTag === "" ? "latest" : requestedTag,
-    currentLatest: readOptionalFlag(argv, "--current-latest"),
+    currentLatest: readOptionalFlag(argv, "--current-latest")
   })
   console.log(JSON.stringify(channel))
 }

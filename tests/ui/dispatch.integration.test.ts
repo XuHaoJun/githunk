@@ -467,7 +467,6 @@ describe("screen modes and layout", () => {
     expect(harness.app.view!.geometry.sideWidth).toBe(Math.round(200 * 0.3333))
   })
 
-
   test("plus and underscore move through the screen modes", async () => {
     harness = await createShellHarness()
     const view = harness.app.view!
@@ -512,7 +511,9 @@ describe("screen modes and layout", () => {
 
 describe("hints bar and keybinding menu", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("the hints bar changes with the focused pane", async () => {
     // A stash must exist for the stash bindings to be enabled — hintRowsFor only
@@ -590,7 +591,9 @@ describe("hints bar and keybinding menu", () => {
 
 describe("navigation keys", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("J and K scroll the main pane while a left pane keeps focus", async () => {
     harness = await createShellHarness({ height: 20 })
@@ -662,7 +665,9 @@ describe("navigation keys", () => {
 
 describe("dividers", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("dragging the vertical divider changes the side width", async () => {
     harness = await createShellHarness({ width: 160, height: 40 })
@@ -701,7 +706,9 @@ describe("dividers", () => {
 
 describe("overflow scrollbars and keyboard auto-scroll", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("moving down a long commit list scrolls the pane to keep the cursor visible", async () => {
     const subjects = Array.from({ length: 60 }, (_v, i) => `commit number ${String(i).padStart(2, "0")}`)
@@ -880,7 +887,9 @@ describe("commit files transient context", () => {
       // Inject failing loader by replacing controller's loader? Instead use harness's controller with override?
       // We simulate failure by monkey-patching loadCommitInspection to reject
       const original = harness.app.controller.loadCommitInspection.bind(harness.app.controller)
-      harness.app.controller.loadCommitInspection = async () => { throw new Error("load failed") }
+      harness.app.controller.loadCommitInspection = async () => {
+        throw new Error("load failed")
+      }
       await harness.pressKey("4")
       expect(view.commitsContextKind).toBe("commits")
       await harness.pressKey("RETURN")
@@ -932,17 +941,18 @@ describe("commit files transient context", () => {
         await repository.write("dir/a.txt", "a changed\n")
         await repository.write("dir/b.txt", "b changed\n")
         await repository.write("unrelated.txt", "unrelated changed\n")
-      },
+      }
     })
     const controller = harness.app.controller
     const originalStageFiles = controller.stageFiles.bind(controller)
     let releaseStage: () => void = () => undefined
-    const stageGate = new Promise<void>((resolve) => { releaseStage = resolve })
+    const stageGate = new Promise<void>((resolve) => {
+      releaseStage = resolve
+    })
     controller.stageFiles = async (paths) => {
       await stageGate
       await originalStageFiles(paths)
     }
-
 
     await harness.pressKey("2")
     await harness.pressKey("j")
@@ -971,7 +981,7 @@ describe("commit files transient context", () => {
         await repository.write("a.txt", "staged a\n")
         await repository.git(["add", "a.txt"])
         await repository.write("b.txt", "unstaged b\n")
-      },
+      }
     })
     const commandLogBefore = harness.app.controller.state.commandLog.length
 
@@ -1008,7 +1018,7 @@ describe("commit files transient context", () => {
         await repository.git(["commit", "-m", "master"])
         await repository.git(["merge", "side"])
         await repository.write("other.txt", "other changed\n")
-      },
+      }
     })
 
     await harness.pressKey("2")
@@ -1034,7 +1044,7 @@ describe("commit files transient context", () => {
         await repository.git(["add", "dir/a.txt", "dir/b.txt"])
         await repository.write("dir/a.txt", "unstaged a\n")
         await repository.write("dir/b.txt", "unstaged b\n")
-      },
+      }
     })
 
     await harness.pressKey("2")
@@ -1059,7 +1069,7 @@ describe("commit files transient context", () => {
         await repository.git(["commit", "-m", "base"])
         await repository.write("dir/a.txt", "changed a\n")
         await repository.write("dir/b.txt", "changed b\n")
-      },
+      }
     })
 
     await harness.pressKey("2")

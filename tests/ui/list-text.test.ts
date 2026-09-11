@@ -1,14 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { TextAttributes, TextRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
-import {
-  createListState,
-  expandListRangeSelection,
-  moveListSelection,
-  renderListRows,
-  toggleListRangeSelection,
-  type ListRow,
-} from "../../src/ui/list-view"
+import { createListState, expandListRangeSelection, moveListSelection, renderListRows, toggleListRangeSelection, type ListRow } from "../../src/ui/list-view"
 import { installListText, releaseListText } from "../../src/ui/panes/list-text"
 import { ANSI_GREEN } from "../../src/ui/theme"
 import { cellWidth } from "../../src/domain/diff/cell-width"
@@ -22,13 +15,10 @@ function rows(count: number): ListRow[] {
       {
         text: "●○",
         priority: 0,
-        segments: [
-          { text: "●", color: ANSI_GREEN },
-          { text: "○" },
-        ],
+        segments: [{ text: "●", color: ANSI_GREEN }, { text: "○" }]
       },
-      { text: "2d ago", priority: 4, style: "dim" as const },
-    ],
+      { text: "2d ago", priority: 4, style: "dim" as const }
+    ]
   }))
 }
 
@@ -36,7 +26,10 @@ const WIDTH = 100
 
 type Span = { text: string; fg: { intent: string; slot: number }; bg: { intent: string; a: number }; attributes: number }
 
-async function textWith(width = WIDTH, height = 40): Promise<{
+async function textWith(
+  width = WIDTH,
+  height = 40
+): Promise<{
   text: TextRenderable
   flush: () => Promise<void>
   destroy: () => void
@@ -48,7 +41,7 @@ async function textWith(width = WIDTH, height = 40): Promise<{
     content: "",
     width,
     height,
-    selectable: true,
+    selectable: true
   })
   setup.renderer.root.add(text)
   text.wrapMode = "none"
@@ -57,16 +50,14 @@ async function textWith(width = WIDTH, height = 40): Promise<{
     flush: () => setup.flush(),
     destroy: () => setup.renderer.destroy(),
     spans: () =>
-      setup
-        .captureSpans()
-        .lines.map((line) =>
-          line.spans.map((span) => ({
-            text: span.text,
-            fg: span.fg as unknown as { intent: string; slot: number },
-            bg: span.bg as unknown as { intent: string; a: number },
-            attributes: (span as unknown as { attributes: number }).attributes,
-          })),
-        ),
+      setup.captureSpans().lines.map((line) =>
+        line.spans.map((span) => ({
+          text: span.text,
+          fg: span.fg as unknown as { intent: string; slot: number },
+          bg: span.bg as unknown as { intent: string; a: number },
+          attributes: (span as unknown as { attributes: number }).attributes
+        }))
+      )
   }
 }
 
@@ -157,7 +148,6 @@ describe("list text painter", () => {
     }
   })
 
-
   test("paints a keyboard range and follows its endpoint", async () => {
     const pane = await textWith()
     try {
@@ -199,7 +189,7 @@ describe("list text painter", () => {
       expect(before[1]!.some((span) => span.fg.intent === "indexed" && span.fg.slot === 2)).toBe(true)
       const yellowRows = rows(3).map((row) => ({
         ...row,
-        columns: row.columns.map((column, index) => (index === 0 ? { ...column, style: "yellow" as const } : column)),
+        columns: row.columns.map((column, index) => (index === 0 ? { ...column, style: "yellow" as const } : column))
       }))
       const recoloured = createListState(yellowRows)
       installListText(pane.text, { state: recoloured, width: WIDTH, focused: false })
@@ -211,7 +201,6 @@ describe("list text painter", () => {
       pane.destroy()
     }
   })
-
 
   test("release drops the selection paint", async () => {
     const pane = await textWith()

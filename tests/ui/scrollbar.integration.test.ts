@@ -19,7 +19,7 @@ describe("scrollbar and gesture capture", () => {
     expect(bar.visible).toBe(true)
     expect({ screenY: bar.screenY, height: bar.height }).toEqual({
       screenY: geometry.screenY,
-      height: geometry.height,
+      height: geometry.height
     })
   })
 
@@ -32,36 +32,23 @@ describe("scrollbar and gesture capture", () => {
         for (const index of Array.from({ length: 10 }, (_, i) => i)) {
           await repository.write("a.txt", `old ${index}\n`)
           await repository.git(["add", "a.txt"])
-          await repository.git([
-            "commit",
-            "-m",
-            "A subject that fills the available panel width",
-            `--date=${new Date(now - (24 + index) * 3_600_000).toISOString()}`,
-          ])
+          await repository.git(["commit", "-m", "A subject that fills the available panel width", `--date=${new Date(now - (24 + index) * 3_600_000).toISOString()}`])
         }
         await repository.write("a.txt", "twelve\n")
         await repository.git(["add", "a.txt"])
-        await repository.git([
-          "commit",
-          "-m",
-          "A subject that fills the available panel width",
-          `--date=${new Date(now - 12 * 3_600_000).toISOString()}`,
-        ])
+        await repository.git(["commit", "-m", "A subject that fills the available panel width", `--date=${new Date(now - 12 * 3_600_000).toISOString()}`])
         await repository.write("a.txt", "two\n")
         await repository.git(["add", "a.txt"])
-        await repository.git([
-          "commit",
-          "-m",
-          "A subject that fills the available panel width",
-          `--date=${new Date(now - 2 * 3_600_000).toISOString()}`,
-        ])
-      },
+        await repository.git(["commit", "-m", "A subject that fills the available panel width", `--date=${new Date(now - 2 * 3_600_000).toISOString()}`])
+      }
     })
-    const view = harness.app.view!
     await harness.pressKey("4")
     await harness.flush()
     const geometry = harness.paneTextGeometry("commits")!
-    const lines = harness.frame().split("\n").slice(geometry.screenY, geometry.screenY + geometry.height)
+    const lines = harness
+      .frame()
+      .split("\n")
+      .slice(geometry.screenY, geometry.screenY + geometry.height)
     expect(lines.some((line) => /\b2h\b/.test(line))).toBe(true)
     expect(lines.some((line) => /\b12h\b/.test(line))).toBe(true)
   })
@@ -69,7 +56,7 @@ describe("scrollbar and gesture capture", () => {
     harness = await createShellHarness({
       commits: Array.from({ length: 8 }, (_, i) => `threshold ${i}`),
       width: 150,
-      height: 40,
+      height: 40
     })
     const view = harness.app.view!
     await harness.pressKey("5")
@@ -79,7 +66,7 @@ describe("scrollbar and gesture capture", () => {
     expect(bar.visible).toBe(true)
     expect({ screenY: bar.screenY, height: bar.height }).toEqual({
       screenY: geometry.screenY,
-      height: geometry.height,
+      height: geometry.height
     })
   })
 
@@ -87,7 +74,7 @@ describe("scrollbar and gesture capture", () => {
     harness = await createShellHarness({
       commits: Array.from({ length: 8 }, (_, i) => `threshold ${i}`),
       width: 150,
-      height: 40,
+      height: 40
     })
     const view = harness.app.view!
     const before = paneScrollbar(view.commitsPane.text)!
@@ -98,14 +85,14 @@ describe("scrollbar and gesture capture", () => {
     expect(bar.visible).toBe(true)
     expect({ screenY: bar.screenY, height: bar.height }).toEqual({
       screenY: geometry.screenY,
-      height: geometry.height,
+      height: geometry.height
     })
   })
   test("reserves the scrollbar gutter in a narrow full-height pane", async () => {
     harness = await createShellHarness({
       commits: Array.from({ length: 8 }, (_, i) => `threshold ${i}`),
       width: 10,
-      height: 10,
+      height: 10
     })
     const view = harness.app.view!
     await harness.pressKey("+")

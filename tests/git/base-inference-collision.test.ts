@@ -25,9 +25,7 @@ describe("base ref identity", () => {
 
       const result = await inferReviewBase(runner)
       expect(result.kind).toBe("choose")
-      expect(result.candidates.filter(({ label }) => label === "origin/main").map(({ ref }) => ref)).toEqual([
-        "refs/heads/origin/main", "refs/remotes/origin/main",
-      ])
+      expect(result.candidates.filter(({ label }) => label === "origin/main").map(({ ref }) => ref)).toEqual(["refs/heads/origin/main", "refs/remotes/origin/main"])
       expect(await resolveRefOid(runner, "refs/heads/origin/main")).toBe(localOid)
       expect(await resolveRefOid(runner, "refs/remotes/origin/main")).toBe(baseOid)
       const preferred = await inferReviewBase(runner, "refs/remotes/origin/main")

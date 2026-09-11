@@ -12,19 +12,7 @@ function snapshot(repositoryRoot: string, patch: string, files = [{ path: "a.ts"
     branch: "main",
     reviewTarget: { kind: "working-tree", scope: "all" },
     files,
-    patches: [{ label: "UNSTAGED", text: patch }],
-  }
-}
-
-function stashSnapshot(repositoryRoot: string, patch: string, ref = "stash@{0}"): WorkingTreeSnapshot {
-  // For stash coverage we reuse AppController's stash path via direct store interaction
-  // but simulate via working-tree target for fingerprint cycle
-  return {
-    repositoryRoot,
-    branch: "main",
-    reviewTarget: { kind: "working-tree", scope: "all" },
-    files: [{ path: "a.ts", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 }],
-    patches: [{ label: "STAGED", text: patch }],
+    patches: [{ label: "UNSTAGED", text: patch }]
   }
 }
 
@@ -76,10 +64,12 @@ describe("working tree invalidation", () => {
       const controller = new AppController({
         repositoryRoot: repository.path,
         reviewStore: store,
-        load: async () => snapshot(repository.path, patch),
+        load: async () => snapshot(repository.path, patch)
       })
       await controller.refresh()
-      store.load = async () => { throw new Error("unchanged review state should not be reloaded") }
+      store.load = async () => {
+        throw new Error("unchanged review state should not be reloaded")
+      }
       await controller.refreshFiles()
       expect(controller.state.banner).toBeUndefined()
       expect(controller.state.reviewStatuses?.["a.ts"]).toBe("not-reviewed")
@@ -99,9 +89,12 @@ describe("working tree invalidation", () => {
         reviewStore: store,
         load: async () => {
           loads += 1
-          if (loads === 2) return new Promise<WorkingTreeSnapshot>((resolve) => { release = resolve })
+          if (loads === 2)
+            return new Promise<WorkingTreeSnapshot>((resolve) => {
+              release = resolve
+            })
           return snapshot(repository.path, patch)
-        },
+        }
       })
       await controller.refresh()
       const refresh = controller.refreshFiles()
@@ -123,12 +116,16 @@ describe("working tree invalidation", () => {
       let snapshotLoads = 0
       let signalStoreLoadStarted: (() => void) | undefined
       let releaseStoreLoad: (() => void) | undefined
-      const storeLoadStarted = new Promise<void>((resolve) => { signalStoreLoadStarted = resolve })
+      const storeLoadStarted = new Promise<void>((resolve) => {
+        signalStoreLoadStarted = resolve
+      })
       store.load = async () => {
         storeLoads += 1
         if (storeLoads === 2) {
           signalStoreLoadStarted?.()
-          await new Promise<void>((resolve) => { releaseStoreLoad = resolve })
+          await new Promise<void>((resolve) => {
+            releaseStoreLoad = resolve
+          })
         }
         return originalLoad()
       }
@@ -141,7 +138,7 @@ describe("working tree invalidation", () => {
           const loaded = snapshot(repository.path, patch)
           if (snapshotLoads === 1) return loaded
           return { ...loaded, files: loaded.files.map((file) => ({ ...file, additions: file.additions + 1 })) }
-        },
+        }
       })
       await controller.refresh()
       const refresh = controller.refreshFiles()
@@ -160,15 +157,17 @@ describe("working tree invalidation", () => {
     const controller = new AppController({
       repositoryRoot: "/tmp/repo",
       load: async () => ({ ...snapshot("/tmp/repo", ""), branch }),
-      loadCommits: async () => [{
-        oid: "a".repeat(40),
-        shortOid: "a".repeat(8),
-        parentOids: [],
-        authorName: "Author",
-        authoredAt: "2026-09-07T00:00:00.000Z",
-        subject,
-        body: "",
-      }],
+      loadCommits: async () => [
+        {
+          oid: "a".repeat(40),
+          shortOid: "a".repeat(8),
+          parentOids: [],
+          authorName: "Author",
+          authoredAt: "2026-09-07T00:00:00.000Z",
+          subject,
+          body: ""
+        }
+      ]
     })
     await controller.refresh()
     branch = "feature"
@@ -185,7 +184,7 @@ describe("working tree invalidation", () => {
       load: async () => {
         if (fail) throw new Error("temporary refresh failure")
         return snapshot("/tmp/repo", "")
-      },
+      }
     })
     await controller.refresh()
     fail = true
@@ -202,15 +201,17 @@ describe("working tree invalidation", () => {
     const controller = new AppController({
       repositoryRoot: "/tmp/repo",
       load: async () => snapshot("/tmp/repo", patch),
-      loadCommits: async () => [{
-        oid: "a".repeat(40),
-        shortOid: "a".repeat(8),
-        parentOids: [],
-        authorName: "Author",
-        authoredAt: "2026-09-07T00:00:00.000Z",
-        subject,
-        body: "",
-      }],
+      loadCommits: async () => [
+        {
+          oid: "a".repeat(40),
+          shortOid: "a".repeat(8),
+          parentOids: [],
+          authorName: "Author",
+          authoredAt: "2026-09-07T00:00:00.000Z",
+          subject,
+          body: ""
+        }
+      ]
     })
     await controller.refresh()
     subject = "background reload"
@@ -234,7 +235,7 @@ describe("working tree invalidation", () => {
       const controller = new AppController({
         runner: new GitRunner({ cwd: repository.path }),
         reviewStore: new WorkingTreeReviewStore(repository.path),
-        load: async () => snapshot(repository.path, patch),
+        load: async () => snapshot(repository.path, patch)
       })
       await controller.refresh()
       const stash = controller.state.stashes?.[0]
@@ -258,14 +259,14 @@ describe("working tree invalidation", () => {
     try {
       const files = [
         { path: "a.ts", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 },
-        { path: "b.ts", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 },
+        { path: "b.ts", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 }
       ]
       const patch = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-a\n+a\ndiff --git a/b.ts b/b.ts\n@@ -1 +1 @@\n-b\n+b\n"
       let current = files
       const controller = new AppController({
         repositoryRoot: repository.path,
         reviewStore: new WorkingTreeReviewStore(repository.path),
-        load: async () => snapshot(repository.path, patch, current),
+        load: async () => snapshot(repository.path, patch, current)
       })
       await controller.refresh()
       controller.selectFile("a.ts")
@@ -286,7 +287,7 @@ describe("working tree invalidation", () => {
       const controller = new AppController({
         repositoryRoot: repository.path,
         reviewStore: new WorkingTreeReviewStore(repository.path),
-        load: async () => snapshot(repository.path, patch),
+        load: async () => snapshot(repository.path, patch)
       })
       await controller.refresh()
       await controller.markFocusedFileReviewed()

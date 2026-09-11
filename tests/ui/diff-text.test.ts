@@ -12,15 +12,7 @@ function patchText(lines: number): string {
   for (let index = 0; index < lines; index++) {
     body.push(index % 2 === 0 ? `-line ${index} before padding padding` : `+line ${index} after padding padding`)
   }
-  return [
-    "diff --git a/big.txt b/big.txt",
-    "index 1111111..2222222 100644",
-    "--- a/big.txt",
-    "+++ b/big.txt",
-    `@@ -1,${lines} +1,${lines} @@`,
-    ...body,
-    "",
-  ].join("\n")
+  return ["diff --git a/big.txt b/big.txt", "index 1111111..2222222 100644", "--- a/big.txt", "+++ b/big.txt", `@@ -1,${lines} +1,${lines} @@`, ...body, ""].join("\n")
 }
 
 type Pane = {
@@ -40,7 +32,7 @@ async function paneWith(lines: number): Promise<Pane> {
     text,
     install: () => installDiffText(text, { preamble: "", body: rendered.displayText, displayLines: rendered.displayLines }),
     flush: () => setup.flush(),
-    destroy: () => setup.renderer.destroy(),
+    destroy: () => setup.renderer.destroy()
   }
 }
 
@@ -144,18 +136,7 @@ describe("diff text installation", () => {
       const text = new TextRenderable(setup.renderer, { id: "main-text", content: "", width: 118, height: 18, selectable: true })
       setup.renderer.root.add(text)
       text.wrapMode = "char"
-      const preamble = [
-        "commit abc",
-        "",
-        "    release | 1 +-",
-        "",
-        "---",
-        " src/中.txt | 2 +-",
-        " data.bin | Bin 9 -> 16 bytes",
-        " mode.bin | Bin",
-        " 3 files changed, 1 insertion(+), 1 deletion(-)",
-        "",
-      ].join("\n")
+      const preamble = ["commit abc", "", "    release | 1 +-", "", "---", " src/中.txt | 2 +-", " data.bin | Bin 9 -> 16 bytes", " mode.bin | Bin", " 3 files changed, 1 insertion(+), 1 deletion(-)", ""].join("\n")
       const rendered = renderDiff(parseDiff(patchText(1)))
       installDiffText(text, { preamble, body: rendered.displayText, displayLines: rendered.displayLines })
       await setup.flush()

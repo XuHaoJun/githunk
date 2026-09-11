@@ -43,10 +43,12 @@
 ### Task 1: Cap `git log` at 300
 
 **Files:**
+
 - Modify: `src/git/commits.ts:9-10,37-50`
 - Test: `tests/git/commits.test.ts:92-105`
 
 **Interfaces:**
+
 - Consumes: nothing new.
 - Produces: `COMMITS_LIMIT`, `listCommits(runner, range, filter?, options?: { readonly limit?: boolean })` for Task 2.
 
@@ -59,7 +61,7 @@ test("limits the initial walk to 300 commits like lazygit", async () => {
     run: async (args: readonly string[]) => {
       calls.push([...args])
       return { exitCode: 0, stdout: "", stderr: "", record: {} as never }
-    },
+    }
   }
   await listCommits(runner as never, "HEAD")
   // lazygit's `ArgIf(opts.Limit, "-300")` (commit_loader.go:597).
@@ -72,7 +74,7 @@ test("loads the full walk when explicitly unlimited", async () => {
     run: async (args: readonly string[]) => {
       calls.push([...args])
       return { exitCode: 0, stdout: "", stderr: "", record: {} as never }
-    },
+    }
   }
   await listCommits(runner as never, "HEAD", undefined, { limit: false })
   expect(calls[0]).not.toContain("-300")
@@ -99,12 +101,7 @@ export const COMMITS_LIMIT = 300
 Change the signature and argv build:
 
 ```ts
-export async function listCommits(
-  runner: CommandRunner,
-  range: string,
-  filter?: string,
-  options?: { readonly limit?: boolean },
-): Promise<readonly CommitSummary[]> {
+export async function listCommits(runner: CommandRunner, range: string, filter?: string, options?: { readonly limit?: boolean }): Promise<readonly CommitSummary[]> {
   // `--topo-order` is lazygit's default `git.log.order`: it keeps a branch's commits
   // contiguous so the rendered graph reads as lanes rather than an interleaved tangle.
   const args = ["log", "-z", "--topo-order", `--format=${LOG_FORMAT}`]
@@ -136,10 +133,12 @@ git_commands/commit_loader.go:597); do the same, default-limited."
 ### Task 2: Controller limit flag, expand, branch re-limit
 
 **Files:**
+
 - Modify: `src/app/controller.ts` (`CommitListLoader` type near line 56, `loadCommitHistory` at 1270, `refreshTarget` flow, `loadBranchCommits` at 902, `switchLocalBranch` at 503)
 - Test: `tests/app/controller.test.ts` (mirror the file-local `snapshot` helper and injected-`loadCommits` pattern at lines 22-30, 123-126)
 
 **Interfaces:**
+
 - Consumes: Task 1's `listCommits` options.
 - Produces: `controller.expandCommits(): Promise<boolean>`, `controller.commitsLimited` read for tests, limited-by-default history for Task 4.
 
@@ -267,10 +266,12 @@ with -300 until the UI asks for the rest; branch switches re-arm the bound
 ### Task 3: `loadCommits` seam through create-app and shell-harness
 
 **Files:**
+
 - Modify: `src/app/create-app.ts` (options type + `AppController` construction + view wiring area near lines 335-337)
 - Modify: `tests/helpers/shell-harness.ts` (options + `createApp` call near lines 36-37, 164-173)
 
 **Interfaces:**
+
 - Consumes: Task 2's loader options type.
 - Produces: injectable `loadCommits` for Task 4's UI test.
 
@@ -304,12 +305,14 @@ Same shape as the existing loadBranchCommits override; no behavior change."
 ### Task 4: O(1) edge jump plus auto-expand in root-view
 
 **Files:**
+
 - Modify: `src/ui/panes/commits-pane.ts` (export threshold)
 - Modify: `src/ui/root-view.ts` (`actionJump` at 1938-1974, commits cursor case at 1784-1806, `handleGenericFilterKey` at 1618-1641, options near 226-230)
 - Modify: `src/app/create-app.ts` (wire `onExpandCommits`)
 - Test: create `tests/ui/commits-pagination.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: Tasks 2-3 (`expandCommits`, `loadCommits` seam).
 - Produces: responsive `End`/`Home` on huge histories; the hang's actual fix.
 
@@ -337,7 +340,7 @@ function syntheticCommits(total: number) {
     parentOids: [],
     authorName: "Author",
     authoredAt: "2026-01-01T00:00:00Z",
-    subject: `synthetic commit ${i}`,
+    subject: `synthetic commit ${i}`
   }))
 }
 
@@ -345,8 +348,7 @@ describe("commits pagination", () => {
   test("End jumps to the oldest loaded commit after expanding", async () => {
     const all = syntheticCommits(1000)
     const harness = await createShellHarness({
-      loadCommits: (async (_range: string, _filter?: string, options?: { readonly limit?: boolean }) =>
-        (options?.limit ?? true ? all.slice(0, 300) : all)) as never,
+      loadCommits: (async (_range: string, _filter?: string, options?: { readonly limit?: boolean }) => ((options?.limit ?? true) ? all.slice(0, 300) : all)) as never
     })
     try {
       // focus the commits pane, then End
@@ -410,12 +412,12 @@ private maybeExpandCommits(selectedIndex: number): void {
 ```
 
 c) Search hook in `actionFilter` when the commits search prompt opens (lazygit's
-  `openSearch`, local_commits_controller.go:1672-1680). NOT per keystroke in
-  `handleGenericFilterKey` — that was tried and reverted: the late expand
-  `update` closes the in-progress filter session, so `RETURN` fell through to
-  drill-down and broke the Commits-tab filter test. The expand repaint passes
-  `{ preserveFilterInput: true }` (new `update()` option, create-app wiring)
-  so the just-opened prompt survives:
+`openSearch`, local_commits_controller.go:1672-1680). NOT per keystroke in
+`handleGenericFilterKey` — that was tried and reverted: the late expand
+`update` closes the in-progress filter session, so `RETURN` fell through to
+drill-down and broke the Commits-tab filter test. The expand repaint passes
+`{ preserveFilterInput: true }` (new `update()` option, create-app wiring)
+so the just-opened prompt survives:
 
 ```ts
 // lazygit loads the full history when the commits search opens
@@ -446,10 +448,7 @@ const direct = selectListRow(active.state, targetId)
 if (direct === active.state) return
 // A sticky range extends to the edge (one step would keep extending it);
 // `selectListRow` clears ranges, so re-apply the sticky endpoints.
-const next =
-  active.state.rangeMode === "sticky" && active.state.rangeStartId !== undefined
-    ? { ...direct, rangeMode: active.state.rangeMode, rangeStartId: active.state.rangeStartId }
-    : direct
+const next = active.state.rangeMode === "sticky" && active.state.rangeStartId !== undefined ? { ...direct, rangeMode: active.state.rangeMode, rangeStartId: active.state.rangeStartId } : direct
 this.updateActiveListState(paneId, next)
 this.renderListPane(paneId)
 this.revealListRow(paneId, this.panes[paneId], next.selectedIndex)
@@ -511,6 +510,7 @@ past row 200, on End, and on search (local_commits_controller.go:22,1674,1793)."
 ### Task 5: Drill-down cap, docs note, full gate
 
 **Files:**
+
 - Covered by Task 2c (`loadBranchCommits` already passes the flag — verify).
 - Modify: `docs/lazygit-compatibility-v0.1.md` row 3 (append one clause).
 - Verify: full gate + real-repo timing.

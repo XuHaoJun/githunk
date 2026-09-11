@@ -40,20 +40,7 @@ describe("scrollYToReveal", () => {
 })
 
 describe("mainCursorTargetLine", () => {
-  const patch = [
-    "diff --git a/a.txt b/a.txt",
-    "index 1111111..2222222 100644",
-    "--- a/a.txt",
-    "+++ b/a.txt",
-    "@@ -1,2 +1,2 @@",
-    "-old one",
-    "+new one",
-    " context",
-    "diff --git a/b.bin b/b.bin",
-    "index 3333333..4444444 100644",
-    "Binary files /dev/null and b/bin differ",
-    "",
-  ].join("\n")
+  const patch = ["diff --git a/a.txt b/a.txt", "index 1111111..2222222 100644", "--- a/a.txt", "+++ b/a.txt", "@@ -1,2 +1,2 @@", "-old one", "+new one", " context", "diff --git a/b.bin b/b.bin", "index 3333333..4444444 100644", "Binary files /dev/null and b/bin differ", ""].join("\n")
 
   const document = parseDiff(patch)
 

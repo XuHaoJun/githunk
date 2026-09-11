@@ -7,7 +7,7 @@ describe("pane geometry", () => {
       terminalWidth: 120,
       leftWidth: 30,
       splitterX: 30,
-      rightWidth: 89,
+      rightWidth: 89
     })
   })
 

@@ -29,12 +29,12 @@ The installed OpenTUI 0.5.6 API provides `RGBA.fromIndex`, `RGBA.defaultForegrou
 
 `src/ui/theme.ts` becomes the single semantic color source:
 
-| Semantic | Representation | lazygit equivalent |
-| --- | --- | --- |
-| ANSI 0-255 | `RGBA.fromIndex(index)` | `gocui.Color*` / tcell indexed color |
-| terminal foreground | `RGBA.defaultForeground()` | `ColorDefault` foreground |
-| terminal background | `RGBA.defaultBackground()` | `ColorDefault` background |
-| explicit truecolor | `RGBA.fromInts(...)` or existing RGB result | gocui/tcell RGB color |
+| Semantic            | Representation                              | lazygit equivalent                   |
+| ------------------- | ------------------------------------------- | ------------------------------------ |
+| ANSI 0-255          | `RGBA.fromIndex(index)`                     | `gocui.Color*` / tcell indexed color |
+| terminal foreground | `RGBA.defaultForeground()`                  | `ColorDefault` foreground            |
+| terminal background | `RGBA.defaultBackground()`                  | `ColorDefault` background            |
+| explicit truecolor  | `RGBA.fromInts(...)` or existing RGB result | gocui/tcell RGB color                |
 
 The module exports named base and bright ANSI tokens plus default foreground/background tokens. `RGBA` values are treated as immutable by convention; callers never mutate a shared token.
 

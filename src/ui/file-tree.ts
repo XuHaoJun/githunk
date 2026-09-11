@@ -145,10 +145,7 @@ function compareAscii(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
-export function nodeSortComparator<T>(
-  sortOrder: FileTreeSortOrder,
-  caseSensitive: boolean,
-): (a: FileTreeNode<T>, b: FileTreeNode<T>) => number {
+export function nodeSortComparator<T>(sortOrder: FileTreeSortOrder, caseSensitive: boolean): (a: FileTreeNode<T>, b: FileTreeNode<T>) => number {
   const compare = caseSensitive ? compareAscii : (a: string, b: string) => compareAscii(a.toLowerCase(), b.toLowerCase())
 
   // The value returned when `a` is a directory and `b` is a file.
@@ -323,9 +320,7 @@ function fileNameAtDepth<T>(node: FileTreeNode<T>, depth: number, options: FileT
   const splitPrevName = splitFileTreePath(previousPath, options.showRootItem ?? false)
   // If the file has just been renamed inside the same directory we can shave off
   // the prefix for the previous path too. Otherwise we keep it unchanged.
-  const sameParentDir =
-    splitName.length === splitPrevName.length &&
-    splitName.slice(0, nameDepth).join("/") === splitPrevName.slice(0, nameDepth).join("/")
+  const sameParentDir = splitName.length === splitPrevName.length && splitName.slice(0, nameDepth).join("/") === splitPrevName.slice(0, nameDepth).join("/")
   const prevName = sameParentDir ? splitPrevName.slice(nameDepth).join("/") : previousPath
 
   return `${prevName} → ${name}`
@@ -342,7 +337,7 @@ function appendRows<T>(
   treeDepth: number,
   visualDepth: number,
   options: FileTreeOptions<T>,
-  out: FileTreeRow<T>[],
+  out: FileTreeRow<T>[]
 ): void {
   const isRoot = treeDepth === -1
   const common = {
@@ -352,7 +347,7 @@ function appendRows<T>(
     treeDepth,
     visualDepth,
     indentation: "  ".repeat(Math.max(0, visualDepth)),
-    node,
+    node
   }
 
   if (isFileNode(node)) {
@@ -365,7 +360,7 @@ function appendRows<T>(
       kind: "file",
       collapsed: false,
       payload,
-      ...(status !== undefined ? { status } : {}),
+      ...(status !== undefined ? { status } : {})
     })
     return
   }
@@ -377,7 +372,7 @@ function appendRows<T>(
       id: `dir:${node.path}`,
       kind: "directory",
       collapsed,
-      arrow: collapsed ? COLLAPSED_ARROW : EXPANDED_ARROW,
+      arrow: collapsed ? COLLAPSED_ARROW : EXPANDED_ARROW
     })
   }
 
@@ -388,11 +383,7 @@ function appendRows<T>(
   }
 }
 
-export function renderFileTreeRows<T>(
-  root: FileTreeNode<T>,
-  collapsedPaths: CollapsedPaths,
-  options: FileTreeOptions<T>,
-): FileTreeRow<T>[] {
+export function renderFileTreeRows<T>(root: FileTreeNode<T>, collapsedPaths: CollapsedPaths, options: FileTreeOptions<T>): FileTreeRow<T>[] {
   const rows: FileTreeRow<T>[] = []
   appendRows(root, collapsedPaths, -1, -1, options, rows)
   return rows
@@ -416,11 +407,7 @@ function buildRoot<T>(items: readonly T[], mode: FileTreeMode, options: FileTree
   return mode === "tree" ? buildTreeFromFiles(items, options) : buildFlatTreeFromFiles(items, options)
 }
 
-export function createFileTreeState<T>(
-  items: readonly T[],
-  options: FileTreeOptions<T>,
-  mode: FileTreeMode = "tree",
-): FileTreeState<T> {
+export function createFileTreeState<T>(items: readonly T[], options: FileTreeOptions<T>, mode: FileTreeMode = "tree"): FileTreeState<T> {
   return { mode, items, root: buildRoot(items, mode, options), collapsedPaths: emptyCollapsedPaths(), options }
 }
 

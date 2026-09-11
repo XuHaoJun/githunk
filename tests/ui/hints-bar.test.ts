@@ -18,7 +18,7 @@ function model(overrides: Partial<AppModel> = {}): AppModel {
     commandLog: [],
     title: "Working Tree — Unstaged",
     commits: [],
-    ...overrides,
+    ...overrides
   } as AppModel
 }
 
@@ -31,14 +31,14 @@ describe("reviewStatusText", () => {
     const invalidated = model({
       reviewSummary: { reviewed: 17, invalidated: 2, commits: 7, files: 24, additions: 0, deletions: 0 },
       reviewTarget: { kind: "stash", ref: "stash@{0}" },
-      title: "Stash — stash@{0}",
+      title: "Stash — stash@{0}"
     })
     expect(reviewStatusText(invalidated)).toBe("Stash — stash@{0}  17/24 ●  2!")
   })
 
   test("omits the progress segment when there are no files", () => {
     const empty = model({
-      reviewSummary: { reviewed: 0, invalidated: 0, commits: 0, files: 0, additions: 0, deletions: 0 },
+      reviewSummary: { reviewed: 0, invalidated: 0, commits: 0, files: 0, additions: 0, deletions: 0 }
     })
     expect(reviewStatusText(empty)).toBe("Working Tree — Unstaged")
   })
@@ -53,7 +53,7 @@ describe("renderMenuLines", () => {
   const entries: readonly MenuEntry[] = [
     { group: "context", keys: "space", description: "stage the selected file", enabled: true },
     { group: "context", keys: "d", description: "discard the file's changes", enabled: false },
-    { group: "global", keys: "q", description: "quit", enabled: true },
+    { group: "global", keys: "q", description: "quit", enabled: true }
   ]
 
   test("groups context bindings under the pane name and global ones after", () => {
@@ -69,10 +69,13 @@ describe("renderMenuLines", () => {
   })
 
   test("aligns the key column to the widest key", () => {
-    const lines = renderMenuLines([
-      { group: "context", keys: "space", description: "stage", enabled: true },
-      { group: "context", keys: "d", description: "discard", enabled: true },
-    ], "Files")
+    const lines = renderMenuLines(
+      [
+        { group: "context", keys: "space", description: "stage", enabled: true },
+        { group: "context", keys: "d", description: "discard", enabled: true }
+      ],
+      "Files"
+    )
     expect(lines[1]).toBe("  space  stage")
     expect(lines[2]).toBe("  d      discard")
   })

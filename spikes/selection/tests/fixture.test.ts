@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  LEFT_FIXTURE,
-  PATCH_FIXTURE,
-  PATCH_SENTINELS,
-} from "../src/fixtures/patch"
+import { LEFT_FIXTURE, PATCH_FIXTURE, PATCH_SENTINELS } from "../src/fixtures/patch"
 
 describe("selection spike fixtures", () => {
   test("left fixture is dense enough to expose row contamination", () => {

@@ -2,7 +2,7 @@ import type { ReviewAction } from "./actions"
 import type { ReviewState, ReviewLineSelection } from "./state"
 import { createLineSelection } from "./anchors"
 import type { ReviewProjection } from "./types"
-import type { ReviewAnchor, ReviewFeedback, ReviewFeedbackDraft } from "./types"
+import type { ReviewAnchor } from "./types"
 export type ReviewIntent =
   | { type: "selection/select-file"; fileKey: string }
   | { type: "selection/move"; unit: "file" | "hunk"; direction: "next" | "previous" }
@@ -24,20 +24,7 @@ export type ReviewIntent =
   | { type: "feedback/reanchor"; id: string; anchor: ReviewAnchor; updatedAt: string }
   | { type: "feedback/next" }
   | { type: "feedback/previous" }
-export type ReviewIntentValidationCode =
-  | "file-not-found"
-  | "hunk-not-found"
-  | "projection-invalid"
-  | "gap-not-found"
-  | "query-invalid"
-  | "commit-not-found"
-  | "anchor-invalid"
-  | "suggestion-invalid"
-  | "draft-missing"
-  | "draft-exists"
-  | "feedback-not-found"
-  | "body-invalid"
-  | "id-invalid"
+export type ReviewIntentValidationCode = "file-not-found" | "hunk-not-found" | "projection-invalid" | "gap-not-found" | "query-invalid" | "commit-not-found" | "anchor-invalid" | "suggestion-invalid" | "draft-missing" | "draft-exists" | "feedback-not-found" | "body-invalid" | "id-invalid"
 
 export class ReviewIntentValidationError extends Error {
   readonly code: ReviewIntentValidationCode
@@ -159,7 +146,8 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
       }
       return { type: "selection/set-line", selection: s }
     }
-    case "selection/move-line": return { type: "selection/move-line", direction: intent.direction }
+    case "selection/move-line":
+      return { type: "selection/move-line", direction: intent.direction }
     case "selection/viewport-anchor": {
       validateFileKey(state, intent.fileKey)
       validateHunkBounds(state, intent.fileKey, intent.hunkIndex)
@@ -167,7 +155,7 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
         type: "selection/viewport-anchor",
         fileKey: intent.fileKey,
         hunkIndex: intent.hunkIndex,
-        ...(intent.reveal ? { reveal: intent.reveal } : {}),
+        ...(intent.reveal ? { reveal: intent.reveal } : {})
       }
     }
     case "filter/set-query": {
@@ -208,7 +196,7 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
         path: file.path,
         contentId: file.contentId,
         generationId: state.document.generation.id,
-        viewedAt: intent.viewedAt,
+        viewedAt: intent.viewedAt
       } as const
       return { type: "viewed/mark", fileKey: intent.fileKey, record }
     }
@@ -226,7 +214,7 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
         kind: intent.kind,
         severity: intent.severity,
         body,
-        ...(intent.replacement !== undefined ? { replacement: intent.replacement } : {}),
+        ...(intent.replacement !== undefined ? { replacement: intent.replacement } : {})
       } as const
       return { type: "feedback/start-draft", draft }
     }
@@ -284,7 +272,7 @@ export function planReviewIntent(state: ReviewState, intent: ReviewIntent): Revi
         anchor: draft.anchor,
         resolution: "active" as const,
         createdAt: intent.createdAt,
-        updatedAt: intent.createdAt,
+        updatedAt: intent.createdAt
       } as const
       return { type: "feedback/create", feedback }
     }

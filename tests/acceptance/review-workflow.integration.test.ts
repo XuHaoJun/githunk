@@ -18,19 +18,15 @@ async function git(cwd: string, args: readonly string[], stdin?: string): Promis
       GIT_AUTHOR_EMAIL: "githunk-acceptance@example.invalid",
       GIT_COMMITTER_NAME: "Githunk Acceptance",
       GIT_COMMITTER_EMAIL: "githunk-acceptance@example.invalid",
-      GIT_TERMINAL_PROMPT: "0",
+      GIT_TERMINAL_PROMPT: "0"
     },
     stdin: "pipe",
     stdout: "pipe",
-    stderr: "pipe",
+    stderr: "pipe"
   })
   if (stdin !== undefined) processHandle.stdin.write(stdin)
   processHandle.stdin.end()
-  const [stdout, stderr, exitCode] = await Promise.all([
-    Bun.readableStreamToText(processHandle.stdout),
-    Bun.readableStreamToText(processHandle.stderr),
-    processHandle.exited,
-  ])
+  const [stdout, stderr, exitCode] = await Promise.all([Bun.readableStreamToText(processHandle.stdout), Bun.readableStreamToText(processHandle.stderr), processHandle.exited])
   return { exitCode, stdout, stderr }
 }
 
@@ -48,22 +44,8 @@ async function commit(repository: TempRepository, path: string, content: string,
   return (await repository.git(["rev-parse", "HEAD"])).stdout.trim()
 }
 
-function patchFromShow(raw: string): string {
-  const match = /(?:^|\n)(diff --(?:git|cc) )/.exec(raw)
-  if (match === null || match.index === undefined) return ""
-  return raw.slice(match.index + (match[0].startsWith("\n") ? 1 : 0))
-}
-
 async function trackedDiff(cwd: string, cached: boolean): Promise<string> {
-  return (await expectGit(cwd, [
-    "diff",
-    ...(cached ? ["--cached"] : []),
-    "--no-ext-diff",
-    "--no-color",
-    "--find-renames",
-    "--binary",
-    "--",
-  ])).stdout
+  return (await expectGit(cwd, ["diff", ...(cached ? ["--cached"] : []), "--no-ext-diff", "--no-color", "--find-renames", "--binary", "--"])).stdout
 }
 
 async function untrackedDiff(cwd: string, path: string): Promise<string> {
@@ -199,7 +181,6 @@ describe("v0.1 review workflow acceptance", () => {
     await controller.refresh()
     expect((await expectGit(clonePath, ["status", "--porcelain"])).stdout).toBe("")
 
-
     const checkout = await controller.checkoutRemoteTracking({ remote: "origin", branch: "main" })
     expect(checkout).toEqual({ kind: "created", localBranch: "main", remoteRef: "origin/main" })
     expect((await expectGit(clonePath, ["branch", "--show-current"])).stdout.trim()).toBe("main")
@@ -231,7 +212,7 @@ describe("v0.1 review workflow acceptance", () => {
       reviewTarget: controller.state.reviewTarget,
       files: controller.state.files,
       patches: controller.state.patches,
-      commandLogLength: controller.state.commandLog.length,
+      commandLogLength: controller.state.commandLog.length
     }
     await expect(controller.fetch("missing-remote")).rejects.toBeInstanceOf(GitCommandError)
     expect(controller.state.title).toBe(viewBeforeFailure.title)

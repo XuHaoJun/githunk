@@ -48,7 +48,7 @@ describe("createApp real wiring", () => {
       loadPullRequests: async () => {
         loadCount += 1
         return []
-      },
+      }
     })
     await app.refresh()
 
@@ -74,15 +74,17 @@ describe("createApp real wiring", () => {
         runner: new GitRunner(repository.path),
         renderer: setup.renderer,
         background: { enabled: false },
-        loadPullRequests: async () => [{
-          number: 42,
-          title: "merged",
-          state: "MERGED",
-          checksState: "",
-          url: "",
-          headRefName: "feature",
-          headRepositoryOwner: "tmp",
-        }],
+        loadPullRequests: async () => [
+          {
+            number: 42,
+            title: "merged",
+            state: "MERGED",
+            checksState: "",
+            url: "",
+            headRefName: "feature",
+            headRepositoryOwner: "tmp"
+          }
+        ]
       })
       await app.refresh()
       await app.controller.refreshPullRequests()

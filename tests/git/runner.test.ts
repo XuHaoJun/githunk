@@ -24,7 +24,12 @@ describe("GitRunner", () => {
     expect(result.stdout.trim()).toBe(repo.path)
     expect(result.exitCode).toBe(0)
     expect(log.lines()).toHaveLength(1)
-    expect(log.lines()[0]?.spans.map((span) => span.text).join("")).toBe("  git rev-parse --show-toplevel")
+    expect(
+      log
+        .lines()[0]
+        ?.spans.map((span) => span.text)
+        .join("")
+    ).toBe("  git rev-parse --show-toplevel")
   })
 
   test("delivers stdin to Git", async () => {
@@ -34,10 +39,7 @@ describe("GitRunner", () => {
   })
 
   test("allows explicitly accepted read-only non-zero exits", async () => {
-    const result = await runner.run(
-      ["diff", "--no-index", "--", "/dev/null", "new file.ts"],
-      { acceptedExitCodes: [0, 1], readOnly: true },
-    )
+    const result = await runner.run(["diff", "--no-index", "--", "/dev/null", "new file.ts"], { acceptedExitCodes: [0, 1], readOnly: true })
 
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain("new file.ts")
@@ -45,7 +47,7 @@ describe("GitRunner", () => {
 
   test("rejects non-zero exits with the complete command record", async () => {
     await expect(runner.run(["rev-parse", "--verify", "missing-ref"])).rejects.toMatchObject({
-      record: { exitCode: 128, args: ["rev-parse", "--verify", "missing-ref"], cwd: repo.path },
+      record: { exitCode: 128, args: ["rev-parse", "--verify", "missing-ref"], cwd: repo.path }
     })
     // The command line itself, plus its failure output under "Git output:" — see "a failed
     // command's stderr lands under the same heading" below for the shape of that. Pinned here as

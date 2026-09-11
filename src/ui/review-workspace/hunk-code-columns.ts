@@ -9,11 +9,7 @@ function validTabWidth(tabWidth: number): number {
   return Math.max(1, Math.min(16, Math.floor(tabWidth)))
 }
 
-export function expandHunkDiffTabs(
-  text: string,
-  tabWidth = DEFAULT_HUNK_TAB_WIDTH,
-  initialColumn = 0,
-): string {
+export function expandHunkDiffTabs(text: string, tabWidth = DEFAULT_HUNK_TAB_WIDTH, initialColumn = 0): string {
   const width = validTabWidth(tabWidth)
   let column = Math.max(0, Math.floor(initialColumn))
   let output = ""
@@ -30,10 +26,7 @@ export function expandHunkDiffTabs(
   return output
 }
 
-export function measureHunkRenderedWidth(
-  text: string,
-  tabWidth = DEFAULT_HUNK_TAB_WIDTH,
-): number {
+export function measureHunkRenderedWidth(text: string, tabWidth = DEFAULT_HUNK_TAB_WIDTH): number {
   return cellWidth(expandHunkDiffTabs(text.replace(/\n$/u, ""), tabWidth))
 }
 
@@ -44,23 +37,13 @@ export function resolveHunkSplitPaneWidths(width: number): { leftWidth: number; 
   return { leftWidth: Math.max(0, leftWidth), rightWidth: Math.max(0, rightWidth) }
 }
 
-export function resolveHunkSplitCellGeometry(
-  width: number,
-  lineNumberDigits: number,
-  showLineNumbers: boolean,
-  prefixWidth = HUNK_DIFF_RAIL_WIDTH,
-): { gutterWidth: number; contentWidth: number } {
+export function resolveHunkSplitCellGeometry(width: number, lineNumberDigits: number, showLineNumbers: boolean, prefixWidth = HUNK_DIFF_RAIL_WIDTH): { gutterWidth: number; contentWidth: number } {
   const availableWidth = Math.max(0, Math.floor(width) - prefixWidth)
   const gutterWidth = Math.min(availableWidth, showLineNumbers ? Math.max(1, lineNumberDigits) + 3 : 2)
   return { gutterWidth, contentWidth: Math.max(0, availableWidth - gutterWidth) }
 }
 
-export function resolveHunkStackCellGeometry(
-  width: number,
-  lineNumberDigits: number,
-  showLineNumbers: boolean,
-  prefixWidth = HUNK_DIFF_RAIL_WIDTH,
-): { gutterWidth: number; contentWidth: number } {
+export function resolveHunkStackCellGeometry(width: number, lineNumberDigits: number, showLineNumbers: boolean, prefixWidth = HUNK_DIFF_RAIL_WIDTH): { gutterWidth: number; contentWidth: number } {
   const availableWidth = Math.max(0, Math.floor(width) - prefixWidth)
   const gutterWidth = Math.min(availableWidth, showLineNumbers ? Math.max(1, lineNumberDigits) * 2 + 5 : 2)
   return { gutterWidth, contentWidth: Math.max(0, availableWidth - gutterWidth) }

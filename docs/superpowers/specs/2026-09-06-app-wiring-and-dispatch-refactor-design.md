@@ -29,11 +29,11 @@ optionality is fiction.
 
 New file `src/ui/root-view-ports.ts` with three interfaces whose methods are required:
 
-| Interface | Contents |
-| --- | --- |
+| Interface            | Contents                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `RepositoryCommands` | Every callback that changes the repository or controller state: stage/unstage/discard (file, files, selection, all), scope change, branch create/checkout/delete/rename/inspect/filter, remote fetch/browse/checkout-tracking, fetch/pull/push, upstream choose/cancel, stash create/apply/pop/drop/inspect, commit/amend message, edit file, `onExpandCommits`, `onRefresh`, `onSelectFile`, `onOpenBranchReview`, `onMarkFocusedFileReviewed`. |
-| `RepositoryQueries` | Pure reads: `loadCommitInspection`, `loadBranchCommits`, `loadCommitFileInspection`, `loadTagInspection`, `loadRefLogInspection`, `onCurrentCommitMessage`, `onCheckBranchMerged`. |
-| `ViewHost` | `onQuit`, `onGeometryChange`, `onMutationSettled`, `onPreviewError`, `isBranchReviewActive`. |
+| `RepositoryQueries`  | Pure reads: `loadCommitInspection`, `loadBranchCommits`, `loadCommitFileInspection`, `loadTagInspection`, `loadRefLogInspection`, `onCurrentCommitMessage`, `onCheckBranchMerged`.                                                                                                                                                                                                                                                               |
+| `ViewHost`           | `onQuit`, `onGeometryChange`, `onMutationSettled`, `onPreviewError`, `isBranchReviewActive`.                                                                                                                                                                                                                                                                                                                                                     |
 
 `RootViewPorts = { commands, queries, host }`. `RootViewOptions` becomes
 `{ sidePanelRatio?, logHeight?, logVisible?, ports }`.
@@ -57,9 +57,14 @@ In `create-app.ts`:
 - One wrapper:
 
   ```ts
-  const ui = <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+  const ui =
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
     async (...args: A): Promise<R> => {
-      try { return await fn(...args) } finally { if (shouldRender()) view.update(controller.state) }
+      try {
+        return await fn(...args)
+      } finally {
+        if (shouldRender()) view.update(controller.state)
+      }
     }
   ```
 
@@ -67,6 +72,7 @@ In `create-app.ts`:
   handlers with extra logic (`onCheckoutRemoteTracking`, `onExpandCommits`,
   `onOpenBranchReview`, `onDeleteBranch`, `onEditFile`, `onSelectFile`) keep their
   bodies but are still wrapped in `ui()` where they currently use the `finally`.
+
 - The `isBusy` closure duplicated at `create-app.ts:285-290` and `522-527` becomes one
   function.
 
@@ -157,11 +163,11 @@ and leaves state untouched, and `true` with the state advanced for a valid one.
 
 ## Delivery
 
-| Commit | Summary |
-| --- | --- |
-| 1 | `refactor: route root view callbacks through required ports` |
-| 2 | `refactor: table-drive controller refresh and centralize state writes` |
-| 3 | `refactor: dispatch branch review intents through the controller` |
+| Commit | Summary                                                                |
+| ------ | ---------------------------------------------------------------------- |
+| 1      | `refactor: route root view callbacks through required ports`           |
+| 2      | `refactor: table-drive controller refresh and centralize state writes` |
+| 3      | `refactor: dispatch branch review intents through the controller`      |
 
 Each commit passes `bun run check`. The compatibility matrix is untouched because no
 user-visible behaviour changes.

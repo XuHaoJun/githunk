@@ -26,7 +26,7 @@ export function createInfoPopup(renderer: CliRenderer, id = "info-popup"): InfoP
     position: "absolute",
     overflow: "hidden",
     backgroundColor: POPUP_BACKGROUND,
-    zIndex: POPUP_Z_INDEX,
+    zIndex: POPUP_Z_INDEX
   })
   const text = new TextRenderable(renderer, {
     id: `${id}-text`,
@@ -36,12 +36,11 @@ export function createInfoPopup(renderer: CliRenderer, id = "info-popup"): InfoP
     selectable: false,
     wrapMode: "none",
     width: "100%",
-    height: "100%",
+    height: "100%"
   })
   box.add(text)
   box.visible = false
 
-  let currentTitle = ""
   let currentMessage = ""
   let contentWidth = 40
 
@@ -56,14 +55,12 @@ export function createInfoPopup(renderer: CliRenderer, id = "info-popup"): InfoP
       return box.visible
     },
     show(title, message) {
-      currentTitle = title
       currentMessage = message
       box.title = title
       box.visible = true
       paint()
     },
     hide() {
-      currentTitle = ""
       currentMessage = ""
       box.title = ""
       box.visible = false
@@ -83,6 +80,6 @@ export function createInfoPopup(renderer: CliRenderer, id = "info-popup"): InfoP
       box.height = geom.height
       box.visible = true
       paint()
-    },
+    }
   }
 }

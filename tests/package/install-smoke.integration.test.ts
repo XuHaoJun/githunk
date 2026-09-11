@@ -16,24 +16,15 @@ type ProcessResult = {
   readonly stderr: string
 }
 
-async function run(
-  command: string,
-  args: readonly string[],
-  cwd: string,
-  env: Record<string, string | undefined>,
-): Promise<ProcessResult> {
+async function run(command: string, args: readonly string[], cwd: string, env: Record<string, string | undefined>): Promise<ProcessResult> {
   const child = Bun.spawn([command, ...args], {
     cwd,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
-    env,
+    env
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    Bun.readableStreamToText(child.stdout),
-    Bun.readableStreamToText(child.stderr),
-    child.exited,
-  ])
+  const [stdout, stderr, exitCode] = await Promise.all([Bun.readableStreamToText(child.stdout), Bun.readableStreamToText(child.stderr), child.exited])
   return { exitCode, stdout, stderr }
 }
 
@@ -44,21 +35,18 @@ async function fixtureRelease(releases: string, version: string, includeSkill = 
   await chmod(join(directory, "githunk-linux-x64", "githunk"), 0o755)
   if (includeSkill) {
     await mkdir(join(directory, "githunk-linux-x64", "skills", "githunk-handoff"), { recursive: true })
-    await writeFile(
-      join(directory, "githunk-linux-x64", "skills", "githunk-handoff", "SKILL.md"),
-      `skill ${version}\n`,
-    )
+    await writeFile(join(directory, "githunk-linux-x64", "skills", "githunk-handoff", "SKILL.md"), `skill ${version}\n`)
   }
   const tar = Bun.spawnSync(["tar", "-czf", "githunk-linux-x64.tar.gz", "githunk-linux-x64"], {
     cwd: directory,
     stdout: "ignore",
-    stderr: "pipe",
+    stderr: "pipe"
   })
   expect(tar.exitCode).toBe(0)
   const sum = Bun.spawnSync(["sha256sum", "githunk-linux-x64.tar.gz"], {
     cwd: directory,
     stdout: "pipe",
-    stderr: "pipe",
+    stderr: "pipe"
   })
   expect(sum.exitCode).toBe(0)
   await writeFile(join(directory, "SHA256SUMS"), sum.stdout.toString())
@@ -83,7 +71,7 @@ suite("install.sh", () => {
     return {
       PATH: "/usr/bin:/bin:/usr/local/bin",
       HOME: home,
-      GITHUNK_RELEASE_BASE: `file://${releases}`,
+      GITHUNK_RELEASE_BASE: `file://${releases}`
     }
   }
 
@@ -103,15 +91,7 @@ suite("install.sh", () => {
     const rc = await Bun.file(join(home, ".bashrc")).text()
     expect(rc).toContain(join(home, ".local", "bin"))
 
-    const installedSkill = join(
-      home,
-      ".local",
-      "bin",
-      "githunk-assets",
-      "skills",
-      "githunk-handoff",
-      "SKILL.md",
-    )
+    const installedSkill = join(home, ".local", "bin", "githunk-assets", "skills", "githunk-handoff", "SKILL.md")
     expect(await Bun.file(installedSkill).text()).toBe("skill 9.9.9\n")
   })
 
@@ -147,9 +127,7 @@ suite("install.sh", () => {
     const repair = await run("sh", [installer, "9.9.9"], workdir, env)
     expect(repair.exitCode).toBe(0)
     expect(`${repair.stdout}${repair.stderr}`).toMatch(/repairing|Installing to/)
-    expect(
-      await Bun.file(join(home, ".local", "bin", "githunk-assets", "skills", "githunk-handoff", "SKILL.md")).text(),
-    ).toBe("skill 9.9.9\n")
+    expect(await Bun.file(join(home, ".local", "bin", "githunk-assets", "skills", "githunk-handoff", "SKILL.md")).text()).toBe("skill 9.9.9\n")
   })
 
   test("--no-modify-path leaves shell startup files alone", async () => {

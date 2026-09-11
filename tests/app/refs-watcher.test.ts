@@ -67,15 +67,20 @@ describe("loadRefsSnapshot", () => {
 })
 
 describe("RefsWatcher", () => {
-  function watcherOver(snapshots: string[], isBusy?: () => boolean): {
+  function watcherOver(
+    snapshots: string[],
+    isBusy?: () => boolean
+  ): {
     readonly watcher: RefsWatcher
     refreshes(): number
   } {
     let refreshes = 0
     const watcher = new RefsWatcher({
       snapshot: async () => snapshots[0] ?? "",
-      onExternalChange: async () => { refreshes += 1 },
-      ...(isBusy === undefined ? {} : { isBusy }),
+      onExternalChange: async () => {
+        refreshes += 1
+      },
+      ...(isBusy === undefined ? {} : { isBusy })
     })
     return { watcher, refreshes: () => refreshes }
   }
@@ -133,7 +138,9 @@ describe("RefsWatcher", () => {
         if (fail) throw new Error("git could not start")
         return "a"
       },
-      onExternalChange: async () => { refreshes += 1 },
+      onExternalChange: async () => {
+        refreshes += 1
+      }
     })
     expect(await watcher.check()).toBe(false)
     expect(watcher.lastSnapshot).toBeUndefined()

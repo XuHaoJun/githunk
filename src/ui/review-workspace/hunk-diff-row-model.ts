@@ -145,51 +145,33 @@ function plainSpans(line: string | undefined): readonly HunkRenderSpan[] {
   return line === undefined ? [] : [{ text: line }]
 }
 
-function highlightedSpans(
-  line: string | undefined,
-  highlighted: HighlightedLine | undefined,
-): readonly HunkRenderSpan[] {
+function highlightedSpans(line: string | undefined, highlighted: HighlightedLine | undefined): readonly HunkRenderSpan[] {
   if (highlighted === undefined || highlighted === null) return plainSpans(line)
   if (highlighted.length === 0) return line === undefined ? [] : [{ text: line }]
   return highlighted
 }
 
-function splitCell(
-  kind: HunkSplitCell["kind"],
-  lineNumber: number | undefined,
-  line: string | undefined,
-  highlighted: HighlightedLine | undefined,
-): HunkSplitCell {
+function splitCell(kind: HunkSplitCell["kind"], lineNumber: number | undefined, line: string | undefined, highlighted: HighlightedLine | undefined): HunkSplitCell {
   if (kind === "empty") return { kind, sign: " ", spans: [] }
   return {
     kind,
     sign: kind === "addition" ? "+" : kind === "deletion" ? "-" : " ",
     ...(lineNumber === undefined ? {} : { lineNumber }),
-    spans: highlightedSpans(line, highlighted),
+    spans: highlightedSpans(line, highlighted)
   }
 }
 
-function stackCell(
-  kind: HunkStackCell["kind"],
-  oldLineNumber: number | undefined,
-  newLineNumber: number | undefined,
-  line: string | undefined,
-  highlighted: HighlightedLine | undefined,
-): HunkStackCell {
+function stackCell(kind: HunkStackCell["kind"], oldLineNumber: number | undefined, newLineNumber: number | undefined, line: string | undefined, highlighted: HighlightedLine | undefined): HunkStackCell {
   return {
     kind,
     sign: kind === "addition" ? "+" : kind === "deletion" ? "-" : " ",
     ...(oldLineNumber === undefined ? {} : { oldLineNumber }),
     ...(newLineNumber === undefined ? {} : { newLineNumber }),
-    spans: highlightedSpans(line, highlighted),
+    spans: highlightedSpans(line, highlighted)
   }
 }
 
-function highlightAt(
-  highlight: HighlightPayload | undefined,
-  side: "deletion" | "addition",
-  index: number,
-): HighlightedLine | undefined {
+function highlightAt(highlight: HighlightPayload | undefined, side: "deletion" | "addition", index: number): HighlightedLine | undefined {
   return highlight?.[`${side}Lines`][index]
 }
 
@@ -198,8 +180,7 @@ export function hunkHeaderText(file: HunkReviewFile, index: number): string {
   if (!hunk) return "@@"
   // `hunkSpecs` comes straight from the patch text and keeps its trailing
   // newline; a header is a single row everywhere it is used, so strip it.
-  return hunk.hunkSpecs?.replace(/\r?\n$/u, "")
-    ?? `@@ -${hunk.deletionStart},${hunk.deletionCount} +${hunk.additionStart},${hunk.additionCount} @@`
+  return hunk.hunkSpecs?.replace(/\r?\n$/u, "") ?? `@@ -${hunk.deletionStart},${hunk.deletionCount} +${hunk.additionStart},${hunk.additionCount} @@`
 }
 
 export function hunkGapBefore(file: HunkReviewFile, hunkIndex: number): { gapId: string; lineCount: number; oldRange: [number, number]; newRange: [number, number] } | null {
@@ -222,14 +203,7 @@ function gapIsExpanded(state: ReviewState, fileKey: string, gapId: string): bool
   return state.expandedGaps.some((gap) => gap.fileKey === fileKey && gap.gapId === gapId && gap.expanded)
 }
 
-function appendGapRows(
-  rows: HunkDiffRow[],
-  file: HunkReviewFile,
-  state: ReviewState,
-  hunkIndex: number,
-  mode: "split" | "stack",
-  options: HunkRowBuildOptions,
-): void {
+function appendGapRows(rows: HunkDiffRow[], file: HunkReviewFile, state: ReviewState, hunkIndex: number, mode: "split" | "stack", options: HunkRowBuildOptions): void {
   const gap = hunkGapBefore(file, hunkIndex)
   if (!gap) return
   const expanded = gapIsExpanded(state, file.id, gap.gapId)
@@ -245,7 +219,7 @@ function appendGapRows(
       oldRange: gap.oldRange,
       newRange: gap.newRange,
       expanded,
-      text: expanded ? `Loading ${gap.lineCount} unchanged ${gap.lineCount === 1 ? "line" : "lines"} — click to collapse` : `▶ ${gap.lineCount} unchanged ${gap.lineCount === 1 ? "line" : "lines"} — press z or click to expand`,
+      text: expanded ? `Loading ${gap.lineCount} unchanged ${gap.lineCount === 1 ? "line" : "lines"} — click to collapse` : `▶ ${gap.lineCount} unchanged ${gap.lineCount === 1 ? "line" : "lines"} — press z or click to expand`
     })
     return
   }
@@ -265,7 +239,7 @@ function appendGapRows(
         isExpansionRow: true,
         expandedGapKey: gap.gapId,
         left: hasOldSide ? splitCell("context", oldLine, source[offset], undefined) : splitCell("empty", undefined, undefined, undefined),
-        right: hasNewSide ? splitCell("context", newLine, source[offset], undefined) : splitCell("empty", undefined, undefined, undefined),
+        right: hasNewSide ? splitCell("context", newLine, source[offset], undefined) : splitCell("empty", undefined, undefined, undefined)
       })
     } else {
       rows.push({
@@ -275,7 +249,7 @@ function appendGapRows(
         hunkIndex,
         isExpansionRow: true,
         expandedGapKey: gap.gapId,
-        cell: stackCell("context", hasOldSide ? oldLine : undefined, hasNewSide ? newLine : undefined, source[offset], undefined),
+        cell: stackCell("context", hasOldSide ? oldLine : undefined, hasNewSide ? newLine : undefined, source[offset], undefined)
       })
     }
   }
@@ -283,9 +257,7 @@ function appendGapRows(
 
 function feedbackAnchorText(file: HunkReviewFile, feedback: ReviewState["feedback"][number]): string {
   if (feedback.anchor.kind === "file") return `${file.path} file`
-  const line = feedback.anchor.startLine === feedback.anchor.endLine
-    ? `${feedback.anchor.startLine}`
-    : `${feedback.anchor.startLine}-${feedback.anchor.endLine}`
+  const line = feedback.anchor.startLine === feedback.anchor.endLine ? `${feedback.anchor.startLine}` : `${feedback.anchor.startLine}-${feedback.anchor.endLine}`
   return `${file.path} ${feedback.anchor.side}:${line}`
 }
 
@@ -315,10 +287,7 @@ function rowActions(verdict: LedgerVerdict): string {
  * anchors and for lines that have dropped out of the diff; those rows fall back
  * to the end of the file.
  */
-function insertionIndexForAnchor(
-  rows: readonly HunkDiffRow[],
-  anchor: ReviewState["feedback"][number]["anchor"],
-): number {
+function insertionIndexForAnchor(rows: readonly HunkDiffRow[], anchor: ReviewState["feedback"][number]["anchor"]): number {
   if (anchor.kind !== "range") return -1
   let found = -1
   for (const [index, row] of rows.entries()) {
@@ -350,12 +319,7 @@ function insertionIndexForAnchor(
  * section row count knew one row per objection while the builder had started
  * emitting a `was`/`now` pair too, and every offset past that file was wrong.
  */
-export function feedbackRowGroups(
-  file: HunkReviewFile,
-  state: ReviewState,
-  mode: "split" | "stack",
-  replies?: ReviewReplies,
-): readonly Readonly<{ feedbackId: string; anchor: ReviewState["feedback"][number]["anchor"]; rows: readonly HunkDiffRow[] }>[] {
+export function feedbackRowGroups(file: HunkReviewFile, state: ReviewState, mode: "split" | "stack", replies?: ReviewReplies): readonly Readonly<{ feedbackId: string; anchor: ReviewState["feedback"][number]["anchor"]; rows: readonly HunkDiffRow[] }>[] {
   const groups: { feedbackId: string; anchor: ReviewState["feedback"][number]["anchor"]; rows: readonly HunkDiffRow[] }[] = []
   for (const feedback of state.feedback) {
     if (feedback.anchor.fileKey !== file.id) continue
@@ -375,7 +339,7 @@ export function feedbackRowGroups(
       resolution: feedback.resolution,
       // The verdict leads, because after a
       // handoff it is the only part of this row the reviewer has not already read.
-      text: `${ledgerBadge(verdict)} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} ${rowActions(verdict)}`,
+      text: `${ledgerBadge(verdict)} ${feedback.resolution} ${feedback.severity === "blocking" ? "!" : "◆"} ${feedback.kind} — ${detail} — ${feedbackAnchorText(file, feedback)} ${rowActions(verdict)}`
     })
     if (reply !== undefined) {
       // The agent's own words, kept visually distinct from the reviewer's row
@@ -388,7 +352,7 @@ export function feedbackRowGroups(
           fileKey: file.id,
           hunkIndex: feedback.anchor.kind === "range" ? feedback.anchor.ownerHunkIndex : -1,
           feedbackId: feedback.id,
-          text: `    ${index === 0 ? "agent" : "     "} │ ${line}`,
+          text: `    ${index === 0 ? "agent" : "     "} │ ${line}`
         })
       }
     }
@@ -399,24 +363,13 @@ export function feedbackRowGroups(
 }
 
 /** How many rows this file's objections add, for section height maths. */
-export function feedbackRowCountForFile(
-  file: HunkReviewFile,
-  state: ReviewState,
-  mode: "split" | "stack",
-  replies?: ReviewReplies,
-): number {
+export function feedbackRowCountForFile(file: HunkReviewFile, state: ReviewState, mode: "split" | "stack", replies?: ReviewReplies): number {
   let count = 0
   for (const group of feedbackRowGroups(file, state, mode, replies)) count += group.rows.length
   return count
 }
 
-function appendFeedbackRows(
-  rows: HunkDiffRow[],
-  file: HunkReviewFile,
-  state: ReviewState,
-  mode: "split" | "stack",
-  replies?: ReviewReplies,
-): void {
+function appendFeedbackRows(rows: HunkDiffRow[], file: HunkReviewFile, state: ReviewState, mode: "split" | "stack", replies?: ReviewReplies): void {
   for (const group of feedbackRowGroups(file, state, mode, replies)) {
     const at = insertionIndexForAnchor(rows, group.anchor)
     if (at === -1) rows.push(...group.rows)
@@ -434,14 +387,7 @@ function appendFeedbackRows(
  * outdated"). Every other verdict either has nothing to compare (`open`,
  * `waiting`) or compares equal by definition (`untouched`).
  */
-function appendFeedbackExcerptRows(
-  rows: HunkDiffRow[],
-  file: HunkReviewFile,
-  state: ReviewState,
-  feedback: ReviewState["feedback"][number],
-  verdict: LedgerVerdict,
-  mode: "split" | "stack",
-): void {
+function appendFeedbackExcerptRows(rows: HunkDiffRow[], file: HunkReviewFile, state: ReviewState, feedback: ReviewState["feedback"][number], verdict: LedgerVerdict, mode: "split" | "stack"): void {
   if (verdict !== "addressed") return
   const was = feedback.handoff?.excerpt
   if (was === undefined || was.length === 0) return
@@ -454,11 +400,13 @@ function appendFeedbackExcerptRows(
       hunkIndex: feedback.anchor.kind === "range" ? feedback.anchor.ownerHunkIndex : -1,
       feedbackId: feedback.id,
       side,
-      text: `    ${label} │ ${line}`,
+      text: `    ${label} │ ${line}`
     })
   }
   const wasLabel = `was ${shortOid(feedback.handoff?.headOid ?? "")}`
-  was.forEach((line, index) => { push("was", index === 0 ? wasLabel : " ".repeat(wasLabel.length), line, index) })
+  was.forEach((line, index) => {
+    push("was", index === 0 ? wasLabel : " ".repeat(wasLabel.length), line, index)
+  })
 
   const now = linesForAnchor(feedback.anchor, state.document)
   const nowLabel = `now ${shortOid(state.document.generation.headOid)}`
@@ -466,15 +414,12 @@ function appendFeedbackExcerptRows(
     push("now", nowLabel, "(not in the diff any more — these lines now match the base)", 0)
     return
   }
-  now.forEach((line, index) => { push("now", index === 0 ? nowLabel : " ".repeat(nowLabel.length), line, index) })
+  now.forEach((line, index) => {
+    push("now", index === 0 ? nowLabel : " ".repeat(nowLabel.length), line, index)
+  })
 }
 
-export function buildHunkSplitRows(
-  file: HunkReviewFile,
-  state: ReviewState,
-  highlight: HighlightPayload | undefined,
-  options: HunkRowBuildOptions,
-): readonly HunkDiffRow[] {
+export function buildHunkSplitRows(file: HunkReviewFile, state: ReviewState, highlight: HighlightPayload | undefined, options: HunkRowBuildOptions): readonly HunkDiffRow[] {
   const rows: HunkDiffRow[] = []
   const hasOldSide = file.kind !== "added"
   const hasNewSide = file.kind !== "deleted"
@@ -485,7 +430,7 @@ export function buildHunkSplitRows(
       key: `${file.id}:split:hunk:${hunkIndex}`,
       fileKey: file.id,
       hunkIndex,
-      text: hunkHeaderText(file, hunkIndex),
+      text: hunkHeaderText(file, hunkIndex)
     })
 
     let deletionIndex = hunk.deletionLineIndex
@@ -502,7 +447,7 @@ export function buildHunkSplitRows(
             fileKey: file.id,
             hunkIndex,
             left: hasOldSide ? splitCell("context", deletionLine + offset, file.metadata.deletionLines[deletionIndex + offset], highlightAt(highlight, "deletion", deletionIndex + offset)) : splitCell("empty", undefined, undefined, undefined),
-            right: hasNewSide ? splitCell("context", additionLine + offset, file.metadata.additionLines[additionIndex + offset], highlightAt(highlight, "addition", additionIndex + offset)) : splitCell("empty", undefined, undefined, undefined),
+            right: hasNewSide ? splitCell("context", additionLine + offset, file.metadata.additionLines[additionIndex + offset], highlightAt(highlight, "addition", additionIndex + offset)) : splitCell("empty", undefined, undefined, undefined)
           })
         }
         deletionIndex += content.lines
@@ -522,7 +467,7 @@ export function buildHunkSplitRows(
           fileKey: file.id,
           hunkIndex,
           left: hasDeletion ? splitCell("deletion", deletionLine + offset, file.metadata.deletionLines[deletionIndex + offset], highlightAt(highlight, "deletion", deletionIndex + offset)) : splitCell("empty", undefined, undefined, undefined),
-          right: hasAddition ? splitCell("addition", additionLine + offset, file.metadata.additionLines[additionIndex + offset], highlightAt(highlight, "addition", additionIndex + offset)) : splitCell("empty", undefined, undefined, undefined),
+          right: hasAddition ? splitCell("addition", additionLine + offset, file.metadata.additionLines[additionIndex + offset], highlightAt(highlight, "addition", additionIndex + offset)) : splitCell("empty", undefined, undefined, undefined)
         })
       }
       deletionIndex += content.deletions
@@ -535,12 +480,7 @@ export function buildHunkSplitRows(
   return rows
 }
 
-export function buildHunkStackRows(
-  file: HunkReviewFile,
-  state: ReviewState,
-  highlight: HighlightPayload | undefined,
-  options: HunkRowBuildOptions,
-): readonly HunkDiffRow[] {
+export function buildHunkStackRows(file: HunkReviewFile, state: ReviewState, highlight: HighlightPayload | undefined, options: HunkRowBuildOptions): readonly HunkDiffRow[] {
   const rows: HunkDiffRow[] = []
   const hasOldSide = file.kind !== "added"
   const hasNewSide = file.kind !== "deleted"
@@ -551,7 +491,7 @@ export function buildHunkStackRows(
       key: `${file.id}:stack:hunk:${hunkIndex}`,
       fileKey: file.id,
       hunkIndex,
-      text: hunkHeaderText(file, hunkIndex),
+      text: hunkHeaderText(file, hunkIndex)
     })
 
     let deletionIndex = hunk.deletionLineIndex
@@ -567,7 +507,13 @@ export function buildHunkStackRows(
             key: `${file.id}:stack:${hunkIndex}:context:${deletionIndex + offset}:${additionIndex + offset}`,
             fileKey: file.id,
             hunkIndex,
-            cell: stackCell("context", hasOldSide ? deletionLine + offset : undefined, hasNewSide ? additionLine + offset : undefined, file.metadata.additionLines[additionIndex + offset] ?? file.metadata.deletionLines[deletionIndex + offset], highlightAt(highlight, "addition", additionIndex + offset) ?? highlightAt(highlight, "deletion", deletionIndex + offset)),
+            cell: stackCell(
+              "context",
+              hasOldSide ? deletionLine + offset : undefined,
+              hasNewSide ? additionLine + offset : undefined,
+              file.metadata.additionLines[additionIndex + offset] ?? file.metadata.deletionLines[deletionIndex + offset],
+              highlightAt(highlight, "addition", additionIndex + offset) ?? highlightAt(highlight, "deletion", deletionIndex + offset)
+            )
           })
         }
         deletionIndex += content.lines
@@ -583,7 +529,7 @@ export function buildHunkStackRows(
           key: `${file.id}:stack:${hunkIndex}:deletion:${deletionIndex + offset}`,
           fileKey: file.id,
           hunkIndex,
-          cell: stackCell("deletion", deletionLine + offset, undefined, file.metadata.deletionLines[deletionIndex + offset], highlightAt(highlight, "deletion", deletionIndex + offset)),
+          cell: stackCell("deletion", deletionLine + offset, undefined, file.metadata.deletionLines[deletionIndex + offset], highlightAt(highlight, "deletion", deletionIndex + offset))
         })
       }
       for (let offset = 0; offset < content.additions; offset += 1) {
@@ -592,7 +538,7 @@ export function buildHunkStackRows(
           key: `${file.id}:stack:${hunkIndex}:addition:${additionIndex + offset}`,
           fileKey: file.id,
           hunkIndex,
-          cell: stackCell("addition", undefined, additionLine + offset, file.metadata.additionLines[additionIndex + offset], highlightAt(highlight, "addition", additionIndex + offset)),
+          cell: stackCell("addition", undefined, additionLine + offset, file.metadata.additionLines[additionIndex + offset], highlightAt(highlight, "addition", additionIndex + offset))
         })
       }
       deletionIndex += content.deletions

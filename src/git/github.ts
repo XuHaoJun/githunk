@@ -28,7 +28,7 @@ export const PULL_REQUEST_LIST_ARGS: readonly string[] = [
   "--limit",
   String(PULL_REQUEST_LIMIT),
   "--json",
-  JSON_FIELDS,
+  JSON_FIELDS
 ]
 
 export type ProcessResult = {
@@ -96,18 +96,18 @@ export function parsePullRequests(json: string): readonly PullRequest[] {
     const headRefName = typeof record.headRefName === "string" ? record.headRefName : ""
     if (headRefName.length === 0) return []
     const owner = record.headRepositoryOwner
-    const login = typeof owner === "object" && owner !== null && typeof (owner as Record<string, unknown>).login === "string"
-      ? (owner as Record<string, string>).login!
-      : ""
-    return [{
-      number: typeof record.number === "number" ? record.number : 0,
-      title: typeof record.title === "string" ? record.title : "",
-      state: asState(record.state, record.isDraft),
-      checksState: rollupChecksState(record.statusCheckRollup),
-      url: typeof record.url === "string" ? record.url : "",
-      headRefName,
-      headRepositoryOwner: login,
-    }]
+    const login = typeof owner === "object" && owner !== null && typeof (owner as Record<string, unknown>).login === "string" ? (owner as Record<string, string>).login! : ""
+    return [
+      {
+        number: typeof record.number === "number" ? record.number : 0,
+        title: typeof record.title === "string" ? record.title : "",
+        state: asState(record.state, record.isDraft),
+        checksState: rollupChecksState(record.statusCheckRollup),
+        url: typeof record.url === "string" ? record.url : "",
+        headRefName,
+        headRepositoryOwner: login
+      }
+    ]
   })
 }
 
@@ -144,12 +144,12 @@ export function createGhRunner(cwd: string, options: GhRunnerOptions = {}): GhRu
       const processResult = runProcess(executable, args, {
         cwd,
         env: { ...process.env, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" },
-        signal: abortController.signal,
+        signal: abortController.signal
       })
       const timeoutResult: ProcessResult = {
         exitCode: -1,
         stdout: "",
-        stderr: `gh timed out after ${timeoutMs}ms`,
+        stderr: `gh timed out after ${timeoutMs}ms`
       }
       const timeoutPromise = new Promise<ProcessResult>((resolve) => {
         timeout = setTimeout(() => {
@@ -164,7 +164,7 @@ export function createGhRunner(cwd: string, options: GhRunnerOptions = {}): GhRu
       return {
         exitCode: -1,
         stdout: "",
-        stderr: error instanceof Error ? error.message : String(error),
+        stderr: error instanceof Error ? error.message : String(error)
       }
     } finally {
       clearTimeout(timeout)

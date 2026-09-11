@@ -16,9 +16,7 @@ export type ListColumn = {
   readonly flex?: boolean
 }
 export type ListRow = { readonly id: string; readonly columns: readonly ListColumn[] }
-export type ListDisplayRow =
-  | { readonly kind: "item"; readonly id: string }
-  | { readonly kind: "header" | "message"; readonly text: string }
+export type ListDisplayRow = { readonly kind: "item"; readonly id: string } | { readonly kind: "header" | "message"; readonly text: string }
 
 export type ListRangeMode = "none" | "sticky" | "non-sticky"
 
@@ -50,11 +48,7 @@ function resolveInitialSelection(rows: readonly ListRow[]): { selectedId?: strin
   return { selectedId: rows[0]!.id, selectedIndex: 0 }
 }
 
-function resolveSelectionAfterChange(
-  previousId: string | undefined,
-  previousIndex: number,
-  rows: readonly ListRow[],
-): { selectedId?: string; selectedIndex: number } {
+function resolveSelectionAfterChange(previousId: string | undefined, previousIndex: number, rows: readonly ListRow[]): { selectedId?: string; selectedIndex: number } {
   if (rows.length === 0) return { selectedIndex: 0 }
   if (previousId !== undefined) {
     const found = rows.findIndex((row) => row.id === previousId)
@@ -78,7 +72,7 @@ export function createListState(rows: readonly ListRow[], displayRows?: readonly
       displayRows: resolvedDisplayRows,
       selectedIndex: selection.selectedIndex,
       scrollY: 0,
-      rangeMode: "none",
+      rangeMode: "none"
     }
   }
   return {
@@ -87,7 +81,7 @@ export function createListState(rows: readonly ListRow[], displayRows?: readonly
     selectedId: selection.selectedId,
     selectedIndex: selection.selectedIndex,
     scrollY: 0,
-    rangeMode: "none",
+    rangeMode: "none"
   }
 }
 
@@ -116,7 +110,7 @@ export function setListRows(state: ListState, rows: readonly ListRow[], displayR
       selectedIndex: selection.selectedIndex,
       scrollY: state.scrollY,
       rangeMode: nextRangeMode,
-      ...(nextRangeStartId === undefined ? {} : { rangeStartId: nextRangeStartId }),
+      ...(nextRangeStartId === undefined ? {} : { rangeStartId: nextRangeStartId })
     }
   }
   return {
@@ -126,7 +120,7 @@ export function setListRows(state: ListState, rows: readonly ListRow[], displayR
     selectedIndex: selection.selectedIndex,
     scrollY: state.scrollY,
     rangeMode: nextRangeMode,
-    ...(nextRangeStartId === undefined ? {} : { rangeStartId: nextRangeStartId }),
+    ...(nextRangeStartId === undefined ? {} : { rangeStartId: nextRangeStartId })
   }
 }
 
@@ -168,7 +162,7 @@ export function clearListRangeSelection(state: ListState): ListState {
     selectedIndex: state.selectedIndex,
     scrollY: state.scrollY,
     rangeMode: "none",
-    ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId }),
+    ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId })
   }
 }
 
@@ -182,7 +176,7 @@ export function toggleListRangeSelection(state: ListState): ListState {
       selectedIndex: state.selectedIndex,
       scrollY: state.scrollY,
       rangeMode: "none",
-      ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId }),
+      ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId })
     }
   }
   if (state.selectedId === undefined) return state
@@ -191,7 +185,7 @@ export function toggleListRangeSelection(state: ListState): ListState {
   return {
     ...state,
     rangeMode: "sticky",
-    rangeStartId: state.selectedId,
+    rangeStartId: state.selectedId
   }
 }
 
@@ -211,7 +205,7 @@ export function expandListRangeSelection(state: ListState, direction: "next" | "
     return {
       ...state,
       selectedId: nextId,
-      selectedIndex: nextIndex,
+      selectedIndex: nextIndex
     }
   }
 
@@ -225,7 +219,7 @@ export function expandListRangeSelection(state: ListState, direction: "next" | "
     rangeMode: "non-sticky",
     rangeStartId: anchorId,
     selectedId: nextId,
-    selectedIndex: nextIndex,
+    selectedIndex: nextIndex
   }
 }
 
@@ -240,7 +234,7 @@ export function setListRangeSelection(state: ListState, anchorId: string, endpoi
       selectedIndex: state.selectedIndex,
       scrollY: state.scrollY,
       rangeMode: "none",
-      ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId }),
+      ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId })
     }
   }
   return {
@@ -248,7 +242,7 @@ export function setListRangeSelection(state: ListState, anchorId: string, endpoi
     rangeMode: "non-sticky",
     rangeStartId: anchorId,
     selectedId: endpointId,
-    selectedIndex: endpointIdx,
+    selectedIndex: endpointIdx
   }
 }
 
@@ -274,7 +268,7 @@ export function moveListSelection(state: ListState, direction: "next" | "previou
       return {
         ...state,
         selectedId: nextId,
-        selectedIndex: nextIndex,
+        selectedIndex: nextIndex
       }
     }
     // Stale sticky anchor: fall through to clear handling.
@@ -292,7 +286,7 @@ export function moveListSelection(state: ListState, direction: "next" | "previou
           selectedIndex: state.selectedIndex,
           scrollY: state.scrollY,
           rangeMode: "none",
-          ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId }),
+          ...(state.selectedId === undefined ? {} : { selectedId: state.selectedId })
         }
       }
       return {
@@ -301,7 +295,7 @@ export function moveListSelection(state: ListState, direction: "next" | "previou
         selectedIndex: nextIndex,
         scrollY: state.scrollY,
         rangeMode: "none",
-        selectedId: nextId,
+        selectedId: nextId
       }
     }
   }
@@ -310,7 +304,7 @@ export function moveListSelection(state: ListState, direction: "next" | "previou
   return {
     ...state,
     selectedId: nextId,
-    selectedIndex: nextIndex,
+    selectedIndex: nextIndex
   }
 }
 
@@ -328,7 +322,7 @@ export function selectListRow(state: ListState, id: string): ListState {
       selectedIndex: idx,
       scrollY: state.scrollY,
       rangeMode: "none",
-      selectedId: id,
+      selectedId: id
     }
   }
   // Any direct selection clears an active range.
@@ -339,13 +333,13 @@ export function selectListRow(state: ListState, id: string): ListState {
       selectedIndex: idx,
       scrollY: state.scrollY,
       rangeMode: "none",
-      selectedId: id,
+      selectedId: id
     }
   }
   return {
     ...state,
     selectedId: id,
-    selectedIndex: idx,
+    selectedIndex: idx
   }
 }
 
@@ -454,8 +448,7 @@ export function computeColumnLayout(rows: readonly ListRow[], width: number): Li
   }
   const minFlex = Math.max(1, Math.min(rawWidths[flexIndex]!, Math.floor(safeWidth / 2)))
 
-  const spaceForFlex = (kept: readonly number[]): number =>
-    safeWidth - kept.reduce((sum, j) => sum + (j === flexIndex ? 0 : rawWidths[j]!), 0) - Math.max(0, kept.length - 1)
+  const spaceForFlex = (kept: readonly number[]): number => safeWidth - kept.reduce((sum, j) => sum + (j === flexIndex ? 0 : rawWidths[j]!), 0) - Math.max(0, kept.length - 1)
 
   // Shed whole columns — least important first — only once squeezing the flex
   // column alone would leave it unreadably narrow.
@@ -512,14 +505,14 @@ export function layoutListRowSegments(row: ListRow, layout: ListColumnLayout): r
             segments.push({
               text: segment.text,
               ...(column.style === undefined ? {} : { style: column.style }),
-              ...(segment.color === undefined ? {} : { color: segment.color }),
+              ...(segment.color === undefined ? {} : { color: segment.color })
             })
             remaining -= chars.length
           } else {
             segments.push({
               text: chars.slice(0, remaining).join(""),
               ...(column.style === undefined ? {} : { style: column.style }),
-              ...(segment.color === undefined ? {} : { color: segment.color }),
+              ...(segment.color === undefined ? {} : { color: segment.color })
             })
             remaining = 0
             break
@@ -529,7 +522,7 @@ export function layoutListRowSegments(row: ListRow, layout: ListColumnLayout): r
         segments.push({
           text: truncated,
           ...(column?.style === undefined ? {} : { style: column.style }),
-          ...(column?.color === undefined ? {} : { color: column.color }),
+          ...(column?.color === undefined ? {} : { color: column.color })
         })
       }
     }

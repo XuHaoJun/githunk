@@ -10,7 +10,7 @@ export function stashRows(model: AppModel, filter = ""): ListRow[] {
   const rows: ListRow[] = stashes.map((stash) => {
     const columns: ListRow["columns"] = [
       { text: stash.ref, priority: 1 },
-      { text: stash.message, priority: 2 },
+      { text: stash.message, priority: 2 }
     ]
     return { id: stash.oid, columns }
   })

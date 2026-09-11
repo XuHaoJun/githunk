@@ -15,7 +15,6 @@ export type PlatformPackageSpec = {
   readonly binaryRelativePath: string
 }
 
-
 export const BUNDLED_SKILL_RELATIVE_PATH = path.join("skills", "githunk-handoff", "SKILL.md")
 
 /** Copy only the public agent skill; repository maintainer skills never enter release payloads. */
@@ -27,12 +26,12 @@ export function copyBundledSkill(sourceRoot: string, destinationRoot: string): v
 const PLATFORM_NAME_MAP: Partial<Record<NodeJS.Platform, SupportedPlatform>> = {
   darwin: "darwin",
   linux: "linux",
-  win32: "windows",
+  win32: "windows"
 }
 
 const ARCH_NAME_MAP: Partial<Record<NodeJS.Architecture, SupportedArch>> = {
   x64: "x64",
-  arm64: "arm64",
+  arm64: "arm64"
 }
 
 /** Platforms published as optional prebuilt binary packages. */
@@ -42,36 +41,36 @@ export const PLATFORM_PACKAGE_MATRIX: readonly PlatformPackageSpec[] = [
     os: "darwin",
     cpu: "arm64",
     binaryName: "githunk",
-    binaryRelativePath: "bin/githunk",
+    binaryRelativePath: "bin/githunk"
   },
   {
     packageName: "@xuhaojun/githunk-darwin-x64",
     os: "darwin",
     cpu: "x64",
     binaryName: "githunk",
-    binaryRelativePath: "bin/githunk",
+    binaryRelativePath: "bin/githunk"
   },
   {
     packageName: "@xuhaojun/githunk-linux-arm64",
     os: "linux",
     cpu: "arm64",
     binaryName: "githunk",
-    binaryRelativePath: "bin/githunk",
+    binaryRelativePath: "bin/githunk"
   },
   {
     packageName: "@xuhaojun/githunk-linux-x64",
     os: "linux",
     cpu: "x64",
     binaryName: "githunk",
-    binaryRelativePath: "bin/githunk",
+    binaryRelativePath: "bin/githunk"
   },
   {
     packageName: "@xuhaojun/githunk-windows-x64",
     os: "windows",
     cpu: "x64",
     binaryName: "githunk",
-    binaryRelativePath: "bin/githunk.exe",
-  },
+    binaryRelativePath: "bin/githunk.exe"
+  }
 ]
 
 /** Normalize a Node platform string into the package naming vocabulary. */
@@ -90,10 +89,7 @@ export function getPlatformPackageSpecByName(packageName: string): PlatformPacka
 }
 
 /** Resolve the published package spec for a given Node platform/architecture pair. */
-export function getPlatformPackageSpecForHost(
-  platform: NodeJS.Platform,
-  arch: NodeJS.Architecture,
-): PlatformPackageSpec {
+export function getPlatformPackageSpecForHost(platform: NodeJS.Platform, arch: NodeJS.Architecture): PlatformPackageSpec {
   const osName = normalizeHostPlatform(platform)
   const archName = normalizeHostArch(arch)
   const spec = PLATFORM_PACKAGE_MATRIX.find((candidate) => candidate.os === osName && candidate.cpu === archName)
@@ -109,10 +105,7 @@ export function getHostPlatformPackageSpec(): PlatformPackageSpec {
 }
 
 /** Build the optional dependency map for the meta package. */
-export function buildOptionalDependencyMap(
-  version: string,
-  specs: readonly PlatformPackageSpec[] = PLATFORM_PACKAGE_MATRIX,
-): Record<string, string> {
+export function buildOptionalDependencyMap(version: string, specs: readonly PlatformPackageSpec[] = PLATFORM_PACKAGE_MATRIX): Record<string, string> {
   return Object.fromEntries(specs.map((spec) => [spec.packageName, version]))
 }
 
@@ -137,18 +130,16 @@ export function buildPlatformPackageManifest(
     readonly bugs?: unknown
     readonly license?: string
   },
-  spec: PlatformPackageSpec,
+  spec: PlatformPackageSpec
 ): Record<string, unknown> {
   return {
     name: spec.packageName,
     version: rootPackage.version,
-    ...(rootPackage.description === undefined
-      ? {}
-      : { description: `${rootPackage.description} (${spec.os} ${spec.cpu} binary)` }),
+    ...(rootPackage.description === undefined ? {} : { description: `${rootPackage.description} (${spec.os} ${spec.cpu} binary)` }),
     os: [spec.os === "windows" ? "win32" : spec.os],
     cpu: [spec.cpu],
     bin: {
-      githunk: spec.binaryRelativePath,
+      githunk: spec.binaryRelativePath
     },
     files: ["bin", "skills/githunk-handoff", "LICENSE"],
     ...(rootPackage.repository === undefined ? {} : { repository: rootPackage.repository }),
@@ -156,8 +147,8 @@ export function buildPlatformPackageManifest(
     ...(rootPackage.bugs === undefined ? {} : { bugs: rootPackage.bugs }),
     ...(rootPackage.license === undefined ? {} : { license: rootPackage.license }),
     publishConfig: {
-      access: "public",
-    },
+      access: "public"
+    }
   }
 }
 

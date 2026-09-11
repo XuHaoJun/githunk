@@ -6,22 +6,11 @@ import type { ReviewCommit, ReviewDocument, ReviewDocumentIndex, ReviewFile, Rev
  * Caller must normalize lines before constructing; digest excludes `index`.
  */
 export function createReviewHunk(input: Omit<ReviewHunk, "digest">): ReviewHunk {
-  const digest = sha256Tuple([
-    String(input.oldStart),
-    String(input.oldCount),
-    String(input.newStart),
-    String(input.newCount),
-    ...input.lines,
-  ])
+  const digest = sha256Tuple([String(input.oldStart), String(input.oldCount), String(input.newStart), String(input.newCount), ...input.lines])
   return { ...input, lines: [...input.lines], digest }
 }
 
-export function createReviewDocument(input: {
-  identity: ReviewDocument["identity"]
-  generation: ReviewDocument["generation"]
-  commits: readonly ReviewCommit[]
-  files: readonly ReviewFile[]
-}): ReviewDocument {
+export function createReviewDocument(input: { identity: ReviewDocument["identity"]; generation: ReviewDocument["generation"]; commits: readonly ReviewCommit[]; files: readonly ReviewFile[] }): ReviewDocument {
   const commits = [...input.commits]
   const files = [...input.files]
 
@@ -49,7 +38,7 @@ export function createReviewDocument(input: {
     generation: input.generation,
     commits: Object.freeze([...commits]),
     files: Object.freeze([...files]),
-    aggregatePatchDigest,
+    aggregatePatchDigest
   }
 }
 
@@ -79,6 +68,6 @@ export function indexReviewDocument(document: ReviewDocument): ReviewDocumentInd
   return {
     fileByKey,
     fileIndexByKey,
-    commitByOid,
+    commitByOid
   }
 }

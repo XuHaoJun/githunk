@@ -3,10 +3,7 @@ import type { ReviewAnchor, ReviewFile, ReviewHunk } from "./types"
 import type { ReviewDocument } from "./types"
 import type { ReviewLineSelection } from "./state"
 
-export type AnchorReconciliation =
-  | { resolution: "active"; anchor: ReviewAnchor }
-  | { resolution: "stale"; anchor: ReviewAnchor }
-  | { resolution: "orphaned"; anchor: ReviewAnchor }
+export type AnchorReconciliation = { resolution: "active"; anchor: ReviewAnchor } | { resolution: "stale"; anchor: ReviewAnchor } | { resolution: "orphaned"; anchor: ReviewAnchor }
 
 function hunkSideRange(hunk: ReviewHunk, side: "old" | "new"): [number, number] | null {
   if (side === "old") {
@@ -76,10 +73,7 @@ export function createFileAnchor(file: ReviewFile): ReviewAnchor {
   return { kind: "file", fileKey: file.key, contentId: file.contentId }
 }
 
-export function createRangeAnchor(
-  file: ReviewFile,
-  range: { side: "old" | "new"; startLine: number; endLine: number },
-): ReviewAnchor {
+export function createRangeAnchor(file: ReviewFile, range: { side: "old" | "new"; startLine: number; endLine: number }): ReviewAnchor {
   const { side, startLine, endLine } = range
   if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) {
     throw new Error(`startLine and endLine must be integers`)
@@ -131,14 +125,11 @@ export function createRangeAnchor(
     startLine,
     endLine,
     ownerHunkIndex: owner.index,
-    contextDigest: digest,
+    contextDigest: digest
   }
 }
 
-export function createLineSelection(
-  file: ReviewFile,
-  input: { hunkIndex: number; side: "old" | "new"; line: number },
-): ReviewLineSelection {
+export function createLineSelection(file: ReviewFile, input: { hunkIndex: number; side: "old" | "new"; line: number }): ReviewLineSelection {
   if (!Number.isInteger(input.hunkIndex) || input.hunkIndex < 0) throw new Error("invalid hunkIndex")
   if (input.side !== "old" && input.side !== "new") throw new Error("invalid side")
   if (!Number.isInteger(input.line) || input.line < 1) throw new Error("invalid line")
@@ -262,7 +253,7 @@ export function reconcileAnchor(anchor: ReviewAnchor, document: ReviewDocument):
       startLine: match.startLine,
       endLine: match.endLine,
       ownerHunkIndex: match.hunk.index,
-      contextDigest: anchor.contextDigest,
+      contextDigest: anchor.contextDigest
     }
     return { resolution: "active", anchor: relocated }
   }

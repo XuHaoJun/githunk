@@ -39,7 +39,7 @@ export function parseNumstat(raw: string): readonly NumstatEntry[] {
         path: records[index + 2] ?? "",
         previousPath: records[index + 1] ?? "",
         additions,
-        deletions,
+        deletions
       })
       index += 2
     } else {
@@ -58,7 +58,7 @@ function mergeStats(files: readonly ChangedFile[], stats: readonly NumstatEntry[
       byPath.set(stat.path, {
         ...stat,
         additions: existing.additions + stat.additions,
-        deletions: existing.deletions + stat.deletions,
+        deletions: existing.deletions + stat.deletions
       })
     }
   }
@@ -66,9 +66,7 @@ function mergeStats(files: readonly ChangedFile[], stats: readonly NumstatEntry[
     const stat = byPath.get(file.path)
     if (stat === undefined) return file
     const merged = { ...file, additions: stat.additions, deletions: stat.deletions }
-    return file.previousPath !== undefined || stat.previousPath === undefined
-      ? merged
-      : { ...merged, previousPath: stat.previousPath }
+    return file.previousPath !== undefined || stat.previousPath === undefined ? merged : { ...merged, previousPath: stat.previousPath }
   })
 }
 
@@ -91,7 +89,8 @@ const UNTRACKED_CONCURRENCY = 8
 
 /** `Promise.all` with a ceiling, preserving input order. */
 async function mapWithLimit<T, R>(items: readonly T[], limit: number, run: (item: T) => Promise<R>): Promise<R[]> {
-  const results = new Array<R>(items.length)
+  const results: R[] = []
+  results.length = items.length
   let next = 0
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     for (;;) {
@@ -106,20 +105,14 @@ async function mapWithLimit<T, R>(items: readonly T[], limit: number, run: (item
 
 async function untrackedPatches(runner: GitRunner, files: readonly ChangedFile[]): Promise<string> {
   const texts = await mapWithLimit(files, UNTRACKED_CONCURRENCY, async (file) => {
-    const result = await runner.run(
-      ["diff", "--no-index", "--no-ext-diff", "--no-color", "--binary", "--", "/dev/null", file.path],
-      { readOnly: true, acceptedExitCodes: [0, 1] },
-    )
+    const result = await runner.run(["diff", "--no-index", "--no-ext-diff", "--no-color", "--binary", "--", "/dev/null", file.path], { readOnly: true, acceptedExitCodes: [0, 1] })
     return result.stdout
   })
   return texts.join("")
 }
 async function untrackedNumstats(runner: GitRunner, files: readonly ChangedFile[]): Promise<readonly NumstatEntry[]> {
   const entries = await mapWithLimit(files, UNTRACKED_CONCURRENCY, async (file) => {
-    const result = await runner.run(
-      ["diff", "--no-index", "--no-ext-diff", "--no-color", "--numstat", "--", "/dev/null", file.path],
-      { readOnly: true, acceptedExitCodes: [0, 1] },
-    )
+    const result = await runner.run(["diff", "--no-index", "--no-ext-diff", "--no-color", "--numstat", "--", "/dev/null", file.path], { readOnly: true, acceptedExitCodes: [0, 1] })
     const entry = parseNumstat(result.stdout)[0]
     return entry === undefined ? undefined : { ...entry, path: file.path }
   })
@@ -149,14 +142,12 @@ export async function loadWorkingTree(runner: GitRunner, scope: WorkingTreeScope
     includeUnstaged ? runner.run(unstagedNumstatArgs, { readOnly: true }).then((result) => parseNumstat(result.stdout)) : Promise.resolve([] as readonly NumstatEntry[]),
     includeStaged ? runner.run(stagedNumstatArgs, { readOnly: true }).then((result) => parseNumstat(result.stdout)) : Promise.resolve([] as readonly NumstatEntry[]),
     includeUnstaged ? runPatch(runner, unstagedPatchArgs) : Promise.resolve(""),
-    includeStaged ? runPatch(runner, stagedPatchArgs) : Promise.resolve(""),
+    includeStaged ? runPatch(runner, stagedPatchArgs) : Promise.resolve("")
   ])
   const status = parsePorcelainV2(statusOutput)
   const files = scopeFiles(status.files, scope)
   const untracked = includeUnstaged ? files.filter((file) => file.untracked) : []
-  const [untrackedStats, untrackedText] = untracked.length === 0
-    ? [[] as readonly NumstatEntry[], ""]
-    : await Promise.all([untrackedNumstats(runner, untracked), untrackedPatches(runner, untracked)])
+  const [untrackedStats, untrackedText] = untracked.length === 0 ? [[] as readonly NumstatEntry[], ""] : await Promise.all([untrackedNumstats(runner, untracked), untrackedPatches(runner, untracked)])
   const stats = [...unstagedStats, ...stagedStats, ...untrackedStats]
   const unstagedText = `${unstagedDiffText}${untrackedText}`
   const stagedText = stagedDiffText
@@ -169,7 +160,7 @@ export async function loadWorkingTree(runner: GitRunner, scope: WorkingTreeScope
     ...(status.upstream === undefined ? {} : { upstream: status.upstream }),
     reviewTarget: { kind: "working-tree" as const, scope },
     files: mergeStats(files, stats),
-    patches,
+    patches
   }
   return snapshot
 }

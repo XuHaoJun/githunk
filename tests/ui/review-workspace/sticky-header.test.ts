@@ -18,11 +18,9 @@ function makeFile(overrides: Partial<ReviewFile> & Pick<ReviewFile, "key" | "pat
     newMode: "100644",
     patchDigest: `patch-${overrides.key}`,
     stats: { additions: 1, deletions: 1 },
-    hunks: [
-      createReviewHunk({ index: 0, oldStart: 10, oldCount: 1, newStart: 10, newCount: 1, lines: ["-old", "+new"] }),
-    ],
+    hunks: [createReviewHunk({ index: 0, oldStart: 10, oldCount: 1, newStart: 10, newCount: 1, lines: ["-old", "+new"] })],
     source: "available",
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -31,10 +29,7 @@ function twoHunkFile(): ReviewFile {
     key: "src/two.ts",
     path: "src/two.ts",
     contentId: "content-two",
-    hunks: [
-      createReviewHunk({ index: 0, oldStart: 10, oldCount: 1, newStart: 10, newCount: 1, lines: ["-old", "+new"] }),
-      createReviewHunk({ index: 1, oldStart: 40, oldCount: 1, newStart: 40, newCount: 1, lines: ["-old2", "+new2"] }),
-    ],
+    hunks: [createReviewHunk({ index: 0, oldStart: 10, oldCount: 1, newStart: 10, newCount: 1, lines: ["-old", "+new"] }), createReviewHunk({ index: 1, oldStart: 40, oldCount: 1, newStart: 40, newCount: 1, lines: ["-old2", "+new2"] })]
   })
 }
 
@@ -72,7 +67,7 @@ describe("Sticky diff header", () => {
       state,
       layout: "stack",
       scrollTop: 0,
-      sectionOffsets: sectionOffsets(files, state, "stack"),
+      sectionOffsets: sectionOffsets(files, state, "stack")
     })
 
     expect(sticky).toEqual({ fileKey: file.key, filePath: file.path, hunkIndex: -1 })
@@ -88,14 +83,14 @@ describe("Sticky diff header", () => {
       state,
       layout: "stack",
       scrollTop: 2,
-      sectionOffsets: sectionOffsets(files, state, "stack"),
+      sectionOffsets: sectionOffsets(files, state, "stack")
     })
 
     expect(sticky).toEqual({
       fileKey: file.key,
       filePath: file.path,
       hunkIndex: 0,
-      hunkText: "@@ -10,1 +10,1 @@",
+      hunkText: "@@ -10,1 +10,1 @@"
     })
   })
 
@@ -109,7 +104,7 @@ describe("Sticky diff header", () => {
       state,
       layout: "stack",
       scrollTop: 4,
-      sectionOffsets: sectionOffsets(files, state, "stack"),
+      sectionOffsets: sectionOffsets(files, state, "stack")
     })
 
     expect(sticky).toMatchObject({ hunkIndex: 0 })
@@ -125,14 +120,14 @@ describe("Sticky diff header", () => {
       state,
       layout: "stack",
       scrollTop: 5,
-      sectionOffsets: sectionOffsets(files, state, "stack"),
+      sectionOffsets: sectionOffsets(files, state, "stack")
     })
 
     expect(sticky).toEqual({
       fileKey: file.key,
       filePath: file.path,
       hunkIndex: 1,
-      hunkText: "@@ -40,1 +40,1 @@",
+      hunkText: "@@ -40,1 +40,1 @@"
     })
   })
 
@@ -156,7 +151,7 @@ describe("Sticky diff header", () => {
       fileKey: second.key,
       filePath: second.path,
       hunkIndex: 0,
-      hunkText: "@@ -10,1 +10,1 @@",
+      hunkText: "@@ -10,1 +10,1 @@"
     })
   })
 
@@ -167,10 +162,8 @@ describe("Sticky diff header", () => {
     const files = [toHunkReviewFile(first), toHunkReviewFile(second)]
     const offsets = sectionOffsets(files, state, "stack")
 
-    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: offsets[2]! + 50, sectionOffsets: offsets }))
-      .toMatchObject({ fileKey: second.key })
-    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: -5, sectionOffsets: offsets }))
-      .toMatchObject({ fileKey: first.key })
+    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: offsets[2]! + 50, sectionOffsets: offsets })).toMatchObject({ fileKey: second.key })
+    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: -5, sectionOffsets: offsets })).toMatchObject({ fileKey: first.key })
   })
 
   test("uses split geometry when the pane is in split layout", () => {
@@ -181,10 +174,8 @@ describe("Sticky diff header", () => {
     // lands on row 4 instead of row 5 and row 4 is still the gap in stack.
     const offsets = sectionOffsets(files, state, "split")
 
-    expect(resolveStickyDiffHeader({ files, state, layout: "split", scrollTop: 4, sectionOffsets: offsets }))
-      .toMatchObject({ hunkIndex: 1 })
-    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: 4, sectionOffsets: sectionOffsets(files, state, "stack") }))
-      .toMatchObject({ hunkIndex: 0 })
+    expect(resolveStickyDiffHeader({ files, state, layout: "split", scrollTop: 4, sectionOffsets: offsets })).toMatchObject({ hunkIndex: 1 })
+    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: 4, sectionOffsets: sectionOffsets(files, state, "stack") })).toMatchObject({ hunkIndex: 0 })
   })
 
   test("includes feedback rows before a later hunk in its offset", () => {
@@ -192,16 +183,18 @@ describe("Sticky diff header", () => {
     const base = makeState([file])
     const state = {
       ...base,
-      feedback: [{
-        id: "feedback-1",
-        kind: "note" as const,
-        severity: "comment" as const,
-        body: "look here",
-        anchor: createRangeAnchor(file, { side: "new", startLine: 10, endLine: 10 }),
-        resolution: "active" as const,
-        createdAt: "2026-09-01T00:00:00.000Z",
-        updatedAt: "2026-09-01T00:00:00.000Z",
-      }],
+      feedback: [
+        {
+          id: "feedback-1",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "look here",
+          anchor: createRangeAnchor(file, { side: "new", startLine: 10, endLine: 10 }),
+          resolution: "active" as const,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z"
+        }
+      ]
     }
 
     expect(hunkSectionRowOffset(toHunkReviewFile(file), "stack", 1, state)).toBe(6)
@@ -211,24 +204,25 @@ describe("Sticky diff header", () => {
     const state = makeState([binary])
     const files = [toHunkReviewFile(binary)]
 
-    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: 1, sectionOffsets: sectionOffsets(files, state, "stack") }))
-      .toEqual({ fileKey: binary.key, filePath: binary.path, hunkIndex: -1 })
+    expect(resolveStickyDiffHeader({ files, state, layout: "stack", scrollTop: 1, sectionOffsets: sectionOffsets(files, state, "stack") })).toEqual({ fileKey: binary.key, filePath: binary.path, hunkIndex: -1 })
   })
   test("places file feedback after a no-diff explanation row", () => {
     const file = makeFile({ key: "mode-only", path: "mode-only", contentId: "content-mode-only", hunks: [] })
     const base = makeState([file])
     const state = {
       ...base,
-      feedback: [{
-        id: "file-feedback",
-        kind: "note" as const,
-        severity: "comment" as const,
-        body: "review the mode",
-        anchor: createFileAnchor(file),
-        resolution: "active" as const,
-        createdAt: "2026-09-01T00:00:00.000Z",
-        updatedAt: "2026-09-01T00:00:00.000Z",
-      }],
+      feedback: [
+        {
+          id: "file-feedback",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "review the mode",
+          anchor: createFileAnchor(file),
+          resolution: "active" as const,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z"
+        }
+      ]
     }
 
     expect(feedbackSectionRowOffset(toHunkReviewFile(file), "stack", "file-feedback", state)).toBe(2)

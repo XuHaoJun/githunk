@@ -13,7 +13,7 @@ const COLORS = {
   header: "#7aa6da",
   separator: "#666666",
   collapsed: "#8c8c8c",
-  feedback: "#c397d8",
+  feedback: "#c397d8"
 } as const
 const BACKGROUNDS = {
   panel: "#1e2329",
@@ -23,7 +23,7 @@ const BACKGROUNDS = {
   empty: "#272b31",
   selected: "#264f78",
   selectedHeader: "#365f8a",
-  selectedFeedback: "#5a3f68",
+  selectedFeedback: "#5a3f68"
 } as const
 
 const SELECTED_FOREGROUND = "#ffffff"
@@ -45,7 +45,7 @@ function chunk(text: string, fg?: string, bg?: string): TextChunk {
     __isChunk: true,
     text,
     ...(fg ? { fg: color(fg) } : {}),
-    ...(bg ? { bg: color(bg) } : {}),
+    ...(bg ? { bg: color(bg) } : {})
   }
 }
 
@@ -81,14 +81,7 @@ function numberText(value: number | undefined, digits: number): string {
   return value === undefined ? " ".repeat(digits) : String(value).padStart(digits, " ")
 }
 
-function cellChunks(
-  cell: HunkSplitCell,
-  side: Side,
-  width: number,
-  digits: number,
-  showLineNumbers: boolean,
-  selected: boolean,
-): StyledText {
+function cellChunks(cell: HunkSplitCell, side: Side, width: number, digits: number, showLineNumbers: boolean, selected: boolean): StyledText {
   const geometry = resolveHunkSplitCellGeometry(width, digits, showLineNumbers)
   const marker = side === "right" ? "│" : cell.kind === "empty" ? " " : cell.sign
   const markerColor = side === "right" ? COLORS.separator : COLORS[cell.kind]
@@ -101,29 +94,21 @@ function cellChunks(
   const fitted = fitSpans(cell.spans, contentWidth, fallback)
   const chunks: TextChunk[] = [chunk(marker, selected ? SELECTED_FOREGROUND : markerColor, selected ? BACKGROUNDS.selected : BACKGROUNDS.panel)]
   if (gutterText.length > 0) chunks.push(chunk(gutterText, selected ? SELECTED_FOREGROUND : COLORS.gutter, gutterBackground))
-  for (const span of fitted.spans) chunks.push(chunk(span.text, selected ? SELECTED_FOREGROUND : span.fg ?? fallback, selected ? BACKGROUNDS.selected : span.bg ?? contentBackground))
+  for (const span of fitted.spans) chunks.push(chunk(span.text, selected ? SELECTED_FOREGROUND : (span.fg ?? fallback), selected ? BACKGROUNDS.selected : (span.bg ?? contentBackground)))
   chunks.push(chunk(" ".repeat(Math.max(0, contentWidth - fitted.usedWidth)), fallback, contentBackground))
   return new StyledText(chunks)
 }
 
-function stackChunks(
-  cell: HunkStackCell,
-  width: number,
-  digits: number,
-  showLineNumbers: boolean,
-  selected: boolean,
-): StyledText {
+function stackChunks(cell: HunkStackCell, width: number, digits: number, showLineNumbers: boolean, selected: boolean): StyledText {
   const geometry = resolveHunkStackCellGeometry(width, digits, showLineNumbers)
-  const gutter = showLineNumbers
-    ? `${numberText(cell.oldLineNumber, digits)} ${numberText(cell.newLineNumber, digits)} `
-    : ""
+  const gutter = showLineNumbers ? `${numberText(cell.oldLineNumber, digits)} ${numberText(cell.newLineNumber, digits)} ` : ""
   const gutterText = padCells(gutter, geometry.gutterWidth)
   const fallback = selected ? SELECTED_FOREGROUND : COLORS[cell.kind]
   const contentBackground = selected ? BACKGROUNDS.selected : BACKGROUNDS[cell.kind]
   const fitted = fitSpans(cell.spans, geometry.contentWidth, fallback)
   const chunks: TextChunk[] = [chunk(cell.sign, fallback, selected ? BACKGROUNDS.selected : BACKGROUNDS.panel)]
   if (gutterText.length > 0) chunks.push(chunk(gutterText, selected ? SELECTED_FOREGROUND : COLORS.gutter, contentBackground))
-  for (const span of fitted.spans) chunks.push(chunk(span.text, selected ? SELECTED_FOREGROUND : span.fg ?? fallback, selected ? BACKGROUNDS.selected : span.bg ?? contentBackground))
+  for (const span of fitted.spans) chunks.push(chunk(span.text, selected ? SELECTED_FOREGROUND : (span.fg ?? fallback), selected ? BACKGROUNDS.selected : (span.bg ?? contentBackground)))
   chunks.push(chunk(" ".repeat(Math.max(0, geometry.contentWidth - fitted.usedWidth)), fallback, contentBackground))
   return new StyledText(chunks)
 }

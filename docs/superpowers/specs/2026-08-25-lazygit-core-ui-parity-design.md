@@ -49,13 +49,13 @@ A numbered side-panel **window** owns geometry and focus. A **view** owns conten
 
 The first-slice window configuration is:
 
-| Window | Number | Views |
-| --- | ---: | --- |
-| Status | 1 | Status |
-| Files | 2 | Files |
-| Branches | 3 | Local Branches, Remotes, Tags; transient RemoteBranches child |
-| Commits | 4 | Commits; transient CommitFiles child |
-| Stash | 5 | Stash |
+| Window   | Number | Views                                                         |
+| -------- | -----: | ------------------------------------------------------------- |
+| Status   |      1 | Status                                                        |
+| Files    |      2 | Files                                                         |
+| Branches |      3 | Local Branches, Remotes, Tags; transient RemoteBranches child |
+| Commits  |      4 | Commits; transient CommitFiles child                          |
+| Stash    |      5 | Stash                                                         |
 
 Worktrees and Submodules will later coexist with Files as tabs in window 2, and Reflog will later coexist with Commits as a tab in window 4, matching lazygit's default groups. They are not rendered as placeholders before their real data and behavior exist.
 

@@ -18,9 +18,6 @@ export type DocumentSelection = {
   readonly reason?: string
 }
 
-
-
-
 function selectedRange(selection: DocumentSelection | undefined, document: DiffDocument, mode: CopyMode): [number, number] | undefined {
   if (!selection?.valid) return undefined
   if (mode === "hunk" || mode === "file") {

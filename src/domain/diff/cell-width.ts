@@ -29,7 +29,7 @@ const WIDE_RANGES: readonly (readonly [number, number])[] = [
   [0xffe0, 0xffe6], // fullwidth signs
   [0x1f300, 0x1f9ff], // emoji: pictographs, emoticons, transport, supplemental symbols
   [0x1fa70, 0x1faff], // emoji: symbols and pictographs extended-A
-  [0x20000, 0x3fffd], // CJK unified ideographs extension B and beyond
+  [0x20000, 0x3fffd] // CJK unified ideographs extension B and beyond
 ]
 
 /** Whether `grapheme`'s leading code point occupies two columns rather than one. */

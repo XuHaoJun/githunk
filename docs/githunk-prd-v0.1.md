@@ -4,6 +4,7 @@
 **Date:** 2026-08-24
 **Primary use case:** Reviewing coding-agent output
 **Product category:** Review-first Git TUI
+
 > **Branch Review cutover (2026-08-27):** The Branch Review portions of this document (§8.2, §9 for Branch Review, §13 as it applied to Branch Review, and the `branch` review target) are **superseded** by the approved spec `docs/superpowers/specs/2026-08-27-branch-review-workspace-design.md`. That spec defines the dedicated full-screen Review Workspace entered with `b`, its coverage/invalidation, projections, feedback lifecycle, immutable artifacts, and persistence. This PRD remains the source for Working Tree review, daily-driver Git core, and v0.1 success criteria; do not duplicate the new spec here.
 
 ---
@@ -14,12 +15,12 @@
 
 It should retain enough of lazygit's layout, keyboard muscle memory, and everyday Git functionality to serve as a daily driver, while substantially improving the experience of:
 
-* reading large diffs;
-* selecting and copying exact portions of patches;
-* reviewing changes over SSH;
-* tracking review progress;
-* understanding a coding agent's complete change set rather than isolated commits;
-* eventually understanding blast radius and regression risk.
+- reading large diffs;
+- selecting and copying exact portions of patches;
+- reviewing changes over SSH;
+- tracking review progress;
+- understanding a coding agent's complete change set rather than isolated commits;
+- eventually understanding blast radius and regression risk.
 
 The fundamental product idea is:
 
@@ -56,13 +57,13 @@ selecting several lines from the Patch pane can unintentionally include text ren
 
 For coding-agent review this is particularly frustrating because selected code is frequently copied into:
 
-* coding agents;
-* LLM conversations;
-* search tools;
-* issue trackers;
-* review discussions;
-* terminal commands;
-* documentation.
+- coding agents;
+- LLM conversations;
+- search tools;
+- issue trackers;
+- review discussions;
+- terminal commands;
+- documentation.
 
 githunk should understand that the Patch pane is a logical document and copy only text belonging to that document.
 
@@ -80,15 +81,15 @@ Existing lazygit users should be able to perform common operations without relea
 
 Preserve wherever practical:
 
-* `0` for the main pane;
-* `1`–`5` for left-side pane navigation;
-* common stage/unstage behavior;
-* common commit operations;
-* push/pull conventions;
-* branch navigation;
-* stash operations;
-* filtering/search conventions;
-* general navigation conventions.
+- `0` for the main pane;
+- `1`–`5` for left-side pane navigation;
+- common stage/unstage behavior;
+- common commit operations;
+- push/pull conventions;
+- branch navigation;
+- stash operations;
+- filtering/search conventions;
+- general navigation conventions.
 
 Do **not** preserve lazygit behavior merely for historical compatibility when doing so would prevent a major review improvement.
 
@@ -106,12 +107,12 @@ Keyboard-first workflows must remain efficient.
 
 Mouse support should additionally make these actions natural:
 
-* focus panes;
-* select text;
-* scroll;
-* resize panes;
-* inspect files;
-* interact with review state.
+- focus panes;
+- select text;
+- scroll;
+- resize panes;
+- inspect files;
+- interact with review state.
 
 Mouse support must not make text copying worse.
 
@@ -127,11 +128,11 @@ The UI must always make it obvious **what changes are currently being reviewed**
 
 The user should never have to wonder whether the displayed diff means:
 
-* unstaged changes;
-* staged changes;
-* all working-tree changes;
-* one commit;
-* or the complete branch change set.
+- unstaged changes;
+- staged changes;
+- all working-tree changes;
+- one commit;
+- or the complete branch change set.
 
 ---
 
@@ -324,25 +325,25 @@ Supports:
 
 ### Local branches
 
-* list;
-* search/filter;
-* switch;
-* create;
-* delete;
-* rename.
+- list;
+- search/filter;
+- switch;
+- create;
+- delete;
+- rename.
 
 ### Remotes
 
-* list configured remotes;
-* fetch;
-* enter a remote to browse its branches.
+- list configured remotes;
+- fetch;
+- enter a remote to browse its branches.
 
 ### Remote branches
 
-* list;
-* search/filter;
-* inspect commits;
-* checkout.
+- list;
+- search/filter;
+- inspect commits;
+- checkout.
 
 When selecting:
 
@@ -396,11 +397,11 @@ v0.1 does **not** require commit-by-commit review completion.
 
 Support common daily operations:
 
-* list;
-* inspect;
-* apply;
-* pop;
-* drop.
+- list;
+- inspect;
+- apply;
+- pop;
+- drop.
 
 Additional advanced stash operations may follow later.
 
@@ -412,13 +413,13 @@ The main pane is the most important surface in githunk.
 
 Depending on context it may display:
 
-* working-tree diff;
-* staged diff;
-* aggregate branch diff;
-* individual commit;
-* stash diff;
-* branch commit history;
-* remote branch history.
+- working-tree diff;
+- staged diff;
+- aggregate branch diff;
+- individual commit;
+- stash diff;
+- branch commit history;
+- remote branch history.
 
 In review contexts, maximizing useful patch space takes priority.
 
@@ -430,10 +431,10 @@ The lower-right region shows executed Git commands and relevant command output.
 
 Users must be able to:
 
-* show/hide it;
-* focus it;
-* scroll it;
-* resize it vertically.
+- show/hide it;
+- focus it;
+- scroll it;
+- resize it vertically.
 
 Command failures must remain inspectable.
 
@@ -454,11 +455,11 @@ The horizontal divider between Main and Command Log must also support mouse drag
 
 Expected behaviors:
 
-* immediate visual resize;
-* sensible minimum pane sizes;
-* terminal resize does not corrupt layout;
-* splitter drag must not accidentally begin text selection;
-* text selection must not accidentally resize a splitter.
+- immediate visual resize;
+- sensible minimum pane sizes;
+- terminal resize does not corrupt layout;
+- splitter drag must not accidentally begin text selection;
+- text selection must not accidentally resize a splitter.
 
 A future enhancement may support double-clicking a divider to collapse/restore a region.
 
@@ -483,12 +484,14 @@ Unstaged
 The exact active target must always be visible.
 
 ---
+
 ## 8.2 Branch Review — superseded
 
 > **Superseded by `docs/superpowers/specs/2026-08-27-branch-review-workspace-design.md` (§5–§13, §15).**
 > The old in-pane Branch Review mode and its `BranchReviewSnapshot`/`branchReviewTarget`/`review-state-v1.json` contract are removed. The dedicated full-screen Review Workspace entered from the repository screen with `b` (and closed with `Escape`) replaces it.
 >
 > **Cutover notes (do not duplicate the spec):**
+>
 > - **Storage isolation:** Working Tree and Stash review progress now live in `working-tree-review-state-v1.json`; Branch Review uses only the v2 store at `.git/githunk/review-state-v2.json` (`version: 2`, `baseByHead`, `reviews`). No record from the combined `review-state-v1.json` is migrated; that file is intentionally ignored.
 > - **Immutable artifacts:** each finished review writes one JSON file at `.git/githunk/reviews/<review-id>/<artifact-id>.json` (`ReviewArtifactV1`) and offers deterministic Markdown derived from that artifact for clipboard/export. Artifacts are exclusive-create and digest-verified; retries reuse the same artifact id.
 > - **Dedicated keys (§5.4):** `j`/`k`/`arrows` row scroll, `]`/`[` next/prev hunk, `.`/`,` next/prev file, `n`/`N` next/prev unreviewed/invalidated, `}`/`{` next/prev pending feedback, `/` filter, `tab` focus cycle, `v` range, `c` create feedback, `r` Viewed, `0`/`1`/`2` layout auto/split/stack, `R` finish, `?` help, `Escape` close.
@@ -511,6 +514,7 @@ The user reviews the aggregate result rather than being forced through commits s
 ---
 
 # 9. Automatic Base Selection
+
 v0.1 should automatically infer a likely review base.
 
 The chosen base must always be shown prominently.
@@ -635,10 +639,10 @@ Therefore v0.1 must test and document a compatibility matrix rather than assumin
 
 Important environments:
 
-* local terminal;
-* SSH;
-* SSH + tmux;
-* SSH + zellij.
+- local terminal;
+- SSH;
+- SSH + tmux;
+- SSH + zellij.
 
 Failure should be understandable rather than silent whenever practical.
 
@@ -665,13 +669,14 @@ Review progress should persist across githunk restarts.
 
 Persistence must:
 
-* remain local to the repository/user;
-* not dirty the working tree;
-* not accidentally become committed project state.
+- remain local to the repository/user;
+- not dirty the working tree;
+- not accidentally become committed project state.
 
 ---
 
 ## 13.1 Change invalidation
+
 When a reviewed file changes after being marked reviewed:
 
 ```text
@@ -692,62 +697,62 @@ v0.1 should contain enough common Git behavior that users do not need to return 
 
 ## Files
 
-* stage file;
-* unstage file;
-* stage hunk;
-* unstage hunk;
-* stage selected lines;
-* unstage selected lines;
-* discard file changes;
-* discard hunk/selected changes where safely supported.
+- stage file;
+- unstage file;
+- stage hunk;
+- unstage hunk;
+- stage selected lines;
+- unstage selected lines;
+- discard file changes;
+- discard hunk/selected changes where safely supported.
 
 ## Commit
 
-* commit;
-* amend;
-* edit commit message.
+- commit;
+- amend;
+- edit commit message.
 
 ## Branches
 
-* local branch list;
-* switch;
-* create;
-* delete;
-* rename.
+- local branch list;
+- switch;
+- create;
+- delete;
+- rename.
 
 ## Remotes
 
-* list;
-* fetch;
-* browse remote branches;
-* checkout remote branch to local tracking branch.
+- list;
+- fetch;
+- browse remote branches;
+- checkout remote branch to local tracking branch.
 
 ## History
 
-* commit list;
-* inspect commit;
-* inspect commit files/diff.
+- commit list;
+- inspect commit;
+- inspect commit files/diff.
 
 ## Stash
 
-* list;
-* inspect;
-* apply;
-* pop;
-* drop.
+- list;
+- inspect;
+- apply;
+- pop;
+- drop.
 
 ## Synchronization
 
-* fetch;
-* pull;
-* push.
+- fetch;
+- pull;
+- push.
 
 ## General
 
-* command log;
-* search/filter;
-* keyboard navigation;
-* mouse scrolling/focus where appropriate.
+- command log;
+- search/filter;
+- keyboard navigation;
+- mouse scrolling/focus where appropriate.
 
 ---
 
@@ -798,17 +803,17 @@ OpenTUI currently exposes selectable code renderables, making it a strong candid
 
 Include:
 
-* ASCII;
-* Chinese text;
-* emoji;
-* tabs;
-* blank lines;
-* long paths;
-* long source lines;
-* wrapped source lines;
-* line numbers;
-* syntax highlighting;
-* multiple hunks.
+- ASCII;
+- Chinese text;
+- emoji;
+- tabs;
+- blank lines;
+- long paths;
+- long source lines;
+- wrapped source lines;
+- line numbers;
+- syntax highlighting;
+- multiple hunks.
 
 The goal is to expose differences between:
 
@@ -858,10 +863,10 @@ Clipboard output reconstructs the logical source text correctly.
 
 Selection works correctly with:
 
-* CJK;
-* emoji;
-* wide characters;
-* combining characters where relevant.
+- CJK;
+- emoji;
+- wide characters;
+- combining characters where relevant.
 
 ### S7 — Terminal resize
 
@@ -899,10 +904,10 @@ OpenTUI is the preferred framework **only if the Selection Spike succeeds**.
 
 Reasons for evaluating it first:
 
-* application-aware selection;
-* selectable code/text renderables;
-* mouse interaction;
-* OSC52 clipboard support.
+- application-aware selection;
+- selectable code/text renderables;
+- mouse interaction;
+- OSC52 clipboard support.
 
 If OpenTUI cannot reliably satisfy pane-isolated selection, Unicode/wrapping behavior, resizing, or remote clipboard requirements, the project should reconsider the UI framework before building the Git functionality.
 
@@ -924,23 +929,23 @@ Its purpose is to answer the framework question, not become the foundation of th
 
 The following are explicitly not required for v0.1:
 
-* complete lazygit feature parity;
-* interactive rebase;
-* advanced cherry-pick workflows;
-* merge-conflict editor;
-* bisect;
-* submodule management;
-* worktree management;
-* editing remote URLs;
-* GitHub/GitLab PR management;
-* issue management;
-* AI-generated reviews;
-* AI-generated commit messages;
-* collaboration/comment threads;
-* plugin system;
-* semantic diff;
-* dependency/blast-radius analysis;
-* arbitrary-base comparison UI.
+- complete lazygit feature parity;
+- interactive rebase;
+- advanced cherry-pick workflows;
+- merge-conflict editor;
+- bisect;
+- submodule management;
+- worktree management;
+- editing remote URLs;
+- GitHub/GitLab PR management;
+- issue management;
+- AI-generated reviews;
+- AI-generated commit messages;
+- collaboration/comment threads;
+- plugin system;
+- semantic diff;
+- dependency/blast-radius analysis;
+- arbitrary-base comparison UI.
 
 These can be reconsidered after the review core proves useful.
 
@@ -952,10 +957,10 @@ These can be reconsidered after the review core proves useful.
 
 Allow selecting:
 
-* local branch;
-* remote branch;
-* tag;
-* commit.
+- local branch;
+- remote branch;
+- tag;
+- commit.
 
 Then review:
 
@@ -1188,13 +1193,13 @@ Mapping arbitrary user-selected lines into valid Git patches can have edge cases
 
 This functionality requires extensive tests around:
 
-* neighboring hunks;
-* context lines;
-* additions;
-* deletions;
-* mixed changes;
-* renamed files;
-* line-ending differences.
+- neighboring hunks;
+- context lines;
+- additions;
+- deletions;
+- mixed changes;
+- renamed files;
+- line-ending differences.
 
 ## Review-state invalidation
 
@@ -1267,4 +1272,3 @@ Alternative short description:
 Long-term positioning:
 
 > **Understand what changed, what it affects, and what you still need to review.**
-

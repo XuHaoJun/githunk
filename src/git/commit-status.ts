@@ -42,9 +42,9 @@ async function existingMainBranch(runner: CommandRunner, name: string): Promise<
   const upstream = await tryOutput(runner, ["rev-parse", "--symbolic-full-name", `${name}@{u}`])
   if (upstream !== undefined) return upstream
   const remote = `refs/remotes/origin/${name}`
-  if (await tryOutput(runner, ["rev-parse", "--verify", "--quiet", remote]) !== undefined) return remote
+  if ((await tryOutput(runner, ["rev-parse", "--verify", "--quiet", remote])) !== undefined) return remote
   const local = `refs/heads/${name}`
-  if (await tryOutput(runner, ["rev-parse", "--verify", "--quiet", local]) !== undefined) return local
+  if ((await tryOutput(runner, ["rev-parse", "--verify", "--quiet", local])) !== undefined) return local
   return undefined
 }
 
@@ -55,28 +55,25 @@ const mainBranchCache = new WeakMap<CommandRunner, { readonly key: string; reado
  * lifetime of the runner exactly as lazygit caches `existingMainBranches` for the lifetime of the
  * process (main_branches.go:40-52): a main branch created after startup is picked up on restart.
  */
-export function resolveMainBranches(
-  runner: CommandRunner,
-  names: readonly string[] = DEFAULT_MAIN_BRANCHES,
-): Promise<readonly string[]> {
+export function resolveMainBranches(runner: CommandRunner, names: readonly string[] = DEFAULT_MAIN_BRANCHES): Promise<readonly string[]> {
   const key = names.join("\n")
   const cached = mainBranchCache.get(runner)
   if (cached !== undefined && cached.key === key) return cached.branches
-  const branches = Promise.all(names.map((name) => existingMainBranch(runner, name)))
-    .then((resolved) => resolved.filter((branch): branch is string => branch !== undefined))
+  const branches = Promise.all(names.map((name) => existingMainBranch(runner, name))).then((resolved) => resolved.filter((branch): branch is string => branch !== undefined))
   mainBranchCache.set(runner, { key, branches })
   return branches
 }
 
 /** `git rev-list <refName> ^<notRefName>…`, lazygit's `getReachableHashes` (commit_loader.go:563). */
-export async function reachableHashes(
-  runner: CommandRunner,
-  refName: string,
-  notRefNames: readonly string[],
-): Promise<ReadonlySet<string>> {
+export async function reachableHashes(runner: CommandRunner, refName: string, notRefNames: readonly string[]): Promise<ReadonlySet<string>> {
   const output = await tryOutput(runner, ["rev-list", refName, ...notRefNames.map((name) => `^${name}`)])
   if (output === undefined) return new Set()
-  return new Set(output.split("\n").map((line) => line.trim()).filter((line) => line.length > 0))
+  return new Set(
+    output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+  )
 }
 
 /**
@@ -93,22 +90,14 @@ async function checkedOutBranch(runner: CommandRunner): Promise<string | undefin
  * them (commit_loader.go:104-124). `refName` is the ref the log was taken from — "HEAD" for the
  * Commits panel.
  */
-export async function loadCommitStatusSets(
-  runner: CommandRunner,
-  options: { readonly refName?: string; readonly mainBranches?: readonly string[] } = {},
-): Promise<CommitStatusSets> {
+export async function loadCommitStatusSets(runner: CommandRunner, options: { readonly refName?: string; readonly mainBranches?: readonly string[] } = {}): Promise<CommitStatusSets> {
   const refName = options.refName ?? "HEAD"
   const mainBranches = await resolveMainBranches(runner, options.mainBranches)
   const branch = await checkedOutBranch(runner)
-  const [unmerged, unpushed] = await Promise.all([
-    mainBranches.length === 0 ? undefined : reachableHashes(runner, refName, mainBranches),
-    branch === undefined
-      ? undefined
-      : reachableHashes(runner, `refs/heads/${branch}`, [`${branch}@{u}`, ...mainBranches]),
-  ])
+  const [unmerged, unpushed] = await Promise.all([mainBranches.length === 0 ? undefined : reachableHashes(runner, refName, mainBranches), branch === undefined ? undefined : reachableHashes(runner, `refs/heads/${branch}`, [`${branch}@{u}`, ...mainBranches])])
   return {
     ...(unpushed === undefined ? {} : { unpushed }),
-    ...(unmerged === undefined ? {} : { unmerged }),
+    ...(unmerged === undefined ? {} : { unmerged })
   }
 }
 
@@ -117,17 +106,11 @@ export async function loadCommitStatusSets(
  * branch exists to be merged into, so nothing is merged; a missing `unpushed` set means the pushed
  * question could not be asked, so everything unmerged reads as pushed rather than as unpushed.
  */
-export function commitStatusFor(
-  oid: string,
-  sets: CommitStatusSets,
-): CommitStatus {
+export function commitStatusFor(oid: string, sets: CommitStatusSets): CommitStatus {
   if (sets.unmerged !== undefined && !sets.unmerged.has(oid)) return "merged"
   return sets.unpushed !== undefined && sets.unpushed.has(oid) ? "unpushed" : "pushed"
 }
 
-export function withCommitStatuses(
-  commits: readonly CommitSummary[],
-  sets: CommitStatusSets,
-): readonly CommitSummary[] {
+export function withCommitStatuses(commits: readonly CommitSummary[], sets: CommitStatusSets): readonly CommitSummary[] {
   return commits.map((commit) => ({ ...commit, status: commitStatusFor(commit.oid, sets) }))
 }

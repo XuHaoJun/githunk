@@ -8,8 +8,8 @@ function createFinishDialog(controller: ReviewWorkspaceController): FinishDialog
     controller,
     clipboard: {
       isOsc52Supported: () => false,
-      copyToClipboardOSC52: () => false,
-    },
+      copyToClipboardOSC52: () => false
+    }
   })
 }
 
@@ -32,7 +32,9 @@ export class ReactReviewSession {
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener)
-    return () => { this.listeners.delete(listener) }
+    return () => {
+      this.listeners.delete(listener)
+    }
   }
 
   activate(controller: ReviewWorkspaceController, onClose: () => void): void {
@@ -63,7 +65,9 @@ export class ReactReviewSession {
 
   private publish(): void {
     for (const listener of this.listeners) {
-      try { listener() } catch {}
+      try {
+        listener()
+      } catch {}
     }
   }
 }

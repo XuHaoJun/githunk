@@ -3,20 +3,7 @@ import { createReviewDocument, createReviewHunk } from "../../../src/review/core
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { createFileAnchor, createRangeAnchor, linesForAnchor } from "../../../src/review/core/anchors"
 import { createInitialReviewState, type ReviewState } from "../../../src/review/core/state"
-import {
-  buildHandoffMailbox,
-  latestHandoff,
-  ledgerBadge,
-  ledgerCounts,
-  ledgerHeaderText,
-  ledgerVerdict,
-  objectionList,
-  parseReviewReplies,
-  renderHandoffMarkdown,
-  reviewCheckpoint,
-  serializeReviewReplies,
-  type ReviewReplies,
-} from "../../../src/review/core/ledger"
+import { buildHandoffMailbox, latestHandoff, ledgerBadge, ledgerCounts, ledgerHeaderText, ledgerVerdict, objectionList, parseReviewReplies, renderHandoffMarkdown, reviewCheckpoint, serializeReviewReplies, type ReviewReplies } from "../../../src/review/core/ledger"
 import type { ReviewDocument, ReviewFeedback, ReviewFile } from "../../../src/review/core/types"
 
 const HANDOFF_OID = "a".repeat(40)
@@ -35,7 +22,7 @@ function makeFile(key: string, lines: readonly string[]): ReviewFile {
     patchDigest: `patch-${key}`,
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: lines.length, newStart: 1, newCount: lines.length, lines: lines.map((line) => ` ${line}`) })],
-    source: "available",
+    source: "available"
   } as unknown as ReviewFile
 }
 
@@ -44,7 +31,7 @@ function makeDoc(files: readonly ReviewFile[], headOid = LATER_OID): ReviewDocum
     identity: createReviewIdentity({ headRef: "refs/heads/feature", headOid, baseRef: "refs/heads/main" }),
     generation: createReviewGeneration({ mergeBaseOid: "m1", baseOid: "b1", headOid }),
     commits: [],
-    files: [...files],
+    files: [...files]
   })
 }
 
@@ -56,7 +43,7 @@ function makeFeedback(overrides: Partial<ReviewFeedback> & { id: string; anchor:
     resolution: "active",
     createdAt: "2026-09-08T00:00:00.000Z",
     updatedAt: "2026-09-08T00:00:00.000Z",
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -64,7 +51,7 @@ function handedOff(overrides: Partial<ReviewFeedback> & { id: string; anchor: Re
   return makeFeedback({
     status: "handed-off",
     handoff: { at: "2026-09-08T01:00:00.000Z", headOid: HANDOFF_OID },
-    ...overrides,
+    ...overrides
   })
 }
 
@@ -72,8 +59,7 @@ function stateWith(files: readonly ReviewFile[], feedback: readonly ReviewFeedba
   return { ...createInitialReviewState(makeDoc(files)), feedback }
 }
 
-const replied = (id: string): ReviewReplies =>
-  new Map([[id, { id, body: "because the range query needs it", at: "2026-09-08T02:00:00.000Z" }]])
+const replied = (id: string): ReviewReplies => new Map([[id, { id, body: "because the range query needs it", at: "2026-09-08T02:00:00.000Z" }]])
 
 describe("ledgerVerdict — resolution and status only mean something as a pair", () => {
   const anchor = createFileAnchor(makeFile("a.ts", ["one"]))
@@ -107,12 +93,11 @@ describe("ledgerVerdict — resolution and status only mean something as a pair"
       handoff: {
         at: "2026-09-08T01:00:00.000Z",
         headOid: HANDOFF_OID,
-        contentId: handedOffFile.contentId,
-      },
+        contentId: handedOffFile.contentId
+      }
     })
     expect(ledgerVerdict(feedback, LATER_OID)).toBe("addressed")
   })
-
 
   test("an anchor that no longer resolves means the code under the objection moved", () => {
     for (const resolution of ["stale", "orphaned"] as const) {
@@ -154,13 +139,7 @@ describe("ledger counts and header", () => {
   const anchor = createFileAnchor(file)
 
   test("counts every verdict and sums what still wants attention", () => {
-    const feedback = [
-      makeFeedback({ id: "open", anchor }),
-      handedOff({ id: "untouched", anchor }),
-      handedOff({ id: "disputed", anchor }),
-      handedOff({ id: "addressed", anchor, resolution: "stale" }),
-      handedOff({ id: "resolved", anchor, status: "resolved" }),
-    ]
+    const feedback = [makeFeedback({ id: "open", anchor }), handedOff({ id: "untouched", anchor }), handedOff({ id: "disputed", anchor }), handedOff({ id: "addressed", anchor, resolution: "stale" }), handedOff({ id: "resolved", anchor, status: "resolved" })]
     const counts = ledgerCounts(feedback, LATER_OID, replied("disputed"))
     expect(counts).toMatchObject({ open: 1, waiting: 0, untouched: 1, disputed: 1, addressed: 1, resolved: 1 })
     // Resolved is settled; everything else is still the reviewer's problem.
@@ -177,11 +156,9 @@ describe("ledger counts and header", () => {
     const feedback = handedOff({
       id: "x",
       anchor,
-      handoff: { at: "2026-09-08T03:00:00.000Z", headOid: HANDOFF_OID },
+      handoff: { at: "2026-09-08T03:00:00.000Z", headOid: HANDOFF_OID }
     })
-    const oldReply: ReviewReplies = new Map([
-      ["x", { id: "x", body: "why not", at: "2026-09-08T02:00:00.000Z" }],
-    ])
+    const oldReply: ReviewReplies = new Map([["x", { id: "x", body: "why not", at: "2026-09-08T02:00:00.000Z" }]])
 
     expect(ledgerCounts([feedback], LATER_OID, oldReply)).toMatchObject({ untouched: 1, disputed: 0 })
     expect(objectionList(stateWith([file], [feedback]), LATER_OID, oldReply)[0]?.verdict).toBe("untouched")
@@ -206,8 +183,10 @@ describe("reviewCheckpoint — what 'since' is measured from", () => {
     expect(reviewCheckpoint({ feedback: [laterHandoff], lastSubmission: submission })?.kind).toBe("handoff")
 
     const earlierHandoff = makeFeedback({
-      id: "y", anchor, status: "handed-off",
-      handoff: { at: "2026-09-08T00:00:00.000Z", headOid: HANDOFF_OID },
+      id: "y",
+      anchor,
+      status: "handed-off",
+      handoff: { at: "2026-09-08T00:00:00.000Z", headOid: HANDOFF_OID }
     })
     expect(reviewCheckpoint({ feedback: [earlierHandoff], lastSubmission: submission })?.kind).toBe("submission")
   })
@@ -230,24 +209,22 @@ describe("the mailbox", () => {
     const mailbox = buildHandoffMailbox(state, { generatedAt: "2026-09-08T01:00:00.000Z", headOid: HANDOFF_OID })
     expect(mailbox.version).toBe(1)
     expect(mailbox.headOid).toBe(HANDOFF_OID)
-    expect(mailbox.items).toEqual([{
-      id: "fb-1",
-      path: "src/cache.ts",
-      side: "new",
-      startLine: 2,
-      endLine: 2,
-      severity: "blocking",
-      kind: "note",
-      body: "use find()",
-    }])
+    expect(mailbox.items).toEqual([
+      {
+        id: "fb-1",
+        path: "src/cache.ts",
+        side: "new",
+        startLine: 2,
+        endLine: 2,
+        severity: "blocking",
+        kind: "note",
+        body: "use find()"
+      }
+    ])
   })
 
   test("leaves out what the reviewer already closed or can no longer anchor", () => {
-    const state = stateWith([file], [
-      makeFeedback({ id: "live", anchor: range }),
-      makeFeedback({ id: "stale", anchor: range, resolution: "stale" }),
-      makeFeedback({ id: "done", anchor: range, status: "resolved" }),
-    ])
+    const state = stateWith([file], [makeFeedback({ id: "live", anchor: range }), makeFeedback({ id: "stale", anchor: range, resolution: "stale" }), makeFeedback({ id: "done", anchor: range, status: "resolved" })])
     const mailbox = buildHandoffMailbox(state, { generatedAt: "t", headOid: HANDOFF_OID })
     expect(mailbox.items.map((item) => item.id)).toEqual(["live"])
   })
@@ -292,7 +269,12 @@ describe("replies are read as data, never trusted as structure", () => {
   })
 
   test("the last reply for one objection wins", () => {
-    const raw = JSON.stringify({ replies: [{ id: "a", body: "first" }, { id: "a", body: "second" }] })
+    const raw = JSON.stringify({
+      replies: [
+        { id: "a", body: "first" },
+        { id: "a", body: "second" }
+      ]
+    })
     expect(parseReviewReplies(raw).get("a")?.body).toBe("second")
   })
 })
@@ -302,10 +284,7 @@ describe("objectionList — the jump list carries the verdict, not just the plac
   const second = makeFile("b.ts", ["one", "two"])
 
   test("sorts by file then line, and says what is left to do", () => {
-    const state = stateWith([first, second], [
-      handedOff({ id: "second-file", anchor: createRangeAnchor(second, { side: "new", startLine: 1, endLine: 1 }) }),
-      makeFeedback({ id: "first-file", anchor: createRangeAnchor(first, { side: "new", startLine: 2, endLine: 2 }), severity: "blocking" }),
-    ])
+    const state = stateWith([first, second], [handedOff({ id: "second-file", anchor: createRangeAnchor(second, { side: "new", startLine: 1, endLine: 1 }) }), makeFeedback({ id: "first-file", anchor: createRangeAnchor(first, { side: "new", startLine: 2, endLine: 2 }), severity: "blocking" })])
     const entries = objectionList(state, LATER_OID)
     expect(entries.map((entry) => entry.id)).toEqual(["first-file", "second-file"])
     expect(entries[0]!.verdict).toBe("open")

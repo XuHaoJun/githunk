@@ -34,7 +34,7 @@ const STYLE_DEFINITIONS: Readonly<Record<CommandLogStyle, PaneStyleDefinition>> 
   intro: { fg: ANSI_CYAN },
   // `style.FgYellow.Sprint(Tr.RandomTip)` / `style.FgGreen.Sprint(tip)` (:81-82).
   "tip-label": { fg: ANSI_YELLOW },
-  tip: { fg: ANSI_GREEN },
+  tip: { fg: ANSI_GREEN }
 }
 
 export type CommandLogHighlight = {
@@ -109,7 +109,7 @@ export function installCommandLogText(text: TextRenderable, lines: readonly Comm
         for (const highlight of commandLogLineHighlights(line)) {
           buffer.addHighlight(index, { start: highlight.start, end: highlight.end, styleId: styleIds[highlight.style] })
         }
-      },
+      }
     })
     painters.set(text, painter)
   }

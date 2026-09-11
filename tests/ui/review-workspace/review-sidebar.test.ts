@@ -18,7 +18,7 @@ function makeFile(overrides: Partial<ReviewFile> & { path: string; key: string }
     patchDigest: "digest",
     stats: overrides.stats ?? { additions: 1, deletions: 1 },
     hunks: overrides.hunks ?? [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: [" x"] })],
-    source: overrides.source ?? "available",
+    source: overrides.source ?? "available"
   }
   return overrides.previousPath === undefined ? base : { ...base, previousPath: overrides.previousPath }
 }
@@ -43,33 +43,25 @@ function makeState(files: ReviewFile[], feedbackFileKeys: string[] = []): Review
       body: "hello",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      resolution: "pending" as const,
+      resolution: "pending" as const
     })),
     draft: null,
     viewport: { start: 0, height: 20 },
     error: undefined,
-    projection: { kind: "aggregate" },
+    projection: { kind: "aggregate" }
   } as unknown as ReviewState
 }
 
 describe("reviewSidebar — tree grouping (hunk parity)", () => {
   test("groups files by dirname and emits group headers in review order", () => {
-    const files = [
-      makeFile({ key: "a", path: "src/a.ts" }),
-      makeFile({ key: "b", path: "README.md" }),
-      makeFile({ key: "c", path: "src/b.ts" }),
-      makeFile({ key: "d", path: "LICENSE" }),
-    ]
+    const files = [makeFile({ key: "a", path: "src/a.ts" }), makeFile({ key: "b", path: "README.md" }), makeFile({ key: "c", path: "src/b.ts" }), makeFile({ key: "d", path: "LICENSE" })]
     const entries = buildReviewSidebarEntries(makeState(files))
     const labels = entries.map((e) => (e.kind === "group" ? e.label : e.name))
     expect(labels).toEqual(["src/", "a.ts", "./", "README.md", "src/", "b.ts", "./", "LICENSE"])
   })
 
   test("file name is basename, rename shows prev -> next", () => {
-    const files = [
-      makeFile({ key: "r", path: "src/ui/Renamed.tsx", previousPath: "src/ui/Legacy.tsx", kind: "renamed" }),
-      makeFile({ key: "m", path: "src/ui/only-add.ts" }),
-    ]
+    const files = [makeFile({ key: "r", path: "src/ui/Renamed.tsx", previousPath: "src/ui/Legacy.tsx", kind: "renamed" }), makeFile({ key: "m", path: "src/ui/only-add.ts" })]
     const entries = buildReviewSidebarEntries(makeState(files)).filter((e) => e.kind === "file")
     expect(entries[0]!.name).toBe("Legacy.tsx -> Renamed.tsx")
     expect(entries[1]!.name).toBe("only-add.ts")
@@ -79,7 +71,7 @@ describe("reviewSidebar — tree grouping (hunk parity)", () => {
     const files = [
       makeFile({ key: "only-add", path: "src/ui/only-add.ts", stats: { additions: 5, deletions: 0 } }),
       makeFile({ key: "only-del", path: "src/ui/only-del.ts", stats: { additions: 0, deletions: 3 } }),
-      makeFile({ key: "zero", path: "src/ui/zero.ts", previousPath: "src/ui/Legacy.tsx", kind: "renamed", stats: { additions: 0, deletions: 0 } }),
+      makeFile({ key: "zero", path: "src/ui/zero.ts", previousPath: "src/ui/Legacy.tsx", kind: "renamed", stats: { additions: 0, deletions: 0 } })
     ]
     const entries = buildReviewSidebarEntries(makeState(files, ["zero"])).filter((e) => e.kind === "file")
     // only-add: +5 only
@@ -103,7 +95,7 @@ describe("reviewSidebar — tree grouping (hunk parity)", () => {
       makeFile({ key: "deleted", path: "src/old.ts", kind: "deleted" }),
       makeFile({ key: "renamed", path: "src/renamed-new.ts", previousPath: "src/renamed-old.ts", kind: "renamed" }),
       makeFile({ key: "modified", path: "src/mod.ts", kind: "modified" }),
-      makeFile({ key: "copied", path: "src/copy.ts", kind: "copied" }),
+      makeFile({ key: "copied", path: "src/copy.ts", kind: "copied" })
     ]
     const entries = buildReviewSidebarEntries(makeState(files)).filter((e) => e.kind === "file")
     expect(entries[0]!.changeType).toBe("new")
@@ -122,26 +114,19 @@ describe("reviewSidebar — tree grouping (hunk parity)", () => {
   test("binary files have no stats badges but still render group and name", () => {
     const bin = makeFile({ key: "bin", path: "assets/image.png", kind: "binary", stats: { additions: null as unknown as number, deletions: null as unknown as number }, source: "binary" })
     const entries = buildReviewSidebarEntries(makeState([bin]))
-    expect(entries).toEqual([
-      { kind: "group", id: expect.stringContaining("group:assets"), label: "assets/" },
-      expect.objectContaining({ kind: "file", name: "image.png", additionsText: null, deletionsText: null }),
-    ])
+    expect(entries).toEqual([{ kind: "group", id: expect.stringContaining("group:assets"), label: "assets/" }, expect.objectContaining({ kind: "file", name: "image.png", additionsText: null, deletionsText: null })])
   })
 
   test("escapes tabs in paths as \\t like hunk", () => {
     const file = makeFile({ key: "tab", path: "src/tab\tname.ts" })
     const entries = buildReviewSidebarEntries(makeState([file]))
     expect(entries[0]).toMatchObject({ kind: "group", label: "src/" })
-    const f = entries[1] as Extract<typeof entries[number], { kind: "file" }>
+    const f = entries[1] as Extract<(typeof entries)[number], { kind: "file" }>
     expect(f.name).toBe("tab\\tname.ts")
   })
 
   test("filter + ordering preserves review stream order while grouping", () => {
-    const files = [
-      makeFile({ key: "a", path: "src/a.ts" }),
-      makeFile({ key: "b", path: "src/b.ts" }),
-      makeFile({ key: "c", path: "test/c.ts" }),
-    ]
+    const files = [makeFile({ key: "a", path: "src/a.ts" }), makeFile({ key: "b", path: "src/b.ts" }), makeFile({ key: "c", path: "test/c.ts" })]
     const state = makeState(files)
     // simulate text filter — we expect builder to be called with already-filtered visible files,
     // but ordering is preserved. This test verifies ids follow input order

@@ -1,13 +1,29 @@
 import { describe, expect, test } from "bun:test"
 import { RGBA, TextAttributes, type TextChunk } from "@opentui/core"
 import type { ListDisplayRow, ListRow } from "../../src/ui/list-view"
-import { clearListRangeSelection, computeColumnLayout, createListState, expandListRangeSelection, getListSelectionRange, hasMultipleListRowsSelected, isListRangeActive, layoutListRowSegments, listRowAtPoint, moveListSelection, renderListRows, selectListRow, setListRangeSelection, setListRows, toggleListRangeSelection } from "../../src/ui/list-view"
+import {
+  clearListRangeSelection,
+  computeColumnLayout,
+  createListState,
+  expandListRangeSelection,
+  getListSelectionRange,
+  hasMultipleListRowsSelected,
+  isListRangeActive,
+  layoutListRowSegments,
+  listRowAtPoint,
+  moveListSelection,
+  renderListRows,
+  selectListRow,
+  setListRangeSelection,
+  setListRows,
+  toggleListRangeSelection
+} from "../../src/ui/list-view"
 import { FILE_STAGED_FG, REFLOG_HASH_FG, SELECTED_LINE_BG, DEFAULT_BACKGROUND } from "../../src/ui/theme"
 
 const rows = [
   { id: "a", columns: [{ text: "alpha", priority: 0 }] },
   { id: "b", columns: [{ text: "beta", priority: 0 }] },
-  { id: "c", columns: [{ text: "gamma", priority: 0 }] },
+  { id: "c", columns: [{ text: "gamma", priority: 0 }] }
 ] as const
 
 describe("stable list state", () => {
@@ -37,8 +53,8 @@ describe("list column layout", () => {
     columns: [
       { text: marker, priority: 1 },
       { text: name, priority: 2, flex: true },
-      { text: note, priority: 4 },
-    ],
+      { text: note, priority: 4 }
+    ]
   })
 
   test("sizes every column to the widest cell in the list, not the row", () => {
@@ -59,7 +75,10 @@ describe("list column layout", () => {
 
   test("pads cells so following columns line up on every row", () => {
     const state = createListState([row("a", "M", "alpha", "n"), row("b", "", "beta-long", "note")])
-    const lines = renderListRows(state, false, 40).chunks.map((c) => c.text).join("").split("\n")
+    const lines = renderListRows(state, false, 40)
+      .chunks.map((c) => c.text)
+      .join("")
+      .split("\n")
     expect(lines).toEqual(["M alpha     n", "  beta-long note"])
   })
 
@@ -72,10 +91,10 @@ describe("list column layout", () => {
           text: "○ hello",
           priority: 2,
           flex: true,
-          segments: [{ text: "○", color: "#ffffff" }, { text: " " }, { text: "hello" }],
+          segments: [{ text: "○", color: "#ffffff" }, { text: " " }, { text: "hello" }]
         },
-        { text: "1d", priority: 0 },
-      ],
+        { text: "1d", priority: 0 }
+      ]
     }
     // Fixed columns take 2 + 2 + 1 separator each side = 6, leaving 6 for the flex prefix "○ hell".
     const layout = computeColumnLayout([segmented], 12)
@@ -98,21 +117,35 @@ describe("selected row highlighting", () => {
       columns: [
         { text: "abc1234", priority: 0, color: REFLOG_HASH_FG },
         { text: "subject", priority: 1, flex: true },
-        { text: "MM", priority: 2, segments: [{ text: "M", color: FILE_STAGED_FG }, { text: "M", color: "#1a2b3c" }] },
+        {
+          text: "MM",
+          priority: 2,
+          segments: [
+            { text: "M", color: FILE_STAGED_FG },
+            { text: "M", color: "#1a2b3c" }
+          ]
+        },
         { text: "tag", priority: 3, style: "cyan" as const },
-        { text: "note", priority: 4, style: "green" as const },
-      ],
+        { text: "note", priority: 4, style: "green" as const }
+      ]
     },
     {
       id: "b",
       columns: [
         { text: "def5678", priority: 0, color: REFLOG_HASH_FG },
         { text: "other", priority: 1, flex: true },
-        { text: "MM", priority: 2, segments: [{ text: "M", color: FILE_STAGED_FG }, { text: "M", color: "#1a2b3c" }] },
+        {
+          text: "MM",
+          priority: 2,
+          segments: [
+            { text: "M", color: FILE_STAGED_FG },
+            { text: "M", color: "#1a2b3c" }
+          ]
+        },
         { text: "tag", priority: 3, style: "cyan" as const },
-        { text: "note", priority: 4, style: "green" as const },
-      ],
-    },
+        { text: "note", priority: 4, style: "green" as const }
+      ]
+    }
   ]
 
   const isBold = (chunk: TextChunk) => ((chunk.attributes ?? 0) & TextAttributes.BOLD) === TextAttributes.BOLD
@@ -210,10 +243,13 @@ describe("selected row highlighting", () => {
 
 describe("hovered row highlighting", () => {
   const isBold = (chunk: TextChunk) => ((chunk.attributes ?? 0) & TextAttributes.BOLD) === TextAttributes.BOLD
-  const hoverState = selectListRow(createListState([
-    { id: "a", columns: [{ text: "alpha", priority: 0 }] },
-    { id: "b", columns: [{ text: "beta", priority: 0 }] },
-  ]), "a")
+  const hoverState = selectListRow(
+    createListState([
+      { id: "a", columns: [{ text: "alpha", priority: 0 }] },
+      { id: "b", columns: [{ text: "beta", priority: 0 }] }
+    ]),
+    "a"
+  )
 
   const line = (chunks: readonly TextChunk[], index: number): TextChunk[] => {
     const lines: TextChunk[][] = [[]]
@@ -414,7 +450,7 @@ describe("list range rendering", () => {
   const rangeRows = [
     { id: "a", columns: [{ text: "alpha", priority: 0 }] },
     { id: "b", columns: [{ text: "beta", priority: 0 }] },
-    { id: "c", columns: [{ text: "gamma", priority: 0 }] },
+    { id: "c", columns: [{ text: "gamma", priority: 0 }] }
   ] as const
 
   const isBold = (chunk: TextChunk) => ((chunk.attributes ?? 0) & TextAttributes.BOLD) === TextAttributes.BOLD
@@ -464,14 +500,14 @@ describe("list range rendering", () => {
     const rowsWithHeaders = [
       { id: "a", columns: [{ text: "alpha", priority: 0 }] },
       { id: "b", columns: [{ text: "beta", priority: 0 }] },
-      { id: "c", columns: [{ text: "gamma", priority: 0 }] },
+      { id: "c", columns: [{ text: "gamma", priority: 0 }] }
     ] as const
     const displayRows = [
       { kind: "header" as const, text: "Header" },
       { kind: "item" as const, id: "c" },
       { kind: "item" as const, id: "a" },
       { kind: "item" as const, id: "b" },
-      { kind: "message" as const, text: "footer" },
+      { kind: "message" as const, text: "footer" }
     ]
     const state = setListRangeSelection(createListState(rowsWithHeaders, displayRows), "a", "c")
     // rows indexes: a=0,c=2 -> range 0-2 includes all three items, header/message must stay unhighlighted

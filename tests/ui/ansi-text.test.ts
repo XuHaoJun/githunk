@@ -23,7 +23,10 @@ function logText(commits: number): string {
   return rows.join("\n")
 }
 
-async function pane(width = 120, height = 40): Promise<{
+async function pane(
+  width = 120,
+  height = 40
+): Promise<{
   readonly text: TextRenderable
   flush(): Promise<void>
   captureSpans(): CapturedFrame
@@ -121,16 +124,7 @@ describe("installAnsiText", () => {
       installAnsiText(host.text, { preamble: "", body: parsed.text, spans: parsed.spans })
       await host.flush()
       releaseAnsiText(host.text)
-      const rendered = renderDiff(parseDiff([
-        "diff --git a/a.txt b/a.txt",
-        "index 1111111..2222222 100644",
-        "--- a/a.txt",
-        "+++ b/a.txt",
-        "@@ -1,1 +1,1 @@",
-        "-before",
-        "+after",
-        "",
-      ].join("\n")))
+      const rendered = renderDiff(parseDiff(["diff --git a/a.txt b/a.txt", "index 1111111..2222222 100644", "--- a/a.txt", "+++ b/a.txt", "@@ -1,1 +1,1 @@", "-before", "+after", ""].join("\n")))
       installDiffText(host.text, { preamble: "", body: rendered.displayText, displayLines: rendered.displayLines })
       await host.flush()
       expect(host.text.plainText).toContain("after")
@@ -161,16 +155,7 @@ describe("releasing a painter twice", () => {
   test("leaves the other painter's installed colours alone", async () => {
     const host = await pane()
     try {
-      const rendered = renderDiff(parseDiff([
-        "diff --git a/a.txt b/a.txt",
-        "index 1111111..2222222 100644",
-        "--- a/a.txt",
-        "+++ b/a.txt",
-        "@@ -1,1 +1,1 @@",
-        "-before",
-        "+after",
-        "",
-      ].join("\n")))
+      const rendered = renderDiff(parseDiff(["diff --git a/a.txt b/a.txt", "index 1111111..2222222 100644", "--- a/a.txt", "+++ b/a.txt", "@@ -1,1 +1,1 @@", "-before", "+after", ""].join("\n")))
       installDiffText(host.text, { preamble: "", body: rendered.displayText, displayLines: rendered.displayLines })
       await host.flush()
 

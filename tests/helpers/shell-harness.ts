@@ -17,19 +17,15 @@ async function createTempBareRepository(): Promise<TempRepository> {
       cwd: path,
       env: {
         ...process.env,
-        GIT_TERMINAL_PROMPT: "0",
+        GIT_TERMINAL_PROMPT: "0"
       },
       stdin: "pipe",
       stdout: "pipe",
-      stderr: "pipe",
+      stderr: "pipe"
     })
     if (stdin !== undefined) proc.stdin.write(stdin)
     proc.stdin.end()
-    const [stdout, stderr, exitCode] = await Promise.all([
-      Bun.readableStreamToText(proc.stdout),
-      Bun.readableStreamToText(proc.stderr),
-      proc.exited,
-    ])
+    const [stdout, stderr, exitCode] = await Promise.all([Bun.readableStreamToText(proc.stdout), Bun.readableStreamToText(proc.stderr), proc.exited])
     return { exitCode, stdout, stderr }
   }
   const initialized = await git(["init", "--bare", "--quiet"])
@@ -46,7 +42,7 @@ async function createTempBareRepository(): Promise<TempRepository> {
     },
     async cleanup(): Promise<void> {
       await rm(path, { recursive: true, force: true })
-    },
+    }
   }
 }
 
@@ -108,7 +104,7 @@ export type ShellHarness = {
 
 export async function createShellHarness(options: ShellHarnessOptions = {}): Promise<ShellHarness> {
   const reused = options.repository !== undefined
-  const repository = options.repository ?? await createTempRepository()
+  const repository = options.repository ?? (await createTempRepository())
   const setupFn = options.setup ?? options.setupRepository
   let fetchBare: TempRepository | undefined
   let pushBare: TempRepository | undefined
@@ -146,7 +142,7 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     // same way a real terminal reports them — without it, ctrl+Enter degrades to a bare \r
     // and the commit dialog cannot be confirmed from a test.
     kittyKeyboard: true,
-    exitOnCtrlC: true,
+    exitOnCtrlC: true
   })
 
   // Exposes whether the app's quit path ran, from either of the two independent mechanisms that
@@ -154,12 +150,14 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
   // ctrl+c) and the renderer's own `exitOnCtrlC` handling (which — like in the shipped app —
   // destroys the renderer directly on ctrl+c, regardless of RootView's key handling).
   let quitCalled = false
-  setup.renderer.on("destroy", () => { quitCalled = true })
+  setup.renderer.on("destroy", () => {
+    quitCalled = true
+  })
 
   if (options.logVisible !== undefined) {
     await new UiStateStore(new GitRunner(repository.path)).save({
       ...defaultUiState(),
-      commandLogVisible: options.logVisible,
+      commandLogVisible: options.logVisible
     })
   }
 
@@ -167,12 +165,14 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     repositoryRoot: repository.path,
     runner: new GitRunner(repository.path),
     renderer: setup.renderer,
-    onQuit: () => { quitCalled = true },
+    onQuit: () => {
+      quitCalled = true
+    },
     ...(options.onGeometryChange === undefined ? {} : { onGeometryChange: options.onGeometryChange }),
     ...(options.onEditFile === undefined ? {} : { onEditFile: options.onEditFile }),
     ...(options.loadCommits === undefined ? {} : { loadCommits: options.loadCommits }),
     ...(options.loadBranchCommits === undefined ? {} : { loadBranchCommits: options.loadBranchCommits }),
-    ...(options.onCheckBranchMerged === undefined ? {} : { onCheckBranchMerged: options.onCheckBranchMerged }),
+    ...(options.onCheckBranchMerged === undefined ? {} : { onCheckBranchMerged: options.onCheckBranchMerged })
   })
   await app.refresh()
   await setup.flush()
@@ -244,6 +244,6 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
       app.destroy()
       setup.renderer.destroy()
       if (!reused) await repository.cleanup().catch(() => {})
-    },
+    }
   }
 }

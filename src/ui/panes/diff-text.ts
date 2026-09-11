@@ -19,7 +19,7 @@ const STYLE_DEFINITIONS: Readonly<Record<"gutter" | Exclude<DiffDisplayLineStyle
   addition: { fg: ANSI_GREEN },
   deletion: { fg: ANSI_RED },
   "hunk-header": { fg: ANSI_CYAN },
-  metadata: { dim: true },
+  metadata: { dim: true }
 }
 
 export type DiffTextContent = {
@@ -80,14 +80,7 @@ export function statSpansForPreamble(preamble: string): ReadonlyMap<number, read
       let runStart = 0
       for (let index = 1; index <= symbols.length; index++) {
         if (index < symbols.length && symbols[index] === symbols[runStart]) continue
-        addStatSpan(
-          grouped,
-          row,
-          value,
-          graphStart + runStart,
-          graphStart + index,
-          symbols[runStart] === "+" ? "addition" : "deletion",
-        )
+        addStatSpan(grouped, row, value, graphStart + runStart, graphStart + index, symbols[runStart] === "+" ? "addition" : "deletion")
         runStart = index
       }
       continue
@@ -112,21 +105,14 @@ function isStatRow(value: string): boolean {
   return /^\s+\d+(?:\s+[+-]+(?:\.\.\.)?)?\s*$/.test(suffix) || /^\s+Bin(?:\s+\d+\s+->\s+\d+\s+bytes)?\s*$/.test(suffix)
 }
 
-function addStatSpan(
-  grouped: Map<number, DiffStatSpan[]>,
-  row: number,
-  value: string,
-  start: number,
-  end: number,
-  style: DiffStatSpan["style"],
-): void {
+function addStatSpan(grouped: Map<number, DiffStatSpan[]>, row: number, value: string, start: number, end: number, style: DiffStatSpan["style"]): void {
   const spans = grouped.get(row) ?? []
   spans.push({
     start,
     end,
     columnStart: cellWidth(value.slice(0, start)),
     columnEnd: cellWidth(value.slice(0, end)),
-    style,
+    style
   })
   grouped.set(row, spans)
 }
@@ -195,11 +181,7 @@ function styledChunk(style: DiffDisplayLineStyle, value: string): TextChunk {
  * Whole-document chunk rendering: correct, and what this module exists to avoid. Reached only if a
  * future OpenTUI stops exposing the buffer, so the pane degrades in speed rather than colour.
  */
-function paintAsChunks(
-  text: TextRenderable,
-  content: DiffTextContent,
-  installed: InstalledPaneText & { readonly firstDiffRow: number },
-): InstalledPaneText {
+function paintAsChunks(text: TextRenderable, content: DiffTextContent, installed: InstalledPaneText & { readonly firstDiffRow: number }): InstalledPaneText {
   const { text: full, firstDiffRow } = installed
   const preambleSpans = content.preambleSpans ?? statSpansForPreamble(content.preamble)
   const rows = full.split("\n")
@@ -236,7 +218,7 @@ export function installDiffText(text: TextRenderable, content: DiffTextContent):
     displayLines: content.displayLines,
     firstDiffRow,
     preambleSpans: content.preambleSpans ?? statSpansForPreamble(content.preamble),
-    ...(content.highlightScrollY === undefined ? {} : { highlightScrollY: content.highlightScrollY }),
+    ...(content.highlightScrollY === undefined ? {} : { highlightScrollY: content.highlightScrollY })
   }
   let painter = painters.get(text)
   if (painter === undefined) {
@@ -255,7 +237,7 @@ export function installDiffText(text: TextRenderable, content: DiffTextContent):
         if (display === undefined) return
         if (display.gutterCols > 0) buffer.addHighlight(row, { start: 0, end: display.gutterCols, styleId: styleIds.gutter! })
         if (display.style !== "plain") buffer.addHighlight(row, { start: display.gutterCols, end: LINE_END_COLS, styleId: styleIds[display.style]! })
-      },
+      }
     })
     painters.set(text, painter)
   }

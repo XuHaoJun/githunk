@@ -45,9 +45,7 @@ export class FocusManager {
   }
 
   cycle(direction: "next" | "previous"): void {
-    const next = direction === "next"
-      ? nextFocus(this.active, this.logVisible)
-      : previousFocus(this.active, this.logVisible)
+    const next = direction === "next" ? nextFocus(this.active, this.logVisible) : previousFocus(this.active, this.logVisible)
     this.focus(next)
   }
 

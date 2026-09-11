@@ -85,7 +85,7 @@ export async function loadRepoConfig(runner: CommandRunner): Promise<RepoConfig>
   // Exit code 1 means "no keys matched", which an empty repo legitimately reports.
   const result = await runner.run(["config", "--local", "-z", "--get-regexp", REPO_CONFIG_KEY_PATTERN], {
     readOnly: true,
-    acceptedExitCodes: [0, 1],
+    acceptedExitCodes: [0, 1]
   })
   return parseRepoConfig(result.stdout)
 }

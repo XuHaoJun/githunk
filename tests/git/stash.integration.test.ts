@@ -21,11 +21,11 @@ describe("stash operations", () => {
       const patch = await loadStash(runner, stashes[0]!.ref)
       expect(patch.patch).toContain("tracked.txt")
       await applyStash(runner, stashes[0]!.ref)
-      expect((await listStashes(runner))).toHaveLength(1)
+      expect(await listStashes(runner)).toHaveLength(1)
       await repository.git(["reset", "--hard"])
       await repository.git(["clean", "-fd"])
       await popStash(runner, stashes[0]!.ref)
-      expect((await listStashes(runner))).toHaveLength(0)
+      expect(await listStashes(runner)).toHaveLength(0)
       await repository.write("tracked.txt", "again\n")
       await createStash(runner, "drop me", { includeUntracked: false })
       const dropped = (await listStashes(runner))[0]!

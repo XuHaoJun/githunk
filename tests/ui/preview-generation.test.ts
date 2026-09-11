@@ -11,7 +11,10 @@ import { parseAnsi } from "../../src/ui/ansi"
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (error: unknown) => void
-  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
   return { promise, resolve, reject }
 }
 function presentCommit(details: CommitDetails): MainPaneContent {
@@ -20,7 +23,7 @@ function presentCommit(details: CommitDetails): MainPaneContent {
     stableId: details.oid,
     label: details.shortOid,
     ...(details.preamble === undefined ? {} : { preamble: details.preamble }),
-    document: details.document,
+    document: details.document
   }
 }
 
@@ -36,17 +39,35 @@ describe("MainPreviewGate", () => {
     const gate = new MainPreviewGate({
       install: (content) => installed.push(content),
       setLoading: (value) => loading.push(value),
-      reportError: (error) => errors.push(error),
+      reportError: (error) => errors.push(error)
     })
     const first = deferred<CommitDetails>()
     const second = deferred<CommitDetails>()
     const oldDetails: CommitDetails = {
-      oid: "old", shortOid: "old", parentOids: [], authorName: "A", authoredAt: "", subject: "old", body: "",
-      document: { text: "old patch", lines: [], files: [] }, patch: { text: "old patch", lines: [], files: [] }, raw: "", preamble: "old",
+      oid: "old",
+      shortOid: "old",
+      parentOids: [],
+      authorName: "A",
+      authoredAt: "",
+      subject: "old",
+      body: "",
+      document: { text: "old patch", lines: [], files: [] },
+      patch: { text: "old patch", lines: [], files: [] },
+      raw: "",
+      preamble: "old"
     }
     const newDetails: CommitDetails = {
-      oid: "new", shortOid: "new", parentOids: [], authorName: "A", authoredAt: "", subject: "new", body: "",
-      document: { text: "new patch", lines: [], files: [] }, patch: { text: "new patch", lines: [], files: [] }, raw: "", preamble: "new",
+      oid: "new",
+      shortOid: "new",
+      parentOids: [],
+      authorName: "A",
+      authoredAt: "",
+      subject: "new",
+      body: "",
+      document: { text: "new patch", lines: [], files: [] },
+      patch: { text: "new patch", lines: [], files: [] },
+      raw: "",
+      preamble: "new"
     }
     const oldRequest = gate.request("commit", "old", () => first.promise, presentCommit)
     const newRequest = gate.request("commit", "new", () => second.promise, presentCommit)
@@ -66,7 +87,7 @@ describe("MainPreviewGate", () => {
     const gate = new MainPreviewGate({
       install: (content) => installed.push(content),
       setLoading: (value) => loading.push(value),
-      reportError: (error) => errors.push(error),
+      reportError: (error) => errors.push(error)
     })
     const tagDeferred = deferred<{ ref: string }>()
     const filesContent: MainPaneContent = { source: "files", stableId: "a.txt", label: "Files — a.txt", plainText: "files content" }
@@ -86,7 +107,7 @@ describe("MainPreviewGate", () => {
     const gate = new MainPreviewGate({
       install: (content) => installed.push(content),
       setLoading: (value) => loading.push(value),
-      reportError: (error) => errors.push(error),
+      reportError: (error) => errors.push(error)
     })
     const filesContent: MainPaneContent = { source: "files", stableId: "a.txt", label: "Files", plainText: "files" }
     gate.installSynchronous(filesContent)
@@ -106,7 +127,7 @@ describe("MainPreviewGate", () => {
     const gate = new MainPreviewGate({
       install: (c) => installed.push(c),
       setLoading: (v) => loading.push(v),
-      reportError: () => {},
+      reportError: () => {}
     })
     gate.installSynchronous({ source: "commit", stableId: "a", label: "A", plainText: "a" })
     gate.installSynchronous({ source: "commit", stableId: "b", label: "B", plainText: "b" })
@@ -127,7 +148,7 @@ describe("Main pane lifecycle", () => {
       rawPatchSections: [],
       loading: false,
       commandLog: [],
-      title: "",
+      title: ""
     } as unknown as import("../../src/app/model").AppModel
     const pane = createMainPane(setup.renderer, model)
     const contentA: MainPaneContent = { source: "commit", stableId: "a", label: "A", plainText: "hello world\n".repeat(50) }
@@ -139,7 +160,9 @@ describe("Main pane lifecycle", () => {
     pane.text.scrollY = 12
     const textView = pane.text as unknown as { setSelection?: (a: number, b: number) => void; hasSelection?: () => boolean }
     if ("setSelection" in pane.text && typeof textView.setSelection === "function") {
-      try { textView.setSelection(0, 5) } catch {}
+      try {
+        textView.setSelection(0, 5)
+      } catch {}
     }
     const hasSelectionBefore = typeof textView.hasSelection === "function" ? textView.hasSelection() : false
 
@@ -157,7 +180,9 @@ describe("Main pane lifecycle", () => {
     pane.text.scrollY = 5
     pane.text.scrollX = 3
     if ("setSelection" in pane.text && typeof textView.setSelection === "function") {
-      try { textView.setSelection(0, 2) } catch {}
+      try {
+        textView.setSelection(0, 2)
+      } catch {}
     }
     installMainContent(pane, contentB, false)
     expect(pane.text.scrollY).toBe(0)
@@ -178,15 +203,19 @@ describe("Main pane lifecycle", () => {
       rawPatchSections: [],
       loading: false,
       commandLog: [],
-      title: "",
+      title: ""
     } as unknown as import("../../src/app/model").AppModel
     const pane = createMainPane(setup.renderer, model)
-    installMainContent(pane, {
-      source: "commit",
-      stableId: "diff",
-      label: "Diff",
-      document: parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n"),
-    }, false)
+    installMainContent(
+      pane,
+      {
+        source: "commit",
+        stableId: "diff",
+        label: "Diff",
+        document: parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
+      },
+      false
+    )
     expect(getMainDocument(pane)).toBeDefined()
     installMainContent(pane, { source: "commit", stableId: "plain", label: "Plain", plainText: "No patch loaded" }, false)
     expect(getMainDocument(pane)).toBeUndefined()
@@ -204,7 +233,7 @@ describe("Main pane lifecycle", () => {
       rawPatchSections: [],
       loading: false,
       commandLog: [],
-      title: "",
+      title: ""
     } as unknown as import("../../src/app/model").AppModel
     const pane = createMainPane(setup.renderer, model)
     const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
@@ -242,7 +271,7 @@ describe("Main pane lifecycle", () => {
       rawPatchSections: [],
       loading: false,
       commandLog: [],
-      title: "",
+      title: ""
     } as unknown as import("../../src/app/model").AppModel
     const pane = createMainPane(setup.renderer, model)
     const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
@@ -281,7 +310,7 @@ describe("Main pane lifecycle", () => {
       rawPatchSections: [],
       loading: false,
       commandLog: [],
-      title: "",
+      title: ""
     } as unknown as import("../../src/app/model").AppModel
     const pane = createMainPane(setup.renderer, model)
     setup.renderer.root.add(pane.box)
@@ -322,7 +351,7 @@ describe("Main pane lifecycle", () => {
       rawPatchSections: [],
       loading: false,
       commandLog: [],
-      title: "",
+      title: ""
     } as unknown as import("../../src/app/model").AppModel
     const pane = createMainPane(setup.renderer, model)
     const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
@@ -349,7 +378,7 @@ describe("Main pane lifecycle", () => {
       rawPatchSections: [],
       loading: false,
       commandLog: [],
-      title: "",
+      title: ""
     } as unknown as import("../../src/app/model").AppModel
     const pane = createMainPane(setup.renderer, model)
     setup.renderer.root.add(pane.box)
@@ -401,7 +430,7 @@ describe("Main pane lifecycle", () => {
       rawPatchSections: [],
       loading: false,
       commandLog: [],
-      title: "",
+      title: ""
     } as unknown as import("../../src/app/model").AppModel
     const pane = createMainPane(setup.renderer, model)
     const first: MainPaneContent = { source: "commit", stableId: "a", label: "A", plainText: "first content" }

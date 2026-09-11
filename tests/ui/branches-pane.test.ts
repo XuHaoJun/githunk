@@ -21,16 +21,16 @@ const model = {
     detached: false,
     localBranches: [
       { name: "main", isCurrent: true, committedAt: "1730000000", subject: "initial commit", upstream: "origin/main", upstreamTrack: "[ahead 1]", upstreamRemote: "origin", upstreamBranch: "main", aheadForPull: "1", behindForPull: "0", upstreamGone: false },
-      { name: "feature", isCurrent: false, committedAt: "1729000000", subject: "feature work" },
+      { name: "feature", isCurrent: false, committedAt: "1729000000", subject: "feature work" }
     ],
     remotes: [
       {
         name: "origin",
         fetchUrl: "https://example.com/repo.git",
         pushUrl: "https://example.com/repo.git",
-        branches: [{ name: "feature/foo", ref: "origin/feature/foo", oid: "abc123" }],
-      },
-    ],
+        branches: [{ name: "feature/foo", ref: "origin/feature/foo", oid: "abc123" }]
+      }
+    ]
   },
   tags: [
     {
@@ -42,9 +42,9 @@ const model = {
       subject: "release 1.0",
       taggerName: "Alice",
       taggedAt: "2026-08-24T00:00:00Z",
-      message: "release notes",
-    },
-  ],
+      message: "release notes"
+    }
+  ]
 } as unknown as AppModel
 
 describe("tab-specific pane rows", () => {
@@ -102,7 +102,7 @@ describe("tab-specific pane rows", () => {
     const emptyModel = {
       ...model,
       branches: { ...model.branches!, remotes: [] },
-      tags: [],
+      tags: []
     } as AppModel
     expect(remoteRows(emptyModel)).toEqual([])
     expect(tagRows(emptyModel)).toEqual([])
@@ -118,9 +118,9 @@ describe("row column alignment", () => {
         ...model.branches!,
         remotes: [
           { name: "origin", fetchUrl: "https://example.com/a.git", pushUrl: "ssh://example.com/a.git" },
-          { name: "bare", branches: [] },
-        ],
-      },
+          { name: "bare", branches: [] }
+        ]
+      }
     } as AppModel)
     expect(new Set(rows.map((row) => row.columns.length)).size).toBe(1)
     expect(rows.map((row) => row.columns[0]!.text)).toEqual(["origin", "bare"])

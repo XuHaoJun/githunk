@@ -71,9 +71,7 @@ function formatSidebarStat(prefix: "+" | "-", value: number | null | undefined, 
   return n > 0 ? `${prefix}${n}${truncated ? "+" : ""}` : null
 }
 
-export function sidebarEntryStats(
-  entry: Pick<ReviewSidebarFileEntry, "agentCommentsText" | "additionsText" | "deletionsText">,
-): Array<{ kind: "agent-comment" | "addition" | "deletion"; text: string }> {
+export function sidebarEntryStats(entry: Pick<ReviewSidebarFileEntry, "agentCommentsText" | "additionsText" | "deletionsText">): Array<{ kind: "agent-comment" | "addition" | "deletion"; text: string }> {
   const stats: Array<{ kind: "agent-comment" | "addition" | "deletion"; text: string }> = []
 
   if (entry.agentCommentsText) {
@@ -91,9 +89,7 @@ export function sidebarEntryStats(
   return stats
 }
 
-export function sidebarEntryStatsWidth(
-  entry: Pick<ReviewSidebarFileEntry, "agentCommentsText" | "additionsText" | "deletionsText">,
-): number {
+export function sidebarEntryStatsWidth(entry: Pick<ReviewSidebarFileEntry, "agentCommentsText" | "additionsText" | "deletionsText">): number {
   return sidebarEntryStats(entry).reduce((width, stat, index) => width + stat.text.length + (index > 0 ? 1 : 0), 0)
 }
 
@@ -136,7 +132,7 @@ export function buildReviewSidebarEntries(state: ReviewState): readonly ReviewSi
       entries.push({
         kind: "group",
         id: `group:${group}:${index}`,
-        label: group === "." ? "./" : `${group}/`,
+        label: group === "." ? "./" : `${group}/`
       })
     }
 
@@ -153,7 +149,7 @@ export function buildReviewSidebarEntries(state: ReviewState): readonly ReviewSi
       additionsText: formatSidebarStat("+", additions, false),
       deletionsText: formatSidebarStat("-", deletions, false),
       changeType: changeTypeForKind(file.kind),
-      isUntracked: false,
+      isUntracked: false
     }
     entries.push(file.previousPath === undefined ? baseEntry : { ...baseEntry, previousPath: file.previousPath })
   })
@@ -180,13 +176,10 @@ export const REVIEW_SIDEBAR_THEME = {
   fileDeleted: "#f85149",
   fileRenamed: "#d7ba7d",
   fileModified: "#e5c07b",
-  fileUntracked: "#858585",
+  fileUntracked: "#858585"
 } as const
 
-export function getFileStateIcon(
-  entry: ReviewSidebarFileEntry,
-  theme: typeof REVIEW_SIDEBAR_THEME = REVIEW_SIDEBAR_THEME,
-): { icon: string; color: string } {
+export function getFileStateIcon(entry: ReviewSidebarFileEntry, theme: typeof REVIEW_SIDEBAR_THEME = REVIEW_SIDEBAR_THEME): { icon: string; color: string } {
   if (entry.isUntracked) {
     return { icon: "?", color: theme.fileUntracked }
   }

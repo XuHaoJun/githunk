@@ -19,7 +19,7 @@ export function createReviewIdentity(input: { headRef?: string; headOid: string;
     id: sha256Tuple(["branch-review-v2", headKey, input.baseRef]),
     headRef: input.headRef ?? null,
     baseRef: input.baseRef,
-    detachedHeadOid: input.headRef === undefined ? input.headOid : null,
+    detachedHeadOid: input.headRef === undefined ? input.headOid : null
   }
 }
 

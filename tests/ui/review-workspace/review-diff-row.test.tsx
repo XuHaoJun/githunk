@@ -17,7 +17,10 @@ type LayoutNode = Readonly<{
 }>
 
 function textSpan(setup: CapturedSetup, text: string) {
-  return setup.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes(text))
+  return setup
+    .captureSpans()
+    .lines.flatMap((line) => line.spans)
+    .find((span) => span.text.includes(text))
 }
 
 function rgb(color: CapturedColor | undefined) {
@@ -30,7 +33,7 @@ const splitRow: Extract<HunkDiffRow, { type: "split-line" }> = {
   fileKey: "parity",
   hunkIndex: 0,
   left: { kind: "deletion", sign: "-", lineNumber: 1, spans: [{ text: "old" }] },
-  right: { kind: "addition", sign: "+", lineNumber: 1, spans: [{ text: "new" }] },
+  right: { kind: "addition", sign: "+", lineNumber: 1, spans: [{ text: "new" }] }
 }
 const emptySplitRow: Extract<HunkDiffRow, { type: "split-line" }> = {
   type: "split-line",
@@ -38,7 +41,7 @@ const emptySplitRow: Extract<HunkDiffRow, { type: "split-line" }> = {
   fileKey: "parity",
   hunkIndex: 0,
   left: { kind: "empty", sign: " ", lineNumber: 42, spans: [{ text: "gap" }] },
-  right: { kind: "context", sign: " ", lineNumber: 42, spans: [{ text: "same" }] },
+  right: { kind: "context", sign: " ", lineNumber: 42, spans: [{ text: "same" }] }
 }
 
 const emptyAdditionSplitRow: Extract<HunkDiffRow, { type: "split-line" }> = {
@@ -47,7 +50,7 @@ const emptyAdditionSplitRow: Extract<HunkDiffRow, { type: "split-line" }> = {
   fileKey: "parity",
   hunkIndex: 0,
   left: { kind: "context", sign: " ", lineNumber: 1, spans: [{ text: "before\n" }] },
-  right: { kind: "addition", sign: "+", lineNumber: 1, spans: [{ text: "\n" }] },
+  right: { kind: "addition", sign: "+", lineNumber: 1, spans: [{ text: "\n" }] }
 }
 
 const stackRow: Extract<HunkDiffRow, { type: "stack-line" }> = {
@@ -55,14 +58,11 @@ const stackRow: Extract<HunkDiffRow, { type: "stack-line" }> = {
   key: "parity:stack",
   fileKey: "parity",
   hunkIndex: 0,
-  cell: { kind: "addition", sign: "+", newLineNumber: 1, spans: [{ text: "new" }] },
+  cell: { kind: "addition", sign: "+", newLineNumber: 1, spans: [{ text: "new" }] }
 }
 
 async function renderRow(row: HunkDiffRow, selected = false, showLineNumbers = false) {
-  const setup = await testRender(
-    <ReviewDiffRow row={row} width={40} digits={1} showLineNumbers={showLineNumbers} selected={selected} />,
-    { width: 40, height: 2 },
-  )
+  const setup = await testRender(<ReviewDiffRow row={row} width={40} digits={1} showLineNumbers={showLineNumbers} selected={selected} />, { width: 40, height: 2 })
   await act(async () => {
     await setup.renderOnce()
   })
@@ -107,7 +107,7 @@ describe("Review diff row parity", () => {
       const panes = root._childrenInLayoutOrder?.[0]?._childrenInLayoutOrder ?? []
       expect(panes.map((pane) => ({ x: pane.x, width: pane.width }))).toEqual([
         { x: 0, width: 20 },
-        { x: 20, width: 20 },
+        { x: 20, width: 20 }
       ])
     } finally {
       await act(async () => setup.renderer.destroy())
@@ -117,42 +117,44 @@ describe("Review diff row parity", () => {
   test("extracts only real source addresses and keeps both split sides", () => {
     expect(hunkDiffAddresses(splitRow)).toEqual([
       { fileKey: "parity", hunkIndex: 0, side: "old", line: 1 },
-      { fileKey: "parity", hunkIndex: 0, side: "new", line: 1 },
+      { fileKey: "parity", hunkIndex: 0, side: "new", line: 1 }
     ])
-    expect(hunkDiffAddresses(emptySplitRow)).toEqual([
-      { fileKey: "parity", hunkIndex: 0, side: "new", line: 42 },
-    ])
-    expect(hunkDiffAddresses({
-      type: "collapsed",
-      key: "parity:gap",
-      fileKey: "parity",
-      hunkIndex: 0,
-      gapId: "before:1",
-      lineCount: 1,
-      oldRange: [1, 1],
-      newRange: [1, 1],
-      expanded: false,
-      text: "gap",
-    })).toEqual([])
-    expect(hunkDiffAddresses({
-      type: "hunk-header",
-      key: "parity:header",
-      fileKey: "parity",
-      hunkIndex: 0,
-      text: "@@",
-    })).toEqual([])
-    expect(hunkDiffAddresses(stackRow)).toEqual([
-      { fileKey: "parity", hunkIndex: 0, side: "new", line: 1 },
-    ])
-    expect(hunkDiffAddresses({
-      type: "stack-line",
-      key: "parity:stack-context",
-      fileKey: "parity",
-      hunkIndex: 0,
-      cell: { kind: "context", sign: " ", oldLineNumber: 7, newLineNumber: 8, spans: [{ text: "same" }] },
-    })).toEqual([
+    expect(hunkDiffAddresses(emptySplitRow)).toEqual([{ fileKey: "parity", hunkIndex: 0, side: "new", line: 42 }])
+    expect(
+      hunkDiffAddresses({
+        type: "collapsed",
+        key: "parity:gap",
+        fileKey: "parity",
+        hunkIndex: 0,
+        gapId: "before:1",
+        lineCount: 1,
+        oldRange: [1, 1],
+        newRange: [1, 1],
+        expanded: false,
+        text: "gap"
+      })
+    ).toEqual([])
+    expect(
+      hunkDiffAddresses({
+        type: "hunk-header",
+        key: "parity:header",
+        fileKey: "parity",
+        hunkIndex: 0,
+        text: "@@"
+      })
+    ).toEqual([])
+    expect(hunkDiffAddresses(stackRow)).toEqual([{ fileKey: "parity", hunkIndex: 0, side: "new", line: 1 }])
+    expect(
+      hunkDiffAddresses({
+        type: "stack-line",
+        key: "parity:stack-context",
+        fileKey: "parity",
+        hunkIndex: 0,
+        cell: { kind: "context", sign: " ", oldLineNumber: 7, newLineNumber: 8, spans: [{ text: "same" }] }
+      })
+    ).toEqual([
       { fileKey: "parity", hunkIndex: 0, side: "old", line: 7 },
-      { fileKey: "parity", hunkIndex: 0, side: "new", line: 8 },
+      { fileKey: "parity", hunkIndex: 0, side: "new", line: 8 }
     ])
   })
 
@@ -170,7 +172,7 @@ describe("Review diff row parity", () => {
       ...emptyAdditionSplitRow,
       key: "parity:highlighted-newline",
       left: { kind: "context", sign: " ", lineNumber: 1, spans: [{ text: "before\r\n", fg: "#ff0000" }] },
-      right: { kind: "addition", sign: "+", lineNumber: 1, spans: [{ text: "after\r\n", fg: "#00ff00" }] },
+      right: { kind: "addition", sign: "+", lineNumber: 1, spans: [{ text: "after\r\n", fg: "#00ff00" }] }
     }
     const setup = await renderRow(row, false, true)
     try {
@@ -178,7 +180,7 @@ describe("Review diff row parity", () => {
       const panes = root._childrenInLayoutOrder?.[0]?._childrenInLayoutOrder ?? []
       expect(panes.map((pane) => ({ x: pane.x, width: pane.width }))).toEqual([
         { x: 0, width: 20 },
-        { x: 20, width: 20 },
+        { x: 20, width: 20 }
       ])
       expect(rgb(textSpan(setup, "before")?.fg)).toEqual([255, 0, 0])
       expect(rgb(textSpan(setup, "after")?.fg)).toEqual([0, 255, 0])

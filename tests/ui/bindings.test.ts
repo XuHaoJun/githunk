@@ -1,15 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  ACTIONS,
-  BindingRegistry,
-  GITHUNK_BINDINGS,
-  assertHandlersCover,
-  createRegistry,
-  formatHints,
-  type Binding,
-  type BindingContext,
-  type UiState,
-} from "../../src/ui/bindings"
+import { ACTIONS, BindingRegistry, GITHUNK_BINDINGS, assertHandlersCover, createRegistry, formatHints, type Binding, type BindingContext, type UiState } from "../../src/ui/bindings"
 import { normalizeKey } from "../../src/ui/keymap"
 import type { AppModel } from "../../src/app/model"
 
@@ -27,7 +17,7 @@ function model(overrides: Partial<AppModel> = {}): AppModel {
     commandLog: [],
     title: "Working Tree — Unstaged",
     commits: [],
-    ...overrides,
+    ...overrides
   } as AppModel
 }
 
@@ -39,31 +29,38 @@ function ui(overrides: Partial<UiState> = {}): UiState {
     mainScope: "unstaged",
     selectedBranchKind: undefined,
     hasSelectedStash: false,
-    ...overrides,
+    ...overrides
   }
 }
 
 describe("formatHints", () => {
   test("renders description then key, joined by a pipe", () => {
-    expect(formatHints([
-      { description: "stage", key: "space" },
-      { description: "reviewed", key: "r" },
-    ], 80)).toBe("stage: space | reviewed: r")
+    expect(
+      formatHints(
+        [
+          { description: "stage", key: "space" },
+          { description: "reviewed", key: "r" }
+        ],
+        80
+      )
+    ).toBe("stage: space | reviewed: r")
   })
 
   test("truncates with an ellipsis rather than overflowing", () => {
-    const rendered = formatHints([
-      { description: "stage", key: "space" },
-      { description: "reviewed", key: "r" },
-      { description: "discard", key: "d" },
-    ], 20)
+    const rendered = formatHints(
+      [
+        { description: "stage", key: "space" },
+        { description: "reviewed", key: "r" },
+        { description: "discard", key: "d" }
+      ],
+      20
+    )
     expect(rendered).toBe("stage: space | …")
     expect(rendered.length).toBeLessThanOrEqual(20)
   })
 
   test("keeps the first entry even when it alone exceeds the width", () => {
-    expect(formatHints([{ description: "a-very-long-description", key: "x" }], 5))
-      .toBe("a-very-long-description: x")
+    expect(formatHints([{ description: "a-very-long-description", key: "x" }], 5)).toBe("a-very-long-description: x")
   })
 
   test("renders nothing for no entries", () => {
@@ -73,36 +70,41 @@ describe("formatHints", () => {
 
 describe("BindingRegistry validation", () => {
   test("rejects two bindings sharing a keystroke in one context", () => {
-    expect(() => new BindingRegistry([
-      { keys: ["x"], action: "quit", description: "one" },
-      { keys: ["x"], action: "refresh", description: "two" },
-    ])).toThrow(/collision/i)
+    expect(
+      () =>
+        new BindingRegistry([
+          { keys: ["x"], action: "quit", description: "one" },
+          { keys: ["x"], action: "refresh", description: "two" }
+        ])
+    ).toThrow(/collision/i)
   })
 
   test("treats a physical uppercase name as shift plus the lowercase key", () => {
-    expect(() => new BindingRegistry([
-      { keys: ["X"], action: "quit", description: "one" },
-      { keys: ["shift+x"], action: "refresh", description: "two" },
-    ])).toThrow(/collision/i)
+    expect(
+      () =>
+        new BindingRegistry([
+          { keys: ["X"], action: "quit", description: "one" },
+          { keys: ["shift+x"], action: "refresh", description: "two" }
+        ])
+    ).toThrow(/collision/i)
   })
 
   test("allows the same keystroke in different contexts", () => {
-    expect(() => new BindingRegistry([
-      { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"] },
-      { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"] },
-    ])).not.toThrow()
+    expect(
+      () =>
+        new BindingRegistry([
+          { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"] },
+          { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"] }
+        ])
+    ).not.toThrow()
   })
 
   test("rejects a binding with an empty description", () => {
-    expect(() => new BindingRegistry([
-      { keys: ["x"], action: "quit", description: "" },
-    ])).toThrow(/description/i)
+    expect(() => new BindingRegistry([{ keys: ["x"], action: "quit", description: "" }])).toThrow(/description/i)
   })
 
   test("rejects an action outside the declared action list", () => {
-    expect(() => new BindingRegistry([
-      { keys: ["x"], action: "not-a-real-action" as Binding["action"], description: "nope" },
-    ])).toThrow(/action/i)
+    expect(() => new BindingRegistry([{ keys: ["x"], action: "not-a-real-action" as Binding["action"], description: "nope" }])).toThrow(/action/i)
   })
 })
 
@@ -111,7 +113,7 @@ describe("BindingRegistry resolution", () => {
     { keys: ["escape"], action: "back", description: "back" },
     { keys: ["escape"], action: "commit-back", description: "back", contexts: ["commits"] },
     { keys: ["escape"], action: "modal-cancel", description: "cancel", contexts: ["modal"] },
-    { keys: ["h", "left"], action: "pane-previous", description: "pane" },
+    { keys: ["h", "left"], action: "pane-previous", description: "pane" }
   ])
 
   test("prefers modal over context over global", () => {
@@ -180,7 +182,6 @@ describe("BindingRegistry availability-aware resolution", () => {
     }
   })
 
-
   test("gates range selection off Files navigation-only tabs", () => {
     const worktrees = ui({ filesTab: "worktrees" })
     const submodules = ui({ filesTab: "submodules" })
@@ -194,9 +195,7 @@ describe("BindingRegistry availability-aware resolution", () => {
   })
 
   test("resolves to undefined when the only binding for a key is unavailable", () => {
-    const onlyUnavailable = new BindingRegistry([
-      { keys: ["x"], action: "quit", description: "quit", contexts: ["files"], available: () => false },
-    ])
+    const onlyUnavailable = new BindingRegistry([{ keys: ["x"], action: "quit", description: "quit", contexts: ["files"], available: () => false }])
     expect(onlyUnavailable.dispatch({ name: "x" }, { context: "files", model: workingTree, ui: ui() })).toBeUndefined()
   })
 
@@ -204,7 +203,7 @@ describe("BindingRegistry availability-aware resolution", () => {
     const modalBoundary = new BindingRegistry([
       { keys: ["x"], action: "quit", description: "quit", contexts: ["modal"], available: () => false },
       { keys: ["x"], action: "refresh", description: "refresh", contexts: ["files"] },
-      { keys: ["x"], action: "back", description: "back" },
+      { keys: ["x"], action: "back", description: "back" }
     ])
     expect(modalBoundary.dispatch({ name: "x" }, { context: "files", modal: true, model: workingTree, ui: ui() })).toBeUndefined()
   })
@@ -223,7 +222,7 @@ describe("BindingRegistry hints", () => {
     { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"], displayOnScreen: true, available: (m) => m.reviewTarget.kind === "working-tree" },
     { keys: ["enter"], action: "inspect", description: "open", contexts: ["files"] },
     { keys: ["l", "right"], action: "pane-next", description: "pane", displayKeys: "h/l", displayOnScreen: true },
-    { keys: ["q"], action: "quit", description: "quit" },
+    { keys: ["q"], action: "quit", description: "quit" }
   ])
 
   test("includes only bindings marked for the screen", () => {
@@ -252,7 +251,7 @@ describe("BindingRegistry hints", () => {
   test("does not repeat a global binding whose key the context overrides", () => {
     const shadowing = new BindingRegistry([
       { keys: ["d"], action: "discard-file", description: "discard file", contexts: ["files"], displayOnScreen: true },
-      { keys: ["d"], action: "discard-selection", description: "discard lines", displayOnScreen: true },
+      { keys: ["d"], action: "discard-selection", description: "discard lines", displayOnScreen: true }
     ])
     expect(shadowing.hintsFor("files", model(), ui(), 200)).toBe("discard file: d")
   })
@@ -262,7 +261,7 @@ describe("BindingRegistry menu", () => {
   const registry = new BindingRegistry([
     { keys: ["space"], action: "stage-file", description: "stage", menuDescription: "stage the selected file", contexts: ["files"] },
     { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"], available: (m) => m.reviewTarget.kind === "working-tree" },
-    { keys: ["q"], action: "quit", description: "quit" },
+    { keys: ["q"], action: "quit", description: "quit" }
   ])
 
   test("groups context bindings first and uses the long description", () => {
@@ -281,7 +280,7 @@ describe("assertHandlersCover", () => {
   test("names every action with no handler", () => {
     const registry = new BindingRegistry([
       { keys: ["x"], action: "quit", description: "quit" },
-      { keys: ["y"], action: "refresh", description: "refresh" },
+      { keys: ["y"], action: "refresh", description: "refresh" }
     ])
     expect(() => assertHandlersCover(registry, new Set(["quit"]))).toThrow(/refresh/)
     expect(() => assertHandlersCover(registry, new Set(["quit", "refresh"]))).not.toThrow()
@@ -373,7 +372,12 @@ describe("GITHUNK_BINDINGS", () => {
    * the matching autoscroll transition rather than just moving the viewport.
    */
   test("the command log binds paging and jump keys in its own context", () => {
-    for (const [key, action] of [[",", "page-previous"], [".", "page-next"], ["<", "goto-top"], [">", "goto-bottom"]] as const) {
+    for (const [key, action] of [
+      [",", "page-previous"],
+      [".", "page-next"],
+      ["<", "goto-top"],
+      [">", "goto-bottom"]
+    ] as const) {
       const binding = registry.resolve({ name: key }, { context: "command-log", model: model(), ui: ui() })
       expect(binding?.action).toBe(action)
       expect(binding?.contexts).toContain("command-log")
@@ -416,7 +420,6 @@ describe("GITHUNK_BINDINGS", () => {
     expect(hints).not.toContain("stage: space")
     expect(hints).toContain("scope: ]")
   })
-
 
   describe("stash pane gating", () => {
     const workingTree = model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } })
@@ -513,7 +516,7 @@ describe("hints/dispatch agreement invariant", () => {
   const targets: readonly { readonly label: string; readonly model: AppModel }[] = [
     { label: "working-tree", model: model({ reviewTarget: { kind: "working-tree", scope: "unstaged" } }) },
     { label: "commit", model: model({ reviewTarget: { kind: "commit", oid: "abc123" } }) },
-    { label: "stash", model: model({ reviewTarget: { kind: "stash", ref: "stash@{0}" } }) },
+    { label: "stash", model: model({ reviewTarget: { kind: "stash", ref: "stash@{0}" } }) }
   ]
 
   const branchKinds: readonly NonNullable<UiState["selectedBranchKind"]>[] = ["local", "remote"]

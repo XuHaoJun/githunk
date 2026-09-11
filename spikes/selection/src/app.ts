@@ -1,11 +1,4 @@
-import {
-  BoxRenderable,
-  ScrollBoxRenderable,
-  TextRenderable,
-  type CliRenderer,
-  type MouseEvent,
-  type Selection,
-} from "@opentui/core"
+import { BoxRenderable, ScrollBoxRenderable, TextRenderable, type CliRenderer, type MouseEvent, type Selection } from "@opentui/core"
 import { copySelection } from "./clipboard"
 import { LEFT_FIXTURE, PATCH_FIXTURE } from "./fixtures/patch"
 import { computePaneLayout, resizeLeftPane } from "./layout"
@@ -17,7 +10,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
     id: "spike-root",
     flexDirection: "row",
     width: "100%",
-    height: "100%",
+    height: "100%"
   })
 
   const left = new BoxRenderable(renderer, {
@@ -25,27 +18,27 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
     width: layout.leftWidth,
     height: "100%",
     border: true,
-    title: "LEFT — must never contaminate PATCH copy",
+    title: "LEFT — must never contaminate PATCH copy"
   })
 
   const leftText = new TextRenderable(renderer, {
     id: "left-fixture",
     content: LEFT_FIXTURE.join("\n"),
     selectable: false,
-    width: "100%",
+    width: "100%"
   })
 
   const splitter = new BoxRenderable(renderer, {
     id: "vertical-splitter",
     width: 1,
-    height: "100%",
+    height: "100%"
   })
 
   const right = new BoxRenderable(renderer, {
     id: "right-pane",
     flexDirection: "column",
     width: layout.rightWidth,
-    height: "100%",
+    height: "100%"
   })
 
   const patchScroll = new ScrollBoxRenderable(renderer, {
@@ -55,7 +48,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
     border: true,
     title: "PATCH — drag to select",
     scrollY: true,
-    scrollX: false,
+    scrollX: false
   })
 
   const statusText = new TextRenderable(renderer, {
@@ -64,7 +57,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
     selectable: false,
     wrapMode: "none",
     width: "100%",
-    height: 1,
+    height: 1
   })
 
   const patch = new TextRenderable(renderer, {
@@ -72,7 +65,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
     content: PATCH_FIXTURE,
     selectable: true,
     wrapMode: "word",
-    width: "100%",
+    width: "100%"
   })
 
   left.add(leftText)
@@ -90,10 +83,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
   }
 
   const handleSplitterDrag = (event: MouseEvent) => {
-    layout = resizeLeftPane(
-      computePaneLayout(renderer.terminalWidth, layout.leftWidth),
-      event.x,
-    )
+    layout = resizeLeftPane(computePaneLayout(renderer.terminalWidth, layout.leftWidth), event.x)
     applyLayout()
   }
 
@@ -104,12 +94,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
 
   const handleSelection = (selection: Selection) => {
     const result = copySelection(selection.getSelectedText(), renderer)
-    statusText.content =
-      result.status === "emitted"
-        ? `OSC52 emitted ${result.bytes} bytes — verify local clipboard`
-        : result.status === "blocked"
-          ? "OSC52 blocked/unsupported in this environment"
-          : "No text selected"
+    statusText.content = result.status === "emitted" ? `OSC52 emitted ${result.bytes} bytes — verify local clipboard` : result.status === "blocked" ? "OSC52 blocked/unsupported in this environment" : "No text selected"
   }
 
   splitter.onMouseDrag = handleSplitterDrag
@@ -122,6 +107,6 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
       renderer.off("resize", handleResize)
       renderer.off("selection", handleSelection)
       root.destroyRecursively()
-    },
+    }
   }
 }

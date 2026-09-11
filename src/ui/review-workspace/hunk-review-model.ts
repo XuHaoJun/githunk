@@ -29,13 +29,10 @@ export function toHunkReviewFile(file: ReviewFile, sourceLoader?: ReviewSourceLo
     kind: file.kind,
     reviewFile: file,
     metadata,
-    ...(sourceLoader ? { sourceLoader } : {}),
+    ...(sourceLoader ? { sourceLoader } : {})
   }
 }
 
-export function toHunkReviewFiles(
-  files: readonly ReviewFile[],
-  sourceLoader?: ReviewSourceLoader,
-): readonly HunkReviewFile[] {
+export function toHunkReviewFiles(files: readonly ReviewFile[], sourceLoader?: ReviewSourceLoader): readonly HunkReviewFile[] {
   return files.map((file) => toHunkReviewFile(file, sourceLoader))
 }

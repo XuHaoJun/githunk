@@ -2,17 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { AppModel } from "../../src/app/model"
 import type { ChangedFile } from "../../src/domain/review-target"
 import { COLLAPSED_ARROW, EXPANDED_ARROW, collapseAllFileTree, expandAllFileTree, fileTreeRows, toggleFileTreeCollapsedPath, toggleFileTreeMode } from "../../src/ui/file-tree"
-import {
-  FILES_JUMP_KEY,
-  FILES_TABS,
-  NO_CHANGED_FILES,
-  createFilesTreeState,
-  fileHasStagedChanges,
-  fileHasUnstagedChanges,
-  fileIsTracked,
-  fileShortStatus,
-  filesTreeRows,
-} from "../../src/ui/panes/files-pane"
+import { FILES_JUMP_KEY, FILES_TABS, NO_CHANGED_FILES, createFilesTreeState, fileHasStagedChanges, fileHasUnstagedChanges, fileIsTracked, fileShortStatus, filesTreeRows } from "../../src/ui/panes/files-pane"
 import { FILE_MIXED_FG, FILE_STAGED_FG, UNSTAGED_CHANGES_FG } from "../../src/ui/theme"
 
 function file(path: string, extra: Partial<ChangedFile> = {}): ChangedFile {
@@ -24,7 +14,7 @@ function file(path: string, extra: Partial<ChangedFile> = {}): ChangedFile {
     conflicted: false,
     additions: 1,
     deletions: 0,
-    ...extra,
+    ...extra
   }
 }
 
@@ -83,13 +73,7 @@ describe("files tab tree rows", () => {
     const state = createFilesTreeState(model([staged, unstaged, untracked]))
     const rows = filesTreeRows(state, model([staged, unstaged, untracked]))
     expect(rows.map((row) => row.id)).toEqual(["dir:.", "file:./README.md", "dir:./src/ui", "file:./src/ui/a.ts", "file:./src/ui/b.ts"])
-    expect(treeLines(rows)).toEqual([
-      `${EXPANDED_ARROW} /`,
-      "  ?? README.md",
-      `  ${EXPANDED_ARROW} src/ui`,
-      "    M  a.ts",
-      "     M b.ts",
-    ])
+    expect(treeLines(rows)).toEqual([`${EXPANDED_ARROW} /`, "  ?? README.md", `  ${EXPANDED_ARROW} src/ui`, "    M  a.ts", "     M b.ts"])
   })
 
   test("keeps githunk's review-status marker in its own leading column", () => {
@@ -108,27 +92,9 @@ describe("files tab tree rows", () => {
     const unstagedRow = rows.find((row) => row.id === "file:./src/ui/b.ts")!
     // files.go:184-199 formatFileStatus: staged char green, unstaged char red, "?" red, " " the
     // row's own colour. files.go:135/137: staged-only names are green, mixed ones yellow.
-    expect(readme.columns[1]!.segments).toEqual([
-      { text: "  " },
-      { text: "?", color: UNSTAGED_CHANGES_FG },
-      { text: "?", color: UNSTAGED_CHANGES_FG },
-      { text: " " },
-      { text: "README.md" },
-    ])
-    expect(stagedRow.columns[1]!.segments).toEqual([
-      { text: "    " },
-      { text: "M", color: FILE_STAGED_FG },
-      { text: " ", color: FILE_STAGED_FG },
-      { text: " ", color: FILE_STAGED_FG },
-      { text: "a.ts", color: FILE_STAGED_FG },
-    ])
-    expect(unstagedRow.columns[1]!.segments).toEqual([
-      { text: "    " },
-      { text: " " },
-      { text: "M", color: UNSTAGED_CHANGES_FG },
-      { text: " " },
-      { text: "b.ts" },
-    ])
+    expect(readme.columns[1]!.segments).toEqual([{ text: "  " }, { text: "?", color: UNSTAGED_CHANGES_FG }, { text: "?", color: UNSTAGED_CHANGES_FG }, { text: " " }, { text: "README.md" }])
+    expect(stagedRow.columns[1]!.segments).toEqual([{ text: "    " }, { text: "M", color: FILE_STAGED_FG }, { text: " ", color: FILE_STAGED_FG }, { text: " ", color: FILE_STAGED_FG }, { text: "a.ts", color: FILE_STAGED_FG }])
+    expect(unstagedRow.columns[1]!.segments).toEqual([{ text: "    " }, { text: " " }, { text: "M", color: UNSTAGED_CHANGES_FG }, { text: " " }, { text: "b.ts" }])
   })
 
   test("a directory takes its colour from its subtree: green when staged-only, yellow when mixed", () => {
@@ -136,7 +102,7 @@ describe("files tab tree rows", () => {
     const mixedRows = filesTreeRows(createFilesTreeState(mixed), mixed)
     expect(mixedRows[0]!.columns[1]!.segments).toEqual([
       { text: `${EXPANDED_ARROW} `, color: FILE_MIXED_FG },
-      { text: "src/ui", color: FILE_MIXED_FG },
+      { text: "src/ui", color: FILE_MIXED_FG }
     ])
 
     const allStaged = model([staged, file("src/ui/c.ts", { indexStatus: "A", worktreeStatus: "." })])
@@ -153,11 +119,7 @@ describe("files tab tree rows", () => {
     const m = model([staged, unstaged, untracked])
     const directory = fileTreeRows(createFilesTreeState(m)).find((row) => row.path === "src/ui")!
     const collapsed = toggleFileTreeCollapsedPath(createFilesTreeState(m), directory.internalPath)
-    expect(treeLines(filesTreeRows(collapsed, m))).toEqual([
-      `${EXPANDED_ARROW} /`,
-      "  ?? README.md",
-      `  ${COLLAPSED_ARROW} src/ui`,
-    ])
+    expect(treeLines(filesTreeRows(collapsed, m))).toEqual([`${EXPANDED_ARROW} /`, "  ?? README.md", `  ${COLLAPSED_ARROW} src/ui`])
     expect(treeLines(filesTreeRows(collapseAllFileTree(createFilesTreeState(m)), m))).toEqual([`${COLLAPSED_ARROW} /`])
     expect(treeLines(filesTreeRows(expandAllFileTree(collapsed), m))).toHaveLength(5)
   })
@@ -167,22 +129,14 @@ describe("files tab tree rows", () => {
     const flat = toggleFileTreeMode(createFilesTreeState(m))
     expect(flat.mode).toBe("flat")
     // buildFlatTreeFromFiles ranks conflicts, then tracked files, then untracked ones.
-    expect(treeLines(filesTreeRows(flat, m))).toEqual([
-      "M  src/ui/a.ts",
-      " M src/ui/b.ts",
-      "?? README.md",
-    ])
+    expect(treeLines(filesTreeRows(flat, m))).toEqual(["M  src/ui/a.ts", " M src/ui/b.ts", "?? README.md"])
     expect(toggleFileTreeMode(flat).mode).toBe("tree")
   })
 
   test("a rename renders lazygit's `old → new` at the truncated depth", () => {
     const renamed = file("src/ui/new.ts", { indexStatus: "R", worktreeStatus: ".", previousPath: "src/ui/old.ts" })
     const m = model([renamed, unstaged])
-    expect(treeLines(filesTreeRows(createFilesTreeState(m), m))).toEqual([
-      `${EXPANDED_ARROW} src/ui`,
-      "   M b.ts",
-      "  R  old.ts → new.ts",
-    ])
+    expect(treeLines(filesTreeRows(createFilesTreeState(m), m))).toEqual([`${EXPANDED_ARROW} src/ui`, "   M b.ts", "  R  old.ts → new.ts"])
   })
 
   test("an empty working tree renders the empty-list message text", () => {

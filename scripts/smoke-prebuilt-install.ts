@@ -3,18 +3,14 @@
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import {
-  binaryFilenameForSpec,
-  getHostPlatformPackageSpec,
-  releaseNpmDir,
-} from "./prebuilt-package-helpers"
+import { binaryFilenameForSpec, getHostPlatformPackageSpec, releaseNpmDir } from "./prebuilt-package-helpers"
 
 function run(command: string[], cwd?: string): { stdout: string; stderr: string } {
   const proc = Bun.spawnSync(command, {
     ...(cwd === undefined ? {} : { cwd }),
     stdin: "ignore",
     stdout: "pipe",
-    stderr: "pipe",
+    stderr: "pipe"
   })
   const stdout = Buffer.from(proc.stdout).toString("utf8")
   const stderr = Buffer.from(proc.stderr).toString("utf8")
@@ -33,8 +29,7 @@ function singleTarball(directory: string): string {
 }
 
 const repoRoot = path.resolve(import.meta.dir, "..")
-const packageVersion = (JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")) as { version: string })
-  .version
+const packageVersion = (JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")) as { version: string }).version
 const releaseRoot = releaseNpmDir(repoRoot)
 const hostSpec = getHostPlatformPackageSpec()
 const tempRoot = mkdtempSync(path.join(tmpdir(), "githunk-prebuilt-smoke-"))
@@ -64,7 +59,7 @@ try {
   }
   smokeManifest.optionalDependencies = {
     ...smokeManifest.optionalDependencies,
-    [hostSpec.packageName]: `file:${platformTarball}`,
+    [hostSpec.packageName]: `file:${platformTarball}`
   }
   writeFileSync(smokeManifestPath, `${JSON.stringify(smokeManifest, null, 2)}\n`)
   const metaPackDir = path.join(tempRoot, "tarballs", "meta")
@@ -77,28 +72,15 @@ try {
   run(["npm", "install", "--global", "--prefix", installDir, metaTarball])
 
   const installedBinDir = process.platform === "win32" ? installDir : path.join(installDir, "bin")
-  const installedPackageRoot =
-    process.platform === "win32"
-      ? path.join(installDir, "node_modules", "@xuhaojun", "githunk")
-      : path.join(installDir, "lib", "node_modules", "@xuhaojun", "githunk")
+  const installedPackageRoot = process.platform === "win32" ? path.join(installDir, "node_modules", "@xuhaojun", "githunk") : path.join(installDir, "lib", "node_modules", "@xuhaojun", "githunk")
   const installedLauncher = path.join(installedBinDir, process.platform === "win32" ? "githunk.cmd" : "githunk")
-  const installedPlatformRoot = path.join(
-    installedPackageRoot,
-    "node_modules",
-    ...hostSpec.packageName.split("/"),
-  )
-  const installedPlatformBinary = path.join(
-    installedPlatformRoot,
-    "bin",
-    binaryFilenameForSpec(hostSpec),
-  )
+  const installedPlatformRoot = path.join(installedPackageRoot, "node_modules", ...hostSpec.packageName.split("/"))
+  const installedPlatformBinary = path.join(installedPlatformRoot, "bin", binaryFilenameForSpec(hostSpec))
 
   if (process.platform !== "win32") {
     const installedBinaryMode = statSync(installedPlatformBinary).mode & 0o777
     if ((installedBinaryMode & 0o111) === 0) {
-      throw new Error(
-        `Expected installed platform binary to keep execute bits, got mode ${installedBinaryMode.toString(8)} at ${installedPlatformBinary}`,
-      )
+      throw new Error(`Expected installed platform binary to keep execute bits, got mode ${installedBinaryMode.toString(8)} at ${installedPlatformBinary}`)
     }
   }
 
@@ -114,9 +96,7 @@ try {
     throw new Error(`Expected installed githunk --version to print ${packageVersion}.\n${version.stdout}`)
   }
   if (version.stderr !== "") {
-    throw new Error(
-      `Expected the prebuilt binary to stay silent on stderr (the Node fallback always warns about experimental FFI).\n${version.stderr}`,
-    )
+    throw new Error(`Expected the prebuilt binary to stay silent on stderr (the Node fallback always warns about experimental FFI).\n${version.stderr}`)
   }
 
   const help = run([installedLauncher, "--help"])

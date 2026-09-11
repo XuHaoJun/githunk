@@ -65,10 +65,7 @@ export type ConformanceFixture = Readonly<{
 }>
 
 // Helpers to compute contentId exactly as loadReviewDocument does, for relationship assertions
-export function computeContentId(
-  raw: { oldBlobOid: string; newBlobOid: string; oldMode: string; newMode: string },
-  normalizedHunkBody: string,
-): string {
+export function computeContentId(raw: { oldBlobOid: string; newBlobOid: string; oldMode: string; newMode: string }, normalizedHunkBody: string): string {
   return sha256Tuple([raw.oldBlobOid, raw.newBlobOid, raw.oldMode, raw.newMode, normalizedHunkBody])
 }
 
@@ -89,38 +86,11 @@ const LONG_LINE = "x".repeat(600)
 const LONG_LINE_MODIFIED = "y".repeat(600)
 
 // Shared patch fragments
-const CRLF_PATCH =
-  "diff --git a/crlf.txt b/crlf.txt\r\n" +
-  "index abc123..def456 100644\r\n" +
-  "--- a/crlf.txt\r\n" +
-  "+++ b/crlf.txt\r\n" +
-  "@@ -1,3 +1,3 @@\r\n" +
-  " line1\r\n" +
-  "-old line\r\n" +
-  "+new line\r\n" +
-  " line3\r\n"
+const CRLF_PATCH = "diff --git a/crlf.txt b/crlf.txt\r\n" + "index abc123..def456 100644\r\n" + "--- a/crlf.txt\r\n" + "+++ b/crlf.txt\r\n" + "@@ -1,3 +1,3 @@\r\n" + " line1\r\n" + "-old line\r\n" + "+new line\r\n" + " line3\r\n"
 
-const NO_NEWLINE_PATCH =
-  "diff --git a/nonewline.txt b/nonewline.txt\n" +
-  "index abc123..def456 100644\n" +
-  "--- a/nonewline.txt\n" +
-  "+++ b/nonewline.txt\n" +
-  "@@ -1,2 +1,2 @@\n" +
-  " line1\n" +
-  "-line2\n" +
-  "+line2\n" +
-  "\\ No newline at end of file\n"
+const NO_NEWLINE_PATCH = "diff --git a/nonewline.txt b/nonewline.txt\n" + "index abc123..def456 100644\n" + "--- a/nonewline.txt\n" + "+++ b/nonewline.txt\n" + "@@ -1,2 +1,2 @@\n" + " line1\n" + "-line2\n" + "+line2\n" + "\\ No newline at end of file\n"
 
-const CJK_PATCH =
-  "diff --git a/cjk.txt b/cjk.txt\n" +
-  "index abc123..def456 100644\n" +
-  "--- a/cjk.txt\n" +
-  "+++ b/cjk.txt\n" +
-  "@@ -1,3 +1,3 @@\n" +
-  " hello\n" +
-  "-世界 hello\n" +
-  "+世界 world\n" +
-  " こんにちは\n"
+const CJK_PATCH = "diff --git a/cjk.txt b/cjk.txt\n" + "index abc123..def456 100644\n" + "--- a/cjk.txt\n" + "+++ b/cjk.txt\n" + "@@ -1,3 +1,3 @@\n" + " hello\n" + "-世界 hello\n" + "+世界 world\n" + " こんにちは\n"
 
 const COMBINING_PATCH =
   "diff --git a/combining.txt b/combining.txt\n" +
@@ -132,81 +102,21 @@ const COMBINING_PATCH =
   "+e\u0301 updated\n" +
   " plain\n"
 
-const LONG_LINE_PATCH =
-  `diff --git a/long.txt b/long.txt\n` +
-  `index abc123..def456 100644\n` +
-  `--- a/long.txt\n` +
-  `+++ b/long.txt\n` +
-  `@@ -1,2 +1,2 @@\n` +
-  ` ${LONG_LINE}\n` +
-  `-${LONG_LINE}\n` +
-  `+${LONG_LINE_MODIFIED}\n`
+const LONG_LINE_PATCH = `diff --git a/long.txt b/long.txt\n` + `index abc123..def456 100644\n` + `--- a/long.txt\n` + `+++ b/long.txt\n` + `@@ -1,2 +1,2 @@\n` + ` ${LONG_LINE}\n` + `-${LONG_LINE}\n` + `+${LONG_LINE_MODIFIED}\n`
 
-const BINARY_PATCH =
-  "diff --git a/image.png b/image.png\n" +
-  "index abc123..def456 100644\n" +
-  "--- a/image.png\n" +
-  "+++ b/image.png\n" +
-  "GIT binary patch\n" +
-  "literal 0\n" +
-  "HcmV?d00001\n"
+const BINARY_PATCH = "diff --git a/image.png b/image.png\n" + "index abc123..def456 100644\n" + "--- a/image.png\n" + "+++ b/image.png\n" + "GIT binary patch\n" + "literal 0\n" + "HcmV?d00001\n"
 
-const MODE_ONLY_PATCH =
-  "diff --git a/script.sh b/script.sh\n" +
-  "old mode 100644\n" +
-  "new mode 100755\n"
+const MODE_ONLY_PATCH = "diff --git a/script.sh b/script.sh\n" + "old mode 100644\n" + "new mode 100755\n"
 
-const RENAME_PATCH =
-  "diff --git a/old-name.txt b/new-name.txt\n" +
-  "similarity index 100%\n" +
-  "rename from old-name.txt\n" +
-  "rename to new-name.txt\n" +
-  "index abc123..def456 100644\n" +
-  "--- a/old-name.txt\n" +
-  "+++ b/new-name.txt\n" +
-  "@@ -1,2 +1,2 @@\n" +
-  " line1\n" +
-  "-old\n" +
-  "+new\n"
+const RENAME_PATCH = "diff --git a/old-name.txt b/new-name.txt\n" + "similarity index 100%\n" + "rename from old-name.txt\n" + "rename to new-name.txt\n" + "index abc123..def456 100644\n" + "--- a/old-name.txt\n" + "+++ b/new-name.txt\n" + "@@ -1,2 +1,2 @@\n" + " line1\n" + "-old\n" + "+new\n"
 
-const COPY_PATCH =
-  "diff --git a/original.txt b/copy.txt\n" +
-  "similarity index 100%\n" +
-  "copy from original.txt\n" +
-  "copy to copy.txt\n" +
-  "index abc123..def456 100644\n" +
-  "--- a/original.txt\n" +
-  "+++ b/copy.txt\n" +
-  "@@ -1,1 +1,1 @@\n" +
-  "-hello\n" +
-  "+hello copy\n"
+const COPY_PATCH = "diff --git a/original.txt b/copy.txt\n" + "similarity index 100%\n" + "copy from original.txt\n" + "copy to copy.txt\n" + "index abc123..def456 100644\n" + "--- a/original.txt\n" + "+++ b/copy.txt\n" + "@@ -1,1 +1,1 @@\n" + "-hello\n" + "+hello copy\n"
 
-const DELETE_PATCH =
-  "diff --git a/delete-me.txt b/delete-me.txt\n" +
-  "deleted file mode 100644\n" +
-  "index abc123..0000000\n" +
-  "--- a/delete-me.txt\n" +
-  "+++ /dev/null\n" +
-  "@@ -1,2 +0,0 @@\n" +
-  "-line1\n" +
-  "-line2\n"
+const DELETE_PATCH = "diff --git a/delete-me.txt b/delete-me.txt\n" + "deleted file mode 100644\n" + "index abc123..0000000\n" + "--- a/delete-me.txt\n" + "+++ /dev/null\n" + "@@ -1,2 +0,0 @@\n" + "-line1\n" + "-line2\n"
 
 const EMPTY_PATCH = ""
 
-const AMBIGUOUS_PATCH =
-  "diff --git a/ambiguous.txt b/ambiguous.txt\n" +
-  "index abc123..def456 100644\n" +
-  "--- a/ambiguous.txt\n" +
-  "+++ b/ambiguous.txt\n" +
-  "@@ -1,7 +1,7 @@\n" +
-  " context-a\n" +
-  " context-b\n" +
-  " context-c\n" +
-  "-target-old\n" +
-  "+target-new\n" +
-  " context-d\n" +
-  " context-e\n" +
-  " context-f\n"
+const AMBIGUOUS_PATCH = "diff --git a/ambiguous.txt b/ambiguous.txt\n" + "index abc123..def456 100644\n" + "--- a/ambiguous.txt\n" + "+++ b/ambiguous.txt\n" + "@@ -1,7 +1,7 @@\n" + " context-a\n" + " context-b\n" + " context-c\n" + "-target-old\n" + "+target-new\n" + " context-d\n" + " context-e\n" + " context-f\n"
 
 const MULTI_FILE_PATCH =
   "diff --git a/src/a.ts b/src/a.ts\n" +
@@ -243,21 +153,21 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "modified",
           stats: { additions: 1, deletions: 1 },
           source: "available",
-          hunks: [{ index: 0, oldStart: 1, oldCount: 3, newStart: 1, newCount: 3, lines: [" line1", "-old line", "+new line", " line3"] }],
-        },
+          hunks: [{ index: 0, oldStart: 1, oldCount: 3, newStart: 1, newCount: 3, lines: [" line1", "-old line", "+new line", " line3"] }]
+        }
       ],
       gaps: [
         { fileKey: "crlf.txt", gapId: "before:0" },
-        { fileKey: "crlf.txt", gapId: "trailing:0" },
+        { fileKey: "crlf.txt", gapId: "trailing:0" }
       ],
       rowAddresses: [
         { fileKey: "crlf.txt", hunkIndex: 0, oldLine: 1, newLine: 1, marker: "context" },
         { fileKey: "crlf.txt", hunkIndex: 0, oldLine: 2, newLine: null, marker: "deletion" },
-        { fileKey: "crlf.txt", hunkIndex: 0, oldLine: null, newLine: 2, marker: "addition" },
+        { fileKey: "crlf.txt", hunkIndex: 0, oldLine: null, newLine: 2, marker: "addition" }
       ],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "no-final-newline",
@@ -273,20 +183,20 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "modified",
           stats: { additions: 1, deletions: 1 },
           source: "available",
-          hunks: [{ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: [" line1", "-line2", "+line2"] }],
-        },
+          hunks: [{ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: [" line1", "-line2", "+line2"] }]
+        }
       ],
       gaps: [
         { fileKey: "nonewline.txt", gapId: "before:0" },
-        { fileKey: "nonewline.txt", gapId: "trailing:0" },
+        { fileKey: "nonewline.txt", gapId: "trailing:0" }
       ],
       rowAddresses: [
         { fileKey: "nonewline.txt", hunkIndex: 0, oldLine: 1, newLine: 1, marker: "context" },
-        { fileKey: "nonewline.txt", hunkIndex: 0, oldLine: 2, newLine: null, marker: "deletion" },
+        { fileKey: "nonewline.txt", hunkIndex: 0, oldLine: 2, newLine: null, marker: "deletion" }
       ],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "cjk",
@@ -302,20 +212,20 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "modified",
           stats: { additions: 1, deletions: 1 },
           source: "available",
-          hunks: [{ index: 0, oldStart: 1, oldCount: 3, newStart: 1, newCount: 3, lines: [" hello", "-世界 hello", "+世界 world", " こんにちは"] }],
-        },
+          hunks: [{ index: 0, oldStart: 1, oldCount: 3, newStart: 1, newCount: 3, lines: [" hello", "-世界 hello", "+世界 world", " こんにちは"] }]
+        }
       ],
       gaps: [
         { fileKey: "cjk.txt", gapId: "before:0" },
-        { fileKey: "cjk.txt", gapId: "trailing:0" },
+        { fileKey: "cjk.txt", gapId: "trailing:0" }
       ],
       rowAddresses: [
         { fileKey: "cjk.txt", hunkIndex: 0, oldLine: 2, newLine: null, marker: "deletion" },
-        { fileKey: "cjk.txt", hunkIndex: 0, oldLine: null, newLine: 2, marker: "addition" },
+        { fileKey: "cjk.txt", hunkIndex: 0, oldLine: null, newLine: 2, marker: "addition" }
       ],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "combining-marks",
@@ -331,20 +241,20 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "modified",
           stats: { additions: 1, deletions: 1 },
           source: "available",
-          hunks: [{ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: ["-e\u0301 combined", "+e\u0301 updated", " plain"] }],
-        },
+          hunks: [{ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: ["-e\u0301 combined", "+e\u0301 updated", " plain"] }]
+        }
       ],
       gaps: [
         { fileKey: "combining.txt", gapId: "before:0" },
-        { fileKey: "combining.txt", gapId: "trailing:0" },
+        { fileKey: "combining.txt", gapId: "trailing:0" }
       ],
       rowAddresses: [
         { fileKey: "combining.txt", hunkIndex: 0, oldLine: 1, newLine: null, marker: "deletion" },
-        { fileKey: "combining.txt", hunkIndex: 0, oldLine: 2, newLine: 2, marker: "context" },
+        { fileKey: "combining.txt", hunkIndex: 0, oldLine: 2, newLine: 2, marker: "context" }
       ],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "long-line",
@@ -360,21 +270,21 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "modified",
           stats: { additions: 1, deletions: 1 },
           source: "available",
-          hunks: [{ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: [` ${LONG_LINE}`, `-${LONG_LINE}`, `+${LONG_LINE_MODIFIED}`] }],
-        },
+          hunks: [{ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: [` ${LONG_LINE}`, `-${LONG_LINE}`, `+${LONG_LINE_MODIFIED}`] }]
+        }
       ],
       gaps: [
         { fileKey: "long.txt", gapId: "before:0" },
-        { fileKey: "long.txt", gapId: "trailing:0" },
+        { fileKey: "long.txt", gapId: "trailing:0" }
       ],
       rowAddresses: [
         { fileKey: "long.txt", hunkIndex: 0, oldLine: 1, newLine: 1, marker: "context" },
         { fileKey: "long.txt", hunkIndex: 0, oldLine: 2, newLine: null, marker: "deletion" },
-        { fileKey: "long.txt", hunkIndex: 0, oldLine: null, newLine: 2, marker: "addition" },
+        { fileKey: "long.txt", hunkIndex: 0, oldLine: null, newLine: 2, marker: "addition" }
       ],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "binary",
@@ -390,14 +300,14 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "binary",
           stats: { additions: null, deletions: null },
           source: "binary",
-          hunks: [],
-        },
+          hunks: []
+        }
       ],
       gaps: [],
       rowAddresses: [{ fileKey: "image.png", hunkIndex: null, oldLine: null, newLine: null, marker: "binary" }],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "mode-only",
@@ -413,14 +323,14 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "modified",
           stats: { additions: 0, deletions: 0 },
           source: "available",
-          hunks: [],
-        },
+          hunks: []
+        }
       ],
       gaps: [],
       rowAddresses: [{ fileKey: "script.sh", hunkIndex: null, oldLine: null, newLine: null, marker: "mode" }],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "rename",
@@ -437,20 +347,20 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "renamed",
           stats: { additions: 1, deletions: 1 },
           source: "available",
-          hunks: [{ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: [" line1", "-old", "+new"] }],
-        },
+          hunks: [{ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: [" line1", "-old", "+new"] }]
+        }
       ],
       gaps: [
         { fileKey: "new-name.txt", gapId: "before:0" },
-        { fileKey: "new-name.txt", gapId: "trailing:0" },
+        { fileKey: "new-name.txt", gapId: "trailing:0" }
       ],
       rowAddresses: [
         { fileKey: "new-name.txt", hunkIndex: 0, oldLine: 1, newLine: 1, marker: "context" },
-        { fileKey: "new-name.txt", hunkIndex: 0, oldLine: 2, newLine: null, marker: "deletion" },
+        { fileKey: "new-name.txt", hunkIndex: 0, oldLine: 2, newLine: null, marker: "deletion" }
       ],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "copy",
@@ -467,20 +377,20 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "copied",
           stats: { additions: 1, deletions: 1 },
           source: "available",
-          hunks: [{ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-hello", "+hello copy"] }],
-        },
+          hunks: [{ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-hello", "+hello copy"] }]
+        }
       ],
       gaps: [
         { fileKey: "copy.txt", gapId: "before:0" },
-        { fileKey: "copy.txt", gapId: "trailing:0" },
+        { fileKey: "copy.txt", gapId: "trailing:0" }
       ],
       rowAddresses: [
         { fileKey: "copy.txt", hunkIndex: 0, oldLine: 1, newLine: null, marker: "deletion" },
-        { fileKey: "copy.txt", hunkIndex: 0, oldLine: null, newLine: 1, marker: "addition" },
+        { fileKey: "copy.txt", hunkIndex: 0, oldLine: null, newLine: 1, marker: "addition" }
       ],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "delete",
@@ -496,20 +406,20 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "deleted",
           stats: { additions: 0, deletions: 2 },
           source: "available",
-          hunks: [{ index: 0, oldStart: 1, oldCount: 2, newStart: 0, newCount: 0, lines: ["-line1", "-line2"] }],
-        },
+          hunks: [{ index: 0, oldStart: 1, oldCount: 2, newStart: 0, newCount: 0, lines: ["-line1", "-line2"] }]
+        }
       ],
       gaps: [
         { fileKey: "delete-me.txt", gapId: "before:0" },
-        { fileKey: "delete-me.txt", gapId: "trailing:0" },
+        { fileKey: "delete-me.txt", gapId: "trailing:0" }
       ],
       rowAddresses: [
         { fileKey: "delete-me.txt", hunkIndex: 0, oldLine: 1, newLine: null, marker: "deletion" },
-        { fileKey: "delete-me.txt", hunkIndex: 0, oldLine: 2, newLine: null, marker: "deletion" },
+        { fileKey: "delete-me.txt", hunkIndex: 0, oldLine: 2, newLine: null, marker: "deletion" }
       ],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "empty",
@@ -522,8 +432,8 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
       gaps: [],
       rowAddresses: [],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "ambiguous-context",
@@ -546,23 +456,23 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
               oldCount: 7,
               newStart: 1,
               newCount: 7,
-              lines: [" context-a", " context-b", " context-c", "-target-old", "+target-new", " context-d", " context-e", " context-f"],
-            },
-          ],
-        },
+              lines: [" context-a", " context-b", " context-c", "-target-old", "+target-new", " context-d", " context-e", " context-f"]
+            }
+          ]
+        }
       ],
       gaps: [
         { fileKey: "ambiguous.txt", gapId: "before:0" },
-        { fileKey: "ambiguous.txt", gapId: "trailing:0" },
+        { fileKey: "ambiguous.txt", gapId: "trailing:0" }
       ],
       rowAddresses: [
         { fileKey: "ambiguous.txt", hunkIndex: 0, oldLine: 4, newLine: null, marker: "deletion" },
         { fileKey: "ambiguous.txt", hunkIndex: 0, oldLine: null, newLine: 4, marker: "addition" },
-        { fileKey: "ambiguous.txt", hunkIndex: 0, oldLine: 1, newLine: 1, marker: "context" },
+        { fileKey: "ambiguous.txt", hunkIndex: 0, oldLine: 1, newLine: 1, marker: "context" }
       ],
       contentIdDistinctPairs: [],
-      contentIdSamePairs: [],
-    },
+      contentIdSamePairs: []
+    }
   },
   {
     id: "multi-file",
@@ -570,11 +480,11 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
     patch: MULTI_FILE_PATCH,
     rawEntries: [
       { status: "M", path: "src/a.ts", oldMode: "100644", newMode: "100644", oldBlobOid: OID_A, newBlobOid: OID_B },
-      { status: "M", path: "src/b.ts", oldMode: "100644", newMode: "100644", oldBlobOid: OID_C, newBlobOid: OID_D },
+      { status: "M", path: "src/b.ts", oldMode: "100644", newMode: "100644", oldBlobOid: OID_C, newBlobOid: OID_D }
     ],
     numstatEntries: [
       { path: "src/a.ts", additions: 1, deletions: 1 },
-      { path: "src/b.ts", additions: 1, deletions: 1 },
+      { path: "src/b.ts", additions: 1, deletions: 1 }
     ],
     expected: {
       files: [
@@ -584,7 +494,7 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "modified",
           stats: { additions: 1, deletions: 1 },
           source: "available",
-          hunks: [{ index: 0, oldStart: 10, oldCount: 3, newStart: 10, newCount: 3, lines: [" context-a", "-old-a", "+new-a", " tail-a"] }],
+          hunks: [{ index: 0, oldStart: 10, oldCount: 3, newStart: 10, newCount: 3, lines: [" context-a", "-old-a", "+new-a", " tail-a"] }]
         },
         {
           key: "src/b.ts",
@@ -592,25 +502,25 @@ export const REVIEW_CONFORMANCE_FIXTURES: readonly ConformanceFixture[] = [
           kind: "modified",
           stats: { additions: 1, deletions: 1 },
           source: "available",
-          hunks: [{ index: 0, oldStart: 20, oldCount: 3, newStart: 20, newCount: 3, lines: [" context-b", "-old-b", "+new-b", " tail-b"] }],
-        },
+          hunks: [{ index: 0, oldStart: 20, oldCount: 3, newStart: 20, newCount: 3, lines: [" context-b", "-old-b", "+new-b", " tail-b"] }]
+        }
       ],
       gaps: [
         { fileKey: "src/a.ts", gapId: "before:0" },
         { fileKey: "src/a.ts", gapId: "trailing:0" },
         { fileKey: "src/b.ts", gapId: "before:0" },
-        { fileKey: "src/b.ts", gapId: "trailing:0" },
+        { fileKey: "src/b.ts", gapId: "trailing:0" }
       ],
       rowAddresses: [
         { fileKey: "src/a.ts", hunkIndex: 0, oldLine: 10, newLine: 10, marker: "context" },
         { fileKey: "src/a.ts", hunkIndex: 0, oldLine: 11, newLine: null, marker: "deletion" },
         { fileKey: "src/b.ts", hunkIndex: 0, oldLine: 21, newLine: null, marker: "deletion" },
-        { fileKey: "src/b.ts", hunkIndex: 0, oldLine: null, newLine: 21, marker: "addition" },
+        { fileKey: "src/b.ts", hunkIndex: 0, oldLine: null, newLine: 21, marker: "addition" }
       ],
       contentIdDistinctPairs: [["src/a.ts", "src/b.ts"]],
-      contentIdSamePairs: [],
-    },
-  },
+      contentIdSamePairs: []
+    }
+  }
 ] as const
 
 export type ReviewConformanceFixture = (typeof REVIEW_CONFORMANCE_FIXTURES)[number]

@@ -49,12 +49,7 @@
             "oldCount": 3,
             "newStart": 10,
             "newCount": 3,
-            "lines": [
-              " context-a",
-              "-old-a",
-              "+new-a",
-              " tail-a"
-            ]
+            "lines": [" context-a", "-old-a", "+new-a", " tail-a"]
           }
         ]
       },
@@ -74,12 +69,7 @@
             "oldCount": 3,
             "newStart": 20,
             "newCount": 3,
-            "lines": [
-              " context-b",
-              "-old-b",
-              "+new-b",
-              " tail-b"
-            ]
+            "lines": [" context-b", "-old-b", "+new-b", " tail-b"]
           }
         ]
       }
@@ -132,12 +122,7 @@
         "marker": "addition"
       }
     ],
-    "contentIdDistinctPairs": [
-      [
-        "src/a.ts",
-        "src/b.ts"
-      ]
-    ],
+    "contentIdDistinctPairs": [["src/a.ts", "src/b.ts"]],
     "contentIdSamePairs": []
   }
 }

@@ -61,7 +61,7 @@ const gitSimpleEscapeBytes: Readonly<Record<string, number>> = {
   f: 0x0c,
   r: 0x0d,
   "\\": 0x5c,
-  '"': 0x22,
+  '"': 0x22
 }
 
 function decodeGitQuotedUtf8Path(path: string): string {
@@ -213,10 +213,7 @@ function findRenameOrCopyMetadata(blockLines: string[]): { oldPath?: string; new
   return { oldPath, newPath }
 }
 
-function resolveDecodedGitFilePaths(
-  decodedPair: { oldPath: string; newPath: string } | undefined,
-  blockLines: string[],
-): SanitizedGitPatchFilePaths | undefined {
+function resolveDecodedGitFilePaths(decodedPair: { oldPath: string; newPath: string } | undefined, blockLines: string[]): SanitizedGitPatchFilePaths | undefined {
   const meta = findRenameOrCopyMetadata(blockLines)
   if (meta.oldPath !== undefined || meta.newPath !== undefined) {
     // Prefer metadata when present; fall back to header pair for missing side
@@ -257,11 +254,7 @@ function shouldStripMnemonicPair(oldPath: string, newPath: string, blockLines: s
   return false
 }
 
-function canonicalizeKnownGitPathPair(
-  oldPath: string,
-  newPath: string,
-  blockLines: string[],
-): { oldPath: string; newPath: string; rewriteMode: GitHeaderRewriteMode | null; changed: boolean; isCanonical: boolean } | null {
+function canonicalizeKnownGitPathPair(oldPath: string, newPath: string, blockLines: string[]): { oldPath: string; newPath: string; rewriteMode: GitHeaderRewriteMode | null; changed: boolean; isCanonical: boolean } | null {
   const oldHasPrefix = oldPath.startsWith("a/") || oldPath.startsWith("b/")
   const newHasPrefix = newPath.startsWith("a/") || newPath.startsWith("b/")
 
@@ -283,7 +276,7 @@ function canonicalizeKnownGitPathPair(
         newPath: withGitPrefix(cleanNew, "b/"),
         rewriteMode: "add",
         changed: true,
-        isCanonical: false,
+        isCanonical: false
       }
     }
     // Real mnemonic: strip prefix letter and re-add a/b
@@ -292,7 +285,7 @@ function canonicalizeKnownGitPathPair(
       newPath: withGitPrefix(newMnemonic.rest, "b/"),
       rewriteMode: "strip",
       changed: true,
-      isCanonical: false,
+      isCanonical: false
     }
   }
 
@@ -303,18 +296,14 @@ function canonicalizeKnownGitPathPair(
       newPath: withGitPrefix(newPath, "b/"),
       rewriteMode: "prepend-prefix",
       changed: true,
-      isCanonical: false,
+      isCanonical: false
     }
   }
 
   return null
 }
 
-function canonicalizeGitPathPair(
-  oldPath: string,
-  newPath: string,
-  blockLines: string[],
-): { oldPath: string; newPath: string; rewriteMode: GitHeaderRewriteMode | null } {
+function canonicalizeGitPathPair(oldPath: string, newPath: string, blockLines: string[]): { oldPath: string; newPath: string; rewriteMode: GitHeaderRewriteMode | null } {
   const strippedOld = stripGitPathQuotes(oldPath)
   const strippedNew = stripGitPathQuotes(newPath)
   const known = canonicalizeKnownGitPathPair(strippedOld, strippedNew, blockLines)
@@ -323,7 +312,7 @@ function canonicalizeGitPathPair(
   return {
     oldPath: withGitPrefix(strippedOld, "a/"),
     newPath: withGitPrefix(strippedNew, "b/"),
-    rewriteMode: "add",
+    rewriteMode: "add"
   }
 }
 
@@ -386,14 +375,11 @@ function rewriteGitPatchBlock(blockLines: string[]): { lines: string[]; filePath
   }
   return {
     lines: rewrittenLines,
-    filePaths: resolveDecodedGitFilePaths(result.decodedPair, blockLines),
+    filePaths: resolveDecodedGitFilePaths(result.decodedPair, blockLines)
   }
 }
 
-function rewriteGitDiffHeader(
-  line: string,
-  blockLines: string[],
-): { line: string; rewriteMode: GitHeaderRewriteMode | null; decodedPair?: { oldPath: string; newPath: string } } {
+function rewriteGitDiffHeader(line: string, blockLines: string[]): { line: string; rewriteMode: GitHeaderRewriteMode | null; decodedPair?: { oldPath: string; newPath: string } } {
   const rest = line.slice("diff --git ".length).trimEnd()
   const quotedMatch = rest.match(/^"((?:\\.|[^"\\])*)" "((?:\\.|[^"\\])*)"$/)
   if (quotedMatch) {
@@ -409,12 +395,12 @@ function rewriteGitDiffHeader(
       return {
         line: `diff --git ${pair.oldPath} ${pair.newPath}`,
         rewriteMode: pair.rewriteMode,
-        decodedPair: { oldPath: can.oldPath, newPath: can.newPath },
+        decodedPair: { oldPath: can.oldPath, newPath: can.newPath }
       }
     }
     return {
       line: `diff --git ${pair.oldPath} ${pair.newPath}`,
-      rewriteMode: pair.rewriteMode,
+      rewriteMode: pair.rewriteMode
     }
   }
 
@@ -427,7 +413,7 @@ function rewriteGitDiffHeader(
     if (knownPair?.changed) {
       return {
         line: `diff --git ${knownPair.oldPath} ${knownPair.newPath}`,
-        rewriteMode: knownPair.rewriteMode,
+        rewriteMode: knownPair.rewriteMode
       }
     }
     if (knownPair?.isCanonical) {
@@ -436,7 +422,7 @@ function rewriteGitDiffHeader(
     if (firstHalf === secondHalf && firstHalf.length > 0) {
       return {
         line: `diff --git ${withGitPrefix(firstHalf, "a/")} ${withGitPrefix(secondHalf, "b/")}`,
-        rewriteMode: "add",
+        rewriteMode: "add"
       }
     }
   }
@@ -449,7 +435,7 @@ function rewriteGitDiffHeader(
     return {
       line: `diff --git ${pair.oldPath} ${pair.newPath}`,
       rewriteMode: pair.rewriteMode,
-      decodedPair: { oldPath: oldTok!, newPath: newTok! },
+      decodedPair: { oldPath: oldTok!, newPath: newTok! }
     }
   }
 
@@ -541,7 +527,7 @@ export function findPatchChunk(metadata: { name: string; prevName?: string }, ch
         .map((v) => normalizeDiffPath(v))
         .filter((v): v is string => Boolean(v))
         .map(stripPrefixes)
-        .some((path) => chunk.includes(`a/${path}`) || chunk.includes(`b/${path}`) || chunk.includes(path)),
+        .some((path) => chunk.includes(`a/${path}`) || chunk.includes(`b/${path}`) || chunk.includes(path))
     ) ?? ""
   )
 }
@@ -574,7 +560,7 @@ function extractHunksFromChunk(chunk: string): Omit<ReviewHunk, "digest">[] {
           oldCount: currentHunk.oldCount,
           newStart: currentHunk.newStart,
           newCount: currentHunk.newCount,
-          lines: currentHunk.lines,
+          lines: currentHunk.lines
         })
       }
       currentHunk = { ...header, lines: [] }
@@ -607,7 +593,7 @@ function extractHunksFromChunk(chunk: string): Omit<ReviewHunk, "digest">[] {
       oldCount: currentHunk.oldCount,
       newStart: currentHunk.newStart,
       newCount: currentHunk.newCount,
-      lines: currentHunk.lines,
+      lines: currentHunk.lines
     })
   }
   return hunks
@@ -651,9 +637,7 @@ export function parseReviewPatch(patchText: string): readonly ParsedPatchFile[] 
     const metadata = metadataFiles[index]!
     const decodedPaths = sanitized.filePaths[index]
     // Prefer exact decoded paths when available
-    const normalizedMetadata = decodedPaths
-      ? { name: decodedPaths.path, prevName: decodedPaths.previousPath }
-      : normalizeDiffMetadataPaths(metadata as unknown as { name: string; prevName?: string })
+    const normalizedMetadata = decodedPaths ? { name: decodedPaths.path, prevName: decodedPaths.previousPath } : normalizeDiffMetadataPaths(metadata as unknown as { name: string; prevName?: string })
 
     const patchChunk = findPatchChunk(metadata as unknown as { name: string; prevName?: string }, chunks, index)
     const normalizedPatch = patchChunk // already sanitized
@@ -678,7 +662,7 @@ export function parseReviewPatch(patchText: string): readonly ParsedPatchFile[] 
         patchDigest,
         normalizedHunkBody,
         hunks,
-        isBinary,
+        isBinary
       })
     } else {
       result.push({
@@ -687,7 +671,7 @@ export function parseReviewPatch(patchText: string): readonly ParsedPatchFile[] 
         patchDigest,
         normalizedHunkBody,
         hunks,
-        isBinary,
+        isBinary
       })
     }
   }

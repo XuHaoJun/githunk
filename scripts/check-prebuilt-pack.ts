@@ -16,7 +16,7 @@ function checkDirectory(directory: string): void {
   const proc = Bun.spawnSync(["npm", "pack", "--dry-run"], {
     cwd: directory,
     stdout: "pipe",
-    stderr: "pipe",
+    stderr: "pipe"
   })
   if (proc.exitCode !== 0) {
     throw new Error(`npm pack --dry-run failed in ${directory}:\n${proc.stderr.toString()}`)

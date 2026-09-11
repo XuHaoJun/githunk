@@ -2,7 +2,7 @@ import { createReviewDocument, createReviewHunk } from "../src/review/core/docum
 import { createReviewGeneration, createReviewIdentity, sha256Tuple } from "../src/review/core/identity"
 import { createInitialReviewState } from "../src/review/core/state"
 import { reconcileReviewState, matchReviewFiles } from "../src/review/core/reconcile"
-import { createFileAnchor, createRangeAnchor } from "../src/review/core/anchors"
+import { createRangeAnchor } from "../src/review/core/anchors"
 import type { ReviewFile } from "../src/review/core/types"
 
 function makeFiles(count: number, offset = 0): ReviewFile[] {
@@ -20,7 +20,7 @@ function makeFiles(count: number, offset = 0): ReviewFile[] {
       patchDigest: sha256Tuple([`file-${idx}-v1`]),
       stats: { additions: 1, deletions: 1 },
       hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 3, newStart: 1, newCount: 3, lines: [" a", "-old", "+new", " b"] })],
-      source: "available" as const,
+      source: "available" as const
     }
   })
 }
@@ -58,7 +58,7 @@ async function main() {
       patchDigest: sha256Tuple([`file-${i}-v2`]),
       stats: { additions: 2, deletions: 2 },
       hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 4, newStart: 1, newCount: 4, lines: [" a", "-old1", "-old2", "+new1", "+new2", " b"] })],
-      source: "available" as const,
+      source: "available" as const
     })
   }
   // 90-99 deleted (not in V2)
@@ -76,7 +76,7 @@ async function main() {
       patchDigest: sha256Tuple([`file-${i}-added`]),
       stats: { additions: 5, deletions: 0 },
       hunks: [createReviewHunk({ index: 0, oldStart: 0, oldCount: 0, newStart: 1, newCount: 5, lines: ["+a", "+b", "+c", "+d", "+e"] })],
-      source: "available" as const,
+      source: "available" as const
     })
   }
   // Rename file-5 -> file-5-renamed (simulate rename)
@@ -126,9 +126,9 @@ async function main() {
       newFiles: match.newFiles.length,
       copied: match.copiedFiles.length,
       ambiguous: match.ambiguous.size,
-      feedbackResolution: (reconciled as any).feedback?.[0]?.resolution ?? "active",
+      feedbackResolution: (reconciled as any).feedback?.[0]?.resolution ?? "active"
     },
-    assertion: "reconcile preserves Viewed only when path+contentId match; orphaned feedback retained",
+    assertion: "reconcile preserves Viewed only when path+contentId match; orphaned feedback retained"
   }
   console.log(JSON.stringify(output, null, 2))
 

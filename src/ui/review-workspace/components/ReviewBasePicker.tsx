@@ -49,7 +49,9 @@ export function ReviewBasePicker({ selection, width, height, active, warning, on
     if (next < scroll.scrollTop) scroll.scrollTop = next
     else if (next >= scroll.scrollTop + viewportHeight) scroll.scrollTop = next - viewportHeight + 1
   }
-  useLayoutEffect(() => { reveal(index) }, [index, candidates, listHeight])
+  useLayoutEffect(() => {
+    reveal(index)
+  }, [index, candidates, listHeight])
   useLayoutEffect(() => {
     const input = inputRef.current
     if (!input) return
@@ -105,34 +107,60 @@ export function ReviewBasePicker({ selection, width, height, active, warning, on
     handlePickerKey(event)
   })
 
-  const status = selection.loading ? "Loading branches…" : selection.selecting ? "Loading review…" : selection.error
-    ? `Error: ${selection.error}` : selection.candidates.length === 0 ? "No branches available. Ctrl-R retry."
-      : candidates.length === 0 ? "No matching branches." : `${candidates.length} branches · recommendations first`
+  const status = selection.loading
+    ? "Loading branches…"
+    : selection.selecting
+      ? "Loading review…"
+      : selection.error
+        ? `Error: ${selection.error}`
+        : selection.candidates.length === 0
+          ? "No branches available. Ctrl-R retry."
+          : candidates.length === 0
+            ? "No matching branches."
+            : `${candidates.length} branches · recommendations first`
 
   return (
     <box id="review-base-backdrop" onMouse={consume} style={{ position: "absolute", left: 0, top: 0, width, height, zIndex: 100, backgroundColor: "#151515" }}>
       <box id="review-base-picker" style={{ position: "absolute", left: Math.floor((width - dialogWidth) / 2), top: Math.floor((height - dialogHeight) / 2), width: dialogWidth, height: dialogHeight, border, borderColor: "#b9ca4a", flexDirection: "column", backgroundColor: "#202020", overflow: "hidden" }}>
         <text content="Choose base branch" wrapMode="none" truncate={true} />
-        <input id="review-base-filter" ref={inputRef} width={contentWidth} value={query} placeholder="Filter branches…" focused={active && !busy} showCursor={true} cursorColor="#c5c8c6" cursorStyle={REVIEW_CURSOR_STYLE} onInput={(value) => {
-          if (busy) return
-          setQuery(value)
-          setSelectedIndex(0)
-          if (scrollRef.current) scrollRef.current.scrollTop = 0
-        }} onKeyDown={(event) => {
-          if (handlePickerKey(event)) return
-        }} onSubmit={() => {
-          submit()
-        }} />
+        <input
+          id="review-base-filter"
+          ref={inputRef}
+          width={contentWidth}
+          value={query}
+          placeholder="Filter branches…"
+          focused={active && !busy}
+          showCursor={true}
+          cursorColor="#c5c8c6"
+          cursorStyle={REVIEW_CURSOR_STYLE}
+          onInput={(value) => {
+            if (busy) return
+            setQuery(value)
+            setSelectedIndex(0)
+            if (scrollRef.current) scrollRef.current.scrollTop = 0
+          }}
+          onKeyDown={(event) => {
+            if (handlePickerKey(event)) return
+          }}
+          onSubmit={() => {
+            submit()
+          }}
+        />
         <scrollbox id="review-base-list" ref={scrollRef} width="100%" height={listHeight} flexShrink={0} scrollY={true} viewportCulling={true} verticalScrollbarOptions={{ visible: false }}>
           <box style={{ width: "100%", flexDirection: "column" }}>
             {candidates.length === 0 ? <text content={status} wrapMode="none" truncate={true} /> : null}
             {candidates.map((candidate, candidateIndex) => (
-              <box key={candidate.ref} id={`review-base-row:${candidate.ref}`} style={{ width: "100%", height: 1, flexShrink: 0, backgroundColor: index === candidateIndex ? "#365f8a" : "#202020" }} onMouseUp={(event) => {
-                consume(event)
-                if (busy) return
-                setSelectedIndex(candidateIndex)
-                onChoose(candidate.ref)
-              }}>
+              <box
+                key={candidate.ref}
+                id={`review-base-row:${candidate.ref}`}
+                style={{ width: "100%", height: 1, flexShrink: 0, backgroundColor: index === candidateIndex ? "#365f8a" : "#202020" }}
+                onMouseUp={(event) => {
+                  consume(event)
+                  if (busy) return
+                  setSelectedIndex(candidateIndex)
+                  onChoose(candidate.ref)
+                }}
+              >
                 <text content={`${index === candidateIndex ? ">" : " "} ${candidate.label}${candidate.reason ? ` — ${candidate.reason}` : ""}`} selectable={false} wrapMode="none" truncate={true} />
               </box>
             ))}
@@ -141,10 +169,17 @@ export function ReviewBasePicker({ selection, width, height, active, warning, on
         {showDetail ? <text id="review-base-status" content={status} fg={selection.error ? "#f0c674" : "#b4b4b4"} wrapMode="none" truncate={true} /> : null}
         {warningHeight > 0 && warning ? <text id="review-base-warning" content={warning} fg="#f0c674" wrapMode="none" truncate={true} /> : null}
         <box style={{ width: "100%", height: 1, flexShrink: 0, flexDirection: "row" }}>
-          {selection.error || selection.candidates.length === 0 ? <box id="review-base-retry" onMouseUp={(event) => {
-            consume(event)
-            if (!busy) onRetry()
-          }}><text content="[Ctrl-R retry] " /></box> : null}
+          {selection.error || selection.candidates.length === 0 ? (
+            <box
+              id="review-base-retry"
+              onMouseUp={(event) => {
+                consume(event)
+                if (!busy) onRetry()
+              }}
+            >
+              <text content="[Ctrl-R retry] " />
+            </box>
+          ) : null}
           <text content={selection.error !== undefined || busy ? status : "↑↓ choose · Enter select · Esc cancel"} wrapMode="none" truncate={true} />
         </box>
       </box>

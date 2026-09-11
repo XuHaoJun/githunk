@@ -1,17 +1,17 @@
 import { createHash } from "node:crypto"
 import type { ReviewTarget } from "../domain/review-target"
 
-export type MutableReviewTarget =
-  | Extract<ReviewTarget, { kind: "working-tree" }>
-  | Extract<ReviewTarget, { kind: "stash" }>
+export type MutableReviewTarget = Extract<ReviewTarget, { kind: "working-tree" }> | Extract<ReviewTarget, { kind: "stash" }>
 
-export type FilePatchInput = {
-  readonly currentPath?: string | undefined
-  readonly path?: string | undefined
-  readonly previousPath?: string | undefined
-  readonly rawPatch?: string | undefined
-  readonly patch?: string | undefined
-} | string
+export type FilePatchInput =
+  | {
+      readonly currentPath?: string | undefined
+      readonly path?: string | undefined
+      readonly previousPath?: string | undefined
+      readonly rawPatch?: string | undefined
+      readonly patch?: string | undefined
+    }
+  | string
 
 function utf8(value: string): Uint8Array {
   return new TextEncoder().encode(value)

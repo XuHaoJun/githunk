@@ -32,7 +32,7 @@ describe("command log autoscroll", () => {
     const created = await createShellHarness({
       commits: ["base commit"],
       logVisible: true,
-      ...(height === undefined ? {} : { height }),
+      ...(height === undefined ? {} : { height })
     })
     remoteBare = await createTempRepository()
     await remoteBare.git(["config", "core.bare", "true"])

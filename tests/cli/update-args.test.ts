@@ -18,7 +18,7 @@ describe("parseCliArgs update", () => {
     expect(parseCliArgs(["update", "0.3.0", "--check"])).toEqual({
       kind: "update",
       version: "0.3.0",
-      check: true,
+      check: true
     })
   })
 })

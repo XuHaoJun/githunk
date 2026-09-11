@@ -42,7 +42,7 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
       },
       writeErr: (text: string) => {
         stderr += text
-      },
+      }
     })
   program
     .command("update")
@@ -52,7 +52,7 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
     .action((version: string | undefined, options: { check?: boolean }) => {
       update = {
         ...(version === undefined ? {} : { version }),
-        check: options.check ?? false,
+        check: options.check ?? false
       }
     })
 
@@ -98,15 +98,7 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
 
   const options = program.opts<{ path?: string }>()
   const positional = program.args[0]
-  const startDirectory = options.path ?? (
-    update === undefined
-      && skillOperation === undefined
-      && skillError === undefined
-      && handoff === undefined
-      && handoffReply === undefined
-      ? positional
-      : undefined
-  )
+  const startDirectory = options.path ?? (update === undefined && skillOperation === undefined && skillError === undefined && handoff === undefined && handoffReply === undefined ? positional : undefined)
   if (update !== undefined) return { kind: "update", ...update }
   if (skillError !== undefined) return { kind: "error", message: skillError, exitCode: 1 }
   if (skillOperation !== undefined) return { kind: skillOperation === "path" ? "skill-path" : "skill-show" }
@@ -117,14 +109,14 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
     return {
       kind: "handoff-reply",
       ...handoffReply,
-      ...(startDirectory === undefined ? {} : { startDirectory }),
+      ...(startDirectory === undefined ? {} : { startDirectory })
     }
   }
   if (handoff !== undefined) {
     return {
       kind: "handoff",
       ...handoff,
-      ...(startDirectory === undefined ? {} : { startDirectory }),
+      ...(startDirectory === undefined ? {} : { startDirectory })
     }
   }
   return startDirectory === undefined ? { kind: "start" } : { kind: "start", startDirectory }

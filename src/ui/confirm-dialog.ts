@@ -15,7 +15,7 @@ export function discardConfirmation(path: string, untracked = false): Confirmati
     confirmLabel: "Discard",
     cancelLabel: "Cancel",
     confirmKey: "d",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 
@@ -28,7 +28,7 @@ function stashConfirmation(title: string, message: string, confirmLabel: string)
     confirmLabel,
     cancelLabel: "Cancel",
     confirmKey: "enter",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 

@@ -47,7 +47,9 @@ describe("focus navigation", () => {
   test("setLogVisible fires onChange like focus() does", () => {
     const manager = new FocusManager()
     let calls = 0
-    manager.onChange = () => { calls += 1 }
+    manager.onChange = () => {
+      calls += 1
+    }
     manager.setLogVisible(true)
     expect(manager.logVisible).toBe(true)
     expect(manager.active).toBe("main")
@@ -72,7 +74,9 @@ describe("focus navigation", () => {
     focus.focus("main")
     expect(focus.lastSide).toBe("branches")
     let seenLast: string | undefined
-    focus.onChange = () => { seenLast = focus.lastSide }
+    focus.onChange = () => {
+      seenLast = focus.lastSide
+    }
     focus.focus("stash")
     expect(seenLast).toBe("stash")
   })

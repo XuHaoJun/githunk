@@ -30,7 +30,7 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [],
     source: "available",
-    ...overrides,
+    ...overrides
   } as unknown as ReviewFile
 }
 function makeDoc(files: ReviewFile[]): ReviewDocument {

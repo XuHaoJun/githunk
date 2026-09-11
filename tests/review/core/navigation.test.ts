@@ -29,7 +29,7 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [] as unknown as ReviewFile["hunks"],
     source: "available",
-    ...overrides,
+    ...overrides
   } as ReviewFile
 }
 function makeDoc(files: ReviewFile[]): ReviewDocument {
@@ -60,10 +60,7 @@ describe("navigation", () => {
   })
 
   test("next/previous hunk clamp and walks visible order", () => {
-    const doc = makeDoc([
-      makeFile({ key: "a", path: "a.ts", hunks: [makeHunk(0), makeHunk(1)] as unknown as ReviewFile["hunks"] }),
-      makeFile({ key: "b", path: "b.ts", hunks: [makeHunk(0)] as unknown as ReviewFile["hunks"] }),
-    ])
+    const doc = makeDoc([makeFile({ key: "a", path: "a.ts", hunks: [makeHunk(0), makeHunk(1)] as unknown as ReviewFile["hunks"] }), makeFile({ key: "b", path: "b.ts", hunks: [makeHunk(0)] as unknown as ReviewFile["hunks"] })])
     let s = createInitialReviewState(doc)
     expect(s.selection).toEqual({ fileKey: "a", hunkIndex: 0 })
     s = reduceReviewState(s, planReviewIntent(s, { type: "selection/move", unit: "hunk", direction: "next" }))
@@ -127,10 +124,7 @@ describe("navigation", () => {
   })
 
   test("moveReviewSelection increments correct token", () => {
-    const doc = makeDoc([
-      makeFile({ key: "a", path: "a.ts", hunks: [makeHunk(0), makeHunk(1)] as unknown as ReviewFile["hunks"] }),
-      makeFile({ key: "b", path: "b.ts", hunks: [makeHunk(0)] as unknown as ReviewFile["hunks"] }),
-    ])
+    const doc = makeDoc([makeFile({ key: "a", path: "a.ts", hunks: [makeHunk(0), makeHunk(1)] as unknown as ReviewFile["hunks"] }), makeFile({ key: "b", path: "b.ts", hunks: [makeHunk(0)] as unknown as ReviewFile["hunks"] })])
     const s0 = createInitialReviewState(doc)
     const t1 = moveReviewSelection(s0, "hunk", "next")
     expect(t1).not.toBeNull()

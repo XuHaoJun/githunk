@@ -36,16 +36,7 @@
             "oldCount": 7,
             "newStart": 1,
             "newCount": 7,
-            "lines": [
-              " context-a",
-              " context-b",
-              " context-c",
-              "-target-old",
-              "+target-new",
-              " context-d",
-              " context-e",
-              " context-f"
-            ]
+            "lines": [" context-a", " context-b", " context-c", "-target-old", "+target-new", " context-d", " context-e", " context-f"]
           }
         ]
       }

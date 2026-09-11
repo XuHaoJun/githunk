@@ -15,14 +15,17 @@ export const NO_TAGS = "No tags"
  */
 function withoutPgpSignature(message: string): string {
   let inSignature = false
-  return message.split("\n").filter((line) => {
-    if (line === "-----END PGP SIGNATURE-----") {
-      inSignature = false
-      return false
-    }
-    if (line === "-----BEGIN PGP SIGNATURE-----") inSignature = true
-    return !inSignature
-  }).join("\n")
+  return message
+    .split("\n")
+    .filter((line) => {
+      if (line === "-----END PGP SIGNATURE-----") {
+        inSignature = false
+        return false
+      }
+      if (line === "-----BEGIN PGP SIGNATURE-----") inSignature = true
+      return !inSignature
+    })
+    .join("\n")
 }
 
 /**
@@ -33,9 +36,7 @@ function withoutPgpSignature(message: string): string {
  */
 export function tagPreamble(tag: TagSummary): string {
   const header = `${tag.kind === "annotated" ? "Annotated tag" : "Lightweight tag"}: ${tag.name}`
-  const annotation = tag.kind === "annotated" && tag.message !== undefined
-    ? withoutPgpSignature(tag.message).replace(/\n+$/, "")
-    : ""
+  const annotation = tag.kind === "annotated" && tag.message !== undefined ? withoutPgpSignature(tag.message).replace(/\n+$/, "") : ""
   return `${annotation.length === 0 ? header : `${header}\n\n${annotation}`}\n\n---\n\n`
 }
 
@@ -49,7 +50,7 @@ export function tagRows(model: AppModel, filter = ""): ListRow[] {
       { text: tag.targetOid.slice(0, 7), priority: 1, style: "yellow" as const },
       ...(tag.subject ? [{ text: tag.subject, priority: 2 }] : []),
       ...(tag.taggerName ? [{ text: tag.taggerName, priority: 4, style: "cyan" as const }] : []),
-      ...(tag.taggedAt ? [{ text: tag.taggedAt, priority: 4, style: "dim" as const }] : []),
+      ...(tag.taggedAt ? [{ text: tag.taggedAt, priority: 4, style: "dim" as const }] : [])
     ]
     return { id, columns }
   })

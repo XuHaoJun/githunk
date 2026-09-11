@@ -1,6 +1,5 @@
 import type { ReviewAction } from "./actions"
 import type { ReviewState } from "./state"
-import { visibleReviewFiles } from "./selectors"
 import { moveReviewSelection, moveReviewLineSelection } from "./navigation"
 
 function projectionsEqual(a: ReviewState["projection"], b: ReviewState["projection"]): boolean {
@@ -13,21 +12,20 @@ function projectionsEqual(a: ReviewState["projection"], b: ReviewState["projecti
 
 function sortedFeedbackForNavigation(state: ReviewState) {
   const indexByKey = new Map(state.document.files.map((f, i) => [f.key, i] as const))
-  return state.feedback.filter((feedback) => feedback.status !== "resolved").sort((a, b) => {
-    const ia = indexByKey.get(a.anchor.fileKey) ?? Number.MAX_SAFE_INTEGER
-    const ib = indexByKey.get(b.anchor.fileKey) ?? Number.MAX_SAFE_INTEGER
-    if (ia !== ib) return ia - ib
-    const la = a.anchor.kind === "range" ? a.anchor.startLine : 0
-    const lb = b.anchor.kind === "range" ? b.anchor.startLine : 0
-    if (la !== lb) return la - lb
-    return a.id.localeCompare(b.id)
-  })
+  return state.feedback
+    .filter((feedback) => feedback.status !== "resolved")
+    .sort((a, b) => {
+      const ia = indexByKey.get(a.anchor.fileKey) ?? Number.MAX_SAFE_INTEGER
+      const ib = indexByKey.get(b.anchor.fileKey) ?? Number.MAX_SAFE_INTEGER
+      if (ia !== ib) return ia - ib
+      const la = a.anchor.kind === "range" ? a.anchor.startLine : 0
+      const lb = b.anchor.kind === "range" ? b.anchor.startLine : 0
+      if (la !== lb) return la - lb
+      return a.id.localeCompare(b.id)
+    })
 }
 
-function feedbackNavigationTarget(
-  state: ReviewState,
-  direction: "next" | "previous",
-): { fileKey: string; hunkIndex: number } | null {
+function feedbackNavigationTarget(state: ReviewState, direction: "next" | "previous"): { fileKey: string; hunkIndex: number } | null {
   const sorted = sortedFeedbackForNavigation(state)
   if (sorted.length === 0) return null
   const currentKey = state.selection.fileKey
@@ -45,7 +43,7 @@ function feedbackNavigationTarget(
       break
     }
   }
-  let target: typeof sorted[number] | null = null
+  let target: (typeof sorted)[number] | null = null
   if (direction === "next") {
     if (currentIdx === -1) {
       target = sorted[0] ?? null
@@ -78,14 +76,14 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         fileTopToken: state.reveal.fileTopToken + 1,
         fileTopRequestToken: state.reveal.fileTopRequestToken + 1,
         hunkToken: state.reveal.hunkToken,
-        scrollToFeedback: false,
+        scrollToFeedback: false
       }
       return {
         ...state,
         selection: nextSelection,
         lineSelection: null,
         reveal: nextReveal,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "selection/set-line": {
@@ -96,7 +94,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         selection: { fileKey: s.fileKey, hunkIndex: s.hunkIndex },
         lineSelection: s,
         reveal: { ...state.reveal, scrollToFeedback: false },
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "selection/move-line": {
@@ -106,7 +104,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         ...state,
         lineSelection: next,
         reveal: { ...state.reveal, scrollToFeedback: false },
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "selection/move": {
@@ -117,7 +115,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         lineSelection: null,
         selection: target.selection,
         reveal: target.reveal,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "selection/viewport-anchor": {
@@ -129,11 +127,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       // ReviewDiffPane wins: false lets the file-top reveal run, true skips it
       // so the selected row is what gets scrolled to. Jumping to an objection
       // wants the row, not the top of its file.
-      const reveal = action.reveal === "hunk"
-        ? { ...state.reveal, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: false }
-        : action.reveal === "feedback"
-          ? { ...state.reveal, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: true }
-          : state.reveal
+      const reveal = action.reveal === "hunk" ? { ...state.reveal, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: false } : action.reveal === "feedback" ? { ...state.reveal, hunkToken: state.reveal.hunkToken + 1, scrollToFeedback: true } : state.reveal
       if (state.selection.fileKey === action.fileKey && state.selection.hunkIndex === clamped && reveal === state.reveal) {
         return state
       }
@@ -142,7 +136,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         lineSelection: null,
         selection: { fileKey: action.fileKey, hunkIndex: clamped },
         reveal,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "filter/set-query": {
@@ -151,7 +145,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         filter: { ...state.filter, query: normalized },
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "filter/set-scope": {
@@ -159,7 +153,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         filter: { ...state.filter, scope: action.scope },
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "projection/apply": {
@@ -179,9 +173,9 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
           fileTopToken: state.reveal.fileTopToken + 1,
           fileTopRequestToken: state.reveal.fileTopRequestToken + 1,
           hunkToken: state.reveal.hunkToken + 1,
-          scrollToFeedback: false,
+          scrollToFeedback: false
         },
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "projection/set": {
@@ -189,14 +183,14 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         projection: action.projection,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "gap/toggle": {
       const file = state.document.files.find((f) => f.key === action.fileKey)
       if (!file) return state
       const idx = state.expandedGaps.findIndex((g) => g.fileKey === action.fileKey && g.gapId === action.gapId)
-      let nextGaps: readonly typeof state.expandedGaps[number][]
+      let nextGaps: readonly (typeof state.expandedGaps)[number][]
       if (idx >= 0) {
         const current = state.expandedGaps[idx]!
         const toggled = { ...current, expanded: !current.expanded }
@@ -209,26 +203,20 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         expandedGaps: nextGaps,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "viewed/mark": {
       const file = state.document.files.find((f) => f.key === action.fileKey)
       if (!file) return state
       const existing = state.viewed[action.fileKey]
-      if (
-        existing &&
-        existing.path === action.record.path &&
-        existing.contentId === action.record.contentId &&
-        existing.generationId === action.record.generationId &&
-        existing.viewedAt === action.record.viewedAt
-      ) {
+      if (existing && existing.path === action.record.path && existing.contentId === action.record.contentId && existing.generationId === action.record.generationId && existing.viewedAt === action.record.viewedAt) {
         return state
       }
       return {
         ...state,
         viewed: { ...state.viewed, [action.fileKey]: action.record },
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "viewed/unmark": {
@@ -251,7 +239,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         draft: action.draft,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "feedback/update-draft": {
@@ -260,7 +248,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         draft: nextDraft,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "feedback/cancel-draft": {
@@ -268,7 +256,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         draft: null,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "feedback/create": {
@@ -276,7 +264,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         ...state,
         feedback: [...state.feedback, action.feedback],
         draft: null,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "feedback/edit": {
@@ -286,14 +274,14 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       const updated = {
         ...existing,
         ...action.patch,
-        updatedAt: action.updatedAt,
+        updatedAt: action.updatedAt
       }
       const copy = [...state.feedback]
       copy[idx] = updated
       return {
         ...state,
         feedback: copy,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "feedback/delete": {
@@ -303,7 +291,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         feedback: copy,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "feedback/reanchor": {
@@ -315,15 +303,15 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         ...withoutHandoff,
         anchor: action.anchor,
         resolution: "active" as const,
-        status: existing.status === "resolved" ? "resolved" as const : "open" as const,
-        updatedAt: action.updatedAt,
+        status: existing.status === "resolved" ? ("resolved" as const) : ("open" as const),
+        updatedAt: action.updatedAt
       }
       const copy = [...state.feedback]
       copy[idx] = updated
       return {
         ...state,
         feedback: copy,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "feedback/handoff": {
@@ -342,9 +330,9 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
             at: action.at,
             headOid: action.headOid,
             ...(feedback.anchor.kind === "file" ? { contentId: feedback.anchor.contentId } : {}),
-            ...(excerpt === undefined ? {} : { excerpt }),
+            ...(excerpt === undefined ? {} : { excerpt })
           },
-          updatedAt: action.at,
+          updatedAt: action.at
         }
       })
       if (!changed) return state
@@ -371,7 +359,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         selection: { fileKey: target.fileKey, hunkIndex: target.hunkIndex },
         lineSelection: null,
         reveal: nextReveal,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
     case "feedback/previous": {
@@ -386,7 +374,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         selection: { fileKey: target.fileKey, hunkIndex: target.hunkIndex },
         lineSelection: null,
         reveal: nextReveal,
-        revision: state.revision + 1,
+        revision: state.revision + 1
       }
     }
   }

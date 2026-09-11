@@ -65,10 +65,7 @@ export function stickyHeaderChunks(sticky: StickyDiffHeader, width: number): rea
 
 export function ReviewStickyHeader({ sticky, width }: Readonly<{ sticky: StickyDiffHeader; width: number }>) {
   return (
-    <box
-      id="review-sticky-header"
-      style={{ width: "100%", height: 1, flexShrink: 0, backgroundColor: STICKY_BACKGROUND }}
-    >
+    <box id="review-sticky-header" style={{ width: "100%", height: 1, flexShrink: 0, backgroundColor: STICKY_BACKGROUND }}>
       <text content={new StyledText([...stickyHeaderChunks(sticky, Math.max(0, width))])} wrapMode="none" truncate={true} />
     </box>
   )

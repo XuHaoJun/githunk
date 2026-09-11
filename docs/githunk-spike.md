@@ -60,6 +60,7 @@ githunk/
 ### Task 1: Bootstrap the Disposable Spike and Hostile Fixture
 
 **Files:**
+
 - Create: `package.json`
 - Create: `tsconfig.json`
 - Create: `spike/selection/src/fixtures/patch.ts`
@@ -67,6 +68,7 @@ githunk/
 - Create: `spike/selection/README.md`
 
 **Interfaces:**
+
 - Produces: `LEFT_FIXTURE: readonly string[]`
 - Produces: `PATCH_FIXTURE: string`
 - Produces: `PATCH_SENTINELS: readonly string[]`
@@ -76,11 +78,7 @@ githunk/
 ```ts
 // spike/selection/tests/fixture.test.ts
 import { describe, expect, test } from "bun:test"
-import {
-  LEFT_FIXTURE,
-  PATCH_FIXTURE,
-  PATCH_SENTINELS,
-} from "../src/fixtures/patch"
+import { LEFT_FIXTURE, PATCH_FIXTURE, PATCH_SENTINELS } from "../src/fixtures/patch"
 
 describe("selection spike fixtures", () => {
   test("left fixture is dense enough to expose row contamination", () => {
@@ -187,13 +185,10 @@ export const LEFT_FIXTURE = [
   "M src/l.ts",
   "M src/m.ts",
   "M src/n.ts",
-  "M src/o.ts",
+  "M src/o.ts"
 ] as const
 
-export const PATCH_SENTINELS = [
-  "GITHUNK_PATCH_ONLY_ALPHA",
-  "GITHUNK_PATCH_ONLY_OMEGA",
-] as const
+export const PATCH_SENTINELS = ["GITHUNK_PATCH_ONLY_ALPHA", "GITHUNK_PATCH_ONLY_OMEGA"] as const
 
 export const PATCH_FIXTURE = `diff --git a/src/payments/capture.ts b/src/payments/capture.ts
 index 1111111..2222222 100644
@@ -232,7 +227,7 @@ Expected: PASS.
 
 - [ ] **Step 6: Write the spike README prerequisites**
 
-```markdown
+````markdown
 # OpenTUI Selection Spike
 
 Prerequisites:
@@ -247,26 +242,30 @@ Run:
 bun install
 bun run spike:selection
 ```
+````
 
 This spike uses fixtures only. It must not execute Git commands.
-```
+
+````
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add package.json tsconfig.json bun.lock spike/selection
 git commit -m "spike: bootstrap opentui selection fixture"
-```
+````
 
 ---
 
 ### Task 2: Implement Testable Splitter Geometry
 
 **Files:**
+
 - Create: `spike/selection/src/layout.ts`
 - Create: `spike/selection/tests/layout.test.ts`
 
 **Interfaces:**
+
 - Produces: `type PaneLayout = { terminalWidth: number; leftWidth: number; splitterX: number; rightWidth: number }`
 - Produces: `computePaneLayout(terminalWidth: number, requestedLeftWidth: number): PaneLayout`
 - Produces: `resizeLeftPane(current: PaneLayout, mouseX: number): PaneLayout`
@@ -284,7 +283,7 @@ describe("pane geometry", () => {
       terminalWidth: 120,
       leftWidth: 30,
       splitterX: 30,
-      rightWidth: 89,
+      rightWidth: 89
     })
   })
 
@@ -326,17 +325,14 @@ export type PaneLayout = {
   rightWidth: number
 }
 
-export function computePaneLayout(
-  terminalWidth: number,
-  requestedLeftWidth: number,
-): PaneLayout {
+export function computePaneLayout(terminalWidth: number, requestedLeftWidth: number): PaneLayout {
   const maxLeft = Math.max(MIN_LEFT, terminalWidth - MIN_RIGHT - SPLITTER_WIDTH)
   const leftWidth = Math.min(Math.max(requestedLeftWidth, MIN_LEFT), maxLeft)
   return {
     terminalWidth,
     leftWidth,
     splitterX: leftWidth,
-    rightWidth: Math.max(0, terminalWidth - leftWidth - SPLITTER_WIDTH),
+    rightWidth: Math.max(0, terminalWidth - leftWidth - SPLITTER_WIDTH)
   }
 }
 
@@ -367,11 +363,13 @@ git commit -m "spike: add deterministic pane splitter geometry"
 ### Task 3: Build the Two-Pane OpenTUI and Prove Pane-Isolated Selection
 
 **Files:**
+
 - Create: `spike/selection/src/app.ts`
 - Create: `spike/selection/src/main.ts`
 - Modify: `spike/selection/README.md`
 
 **Interfaces:**
+
 - Consumes: `LEFT_FIXTURE`, `PATCH_FIXTURE`
 - Consumes: `computePaneLayout`, `resizeLeftPane`
 - Produces: `createSelectionSpike(renderer: CliRenderer): { destroy(): void }`
@@ -402,7 +400,7 @@ const renderer = await createCliRenderer({
   exitOnCtrlC: true,
   useMouse: true,
   enableMouseMovement: true,
-  targetFps: 30,
+  targetFps: 30
 })
 
 createSelectionSpike(renderer)
@@ -426,13 +424,7 @@ Use `CodeRenderable` for the patch and set `selectable: true`. Do not put the le
 The essential construction must follow this shape:
 
 ```ts
-import {
-  BoxRenderable,
-  CodeRenderable,
-  ScrollBoxRenderable,
-  TextRenderable,
-  type CliRenderer,
-} from "@opentui/core"
+import { BoxRenderable, CodeRenderable, ScrollBoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core"
 import { LEFT_FIXTURE, PATCH_FIXTURE } from "./fixtures/patch"
 import { computePaneLayout, resizeLeftPane } from "./layout"
 
@@ -443,7 +435,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
     id: "spike-root",
     flexDirection: "row",
     width: "100%",
-    height: "100%",
+    height: "100%"
   })
 
   const left = new BoxRenderable(renderer, {
@@ -451,19 +443,19 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
     width: layout.leftWidth,
     height: "100%",
     border: true,
-    title: "LEFT — must never contaminate PATCH copy",
+    title: "LEFT — must never contaminate PATCH copy"
   })
 
   const leftText = new TextRenderable(renderer, {
     id: "left-fixture",
     content: LEFT_FIXTURE.join("\n"),
-    selectable: false,
+    selectable: false
   })
 
   const splitter = new BoxRenderable(renderer, {
     id: "vertical-splitter",
     width: 1,
-    height: "100%",
+    height: "100%"
   })
 
   const patchScroll = new ScrollBoxRenderable(renderer, {
@@ -473,7 +465,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
     border: true,
     title: "PATCH — drag to select",
     scrollY: true,
-    scrollX: false,
+    scrollX: false
   })
 
   const patch = new CodeRenderable(renderer, {
@@ -481,7 +473,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
     content: PATCH_FIXTURE,
     filetype: "diff",
     selectable: true,
-    width: "100%",
+    width: "100%"
   })
 
   left.add(leftText)
@@ -497,10 +489,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
   }
 
   splitter.onMouseDrag = (event) => {
-    layout = resizeLeftPane(
-      computePaneLayout(renderer.terminalWidth, layout.leftWidth),
-      event.x,
-    )
+    layout = resizeLeftPane(computePaneLayout(renderer.terminalWidth, layout.leftWidth), event.x)
     applyLayout()
   }
 
@@ -512,7 +501,7 @@ export function createSelectionSpike(renderer: CliRenderer): { destroy(): void }
   return {
     destroy() {
       root.destroy()
-    },
+    }
   }
 }
 ```
@@ -558,11 +547,13 @@ git commit -m "spike: prove opentui pane-aware patch selection"
 ### Task 4: Add Explicit Clipboard Policy and OSC52 Feedback
 
 **Files:**
+
 - Create: `spike/selection/src/clipboard.ts`
 - Create: `spike/selection/tests/clipboard.test.ts`
 - Modify: `spike/selection/src/app.ts`
 
 **Interfaces:**
+
 - Produces: `type ClipboardPort = { isOsc52Supported(): boolean; copyToClipboardOSC52(text: string): boolean }`
 - Produces: `type CopyResult = { status: "emitted" | "blocked" | "empty"; bytes: number }`
 - Produces: `copySelection(text: string, clipboard: ClipboardPort): CopyResult`
@@ -578,7 +569,7 @@ describe("OSC52 copy policy", () => {
   test("does not emit empty selections", () => {
     const port = {
       isOsc52Supported: () => true,
-      copyToClipboardOSC52: () => true,
+      copyToClipboardOSC52: () => true
     }
     expect(copySelection("", port)).toEqual({ status: "empty", bytes: 0 })
   })
@@ -586,7 +577,7 @@ describe("OSC52 copy policy", () => {
   test("reports capability-policy block", () => {
     const port = {
       isOsc52Supported: () => false,
-      copyToClipboardOSC52: () => true,
+      copyToClipboardOSC52: () => true
     }
     expect(copySelection("abc", port)).toEqual({ status: "blocked", bytes: 3 })
   })
@@ -594,7 +585,7 @@ describe("OSC52 copy policy", () => {
   test("reports emission but does not claim terminal acceptance", () => {
     const port = {
       isOsc52Supported: () => true,
-      copyToClipboardOSC52: (text: string) => text === "abc",
+      copyToClipboardOSC52: (text: string) => text === "abc"
     }
     expect(copySelection("abc", port)).toEqual({ status: "emitted", bytes: 3 })
   })
@@ -631,7 +622,7 @@ export function copySelection(text: string, clipboard: ClipboardPort): CopyResul
   if (!clipboard.isOsc52Supported()) return { status: "blocked", bytes }
   return {
     status: clipboard.copyToClipboardOSC52(text) ? "emitted" : "blocked",
-    bytes,
+    bytes
   }
 }
 ```
@@ -644,12 +635,7 @@ In `app.ts`, subscribe once:
 renderer.on("selection", (selection) => {
   const text = selection.getSelectedText()
   const result = copySelection(text, renderer)
-  statusText.content =
-    result.status === "emitted"
-      ? `OSC52 emitted ${result.bytes} bytes — verify local clipboard`
-      : result.status === "blocked"
-        ? "OSC52 blocked/unsupported in this environment"
-        : "No text selected"
+  statusText.content = result.status === "emitted" ? `OSC52 emitted ${result.bytes} bytes — verify local clipboard` : result.status === "blocked" ? "OSC52 blocked/unsupported in this environment" : "No text selected"
 })
 ```
 
@@ -689,10 +675,12 @@ git commit -m "spike: validate osc52 patch copy semantics"
 ### Task 5: Stress Wrapping, Unicode, Resizing, and Selection Boundaries
 
 **Files:**
+
 - Modify: `spike/selection/README.md`
 - Modify: `spike/selection/src/app.ts` only if a diagnostic toggle is needed
 
 **Interfaces:**
+
 - Consumes existing fixture and UI.
 - Produces no production interface; this task produces reproducible evidence.
 
@@ -703,18 +691,18 @@ git commit -m "spike: validate osc52 patch copy semantics"
 
 Run each case twice: once at 120+ columns and once with PATCH narrowed until the intentionally long line wraps.
 
-| ID | Case | Expected |
-|---|---|---|
-| U1 | Select `中文審查` | Exact CJK text |
-| U2 | Select `🚀` plus neighbors | No adjacent character corruption |
-| U3 | Select `é` | Grapheme is not split/corrupted |
-| U4 | Select a tab-indented line | Clipboard preserves logical indentation |
-| W1 | Select the wrapped long source line | Clipboard contains one logical source line, not visual-row artifacts |
-| W2 | Select from mid wrapped line into next logical line | Boundary text is correct |
-| R1 | Resize terminal narrower, then wider | Selection remains mapped to visible patch content |
-| R2 | Drag splitter repeatedly, then select | No left-pane contamination |
-| S1 | Start drag on splitter | Resize only; no text selection |
-| S2 | Start drag one cell inside patch | Selection only; no resize |
+| ID  | Case                                                | Expected                                                             |
+| --- | --------------------------------------------------- | -------------------------------------------------------------------- |
+| U1  | Select `中文審查`                                   | Exact CJK text                                                       |
+| U2  | Select `🚀` plus neighbors                          | No adjacent character corruption                                     |
+| U3  | Select `é`                                          | Grapheme is not split/corrupted                                      |
+| U4  | Select a tab-indented line                          | Clipboard preserves logical indentation                              |
+| W1  | Select the wrapped long source line                 | Clipboard contains one logical source line, not visual-row artifacts |
+| W2  | Select from mid wrapped line into next logical line | Boundary text is correct                                             |
+| R1  | Resize terminal narrower, then wider                | Selection remains mapped to visible patch content                    |
+| R2  | Drag splitter repeatedly, then select               | No left-pane contamination                                           |
+| S1  | Start drag on splitter                              | Resize only; no text selection                                       |
+| S2  | Start drag one cell inside patch                    | Selection only; no resize                                            |
 ```
 
 - [ ] **Step 2: Run every stress case locally**
@@ -749,11 +737,13 @@ git commit -m "spike: exercise unicode wrapping and resize selection"
 ### Task 6: Add Environment Capture for Remote Compatibility Runs
 
 **Files:**
+
 - Create: `spike/selection/src/acceptance-log.ts`
 - Modify: `spike/selection/src/main.ts`
 - Modify: `spike/selection/README.md`
 
 **Interfaces:**
+
 - Produces: `captureEnvironment(): AcceptanceEnvironment`
 - Produces: `type AcceptanceEnvironment`
 
@@ -779,7 +769,7 @@ export function captureEnvironment(): AcceptanceEnvironment {
     tmux: Boolean(process.env.TMUX),
     zellij: Boolean(process.env.ZELLIJ || process.env.ZELLIJ_SESSION_NAME),
     columns: process.stdout.columns ?? null,
-    rows: process.stdout.rows ?? null,
+    rows: process.stdout.rows ?? null
   }
 }
 ```
@@ -798,7 +788,7 @@ if (process.env.GITHUNK_SPIKE_ENV === "1") {
 
 - [ ] **Step 3: Add exact remote test commands to README**
 
-```markdown
+````markdown
 ## Remote matrix
 
 Capture environment:
@@ -807,6 +797,7 @@ Capture environment:
 GITHUNK_SPIKE_ENV=1 bun run spike:selection 2> /tmp/githunk-spike-env.json
 cat /tmp/githunk-spike-env.json
 ```
+````
 
 Run these four environments where available:
 
@@ -821,7 +812,8 @@ For each environment:
 - paste on the client machine;
 - repeat with a multiline selection containing CJK + emoji;
 - record PASS/FAIL and any terminal setting required for OSC52.
-```
+
+````
 
 - [ ] **Step 4: Run automated tests**
 
@@ -829,7 +821,7 @@ Run:
 
 ```bash
 bun test
-```
+````
 
 Expected: PASS.
 
@@ -845,9 +837,11 @@ git commit -m "spike: capture ssh tmux and zellij test context"
 ### Task 7: Execute the Compatibility Matrix and Make the Framework Decision
 
 **Files:**
+
 - Create: `spike/selection/results.md`
 
 **Interfaces:**
+
 - Produces: one decision: `ACCEPT_OPENTUI`, `ACCEPT_WITH_WORKAROUND`, or `REJECT_OPENTUI`.
 
 - [ ] **Step 1: Create the results document with explicit gates**
@@ -860,26 +854,26 @@ git commit -m "spike: capture ssh tmux and zellij test context"
 
 ## Release-blocking gates
 
-| Gate | Result | Evidence |
-|---|---|---|
-| Pane-isolated multiline selection | | |
-| Partial first/last line correctness | | |
-| Scrolled selection correctness | | |
-| Wrapped logical-line correctness | | |
-| CJK / emoji / combining text | | |
-| Terminal resize correctness | | |
-| Mouse splitter does not steal selection | | |
-| Local clipboard | | |
-| SSH clipboard | | |
+| Gate                                    | Result | Evidence |
+| --------------------------------------- | ------ | -------- |
+| Pane-isolated multiline selection       |        |          |
+| Partial first/last line correctness     |        |          |
+| Scrolled selection correctness          |        |          |
+| Wrapped logical-line correctness        |        |          |
+| CJK / emoji / combining text            |        |          |
+| Terminal resize correctness             |        |          |
+| Mouse splitter does not steal selection |        |          |
+| Local clipboard                         |        |          |
+| SSH clipboard                           |        |          |
 
 ## Compatibility observations
 
-| Environment | Selection | OSC52 | Required configuration |
-|---|---|---|---|
-| Local | | | |
-| SSH | | | |
-| SSH + tmux | | | |
-| SSH + zellij | | | |
+| Environment  | Selection | OSC52 | Required configuration |
+| ------------ | --------- | ----- | ---------------------- |
+| Local        |           |       |                        |
+| SSH          |           |       |                        |
+| SSH + tmux   |           |       |                        |
+| SSH + zellij |           |       |                        |
 
 ## Decision
 
@@ -986,4 +980,3 @@ Recommended next plans after `ACCEPT_OPENTUI`:
 6. `githunk-branches-remotes-tracking-checkout`
 7. `githunk-commit-stash-sync`
 8. `githunk-review-progress`
-

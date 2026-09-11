@@ -43,7 +43,7 @@ export function normalizeKey(key: string | KeyLike): KeyStroke {
     shift: modifierValue(key.shift) || isPhysicalUppercase,
     meta: modifierValue(key.meta),
     option: modifierValue(key.option) || modifierValue(key.alt),
-    super: modifierValue(key.super),
+    super: modifierValue(key.super)
   }
 }
 
@@ -58,6 +58,6 @@ function parseKeyStroke(value: string): KeyStroke {
     shift: modifiers.has("shift") || isPhysicalUppercase,
     meta: modifiers.has("meta") || modifiers.has("cmd"),
     option: modifiers.has("option") || modifiers.has("alt"),
-    super: modifiers.has("super"),
+    super: modifiers.has("super")
   }
 }

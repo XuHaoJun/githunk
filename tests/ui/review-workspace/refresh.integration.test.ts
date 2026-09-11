@@ -21,7 +21,7 @@ function fakeRunner(): GitRunner {
     logTip: () => {},
     lines: () => [] as unknown[],
     autoscrollArms: () => false,
-    commandLogSnapshot: () => ({ entries: [] }),
+    commandLogSnapshot: () => ({ entries: [] })
   } as unknown as GitRunner["log"]
   return { run: async () => ({ stdout: "", stderr: "", exitCode: 0 }), log, cwd: "/tmp/fake" } as unknown as GitRunner
 }
@@ -29,7 +29,7 @@ function fakeRunner(): GitRunner {
 function makeHunk(index: number, lines: string[], opts?: { oldStart?: number; newStart?: number }) {
   const oldStart = opts?.oldStart ?? 1
   const newStart = opts?.newStart ?? 1
-  return createReviewHunk({ index, oldStart, oldCount: lines.filter(l => l[0] !== "+").length, newStart, newCount: lines.filter(l => l[0] !== "-").length, lines })
+  return createReviewHunk({ index, oldStart, oldCount: lines.filter((l) => l[0] !== "+").length, newStart, newCount: lines.filter((l) => l[0] !== "-").length, lines })
 }
 
 function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }): ReviewFile {
@@ -44,7 +44,7 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [],
     source: "available",
-    ...overrides,
+    ...overrides
   } as unknown as ReviewFile
 }
 
@@ -62,14 +62,16 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     const initial = createInitialReviewState(doc)
     const persisted = {
       ...persistedFromReviewState(initial),
-      projection: { kind: "commit" as const, oid: "c".repeat(40) },
+      projection: { kind: "commit" as const, oid: "c".repeat(40) }
     }
     const db: ReviewDatabaseV2 = { version: 2, baseByHead: {}, reviews: { [doc.identity.id]: persisted } }
     let written: ReviewDatabaseV2 | undefined
     const stateStore = {
       load: async () => db,
-      saveSemanticChange: async (updater: (value: typeof db) => typeof db) => { written = updater(db) },
-      flush: async () => undefined,
+      saveSemanticChange: async (updater: (value: typeof db) => typeof db) => {
+        written = updater(db)
+      },
+      flush: async () => undefined
     } as unknown as ReviewStateStore
     const controller = new ReviewWorkspaceController({ runner: fakeRunner(), stateStore, loadDocument: async () => doc })
     const state = await controller.open("refs/heads/main")
@@ -110,13 +112,13 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
         }
         if (loadCount === 1) {
           loadCount++
-          await new Promise(r => setTimeout(r, 30))
+          await new Promise((r) => setTimeout(r, 30))
           return docA
         } else {
-          await new Promise(r => setTimeout(r, 5))
+          await new Promise((r) => setTimeout(r, 5))
           return docB
         }
-      },
+      }
     })
 
     await controller.open("refs/heads/main")
@@ -147,9 +149,9 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
       runner: fakeRunner(),
       loadDocument: async () => currentDoc,
       loadSourceContextImpl: async (req) => {
-        await new Promise(r => setTimeout(r, 20))
+        await new Promise((r) => setTimeout(r, 20))
         return { ok: true, result: { lines: ["ctx1", "ctx2"], range: [req.startLine, req.endLine] } as never }
-      },
+      }
     })
     await controller.open("refs/heads/main")
 
@@ -170,7 +172,7 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
       loadDocument: async () => {
         if (shouldFail) throw new Error("Failed to parse patch: unsupported patch for src/broken.ts")
         return docGood
-      },
+      }
     })
     await controller.open("refs/heads/main")
     const before = controller.state!.document
@@ -194,11 +196,10 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
 
     const docV2 = makeDoc([fileA_v2, fileB_v2], "b".repeat(40))
 
-
     let currentDoc = docV1
     const controller = new ReviewWorkspaceController({
       runner: fakeRunner(),
-      loadDocument: async () => currentDoc,
+      loadDocument: async () => currentDoc
     })
     await controller.open("refs/heads/main")
 
@@ -224,7 +225,7 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     const docV1WithC = makeDoc([fileA_v1, fileB_v1, fileC_v1], "c".repeat(40))
     currentDoc = docV1WithC
     await controller.refreshGeneration()
-    expect(controller.state!.document.files.some(f => f.key === "c")).toBe(true)
+    expect(controller.state!.document.files.some((f) => f.key === "c")).toBe(true)
     const anchorC = { kind: "file" as const, fileKey: "c", contentId: "content-c-v1" }
     const feedbackC = { id: "fbC", kind: "note" as const, severity: "comment" as const, body: "c note", anchor: anchorC, resolution: "active" as const, createdAt: viewedAt, updatedAt: viewedAt }
     controller.dispatch({ type: "feedback/create", feedback: feedbackC } as unknown as never)
@@ -239,17 +240,17 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     const after = controller.state!
     expect(after.viewed["a"]).toBeDefined()
     expect(after.viewed["a"]!.contentId).toBe("content-a-v1")
-    expect(after.document.files.find(f => f.key === "a")!.contentId).toBe("content-a-v2")
+    expect(after.document.files.find((f) => f.key === "a")!.contentId).toBe("content-a-v2")
     expect(after.viewed["b"]).toBeDefined()
     expect(after.viewed["b"]!.contentId).toBe("content-b-v1")
-    expect(after.document.files.find(f => f.key === "b")!.contentId).toBe("content-b-v1")
+    expect(after.document.files.find((f) => f.key === "b")!.contentId).toBe("content-b-v1")
 
     expect(after.draft).toBeDefined()
     expect(after.draft!.body).toBe("draft body")
 
-    const fbA = after.feedback.find(f => f.id === "fb1")!
+    const fbA = after.feedback.find((f) => f.id === "fb1")!
     expect(["stale", "active", "orphaned"]).toContain(fbA.resolution)
-    const fbC = after.feedback.find(f => f.id === "fbC")
+    const fbC = after.feedback.find((f) => f.id === "fbC")
     if (fbC) {
       expect(fbC.resolution).toBe("orphaned")
     } else {
@@ -259,7 +260,6 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
 
   test("hidden repository refresh not repainting the review screen", async () => {
     const runner = fakeRunner()
-    let repoRefreshCalls = 0
     const setup = await createTestRenderer({ width: 80, height: 24 })
     const renderer = setup.renderer as unknown as CliRenderer
     let viewUpdates = 0
@@ -269,16 +269,11 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
       runner: runner as unknown as GitRunner,
       renderer,
       reviewLoaders: {
-        loadDocument: async () => doc,
-      },
+        loadDocument: async () => doc
+      }
     } as unknown as Parameters<typeof createApp>[0])
 
     const repoController = (app as unknown as { controller: { refresh: () => Promise<void> } }).controller
-    const originalRepoRefresh = repoController.refresh.bind(repoController)
-    repoController.refresh = async () => {
-      repoRefreshCalls++
-      return originalRepoRefresh()
-    }
     const viewObj = (app as unknown as { view: { update: (s: unknown) => void } }).view
     const originalViewUpdate = viewObj.update.bind(viewObj)
     viewObj.update = (s: unknown) => {
@@ -306,7 +301,7 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     setup.renderer.destroy()
   })
   test("reopen restores persisted semantic selection and review context", async () => {
-    const f = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a", " b"]) ] })
+    const f = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a", " b"])] })
     const doc = makeDoc([f], "a".repeat(40))
     const initial = createInitialReviewState(doc)
     const lineSelection = createLineSelection(f, { hunkIndex: 0, side: "new", line: 1 })
@@ -316,12 +311,19 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
       selection: { fileKey: "a", hunkIndex: 0 },
       filter: { query: "needle", scope: "feedback" as const },
       viewed: {},
-      feedback: [{
-        id: "fb", kind: "note" as const, severity: "comment" as const, body: "note",
-        anchor: { kind: "file" as const, fileKey: "a", contentId: f.contentId },
-        resolution: "active" as const, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      }],
-      expandedGaps: [{ fileKey: "a", gapId: "before:1", expanded: true }],
+      feedback: [
+        {
+          id: "fb",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "note",
+          anchor: { kind: "file" as const, fileKey: "a", contentId: f.contentId },
+          resolution: "active" as const,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
+      expandedGaps: [{ fileKey: "a", gapId: "before:1", expanded: true }]
     }
     const db = { version: 2 as const, baseByHead: {}, reviews: { [doc.identity.id]: persistedFromReviewState(state) } }
     const stateStore = { load: async () => db, saveSemanticChange: async () => undefined, flush: async () => undefined } as unknown as ReviewStateStore
@@ -339,14 +341,14 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
       path: "src/a.ts",
       contentId: "content-a-old",
       patchDigest: "patch-a-old",
-      hunks: [makeHunk(0, ["-old", "+old result"])],
+      hunks: [makeHunk(0, ["-old", "+old result"])]
     })
     const currentFile = makeFile({
       key: "a",
       path: "src/a.ts",
       contentId: "content-a-current",
       patchDigest: "patch-a-current",
-      hunks: [makeHunk(0, ["-old", "+current result"])],
+      hunks: [makeHunk(0, ["-old", "+current result"])]
     })
     const oldDoc = makeDoc([oldFile], "a".repeat(40))
     const currentDoc = makeDoc([currentFile], "b".repeat(40))
@@ -358,8 +360,8 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
         path: "src/a.ts",
         contentId: oldFile.contentId,
         generationId: oldDoc.generation.id,
-        viewedAt: "2026-08-31T00:00:00.000Z",
-      },
+        viewedAt: "2026-08-31T00:00:00.000Z"
+      }
     }
     const persistedState = {
       ...oldState,
@@ -367,34 +369,36 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
       selection: { fileKey: "a", hunkIndex: 0 },
       filter: { query: "current", scope: "feedback" as const },
       viewed,
-      feedback: [{
-        id: "stale-on-reopen",
-        kind: "note" as const,
-        severity: "comment" as const,
-        body: "needs re-anchor",
-        anchor: createRangeAnchor(oldFile, { side: "new", startLine: 1, endLine: 1 }),
-        resolution: "active" as const,
-        createdAt: "2026-08-31T00:00:00.000Z",
-        updatedAt: "2026-08-31T00:00:00.000Z",
-      }],
+      feedback: [
+        {
+          id: "stale-on-reopen",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "needs re-anchor",
+          anchor: createRangeAnchor(oldFile, { side: "new", startLine: 1, endLine: 1 }),
+          resolution: "active" as const,
+          createdAt: "2026-08-31T00:00:00.000Z",
+          updatedAt: "2026-08-31T00:00:00.000Z"
+        }
+      ],
       draft: {
         anchor: { kind: "file" as const, fileKey: "a", contentId: oldFile.contentId },
         kind: "note" as const,
         severity: "comment" as const,
-        body: "keep editing",
+        body: "keep editing"
       },
-      expandedGaps: [{ fileKey: "a", gapId: "before:1", expanded: true }],
+      expandedGaps: [{ fileKey: "a", gapId: "before:1", expanded: true }]
     }
     const db = { version: 2 as const, baseByHead: {}, reviews: { [currentDoc.identity.id]: persistedFromReviewState(persistedState) } }
     const stateStore = {
       load: async () => db,
       saveSemanticChange: async () => undefined,
-      flush: async () => undefined,
+      flush: async () => undefined
     } as unknown as ReviewStateStore
     const controller = new ReviewWorkspaceController({
       runner: fakeRunner(),
       stateStore,
-      loadDocument: async () => currentDoc,
+      loadDocument: async () => currentDoc
     })
 
     const restored = await controller.open("refs/heads/main")
@@ -416,8 +420,10 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     let written: typeof db | undefined
     const stateStore = {
       load: async () => db,
-      saveSemanticChange: async (updater: (value: typeof db) => typeof db) => { written = updater(db) },
-      flush: async () => undefined,
+      saveSemanticChange: async (updater: (value: typeof db) => typeof db) => {
+        written = updater(db)
+      },
+      flush: async () => undefined
     } as unknown as ReviewStateStore
     const controller = new ReviewWorkspaceController({ runner: fakeRunner(), stateStore, loadDocument: async () => doc })
     await controller.open("refs/heads/main")
@@ -431,7 +437,7 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
       identity: identityB,
       generation: docA.generation,
       commits: docA.commits,
-      files: docA.files,
+      files: docA.files
     })
     let current = docA
     const controller = new ReviewWorkspaceController({ runner: fakeRunner(), loadDocument: async () => current })
@@ -452,16 +458,18 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     commandRunner.run = async (args) => ({
       stdout: args.includes("symbolic-ref") ? "refs/heads/feature\n" : "",
       stderr: "",
-      exitCode: 0,
+      exitCode: 0
     })
     const stateStore = {
       load: async () => {
         loadCalls++
         return { version: 2 as const, baseByHead: {}, reviews: {} }
       },
-      get quarantineWarning() { return loadCalls === 1 ? warning : undefined },
+      get quarantineWarning() {
+        return loadCalls === 1 ? warning : undefined
+      },
       saveSemanticChange: async () => undefined,
-      flush: async () => undefined,
+      flush: async () => undefined
     } as unknown as ReviewStateStore
     const controller = new ReviewWorkspaceController({ runner, stateStore, loadDocument: async () => doc })
     await controller.open()
@@ -477,8 +485,10 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
     const stateStore = {
       load: async () => ({ version: 2 as const, baseByHead: {}, reviews: {} }),
       saveSemanticChange: async () => undefined,
-      saveDraftDebounced: (_reviewId: string, draft: unknown) => { drafts.push(draft) },
-      flush: async () => undefined,
+      saveDraftDebounced: (_reviewId: string, draft: unknown) => {
+        drafts.push(draft)
+      },
+      flush: async () => undefined
     } as unknown as ReviewStateStore
     const controller = new ReviewWorkspaceController({ runner: fakeRunner(), stateStore, loadDocument: async () => doc })
     await controller.open("refs/heads/main")
@@ -500,7 +510,7 @@ describe("refresh integration — monotonic qualification, atomic swap, reconcil
         if (writes === 1) throw new Error("injected persistence failure")
         db = updater(db)
       },
-      flush: async () => undefined,
+      flush: async () => undefined
     } as unknown as ReviewStateStore
     const controller = new ReviewWorkspaceController({ runner: fakeRunner(), stateStore, loadDocument: async () => doc })
     await controller.open("refs/heads/main")

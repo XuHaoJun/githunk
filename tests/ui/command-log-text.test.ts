@@ -16,12 +16,8 @@ function line(id: number, ...spans: readonly (readonly [string, CommandLogLine["
  */
 describe("commandLogLineHighlights", () => {
   test("paints a single-span line across the whole line", () => {
-    expect(commandLogLineHighlights(line(1, ["You can hide/focus this panel by pressing '@'", "intro"]))).toEqual([
-      { start: 0, end: LINE_END_COLS, style: "intro" },
-    ])
-    expect(commandLogLineHighlights(line(4, ["Stage file", "action"]))).toEqual([
-      { start: 0, end: LINE_END_COLS, style: "action" },
-    ])
+    expect(commandLogLineHighlights(line(1, ["You can hide/focus this panel by pressing '@'", "intro"]))).toEqual([{ start: 0, end: LINE_END_COLS, style: "intro" }])
+    expect(commandLogLineHighlights(line(4, ["Stage file", "action"]))).toEqual([{ start: 0, end: LINE_END_COLS, style: "action" }])
   })
 
   test("paints a blank line as nothing", () => {
@@ -32,7 +28,7 @@ describe("commandLogLineHighlights", () => {
     const tip = line(3, ["Random tip: ", "tip-label"], ["press '@' to hide this panel", "tip"])
     expect(commandLogLineHighlights(tip)).toEqual([
       { start: 0, end: 12, style: "tip-label" },
-      { start: 12, end: LINE_END_COLS, style: "tip" },
+      { start: 12, end: LINE_END_COLS, style: "tip" }
     ])
   })
 
@@ -46,11 +42,11 @@ describe("commandLogLineHighlights", () => {
     // render-level test below pins the same thing end to end.
     expect(commandLogLineHighlights(line(1, ["🎲 tip: ", "tip-label"], ["go", "tip"]))).toEqual([
       { start: 0, end: 8, style: "tip-label" },
-      { start: 8, end: LINE_END_COLS, style: "tip" },
+      { start: 8, end: LINE_END_COLS, style: "tip" }
     ])
     expect(commandLogLineHighlights(line(2, ["中 tip: ", "tip-label"], ["go", "tip"]))).toEqual([
       { start: 0, end: 8, style: "tip-label" },
-      { start: 8, end: LINE_END_COLS, style: "tip" },
+      { start: 8, end: LINE_END_COLS, style: "tip" }
     ])
   })
 })
@@ -89,7 +85,7 @@ describe("installCommandLogText", () => {
         { id: 1, spans: [{ text: "Stage file", style: "action" }] },
         // 24 columns at width 12 wraps into exactly two visual rows, shifting every row after it.
         { id: 2, spans: [{ text: `  ${"a".repeat(22)}`, style: "command" }] },
-        { id: 3, spans: [{ text: "Push branch", style: "action" }] },
+        { id: 3, spans: [{ text: "Push branch", style: "action" }] }
       ]
       installCommandLogText(text, lines)
       ;(text as unknown as { requestRender?: () => void }).requestRender?.()
@@ -116,7 +112,15 @@ describe("installCommandLogText", () => {
       setup.renderer.root.add(text)
       const label = "Random tip: "
       const tip = "this tip text is deliberately long enough to wrap across several rows"
-      const lines: readonly CommandLogLine[] = [{ id: 1, spans: [{ text: label, style: "tip-label" }, { text: tip, style: "tip" }] }]
+      const lines: readonly CommandLogLine[] = [
+        {
+          id: 1,
+          spans: [
+            { text: label, style: "tip-label" },
+            { text: tip, style: "tip" }
+          ]
+        }
+      ]
       installCommandLogText(text, lines)
       ;(text as unknown as { requestRender?: () => void }).requestRender?.()
       await setup.flush()
@@ -146,7 +150,15 @@ describe("installCommandLogText", () => {
       try {
         const text = new TextRenderable(setup.renderer, { id: "log-text", content: "", width: 30, height: 4, selectable: false, wrapMode: "char" })
         setup.renderer.root.add(text)
-        installCommandLogText(text, [{ id: 1, spans: [{ text: label, style: "tip-label" }, { text: "GREEN", style: "tip" }] }])
+        installCommandLogText(text, [
+          {
+            id: 1,
+            spans: [
+              { text: label, style: "tip-label" },
+              { text: "GREEN", style: "tip" }
+            ]
+          }
+        ])
         ;(text as unknown as { requestRender?: () => void }).requestRender?.()
         await setup.flush()
 
@@ -172,11 +184,7 @@ describe("installCommandLogText", () => {
     try {
       const text = new TextRenderable(setup.renderer, { id: "log-text", content: "", width: 24, height: 6, selectable: false, wrapMode: "char" })
       setup.renderer.root.add(text)
-      installCommandLogText(text, [
-        line(1, ["Stage file", "action"]),
-        line(2, ["  git add -- a.txt", "command"]),
-        line(3, ["Push branch", "action"]),
-      ])
+      installCommandLogText(text, [line(1, ["Stage file", "action"]), line(2, ["  git add -- a.txt", "command"]), line(3, ["Push branch", "action"])])
       await setup.flush()
       installCommandLogText(text, [line(4, ["Stage file", "action"])])
       await setup.flush()

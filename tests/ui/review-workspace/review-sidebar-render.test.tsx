@@ -23,8 +23,8 @@ function makeFile(overrides: Partial<ReviewFile> & { path: string; key: string; 
     contentId: overrides.contentId ?? `cid:${overrides.key}`,
     patchDigest: "digest",
     stats: overrides.stats ?? { additions: 1, deletions: 1 },
-    hunks: overrides.hunks as unknown as ReviewFile["hunks"] ?? [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: [" x"] })],
-    source: overrides.source ?? "available",
+    hunks: (overrides.hunks as unknown as ReviewFile["hunks"]) ?? [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: [" x"] })],
+    source: overrides.source ?? "available"
   }
   return overrides.previousPath === undefined ? base : { ...base, previousPath: overrides.previousPath }
 }
@@ -43,7 +43,7 @@ function makeController(files: readonly ReviewFile[], feedbackKeys: string[] = [
     body: "hello",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    resolution: "pending" as const,
+    resolution: "pending" as const
   }))
   const state = { ...base, feedback } as unknown as typeof base
   return {
@@ -54,7 +54,7 @@ function makeController(files: readonly ReviewFile[], feedbackKeys: string[] = [
     dispatchIntent: () => false,
     getExpandedSourceByGap: () => new Map(),
     ensureExpandedGapSource: async () => undefined,
-    expandGap: async () => undefined,
+    expandGap: async () => undefined
   } as unknown as ReviewWorkspaceController
 }
 
@@ -75,11 +75,7 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 
 describe("review sidebar render — hunk parity", () => {
   test("renders tree groups, basename rows, status icons, stats badges, and comment counts", async () => {
-    const files = [
-      makeFile({ key: "a", path: "src/a.ts", kind: "modified", stats: { additions: 5, deletions: 2 } }),
-      makeFile({ key: "b", path: "src/b.ts", kind: "added", stats: { additions: 3, deletions: 0 } }),
-      makeFile({ key: "c", path: "README.md", kind: "modified", stats: { additions: 1, deletions: 1 } }),
-    ]
+    const files = [makeFile({ key: "a", path: "src/a.ts", kind: "modified", stats: { additions: 5, deletions: 2 } }), makeFile({ key: "b", path: "src/b.ts", kind: "added", stats: { additions: 3, deletions: 0 } }), makeFile({ key: "c", path: "README.md", kind: "modified", stats: { additions: 1, deletions: 1 } })]
     // add feedback on first file => *1 badge
     const session = makeSession(files, ["a"])
 
@@ -123,9 +119,7 @@ describe("review sidebar render — hunk parity", () => {
   })
 
   test("renders rename as prev -> next basename", async () => {
-    const files = [
-      makeFile({ key: "r", path: "src/ui/Renamed.tsx", previousPath: "src/ui/Legacy.tsx", kind: "renamed", stats: { additions: 0, deletions: 0 } }),
-    ]
+    const files = [makeFile({ key: "r", path: "src/ui/Renamed.tsx", previousPath: "src/ui/Legacy.tsx", kind: "renamed", stats: { additions: 0, deletions: 0 } })]
     const session = makeSession(files)
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
     try {
@@ -139,10 +133,7 @@ describe("review sidebar render — hunk parity", () => {
   })
 
   test("selected file row uses hunk selected style (panelAlt bg + accent border)", async () => {
-    const files = [
-      makeFile({ key: "a", path: "src/a.ts", kind: "modified" }),
-      makeFile({ key: "b", path: "src/b.ts", kind: "modified" }),
-    ]
+    const files = [makeFile({ key: "a", path: "src/a.ts", kind: "modified" }), makeFile({ key: "b", path: "src/b.ts", kind: "modified" })]
     const session = makeSession(files)
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
     try {

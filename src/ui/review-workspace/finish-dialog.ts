@@ -20,7 +20,7 @@ const REASON_MESSAGES: Record<string, string> = {
   "comment-has-blocking-feedback": "Finish blocked: Comment cannot have blocking feedback",
   "comment-requires-summary-or-feedback": "Finish blocked: Comment requires a summary or at least one comment",
   "summary-required": "Finish blocked: summary cannot be empty for this decision",
-  "suggestion-invalid": "Finish blocked: suggestion is invalid — it must target current new-side source with non-empty replacement",
+  "suggestion-invalid": "Finish blocked: suggestion is invalid — it must target current new-side source with non-empty replacement"
 }
 
 function messageForReason(reason: string): string {
@@ -40,12 +40,7 @@ export class FinishDialog {
   private lastCopyResult: CopyResult | undefined
   private lastArtifactId: string | undefined
 
-  constructor(options: {
-    controller: ReviewWorkspaceController
-    clipboard: ClipboardPort
-    stateStore?: ReviewStateStore
-    artifactStore?: ReviewArtifactStore
-  }) {
+  constructor(options: { controller: ReviewWorkspaceController; clipboard: ClipboardPort; stateStore?: ReviewStateStore; artifactStore?: ReviewArtifactStore }) {
     this.controller = options.controller
     this.clipboard = options.clipboard
     this.stateStore = options.stateStore ?? (options.controller as unknown as { stateStore?: ReviewStateStore }).stateStore
@@ -123,7 +118,6 @@ export class FinishDialog {
     return v.message ?? `Finish blocked: ${v.reason}`
   }
 
-
   /** Derive deterministic markdown from persisted artifact */
   async getPersistedMarkdown(artifactId: string): Promise<string | undefined> {
     const state = this.controller.state
@@ -183,7 +177,6 @@ export class FinishDialog {
       return { ok: false, reason: validation.reason, message: this.lastError }
     }
 
-
     try {
       const nextState = await this.controller.finishReview({ decision: this.decision, summary: this.summary })
       const artifactId = nextState.lastSubmission?.artifactId ?? this.controller.state?.lastSubmission?.artifactId
@@ -234,7 +227,7 @@ export class FinishDialog {
       this._open = false
       const out: { ok: boolean; reason?: string; message?: string; markdown?: string; copyResult?: CopyResult; artifactId?: string } = {
         ok: true,
-        message: `Review finished — ${this.decision}`,
+        message: `Review finished — ${this.decision}`
       }
       if (this.lastMarkdown !== undefined) out.markdown = this.lastMarkdown
       if (this.lastCopyResult !== undefined) out.copyResult = this.lastCopyResult

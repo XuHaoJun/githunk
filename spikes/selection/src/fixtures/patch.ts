@@ -46,13 +46,10 @@ export const LEFT_FIXTURE = [
   "M src/al.ts",
   "M src/am.ts",
   "M src/an.ts",
-  "M src/ao.ts",
+  "M src/ao.ts"
 ] as const
 
-export const PATCH_SENTINELS = [
-  "GITHUNK_PATCH_ONLY_ALPHA",
-  "GITHUNK_PATCH_ONLY_OMEGA",
-] as const
+export const PATCH_SENTINELS = ["GITHUNK_PATCH_ONLY_ALPHA", "GITHUNK_PATCH_ONLY_OMEGA"] as const
 
 export const PATCH_FIXTURE = `diff --git a/src/payments/capture.ts b/src/payments/capture.ts
 index 1111111..2222222 100644

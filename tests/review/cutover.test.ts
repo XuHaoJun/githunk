@@ -13,7 +13,7 @@ function snapshot(repositoryRoot: string, patch: string): WorkingTreeSnapshot {
     branch: "main",
     reviewTarget: { kind: "working-tree", scope: "all" },
     files: [{ path: "a.ts", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 }],
-    patches: [{ label: "UNSTAGED", text: patch }],
+    patches: [{ label: "UNSTAGED", text: patch }]
   }
 }
 

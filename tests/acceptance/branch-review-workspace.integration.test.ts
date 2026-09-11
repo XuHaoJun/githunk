@@ -42,7 +42,9 @@ async function seedBase(repository: TempRepository, headRef: string, baseRef: st
   const targetFile = join(targetDir, "review-state-v2.json")
   const payload = JSON.stringify({ version: 2, baseByHead: { [headRef]: { baseRef, confirmed: true } }, reviews: {} })
   await writeFile(targetFile, payload, "utf8")
-  try { await Bun.file(targetFile).text() } catch {}
+  try {
+    await Bun.file(targetFile).text()
+  } catch {}
 }
 
 describe("branch review workspace – coverage and reconciliation acceptance", () => {
@@ -188,15 +190,12 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     const focusState = (): { readonly diff: boolean; readonly sidebar: boolean; readonly filter: boolean } => ({
       diff: Boolean((root.findDescendantById("review-diff-scrollbox") as { focused?: boolean } | undefined)?.focused),
       sidebar: Boolean((root.findDescendantById("react-review-sidebar-scrollbox") as { focused?: boolean } | undefined)?.focused),
-      filter: Boolean((root.findDescendantById("review-file-filter-input") as { focused?: boolean } | undefined)?.focused),
+      filter: Boolean((root.findDescendantById("review-file-filter-input") as { focused?: boolean } | undefined)?.focused)
     })
     const clickNode = async (id: string): Promise<void> => {
       const node = root.findDescendantById(id) as { screenX?: number; screenY?: number; width?: number; height?: number } | undefined
       if (!node || node.screenX === undefined || node.screenY === undefined) throw new Error(`missing OpenTUI node ${id}`)
-      await harness!.mockMouse.click(
-        node.screenX + Math.floor(Math.max(1, node.width ?? 1) / 2),
-        node.screenY + Math.floor(Math.max(1, node.height ?? 1) / 2),
-      )
+      await harness!.mockMouse.click(node.screenX + Math.floor(Math.max(1, node.width ?? 1) / 2), node.screenY + Math.floor(Math.max(1, node.height ?? 1) / 2))
       await harness!.flush()
     }
     const fileRow = (path: string): string => `review-file-row:${path}`

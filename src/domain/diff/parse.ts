@@ -5,7 +5,10 @@ function withoutLineEnding(raw: string): string {
 }
 
 function pathFromHeader(value: string): string | undefined {
-  const path = value.replace(/^(?:a|b)\//, "").replace(/^\/dev\/null$/, "/dev/null").split(/[\t ](?=\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2})/, 1)[0]!
+  const path = value
+    .replace(/^(?:a|b)\//, "")
+    .replace(/^\/dev\/null$/, "/dev/null")
+    .split(/[\t ](?=\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2})/, 1)[0]!
   return stripGitPrefix(path)
 }
 
@@ -25,7 +28,7 @@ function decodeGitQuoted(value: string): string {
       continue
     }
     flush()
-    if (value[index] === "\\" && (value[index + 1] === "\\" || value[index + 1] === "\"")) {
+    if (value[index] === "\\" && (value[index + 1] === "\\" || value[index + 1] === '"')) {
       result += value[index + 1]
       index += 1
     } else if (value[index] === "\\" && value[index + 1] === "t") {
@@ -44,12 +47,12 @@ function decodeGitQuoted(value: string): string {
 
 function stripGitPrefix(value: string): string {
   const token = value.trim()
-  const unquoted = token.startsWith("\"") && token.endsWith("\"") ? token.slice(1, -1) : token
+  const unquoted = token.startsWith('"') && token.endsWith('"') ? token.slice(1, -1) : token
   return decodeGitQuoted(unquoted).replace(/^(?:a|b)\//, "")
 }
 
 function quotedTokenEnd(value: string): number | undefined {
-  if (!value.startsWith("\"")) return undefined
+  if (!value.startsWith('"')) return undefined
   let escaped = false
   for (let index = 1; index < value.length; index++) {
     const character = value[index]!
@@ -57,7 +60,7 @@ function quotedTokenEnd(value: string): number | undefined {
       escaped = false
     } else if (character === "\\") {
       escaped = true
-    } else if (character === "\"") {
+    } else if (character === '"') {
       return index
     }
   }
@@ -70,10 +73,7 @@ function splitGitPaths(value: string): [string | undefined, string | undefined] 
   if (firstEnd !== undefined && body[firstEnd + 1] === " ") {
     const second = body.slice(firstEnd + 2).trim()
     const secondEnd = quotedTokenEnd(second)
-    return [
-      stripGitPrefix(body.slice(1, firstEnd)),
-      stripGitPrefix(secondEnd === undefined ? second : second.slice(1, secondEnd)),
-    ]
+    return [stripGitPrefix(body.slice(1, firstEnd)), stripGitPrefix(secondEnd === undefined ? second : second.slice(1, secondEnd))]
   }
   const candidates = [...body.matchAll(/ b\//g)].map((match) => match.index ?? -1).filter((index) => index >= 0)
   // Git quotes ambiguous old paths; for unquoted records the first ` b/` is the separator.
@@ -86,10 +86,7 @@ function splitBinaryPaths(value: string, expectedNewPath: string | undefined): [
   if (!value.startsWith("Binary files ") || !value.endsWith(" differ")) return undefined
   const body = value.slice("Binary files ".length, -" differ".length)
   const candidates = [...body.matchAll(/ and (?=(?:"?b\/|\/dev\/null))/g)].map((match) => match.index ?? -1).filter((index) => index >= 0)
-  const pairs = candidates.map((splitAt) => [
-    stripGitPrefix(body.slice(0, splitAt)),
-    stripGitPrefix(body.slice(splitAt + " and ".length)),
-  ] as [string | undefined, string | undefined])
+  const pairs = candidates.map((splitAt) => [stripGitPrefix(body.slice(0, splitAt)), stripGitPrefix(body.slice(splitAt + " and ".length))] as [string | undefined, string | undefined])
   if (pairs.length === 0) return undefined
   if (expectedNewPath !== undefined) {
     const matching = pairs.find((pair) => pair[1] === expectedNewPath)
@@ -105,7 +102,7 @@ function hunkNumbers(value: string): { oldStart: number; oldCount: number; newSt
     oldStart: Number(match[1]),
     oldCount: Number(match[2] ?? 1),
     newStart: Number(match[3]),
-    newCount: Number(match[4] ?? 1),
+    newCount: Number(match[4] ?? 1)
   }
 }
 
@@ -174,7 +171,7 @@ export function parseDiff(text: string): DiffDocument {
         oldCount: hunk.oldCount,
         newStart: hunk.newStart,
         newCount: hunk.newCount,
-        lines: [],
+        lines: []
       }
       file.hunks.push(currentHunk)
       oldLine = hunk.oldStart
@@ -225,7 +222,7 @@ export function parseDiff(text: string): DiffDocument {
       fileIndex: file.fileIndex,
       ...(hunkIndex === undefined ? {} : { hunkIndex }),
       ...(lineOld === undefined ? {} : { oldLine: lineOld }),
-      ...(lineNew === undefined ? {} : { newLine: lineNew }),
+      ...(lineNew === undefined ? {} : { newLine: lineNew })
     }
     lines.push(line)
     file.lines.push(line)

@@ -29,7 +29,7 @@ export class HighlightCache {
 
   invalidateGeneration(generationId: string): void {
     const needle = `\0${generationId}\0`
-    for (const key of [...this.map.keys()]) {
+    for (const key of this.map.keys()) {
       if (key.includes(needle)) this.map.delete(key)
     }
   }

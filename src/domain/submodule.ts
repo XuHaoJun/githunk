@@ -42,9 +42,6 @@ export function submoduleDepth(submodule: SubmoduleConfig): number {
 
 /** Git dir of the submodule under the repository's git dir — lazygit's `GitDirPath`. */
 export function submoduleGitDirPath(repoGitDirPath: string, submodule: SubmoduleConfig): string {
-  const parentPath =
-    submodule.parentModule === undefined
-      ? repoGitDirPath
-      : submoduleGitDirPath(repoGitDirPath, submodule.parentModule)
+  const parentPath = submodule.parentModule === undefined ? repoGitDirPath : submoduleGitDirPath(repoGitDirPath, submodule.parentModule)
   return join(parentPath, "modules", submodule.name)
 }

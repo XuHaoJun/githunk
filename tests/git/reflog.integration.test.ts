@@ -5,7 +5,9 @@ import { createTempRepository, type TempRepository } from "../helpers/temp-repos
 
 describe("reflog loader against a real repository", () => {
   let repository: TempRepository | undefined
-  afterEach(async () => { await repository?.cleanup() })
+  afterEach(async () => {
+    await repository?.cleanup()
+  })
 
   test("loads checkout, commit, and merge entries newest first", async () => {
     repository = await createTempRepository()

@@ -16,14 +16,16 @@ describe("Open file action label", () => {
   })
 
   function actionLabels(harness: ShellHarness): readonly string[] {
-    return harness.app.controller.state.commandLog
-      .filter((line) => line.spans.some((span) => span.style === "action"))
-      .map((line) => line.spans.map((span) => span.text).join(""))
+    return harness.app.controller.state.commandLog.filter((line) => line.spans.some((span) => span.style === "action")).map((line) => line.spans.map((span) => span.text).join(""))
   }
 
   test("pressing e on the files tab logs Open file, whether the default or an injected editor runs", async () => {
     let editedPath: string | undefined
-    harness = await createShellHarness({ onEditFile: async (path) => { editedPath = path } })
+    harness = await createShellHarness({
+      onEditFile: async (path) => {
+        editedPath = path
+      }
+    })
     await harness.pressKey("2")
     await harness.settle()
     await harness.pressKey("e")

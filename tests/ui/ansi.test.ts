@@ -71,7 +71,6 @@ describe("parseAnsi", () => {
     expectIndexed(parsed.spans[0]?.fg, 1)
   })
 
-
   test("non-SGR escapes are stripped without producing spans", () => {
     expect(parseAnsi(`a${ESC}[Kb${ESC}]8;;http://x${ESC}\\c${ESC}(Bd`)).toEqual({ text: "abcd", spans: [] })
   })

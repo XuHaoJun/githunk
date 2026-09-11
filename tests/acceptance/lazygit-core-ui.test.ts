@@ -65,7 +65,7 @@ describe("lazygit core UI acceptance", () => {
         await expectGit(repository, ["remote", "set-url", "--push", "origin", pushBare.path])
         await expectGit(repository, ["push", "origin", "master"])
         await expectGit(repository, ["fetch", "origin"])
-      },
+      }
     })
 
     const view = harness.app.view!
@@ -153,7 +153,9 @@ describe("lazygit core UI acceptance", () => {
     view.mainPane.text.scrollY = 5
     view.mainPane.text.scrollX = 3
     if (typeof mainView.setSelection === "function") {
-      try { mainView.setSelection(0, 8) } catch {}
+      try {
+        mainView.setSelection(0, 8)
+      } catch {}
     }
     const stableBeforeMove = view.mainContent?.stableId
     const textBeforeMove = mainText(view)
@@ -194,7 +196,9 @@ describe("lazygit core UI acceptance", () => {
     // Same-identity reinstall preserves viewport when text identical
     view.mainPane.text.scrollY = 4
     if (typeof mainView.setSelection === "function") {
-      try { mainView.setSelection(0, 5) } catch {}
+      try {
+        mainView.setSelection(0, 5)
+      } catch {}
     }
     const prevScrollY = view.mainPane.text.scrollY
     const prevHadSel = typeof mainView.hasSelection === "function" ? mainView.hasSelection() : false
@@ -212,7 +216,7 @@ describe("lazygit core UI acceptance", () => {
         stableId: currentContent.stableId,
         label: currentContent.label,
         plainText: `${currentContent.plainText}\nchanged`,
-        preamble: `${currentContent.preamble ?? ""}\nchanged`,
+        preamble: `${currentContent.preamble ?? ""}\nchanged`
       } as unknown as MainPaneContent
       view.installMainContent(changed)
       await harness.flush()
@@ -223,7 +227,7 @@ describe("lazygit core UI acceptance", () => {
         stableId: currentContent.stableId,
         label: currentContent.label,
         document: { ...currentContent.document, text: `${currentContent.document.text}\nchanged line\n` },
-        ...(currentContent.preamble === undefined ? {} : { preamble: currentContent.preamble }),
+        ...(currentContent.preamble === undefined ? {} : { preamble: currentContent.preamble })
       }
       view.installMainContent(docChanged)
       await harness.flush()
@@ -318,18 +322,17 @@ describe("lazygit core UI acceptance", () => {
     expect(view.commitsSelectedOid).toBe(oidInChild)
     expect(view.mainContent?.stableId).toBe(oidInChild)
 
-
     // 5. Panel 3 [/] wraps Branches/Remotes/Tags and preserves each selection
     await harness.pressKey("3")
     await harness.flush()
-    expect((view.activeBranchesTab as string)).toBe("branches")
+    expect(view.activeBranchesTab as string).toBe("branches")
     const branchesSel = view.selectedListId("branches")
     await harness.pressKey("j")
     await harness.flush()
     const savedBranches = view.selectedListId("branches") ?? branchesSel
     await harness.pressKey("]")
     await harness.flush()
-    expect((view.activeBranchesTab as string)).toBe("remotes")
+    expect(view.activeBranchesTab as string).toBe("remotes")
     const remotesSel = view.selectedListId("branches")
     expect(remotesSel).toBeDefined()
     await harness.pressKey("j")
@@ -337,7 +340,7 @@ describe("lazygit core UI acceptance", () => {
     const remotesAfterMove = view.selectedListId("branches") ?? remotesSel
     await harness.pressKey("]")
     await harness.flush()
-    expect((view.activeBranchesTab as string)).toBe("tags")
+    expect(view.activeBranchesTab as string).toBe("tags")
     const tagsSel = view.selectedListId("branches")
     expect(tagsSel).toBeDefined()
     await harness.pressKey("j")
@@ -345,19 +348,19 @@ describe("lazygit core UI acceptance", () => {
     const tagsAfterMove = view.selectedListId("branches") ?? tagsSel
     await harness.pressKey("]")
     await harness.flush()
-    expect((view.activeBranchesTab as string)).toBe("branches")
+    expect(view.activeBranchesTab as string).toBe("branches")
     expect(view.selectedListId("branches")).toBe(savedBranches)
     await harness.pressKey("[")
     await harness.flush()
-    expect((view.activeBranchesTab as string)).toBe("tags")
+    expect(view.activeBranchesTab as string).toBe("tags")
     expect(view.selectedListId("branches")).toBe(tagsAfterMove)
     await harness.pressKey("[")
     await harness.flush()
-    expect((view.activeBranchesTab as string)).toBe("remotes")
+    expect(view.activeBranchesTab as string).toBe("remotes")
     expect(view.selectedListId("branches")).toBe(remotesAfterMove)
     await harness.pressKey("[")
     await harness.flush()
-    expect((view.activeBranchesTab as string)).toBe("branches")
+    expect(view.activeBranchesTab as string).toBe("branches")
     expect(view.selectedListId("branches")).toBe(savedBranches)
 
     // 6. Remotes Enter/Escape child behavior and Tags preview fields are correct
@@ -384,7 +387,7 @@ describe("lazygit core UI acceptance", () => {
     await harness.flush()
     expect(view.branchesPanel.child).toBeUndefined()
     expect(view.selectedListId("branches")).toBe(remotesSelectionBefore)
-    expect((view.activeBranchesTab as string)).toBe("remotes")
+    expect(view.activeBranchesTab as string).toBe("remotes")
     while ((view.activeBranchesTab as string) !== "tags") {
       await harness.pressKey("]")
       await harness.flush()
@@ -445,8 +448,7 @@ describe("lazygit core UI acceptance", () => {
     await harness.pressKey("[")
     await harness.settle()
     expect(view.activeBranchesTab).toBe(tabBeforeMainBracket)
-    expect(JSON.stringify(app.controller.state.reviewTarget))
-      .toBe(JSON.stringify({ kind: "working-tree", scope: "unstaged" }))
+    expect(JSON.stringify(app.controller.state.reviewTarget)).toBe(JSON.stringify({ kind: "working-tree", scope: "unstaged" }))
     await harness.pressKey("]")
     await harness.settle()
     expect(view.activeBranchesTab).toBe(tabBeforeMainBracket)
@@ -619,14 +621,20 @@ describe("lazygit core UI acceptance", () => {
     let unicodeFound = false
     for (let i = 0; i < 12; i++) {
       const sel = view.selectedListId("files")
-      if (sel === "unicode-€-test.txt") { unicodeFound = true; break }
+      if (sel === "unicode-€-test.txt") {
+        unicodeFound = true
+        break
+      }
       await harness.pressKey("j")
       await harness.flush()
     }
     if (!unicodeFound) {
       for (let i = 0; i < 12; i++) {
         const sel = view.selectedListId("files")
-        if (sel === "unicode-€-test.txt") { unicodeFound = true; break }
+        if (sel === "unicode-€-test.txt") {
+          unicodeFound = true
+          break
+        }
         await harness.pressKey("k")
         await harness.flush()
       }
@@ -701,19 +709,19 @@ describe("lazygit core UI acceptance", () => {
         branches: String(view.branchesPane.box.title),
         commits: view.commitsPane.box.title,
         stash: view.stashPane.box.title,
-        main: view.mainPane.box.title,
+        main: view.mainPane.box.title
       },
       selectedIds: {
         files: view.selectedListId("files"),
         branches: view.selectedListId("branches"),
         commits: view.commitsSelectedOid,
-        stash: view.selectedListId("stash"),
+        stash: view.selectedListId("stash")
       },
       main: {
         source: view.mainContent?.source,
         stableId: view.mainContent?.stableId,
         label: view.mainContent?.label,
-        textSnippet: mainText(view).slice(0, 120),
+        textSnippet: mainText(view).slice(0, 120)
       },
       scrollPositions: {
         mainY: view.mainScrollY,
@@ -721,22 +729,26 @@ describe("lazygit core UI acceptance", () => {
         commitsY: view.paneScrollY("commits"),
         filesY: view.paneScrollY("files"),
         branchesY: view.paneScrollY("branches"),
-        stashY: view.paneScrollY("stash"),
+        stashY: view.paneScrollY("stash")
       },
       copiedTextSample: (() => {
         const d = view.mainContent?.document
         if (!d) return mainText(view).slice(0, 80)
-        try { return copySelection(d, { valid: true, startUtf16: 0, endUtf16: Math.min(80, d.text.length), active: true }, "text").slice(0, 80) } catch { return d.text.slice(0, 80) }
+        try {
+          return copySelection(d, { valid: true, startUtf16: 0, endUtf16: Math.min(80, d.text.length), active: true }, "text").slice(0, 80)
+        } catch {
+          return d.text.slice(0, 80)
+        }
       })(),
       geometry: {
         stashHeightUnfocused: heightOf(view.geometry.windows.stash!),
         sidePanelRatio: view.sidePanelRatio,
-        logHeight: heightOf(view.geometry.windows.log!),
+        logHeight: heightOf(view.geometry.windows.log!)
       },
       bareRemotes: {
         originFetchUrl: (await harness.repository.git(["remote", "get-url", "origin"])).stdout.trim(),
-        originPushUrl: (await harness.repository.git(["remote", "get-url", "--push", "origin"])).stdout.trim(),
-      },
+        originPushUrl: (await harness.repository.git(["remote", "get-url", "--push", "origin"])).stdout.trim()
+      }
     }
     // Record for smoke verification
     console.log("LAZYGIT-ACCEPTANCE-OBSERVED", JSON.stringify(observed, null, 2))
@@ -746,9 +758,7 @@ describe("lazygit core UI acceptance", () => {
 
     // 11. Contiguous keyboard ranges use stable IDs across list mutations, confirmation dialogs,
     // and Main's existing patch/copy actions.
-    const commandLogText = (): string => app.controller.state.commandLog
-      .map((line) => line.spans.map((span) => span.text).join(""))
-      .join("\n")
+    const commandLogText = (): string => app.controller.state.commandLog.map((line) => line.spans.map((span) => span.text).join("")).join("\n")
     const moveToListId = async (pane: "files" | "branches" | "stash", id: string, limit = 32): Promise<void> => {
       for (let attempt = 0; attempt < limit && view.selectedListId(pane) !== id; attempt++) {
         await harness!.pressKey("j")

@@ -22,8 +22,8 @@ export function reflogRows(model: AppModel, filter = ""): ListRow[] {
     id: entry.id,
     columns: [
       { text: entry.shortOid, priority: 1, color: REFLOG_HASH_FG },
-      { text: entry.subject, priority: 2, flex: true },
-    ],
+      { text: entry.subject, priority: 2, flex: true }
+    ]
   }))
   if (filter.length === 0) return rows
   return [...filterItems(filter, rows, (row) => row.columns[1]?.text ?? row.id)]

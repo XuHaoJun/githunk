@@ -9,7 +9,7 @@ export type RepositoryStatus = {
 function statusPair(value: string): { indexStatus: string; worktreeStatus: string } {
   return {
     indexStatus: value[0] ?? ".",
-    worktreeStatus: value[1] ?? ".",
+    worktreeStatus: value[1] ?? "."
   }
 }
 
@@ -23,9 +23,9 @@ function parseEntry(record: string, records: readonly string[], index: number): 
         untracked: true,
         conflicted: false,
         additions: 0,
-        deletions: 0,
+        deletions: 0
       },
-      consumed: 0,
+      consumed: 0
     }
   }
 
@@ -40,9 +40,9 @@ function parseEntry(record: string, records: readonly string[], index: number): 
         untracked: false,
         conflicted: statuses.indexStatus === "U" || statuses.worktreeStatus === "U",
         additions: 0,
-        deletions: 0,
+        deletions: 0
       },
-      consumed: 0,
+      consumed: 0
     }
   }
 
@@ -56,7 +56,7 @@ function parseEntry(record: string, records: readonly string[], index: number): 
       untracked: false,
       conflicted: statuses.indexStatus === "U" || statuses.worktreeStatus === "U",
       additions: 0,
-      deletions: 0,
+      deletions: 0
     }
     const previousPath = records[index + 1]
     const file: ChangedFile = previousPath === undefined ? base : { ...base, previousPath }
@@ -74,9 +74,9 @@ function parseEntry(record: string, records: readonly string[], index: number): 
         untracked: false,
         conflicted: true,
         additions: 0,
-        deletions: 0,
+        deletions: 0
       },
-      consumed: 0,
+      consumed: 0
     }
   }
 

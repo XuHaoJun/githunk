@@ -3,15 +3,6 @@ import { createReviewDocument, createReviewHunk } from "../src/review/core/docum
 import { createReviewGeneration, createReviewIdentity, sha256Tuple } from "../src/review/core/identity"
 import { REVIEW_CONFORMANCE_FIXTURES, computeContentId, normalizedHunkBodyForFixture } from "../tests/review/conformance/corpus"
 
-function measure<T>(fn: () => T): { result: T; elapsedMs: number; heapDelta: number; fixtureSize: number } {
-  const beforeHeap = process.memoryUsage().heapUsed
-  const start = performance.now()
-  const result = fn()
-  const elapsedMs = performance.now() - start
-  const afterHeap = process.memoryUsage().heapUsed
-  return { result, elapsedMs, heapDelta: afterHeap - beforeHeap, fixtureSize: 0 }
-}
-
 function buildDocumentForFixture(fixture: (typeof REVIEW_CONFORMANCE_FIXTURES)[number]) {
   const identity = createReviewIdentity({ headRef: "refs/heads/feature", headOid: "h".repeat(40), baseRef: "refs/remotes/origin/main" })
   const generation = createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "m".repeat(40), headOid: "h".repeat(40) })
@@ -35,7 +26,7 @@ function buildDocumentForFixture(fixture: (typeof REVIEW_CONFORMANCE_FIXTURES)[n
       patchDigest: pf.patchDigest,
       stats: { additions: numstat?.additions ?? null, deletions: numstat?.deletions ?? null },
       hunks: pf.hunks as any,
-      source: pf.isBinary ? "binary" as const : "available" as const,
+      source: pf.isBinary ? ("binary" as const) : ("available" as const)
     }
   })
   // Fallback for fixtures like mode-only where parser returns 0 but expected has 1 file (no patch)
@@ -59,7 +50,7 @@ function buildDocumentForFixture(fixture: (typeof REVIEW_CONFORMANCE_FIXTURES)[n
         patchDigest: sha256Tuple([body]),
         stats: ef.stats,
         hunks: hunks as any,
-        source: ef.source,
+        source: ef.source
       } as any)
     }
   }
@@ -93,7 +84,7 @@ async function main() {
     patchDigest: sha256Tuple([`file-${i}`]),
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 3, newStart: 1, newCount: 3, lines: [" a", "-old", "+new", " b"] })],
-    source: "available" as const,
+    source: "available" as const
   }))
   const largeDoc = createReviewDocument({ identity: largeIdentity, generation: largeGen, commits: [{ oid: "c".repeat(40), parents: [], author: "A", timestamp: 0, subject: "s", body: "" }], files: largeFiles })
   const elapsedMs = performance.now() - start
@@ -105,7 +96,7 @@ async function main() {
     elapsedMs: Math.round(elapsedMs * 100) / 100,
     heapDeltaBytes: heapDelta,
     heapDeltaMiB: Math.round((heapDelta / 1024 / 1024) * 100) / 100,
-    outputCount: { files: totalFiles, hunks: totalHunks, largeFiles: largeDoc.files.length },
+    outputCount: { files: totalFiles, hunks: totalHunks, largeFiles: largeDoc.files.length }
   }
   console.log(JSON.stringify(output, null, 2))
   // sanity

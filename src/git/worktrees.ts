@@ -37,7 +37,7 @@ function finalizeEntry(entry: { path: string; head?: string; branch?: string }):
   return {
     path: entry.path,
     ...(entry.head === undefined ? {} : { head: entry.head }),
-    ...(entry.branch === undefined ? {} : { branch: entry.branch }),
+    ...(entry.branch === undefined ? {} : { branch: entry.branch })
   }
 }
 
@@ -127,7 +127,8 @@ function uniqueNamesAtDepth(paths: readonly IndexedPath[], depth: number): reado
  */
 export function uniqueWorktreeNames(paths: readonly string[]): readonly string[] {
   const indexed = paths.map((path, index): IndexedPath => ({ path, index }))
-  const names = new Array<string>(paths.length).fill("")
+  const names: string[] = []
+  names.length = paths.length
   for (const named of uniqueNamesAtDepth(indexed, 0)) {
     names[named.index] = named.name
   }
@@ -135,17 +136,7 @@ export function uniqueWorktreeNames(paths: readonly string[]): readonly string[]
 }
 
 async function resolveRepositoryPaths(runner: CommandRunner): Promise<RepositoryPaths> {
-  const result = await runner.run(
-    [
-      "rev-parse",
-      "--path-format=absolute",
-      "--show-toplevel",
-      "--absolute-git-dir",
-      "--git-common-dir",
-      "--show-superproject-working-tree",
-    ],
-    { readOnly: true },
-  )
+  const result = await runner.run(["rev-parse", "--path-format=absolute", "--show-toplevel", "--absolute-git-dir", "--git-common-dir", "--show-superproject-working-tree"], { readOnly: true })
   const lines = result.stdout.replace(/\r\n/g, "\n").split("\n")
   const worktreePath = lines[0] ?? ""
   const worktreeGitDirPath = lines[1] ?? ""
@@ -156,8 +147,7 @@ async function resolveRepositoryPaths(runner: CommandRunner): Promise<Repository
   // path is the directory holding the common git dir — the same derivation
   // `git worktree list` uses to report the main worktree.
   const isSubmodule = (lines[3] ?? "").length > 0
-  const repoPath =
-    worktreeGitDirPath === repoGitDirPath || isSubmodule ? worktreePath : dirname(repoGitDirPath)
+  const repoPath = worktreeGitDirPath === repoGitDirPath || isSubmodule ? worktreePath : dirname(repoGitDirPath)
   return { worktreePath, worktreeGitDirPath, repoPath, repoGitDirPath }
 }
 
@@ -174,7 +164,7 @@ async function isPathMissing(path: string): Promise<boolean> {
 async function resolveGitDir(runner: CommandRunner, path: string): Promise<string> {
   try {
     const result = await runner.run(["-C", path, "rev-parse", "--path-format=absolute", "--absolute-git-dir"], {
-      readOnly: true,
+      readOnly: true
     })
     return result.stdout.trim()
   } catch {
@@ -217,7 +207,7 @@ export async function listWorktrees(runner: CommandRunner): Promise<readonly Wor
       gitDir: "",
       isPathMissing: await isPathMissing(entry.path),
       isMain: false,
-      isCurrent: false,
+      isCurrent: false
     })
   }
 
@@ -251,21 +241,16 @@ export async function listWorktrees(runner: CommandRunner): Promise<readonly Wor
 
   const listing: Worktree[] = []
   for (const { worktree, name } of ordered) {
-    const branch =
-      worktree.branch !== undefined || worktree.gitDir.length === 0
-        ? worktree.branch
-        : await inProgressBranch(worktree.gitDir)
+    const branch = worktree.branch !== undefined || worktree.gitDir.length === 0 ? worktree.branch : await inProgressBranch(worktree.gitDir)
     listing.push({
       path: worktree.path,
       ...(worktree.gitDir.length === 0 ? {} : { gitDir: worktree.gitDir }),
       name,
       ...(branch === undefined || branch.length === 0 ? {} : { branch }),
-      ...(worktree.head === undefined
-        ? {}
-        : { head: worktree.head, shortHead: shortHash(worktree.head) }),
+      ...(worktree.head === undefined ? {} : { head: worktree.head, shortHead: shortHash(worktree.head) }),
       isMain: worktree.isMain,
       isCurrent: worktree.isCurrent,
-      isPathMissing: worktree.isPathMissing,
+      isPathMissing: worktree.isPathMissing
     })
   }
   return listing
@@ -281,6 +266,5 @@ export async function detachWorktree(runner: CommandRunner, path: string): Promi
 
 export function worktreeRemovalRequiresForce(error: unknown): boolean {
   if (!(error instanceof GitCommandError)) return false
-  return error.record.stderr.includes("--force") ||
-    error.record.stderr.includes("working trees containing submodules cannot be moved or removed")
+  return error.record.stderr.includes("--force") || error.record.stderr.includes("working trees containing submodules cannot be moved or removed")
 }

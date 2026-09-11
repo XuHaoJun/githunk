@@ -12,7 +12,7 @@ export function createInvalidBaseError(baseRef: string, detail?: string): Review
     kind: "invalid-base",
     title: "Invalid base branch",
     detail: detail ?? `Base ref "${baseRef}" does not resolve to a commit. Choose a valid base to open the review.`,
-    action: "choose-base",
+    action: "choose-base"
   }
 }
 
@@ -21,7 +21,7 @@ export function createHistoryRewrittenError(lastHeadOid: string, headOid: string
     kind: "history-rewritten",
     title: "History rewritten",
     detail: detail ?? `Previous review HEAD ${lastHeadOid.slice(0, 8)} is not an ancestor of current HEAD ${headOid.slice(0, 8)}. Since Last Review is unavailable, but aggregate coverage is preserved.`,
-    action: "dismiss",
+    action: "dismiss"
   }
 }
 
@@ -30,7 +30,7 @@ export function createGitError(detail: string): ReviewWorkspaceError {
     kind: "git",
     title: "Git operation failed",
     detail,
-    action: "retry",
+    action: "retry"
   }
 }
 
@@ -39,7 +39,7 @@ export function createParseError(detail: string): ReviewWorkspaceError {
     kind: "parse",
     title: "Failed to parse patch",
     detail,
-    action: "retry",
+    action: "retry"
   }
 }
 
@@ -48,7 +48,7 @@ export function createSourceError(detail: string): ReviewWorkspaceError {
     kind: "source",
     title: "Source unavailable",
     detail,
-    action: "dismiss",
+    action: "dismiss"
   }
 }
 
@@ -57,7 +57,7 @@ export function createStorageError(detail: string): ReviewWorkspaceError {
     kind: "storage",
     title: "Failed to save review state",
     detail,
-    action: "retry",
+    action: "retry"
   }
 }
 
@@ -66,7 +66,7 @@ export function createCorruptStateError(quarantinePath: string, detail?: string)
     kind: "corrupt-state",
     title: "Review state was corrupt",
     detail: detail ?? `Persisted review state was corrupt and moved to ${quarantinePath}. Starting with empty state.`,
-    action: "dismiss",
+    action: "dismiss"
   }
 }
 

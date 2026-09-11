@@ -7,7 +7,7 @@ const noop = (): void => {}
 
 const items: readonly ActionMenuItem[] = [
   { key: "t", label: "Toggle show/hide command log", onPress: noop },
-  { key: "f", label: "Focus command log", onPress: noop },
+  { key: "f", label: "Focus command log", onPress: noop }
 ]
 
 /**
@@ -18,28 +18,19 @@ const items: readonly ActionMenuItem[] = [
  */
 describe("renderActionMenuLines", () => {
   test("renders one line per item with its key", () => {
-    expect(renderActionMenuLines(items, 0)).toEqual([
-      "> t  Toggle show/hide command log",
-      "  f  Focus command log",
-    ])
+    expect(renderActionMenuLines(items, 0)).toEqual(["> t  Toggle show/hide command log", "  f  Focus command log"])
   })
 
   test("moves the cursor marker to the selected item", () => {
-    expect(renderActionMenuLines(items, 1)).toEqual([
-      "  t  Toggle show/hide command log",
-      "> f  Focus command log",
-    ])
+    expect(renderActionMenuLines(items, 1)).toEqual(["  t  Toggle show/hide command log", "> f  Focus command log"])
   })
 
   test("pads the key column to the widest key", () => {
     const wide: readonly ActionMenuItem[] = [
       { key: "t", label: "Short", onPress: noop },
-      { key: "esc", label: "Long", onPress: noop },
+      { key: "esc", label: "Long", onPress: noop }
     ]
-    expect(renderActionMenuLines(wide, 0)).toEqual([
-      "> t    Short",
-      "  esc  Long",
-    ])
+    expect(renderActionMenuLines(wide, 0)).toEqual(["> t    Short", "  esc  Long"])
   })
 
   test("renders nothing for no items", () => {
@@ -47,10 +38,7 @@ describe("renderActionMenuLines", () => {
   })
 
   test("marks no row when the selection is out of range", () => {
-    expect(renderActionMenuLines(items, 9)).toEqual([
-      "  t  Toggle show/hide command log",
-      "  f  Focus command log",
-    ])
+    expect(renderActionMenuLines(items, 9)).toEqual(["  t  Toggle show/hide command log", "  f  Focus command log"])
   })
 })
 
@@ -64,7 +52,7 @@ describe("renderActionMenuLines", () => {
 describe("createActionMenu", () => {
   const menuItems = (calls: string[]): readonly ActionMenuItem[] => [
     { key: "t", label: "Toggle show/hide command log", onPress: () => calls.push("t") },
-    { key: "f", label: "Focus command log", onPress: () => calls.push("f") },
+    { key: "f", label: "Focus command log", onPress: () => calls.push("f") }
   ]
 
   test("starts closed; openMenu opens it and resets the cursor to the first item", async () => {
@@ -209,8 +197,8 @@ describe("createActionMenu", () => {
           onPress: () => {
             openWhenPressed = menu.isOpen()
             calls.push("f")
-          },
-        },
+          }
+        }
       ])
       expect(menu.handleKey("f")).toBe(true)
       expect(calls).toEqual(["f"])
@@ -227,7 +215,7 @@ describe("createActionMenu", () => {
       const menu = createActionMenu(setup.renderer)
       menu.openMenu("Delete branch", [
         { key: "c", label: "Delete local branch", onPress: () => calls.push("local"), disabledReason: "checked out" },
-        { key: "r", label: "Delete remote branch", onPress: () => calls.push("remote") },
+        { key: "r", label: "Delete remote branch", onPress: () => calls.push("remote") }
       ])
       const text = menu.box.findDescendantById("action-menu-text") as TextRenderable
       expect(text.plainText).toContain("Delete local branch (unavailable: checked out)")
@@ -250,7 +238,6 @@ describe("createActionMenu", () => {
       setup.renderer.destroy()
     }
   })
-
 
   test("layout() hides the box when the menu is closed", async () => {
     const setup = await createTestRenderer({ width: 80, height: 24 })

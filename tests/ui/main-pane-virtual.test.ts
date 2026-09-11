@@ -15,15 +15,7 @@ function model(): AppModel {
 
 function patchText(lines: number, lineWidth = 0, wide = false): string {
   const body = Array.from({ length: lines }, (_, index) => `+${wide ? "界" : ""}${"x".repeat(lineWidth)}line ${index}`)
-  return [
-    "diff --git a/large.txt b/large.txt",
-    "index 1111111..2222222 100644",
-    "--- a/large.txt",
-    "+++ b/large.txt",
-    `@@ -1,${lines} +1,${lines} @@`,
-    ...body,
-    "",
-  ].join("\n")
+  return ["diff --git a/large.txt b/large.txt", "index 1111111..2222222 100644", "--- a/large.txt", "+++ b/large.txt", `@@ -1,${lines} +1,${lines} @@`, ...body, ""].join("\n")
 }
 
 function content(document: DiffDocument): MainPaneContent {
@@ -72,7 +64,6 @@ describe("main pane virtual diff viewport", () => {
     }
   })
 
-
   test("preserves raw line-range selection while scrolling away from it", async () => {
     const setup = await createTestRenderer({ width: 120, height: 40 })
     try {
@@ -99,7 +90,6 @@ describe("main pane virtual diff viewport", () => {
       setup.renderer.destroy()
     }
   })
-
 
   test("includes a long preamble in virtual horizontal metrics", async () => {
     const setup = await createTestRenderer({ width: 120, height: 40 })
@@ -214,7 +204,7 @@ describe("main pane virtual diff viewport", () => {
         valid: true as const,
         startUtf16: document.lines[6]!.startUtf16,
         endUtf16: document.lines[6]!.endUtf16,
-        active: true as const,
+        active: true as const
       }
       setMainDocumentSelection(pane, selected)
       pane.text.scrollY = pane.text.maxScrollY
@@ -259,7 +249,7 @@ describe("main pane virtual diff viewport", () => {
         valid: true,
         startUtf16: document.lines[0]!.startUtf16,
         endUtf16: document.lines[0]!.endUtf16,
-        active: true,
+        active: true
       })
       expect(getMainSelection(pane)).toBeDefined()
       ;(pane.text as unknown as { resetSelection(): void }).resetSelection()

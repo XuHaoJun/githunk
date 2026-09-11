@@ -77,6 +77,6 @@ export function resolveStickyDiffHeader(request: StickyDiffHeaderRequest): Stick
     fileKey: file.id,
     filePath: file.path,
     hunkIndex,
-    ...(hunkIndex < 0 ? {} : { hunkText: hunkHeaderText(file, hunkIndex) }),
+    ...(hunkIndex < 0 ? {} : { hunkText: hunkHeaderText(file, hunkIndex) })
   }
 }

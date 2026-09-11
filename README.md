@@ -1,4 +1,5 @@
 # githunk
+
 [![npm version](https://img.shields.io/npm/v/%40xuhaojun%2Fgithunk?logo=npm)](https://www.npmjs.com/package/@xuhaojun/githunk)
 
 A review-first Git TUI that mixes [lazygit](https://github.com/jesseduffield/lazygit)’s everyday Git workflow with [hunk](https://github.com/modem-dev/hunk)’s focused diff review.
@@ -173,6 +174,8 @@ This repository uses Bun for development and for producing the Node.js bundle pu
 ```sh
 bun install
 bun run start
+bun run format:check
+bun run lint
 bun run check
 bun run build
 ```

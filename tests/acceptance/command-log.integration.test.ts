@@ -51,12 +51,7 @@ describe("command log", () => {
     await app.controller.commit("second\n")
 
     const meaningful = texts().filter((text) => text === "Stage file" || text === "Commit" || text.startsWith("  git "))
-    expect(meaningful).toEqual([
-      "Stage file",
-      "  git add -- a.txt",
-      "Commit",
-      "  git commit -F -",
-    ])
+    expect(meaningful).toEqual(["Stage file", "  git add -- a.txt", "Commit", "  git commit -F -"])
   })
 
   /**
@@ -95,6 +90,10 @@ describe("command log", () => {
     // heading) actually fails.
     const headingIndex = texts().indexOf("Git output:")
     expect(headingIndex).toBeGreaterThanOrEqual(0)
-    expect(texts().slice(headingIndex + 1).join("\n")).toContain("not found")
+    expect(
+      texts()
+        .slice(headingIndex + 1)
+        .join("\n")
+    ).toContain("not found")
   })
 })

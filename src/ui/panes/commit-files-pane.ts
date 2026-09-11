@@ -19,11 +19,7 @@ export function commitFileRows(details: CommitDetails, filter = ""): ListRow[] {
     const status = statusForFile(file.oldPath, file.newPath)
     const displayPath = newPath.length > 0 ? newPath : oldPath
     const previous = file.oldPath !== undefined && file.oldPath !== newPath ? file.oldPath : undefined
-    const columns: ListRow["columns"] = [
-      { text: status, priority: 1 },
-      { text: displayPath, priority: 2 },
-      ...(previous !== undefined ? [{ text: `→ ${previous}`, priority: 3, style: "dim" as const }] : []),
-    ]
+    const columns: ListRow["columns"] = [{ text: status, priority: 1 }, { text: displayPath, priority: 2 }, ...(previous !== undefined ? [{ text: `→ ${previous}`, priority: 3, style: "dim" as const }] : [])]
     return { id, columns }
   })
   if (filter.length === 0) return rows

@@ -21,11 +21,11 @@ describe("review workspace lifecycle integration", () => {
           const identity = createReviewIdentity({ headRef: "refs/heads/feature", headOid: "a".repeat(40), baseRef: "refs/heads/main" })
           const generation = createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "c".repeat(40), headOid: "a".repeat(40) })
           return createReviewDocument({ identity, generation, commits: [], files: [] })
-        },
-      },
+        }
+      }
     } as unknown as Parameters<typeof createApp>[0])
 
-    const screen = (app as unknown as { screenController: { active: { kind: string } ; openBranchReview: () => Promise<void>; closeBranchReview: () => Promise<void> } }).screenController
+    const screen = (app as unknown as { screenController: { active: { kind: string }; openBranchReview: () => Promise<void>; closeBranchReview: () => Promise<void> } }).screenController
     expect(screen).toBeDefined()
     // initial is repository
     expect(screen.active.kind).toBe("repository")
@@ -43,8 +43,10 @@ describe("review workspace lifecycle integration", () => {
       repositoryRoot: "/tmp/does-not-exist",
       runner,
       reviewLoaders: {
-        loadDocument: async () => { throw new Error("load failed") },
-      },
+        loadDocument: async () => {
+          throw new Error("load failed")
+        }
+      }
     } as unknown as Parameters<typeof createApp>[0])
     const screen = (app as unknown as { screenController: { active: { kind: string; controller?: unknown }; openBranchReview: (baseRef?: string) => Promise<void> } }).screenController
     await expect(screen.openBranchReview("refs/heads/main")).rejects.toThrow("load failed")

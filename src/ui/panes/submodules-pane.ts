@@ -28,7 +28,7 @@ function submoduleRowName(submodule: SubmoduleConfig): string {
 export function submoduleRows(model: AppModel, filter = ""): ListRow[] {
   const rows: ListRow[] = (model.submodules ?? []).map((submodule) => ({
     id: submoduleRowId(submodule),
-    columns: [{ text: submoduleRowName(submodule), priority: 2, flex: true }],
+    columns: [{ text: submoduleRowName(submodule), priority: 2, flex: true }]
   }))
   if (filter.length === 0) return rows
   return [...filterItems(filter, rows, (row) => row.columns[0]?.text ?? row.id)]

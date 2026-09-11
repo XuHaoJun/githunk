@@ -91,7 +91,8 @@ export function createVirtualDiffLayout(document: DiffDocument, preamble: string
   const normalized = normalizePreamble(preamble)
   const width = lineNumberWidth(document)
   const prefixes = document.lines.map((line) => linePrefix(line, width))
-  const displayStarts: number[] = new Array(document.lines.length)
+  const displayStarts: number[] = []
+  displayStarts.length = document.lines.length
   let displayLength = normalized.text.length
   let contentWidth = 0
 
@@ -117,7 +118,7 @@ export function createVirtualDiffLayout(document: DiffDocument, preamble: string
       rawStartUtf16: line.startUtf16,
       rawEndUtf16: line.endUtf16,
       displayStartUtf16: displayStarts[lineIndex]!,
-      displayEndUtf16: displayStarts[lineIndex]! + prefix.length + line.raw.length,
+      displayEndUtf16: displayStarts[lineIndex]! + prefix.length + line.raw.length
     }
   }
 
@@ -130,7 +131,7 @@ export function createVirtualDiffLayout(document: DiffDocument, preamble: string
         gutterCols: 0,
         style: "plain",
         displayStartUtf16: normalized.starts[row]!,
-        displayEndUtf16: normalized.ends[row]!,
+        displayEndUtf16: normalized.ends[row]!
       }
     }
     return bodyRow(row - normalized.rows.length)

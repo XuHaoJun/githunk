@@ -21,7 +21,7 @@ function controllerForState(state: SurfaceController["state"]): SurfaceControlle
     dispatch: () => undefined,
     dispatchIntent: () => false,
     expandGap: async () => undefined,
-    getExpandedSourceByGap: () => new Map(),
+    getExpandedSourceByGap: () => new Map()
   } as unknown as SurfaceController
 }
 

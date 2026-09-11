@@ -51,6 +51,6 @@ export function createInitialReviewState(document: ReviewDocument): ReviewState 
     feedback: [],
     draft: null,
     expandedGaps: [],
-    lastSubmission: null,
+    lastSubmission: null
   }
 }

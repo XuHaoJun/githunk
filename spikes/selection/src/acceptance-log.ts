@@ -16,6 +16,6 @@ export function captureEnvironment(): AcceptanceEnvironment {
     tmux: Boolean(process.env.TMUX),
     zellij: Boolean(process.env.ZELLIJ || process.env.ZELLIJ_SESSION_NAME),
     columns: process.stdout.columns ?? null,
-    rows: process.stdout.rows ?? null,
+    rows: process.stdout.rows ?? null
   }
 }

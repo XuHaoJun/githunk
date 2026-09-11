@@ -9,7 +9,7 @@ import { pullRequestIcon } from "../pull-request-icon"
 import { BRANCH_RECENCY_CURRENT_FG, BRANCH_RECENCY_FG } from "../theme"
 import { createPane, type PaneHandle } from "./common"
 import type { ListColumn, ListRow } from "../list-view"
-import { createListState, selectListRow, setListRows, type ListState } from "../list-view"
+import { createListState, setListRows, type ListState } from "../list-view"
 import { installListText } from "./list-text"
 
 /**
@@ -65,7 +65,7 @@ export function localBranchRows(model: AppModel, filter = "", options: BranchRow
     columns.push({
       text: branch.isCurrent ? "  *" : formatRecency(branch.committedAt, nowUnix),
       priority: 0,
-      color: branch.isCurrent ? BRANCH_RECENCY_CURRENT_FG : BRANCH_RECENCY_FG,
+      color: branch.isCurrent ? BRANCH_RECENCY_CURRENT_FG : BRANCH_RECENCY_FG
     })
     const pullRequest = pullRequests === undefined ? undefined : Object.prototype.hasOwnProperty.call(pullRequests, branch.name) ? pullRequests[branch.name] : undefined
     const icon = pullRequest !== undefined && shouldShowPullRequest(pullRequest, branch.name) ? pullRequestIcon(pullRequest) : undefined
@@ -96,7 +96,7 @@ export const BRANCHES_JUMP_KEY = "3"
 
 export function createBranchesPane(renderer: CliRenderer, model: AppModel): PaneHandle {
   const pane = createPane(renderer, "branches", "", "", false, {
-    tabs: { jumpKey: BRANCHES_JUMP_KEY, tabs: BRANCHES_TABS },
+    tabs: { jumpKey: BRANCHES_JUMP_KEY, tabs: BRANCHES_TABS }
   })
   const rows = localBranchRows(model)
   const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No branches" }] : undefined
@@ -116,10 +116,7 @@ export function updateBranchesPane(pane: PaneHandle, model: AppModel, state: Lis
 }
 
 // --- Compatibility shims for pre-Task4 callers (dispatch.integration) ---
-export type BranchPaneItem =
-  | { readonly kind: "local"; readonly name: string }
-  | { readonly kind: "remote"; readonly name: string }
-  | { readonly kind: "remote-branch"; readonly remote: string; readonly name: string; readonly ref: string }
+export type BranchPaneItem = { readonly kind: "local"; readonly name: string } | { readonly kind: "remote"; readonly name: string } | { readonly kind: "remote-branch"; readonly remote: string; readonly name: string; readonly ref: string }
 
 export function branchItemId(item: BranchPaneItem): string {
   return item.kind === "remote-branch" ? `${item.kind}:${item.remote}:${item.name}` : `${item.kind}:${item.name}`
@@ -130,10 +127,7 @@ export function branchPaneItems(model: AppModel, filter = ""): readonly BranchPa
   if (listing === undefined) return []
   const all = [
     ...listing.localBranches.map((branch) => ({ kind: "local" as const, name: branch.name })),
-    ...listing.remotes.flatMap((remote) => [
-      { kind: "remote" as const, name: remote.name },
-      ...(remote.branches ?? []).map((branch) => ({ kind: "remote-branch" as const, remote: remote.name, name: branch.name, ref: branch.ref })),
-    ]),
+    ...listing.remotes.flatMap((remote) => [{ kind: "remote" as const, name: remote.name }, ...(remote.branches ?? []).map((branch) => ({ kind: "remote-branch" as const, remote: remote.name, name: branch.name, ref: branch.ref }))])
   ]
   return filterItems(filter, all, (item) => item.name)
 }

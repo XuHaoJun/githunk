@@ -2,33 +2,15 @@ import { describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import {
-  binaryFilenameForSpec,
-  buildOptionalDependencyMap,
-  buildPlatformPackageManifest,
-  getHostPlatformPackageSpec,
-  getPlatformPackageSpecByName,
-  getPlatformPackageSpecForHost,
-  listStagedPackageDirs,
-  PLATFORM_PACKAGE_MATRIX,
-  sortStagedForPublish,
-} from "../../scripts/prebuilt-package-helpers"
+import { binaryFilenameForSpec, buildOptionalDependencyMap, buildPlatformPackageManifest, getHostPlatformPackageSpec, getPlatformPackageSpecByName, getPlatformPackageSpecForHost, listStagedPackageDirs, PLATFORM_PACKAGE_MATRIX, sortStagedForPublish } from "../../scripts/prebuilt-package-helpers"
 
 describe("prebuilt platform matrix", () => {
   test("covers exactly the five shipped platform packages", () => {
-    expect(PLATFORM_PACKAGE_MATRIX.map((spec) => spec.packageName)).toEqual([
-      "@xuhaojun/githunk-darwin-arm64",
-      "@xuhaojun/githunk-darwin-x64",
-      "@xuhaojun/githunk-linux-arm64",
-      "@xuhaojun/githunk-linux-x64",
-      "@xuhaojun/githunk-windows-x64",
-    ])
+    expect(PLATFORM_PACKAGE_MATRIX.map((spec) => spec.packageName)).toEqual(["@xuhaojun/githunk-darwin-arm64", "@xuhaojun/githunk-darwin-x64", "@xuhaojun/githunk-linux-arm64", "@xuhaojun/githunk-linux-x64", "@xuhaojun/githunk-windows-x64"])
   })
 
   test("resolves the host spec from the current platform", () => {
-    expect(getHostPlatformPackageSpec()).toEqual(
-      getPlatformPackageSpecForHost(process.platform, process.arch),
-    )
+    expect(getHostPlatformPackageSpec()).toEqual(getPlatformPackageSpecForHost(process.platform, process.arch))
   })
 
   test("returns undefined for unknown package names", () => {
@@ -44,7 +26,7 @@ describe("prebuilt platform matrix", () => {
       name: "@xuhaojun/githunk-windows-x64",
       version: "0.2.0",
       os: ["win32"],
-      cpu: ["x64"],
+      cpu: ["x64"]
     })
   })
 
@@ -62,7 +44,7 @@ describe("prebuilt platform matrix", () => {
       "@xuhaojun/githunk-darwin-x64": "0.2.0",
       "@xuhaojun/githunk-linux-arm64": "0.2.0",
       "@xuhaojun/githunk-linux-x64": "0.2.0",
-      "@xuhaojun/githunk-windows-x64": "0.2.0",
+      "@xuhaojun/githunk-windows-x64": "0.2.0"
     })
   })
 
@@ -79,25 +61,14 @@ describe("prebuilt platform matrix", () => {
     try {
       await mkdir(join(root, "@xuhaojun", "githunk-linux-x64"), { recursive: true })
       await mkdir(join(root, "@xuhaojun", "githunk"), { recursive: true })
-      expect(listStagedPackageDirs(root).sort()).toEqual([
-        join(root, "@xuhaojun", "githunk"),
-        join(root, "@xuhaojun", "githunk-linux-x64"),
-      ])
+      expect(listStagedPackageDirs(root).sort()).toEqual([join(root, "@xuhaojun", "githunk"), join(root, "@xuhaojun", "githunk-linux-x64")])
     } finally {
       await rm(root, { recursive: true, force: true })
     }
   })
 
   test("orders the meta package last for publish", () => {
-    const dirs = [
-      "/r/@xuhaojun/githunk",
-      "/r/@xuhaojun/githunk-linux-x64",
-      "/r/@xuhaojun/githunk-darwin-arm64",
-    ]
-    expect(sortStagedForPublish(dirs, "@xuhaojun/githunk")).toEqual([
-      "/r/@xuhaojun/githunk-darwin-arm64",
-      "/r/@xuhaojun/githunk-linux-x64",
-      "/r/@xuhaojun/githunk",
-    ])
+    const dirs = ["/r/@xuhaojun/githunk", "/r/@xuhaojun/githunk-linux-x64", "/r/@xuhaojun/githunk-darwin-arm64"]
+    expect(sortStagedForPublish(dirs, "@xuhaojun/githunk")).toEqual(["/r/@xuhaojun/githunk-darwin-arm64", "/r/@xuhaojun/githunk-linux-x64", "/r/@xuhaojun/githunk"])
   })
 })

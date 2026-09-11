@@ -38,10 +38,7 @@ export type ReviewArtifactV1 = Readonly<{
 
 export type FinishValidationResult = { ok: true } | { ok: false; reason: string }
 
-export function validateFinishReview(
-  state: ReviewState,
-  input: { decision: ReviewDecision; summary: string },
-): FinishValidationResult {
+export function validateFinishReview(state: ReviewState, input: { decision: ReviewDecision; summary: string }): FinishValidationResult {
   if (state.draft !== null) {
     return { ok: false, reason: "draft-open" }
   }
@@ -60,13 +57,13 @@ export function validateFinishReview(
   // exit from a moved anchor was `a` (re-anchor), which is the wrong verb when
   // the objection is genuinely settled; `-` (resolve) is the missing one.
   const live = state.feedback.filter((f) => f.status !== "resolved")
-  if (live.some((f) => f.kind === "suggestion" && (
-    f.anchor.kind !== "range" || f.anchor.side !== "new" || !f.replacement || f.replacement.trim().length === 0 ||
-    !state.document.files.some((file) => file.key === f.anchor.fileKey && file.contentId === f.anchor.contentId && file.source !== "binary" && file.source !== "too-large")
-  ))) return { ok: false, reason: "suggestion-invalid" }
-  const hasUnresolvedAnchor = live.some((f) =>
-    f.resolution !== "active" ||
-    ledgerVerdict(f, state.document.generation.headOid) === "addressed")
+  if (
+    live.some(
+      (f) => f.kind === "suggestion" && (f.anchor.kind !== "range" || f.anchor.side !== "new" || !f.replacement || f.replacement.trim().length === 0 || !state.document.files.some((file) => file.key === f.anchor.fileKey && file.contentId === f.anchor.contentId && file.source !== "binary" && file.source !== "too-large"))
+    )
+  )
+    return { ok: false, reason: "suggestion-invalid" }
+  const hasUnresolvedAnchor = live.some((f) => f.resolution !== "active" || ledgerVerdict(f, state.document.generation.headOid) === "addressed")
   if (hasUnresolvedAnchor) {
     return { ok: false, reason: "feedback-needs-reanchor" }
   }
@@ -107,10 +104,7 @@ export function validateFinishReview(
   return { ok: true }
 }
 
-export function buildReviewArtifact(
-  state: ReviewState,
-  params: { id: string; submittedAt: string; decision: ReviewDecision; summary: string },
-): ReviewArtifactV1 {
+export function buildReviewArtifact(state: ReviewState, params: { id: string; submittedAt: string; decision: ReviewDecision; summary: string }): ReviewArtifactV1 {
   const validation = validateFinishReview(state, { decision: params.decision, summary: params.summary })
   if (!validation.ok) {
     throw new Error(`cannot build artifact: ${validation.reason}`)
@@ -158,7 +152,7 @@ export function buildReviewArtifact(
     ...(f.status === undefined ? {} : { status: f.status }),
     ...(f.handoff === undefined ? {} : { handoff: f.handoff }),
     createdAt: f.createdAt,
-    updatedAt: f.updatedAt,
+    updatedAt: f.updatedAt
   }))
 
   return {
@@ -172,9 +166,9 @@ export function buildReviewArtifact(
     projection,
     coverage: {
       viewed: viewed as readonly { fileKey: string; path: string; contentId: string }[],
-      notViewed: notViewed as readonly { fileKey: string; path: string }[],
+      notViewed: notViewed as readonly { fileKey: string; path: string }[]
     },
-    feedback,
+    feedback
   }
 }
 

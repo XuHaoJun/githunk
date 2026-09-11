@@ -8,10 +8,7 @@ export type CopyResult = {
   bytes: number
 }
 
-export function copySelection(
-  text: string,
-  clipboard: ClipboardPort,
-): CopyResult {
+export function copySelection(text: string, clipboard: ClipboardPort): CopyResult {
   const bytes = Buffer.byteLength(text, "utf8")
 
   if (text.length === 0) {
@@ -24,6 +21,6 @@ export function copySelection(
 
   return {
     status: clipboard.copyToClipboardOSC52(text) ? "emitted" : "blocked",
-    bytes,
+    bytes
   }
 }
