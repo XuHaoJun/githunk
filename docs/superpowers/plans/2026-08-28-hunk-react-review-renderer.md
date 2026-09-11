@@ -27,6 +27,7 @@
 ### Task 1: React/OpenTUI runtime and screen mount boundary
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `tsconfig.json`
 - Modify: `bun.lock` through the package manager
@@ -37,6 +38,7 @@
 - Create: `tests/ui/review-workspace/react-review-host.integration.test.tsx`
 
 **Interfaces:**
+
 - `ReactReviewHost` exposes `destroy(): void`, `root`, and the review controller it mounts.
 - `createReviewView` returns the host type accepted by `AppScreenController`; the repository view remains an imperative `RootView`.
 - The host creates one `@opentui/react` root for the existing `CliRenderer`, renders one review workspace component, and unmounts it before releasing review-specific resources.
@@ -68,6 +70,7 @@
 ### Task 2: Adapt Githunk review documents to Hunk-style diff files
 
 **Files:**
+
 - Create: `src/ui/review-workspace/hunk-review-model.ts`
 - Modify: `src/review/git/load-review-document.ts`
 - Modify: `src/review/git/load-review-projection.ts`
@@ -75,6 +78,7 @@
 - Create: `tests/ui/review-workspace/hunk-review-model.test.ts`
 
 **Interfaces:**
+
 - `ReviewSourceLoader` is `{ readonly read: (side: "old" | "new", file: ReviewFile) => Promise<readonly string[]> }`; it is optional and never enters `src/review/core`.
 - `HunkReviewFile` is a renderer-local immutable `{ readonly id: string; readonly path: string; readonly previousPath?: string; readonly kind: ReviewFile["kind"]; readonly metadata: FileDiffMetadata; readonly sourceLoader?: ReviewSourceLoader }`.
 - `toHunkReviewFile(file: ReviewFile, sourceLoader?: ReviewSourceLoader): HunkReviewFile` returns a renderer-local immutable model containing file identity, Pierre-compatible metadata, old/new line arrays, hunk content groups, and optional source readers.
@@ -106,6 +110,7 @@
 ### Task 3: Port Hunk pure row planning and split/stack geometry
 
 **Files:**
+
 - Create: `src/ui/review-workspace/hunk-diff-row-model.ts`
 - Create: `src/ui/review-workspace/hunk-diff-rows.ts`
 - Create: `src/ui/review-workspace/hunk-code-columns.ts`
@@ -118,6 +123,7 @@
 - Create: `tests/ui/review-workspace/hunk-diff-columns.test.ts`
 
 **Interfaces:**
+
 - `buildHunkSplitRows(file, state, highlights, options): readonly HunkDiffRow[]` pairs contiguous deletion/addition blocks into left/right cells, pads the shorter side, and leaves context on both sides.
 - `buildHunkStackRows(file, state, highlights, options): readonly HunkDiffRow[]` emits context, deletion, and addition rows in unified order with correct old/new gutters.
 - `resolveHunkSplitCellGeometry` and `resolveHunkStackCellGeometry` return fixed gutter/content widths from terminal cells, never UTF-16 lengths.
@@ -150,6 +156,7 @@
 ### Task 4: React review stream with persistent viewport culling
 
 **Files:**
+
 - Create: `src/ui/review-workspace/components/ReviewDiffRow.tsx`
 - Create: `src/ui/review-workspace/components/ReviewDiffSection.tsx`
 - Create: `src/ui/review-workspace/components/ReviewDiffPane.tsx`
@@ -164,6 +171,7 @@
 - Create: `tests/ui/review-workspace/react-diff-pane.integration.test.tsx`
 
 **Interfaces:**
+
 - `ReviewWorkspaceApp` receives the Githunk controller, options, and close callback; it owns focus, layout mode, sidebar visibility, selection reveal, feedback overlays, and finish dialog state.
 - `ReviewDiffPane` receives renderer-local files, selected file/hunk, layout, width/height, expanded gaps, and highlight snapshots; it renders one persistent `scrollbox` with `scrollY` and `viewportCulling`.
 - Row callbacks dispatch Githunk intents only; no component invokes Git mutation APIs.
@@ -197,6 +205,7 @@
 ### Task 5: Hunk highlight hook, cache, worker, and source qualification
 
 **Files:**
+
 - Create: `src/ui/review-workspace/hooks/useReviewHighlights.ts`
 - Modify: `src/review/git/highlight/highlight-worker-client.ts`
 - Modify: `src/review/git/highlight/highlight-worker.ts`
@@ -208,6 +217,7 @@
 - Create: `tests/ui/review-workspace/highlight-worker-lifecycle.test.ts`
 
 **Interfaces:**
+
 - `useReviewHighlights` accepts stable renderer-local files, theme, selected/visible file IDs, and an enabled flag; it returns an immutable map of per-file highlight payloads plus loading/error state.
 - `highlightInWorker` serializes requests through one reusable worker, rejects on startup/post/runtime failure, and supports `disposeHighlightWorker()` that settles active and queued requests.
 - Highlight cache keys include file content identity, generation/review identity, language/theme, and source-context identity.
@@ -241,6 +251,7 @@
 ### Task 6: Controller and input cutover
 
 **Files:**
+
 - Modify: `src/app/screen-controller.ts`
 - Modify: `src/app/create-app.ts`
 - Modify: `src/ui/review-workspace/controller.ts`
@@ -254,6 +265,7 @@
 - Test: `tests/ui/review-workspace/navigation.integration.test.ts`
 
 **Interfaces:**
+
 - Only the active review React root receives review commands; hidden repository bindings cannot mutate review state or repaint over it.
 - `AppScreenController.closeBranchReview()` unmounts React before restoring `RootView`; app shutdown unmounts the active review root before renderer destruction.
 - `ReviewWorkspaceController.destroy()` invalidates document/highlight/source request tokens and disposes review-local resources without touching repository mutations.
@@ -283,6 +295,7 @@
 ### Task 7: Real large-branch verification and cleanup
 
 **Files:**
+
 - Modify: `tests/ui/review-workspace/real-surface.integration.test.ts`
 - Create: `tests/ui/review-workspace/large-branch.integration.test.tsx`
 - Modify: `benchmarks/review-row-plan.ts`

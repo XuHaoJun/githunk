@@ -15,10 +15,7 @@ export type ReviewFileMatchResult = Readonly<{
   ambiguousPreviousKeys: ReadonlySet<string>
 }>
 
-export function matchReviewFiles(
-  previous: readonly ReviewFile[],
-  current: readonly ReviewFile[],
-): ReviewFileMatchResult {
+export function matchReviewFiles(previous: readonly ReviewFile[], current: readonly ReviewFile[]): ReviewFileMatchResult {
   const previousByKey = new Map<string, ReviewFile>()
   for (const f of previous) previousByKey.set(f.key, f)
 
@@ -129,14 +126,11 @@ export function matchReviewFiles(
     deletedFiles,
     previousToCurrent,
     currentToPrevious,
-    ambiguousPreviousKeys,
+    ambiguousPreviousKeys
   }
 }
 
-export function reconcileViewed(
-  previous: Readonly<Record<string, ViewedRecord>>,
-  matches: ReviewFileMatchResult,
-): Readonly<Record<string, ViewedRecord>> {
+export function reconcileViewed(previous: Readonly<Record<string, ViewedRecord>>, matches: ReviewFileMatchResult): Readonly<Record<string, ViewedRecord>> {
   const prevKeys = Object.keys(previous)
   if (prevKeys.length === 0) return previous
   const next: Record<string, ViewedRecord> = {}
@@ -154,7 +148,7 @@ export function reconcileViewed(
           path: record.path,
           contentId: record.contentId,
           generationId: record.generationId,
-          viewedAt: record.viewedAt,
+          viewedAt: record.viewedAt
         }
         next[current.key] = transferred
         changed = true
@@ -179,11 +173,7 @@ export function reconcileViewed(
   return next
 }
 
-export function reconcileFeedback(
-  feedback: ReviewFeedback,
-  matches: ReviewFileMatchResult,
-  document: ReviewDocument,
-): ReviewFeedback {
+export function reconcileFeedback(feedback: ReviewFeedback, matches: ReviewFileMatchResult, document: ReviewDocument): ReviewFeedback {
   const prevKey = feedback.anchor.fileKey
   const current = matches.previousToCurrent.get(prevKey)
 
@@ -216,15 +206,11 @@ export function reconcileFeedback(
   return {
     ...feedback,
     anchor: result.anchor,
-    resolution: result.resolution,
+    resolution: result.resolution
   }
 }
 
-export function reconcileSelection(
-  selection: ReviewSelection,
-  matches: ReviewFileMatchResult,
-  document: ReviewDocument,
-): ReviewSelection {
+export function reconcileSelection(selection: ReviewSelection, matches: ReviewFileMatchResult, document: ReviewDocument): ReviewSelection {
   if (selection.fileKey === null) return selection
   const current = matches.previousToCurrent.get(selection.fileKey)
   if (current) {
@@ -237,7 +223,7 @@ export function reconcileSelection(
   }
 
   if (matches.ambiguousPreviousKeys.has(selection.fileKey) || matches.deletedFiles.some((f) => f.key === selection.fileKey)) {
-    return fallbackSelection(document, selection)
+    return fallbackSelection(document)
   }
 
   const stillExists = document.files.find((f) => f.key === selection.fileKey)
@@ -248,20 +234,17 @@ export function reconcileSelection(
     return { fileKey: stillExists.key, hunkIndex: clamped }
   }
 
-  return fallbackSelection(document, selection)
+  return fallbackSelection(document)
 }
 
 // TODO: nearest visible fallback for middle deletion – currently first-file; deferred to polish (see task-4-report I2)
-function fallbackSelection(document: ReviewDocument, previous: ReviewSelection): ReviewSelection {
+function fallbackSelection(document: ReviewDocument): ReviewSelection {
   if (document.files.length === 0) return { fileKey: null, hunkIndex: 0 }
   const first = document.files[0]!
   return { fileKey: first.key, hunkIndex: 0 }
 }
 
-export function reconcileExpandedGaps(
-  expandedGaps: readonly ExpandedGap[],
-  matches: ReviewFileMatchResult,
-): readonly ExpandedGap[] {
+export function reconcileExpandedGaps(expandedGaps: readonly ExpandedGap[], matches: ReviewFileMatchResult): readonly ExpandedGap[] {
   if (expandedGaps.length === 0) return expandedGaps
   const result: ExpandedGap[] = []
   let changed = false
@@ -331,7 +314,7 @@ export function reconcileReviewState(previous: ReviewState, document: ReviewDocu
       startLine: oldLine.line,
       endLine: oldLine.line,
       ownerHunkIndex: oldLine.hunkIndex,
-      contextDigest: oldLine.contextDigest,
+      contextDigest: oldLine.contextDigest
     }
     const reconciled = reconcileAnchor(lineAnchor, document)
     if (reconciled.resolution === "active" && reconciled.anchor.kind === "range") {
@@ -341,29 +324,23 @@ export function reconcileReviewState(previous: ReviewState, document: ReviewDocu
         side: reconciled.anchor.side,
         line: reconciled.anchor.startLine,
         contentId: reconciled.anchor.contentId,
-        contextDigest: reconciled.anchor.contextDigest,
+        contextDigest: reconciled.anchor.contextDigest
       }
     }
   }
   const expandedGaps = reconcileExpandedGaps(previous.expandedGaps, matches)
-  const lineSelectionEqual = lineSelection === null && previous.lineSelection === null ||
-    lineSelection !== null && previous.lineSelection !== null &&
-    lineSelection.fileKey === previous.lineSelection.fileKey &&
-    lineSelection.hunkIndex === previous.lineSelection.hunkIndex &&
-    lineSelection.side === previous.lineSelection.side &&
-    lineSelection.line === previous.lineSelection.line &&
-    lineSelection.contentId === previous.lineSelection.contentId &&
-    lineSelection.contextDigest === previous.lineSelection.contextDigest
+  const lineSelectionEqual =
+    (lineSelection === null && previous.lineSelection === null) ||
+    (lineSelection !== null &&
+      previous.lineSelection !== null &&
+      lineSelection.fileKey === previous.lineSelection.fileKey &&
+      lineSelection.hunkIndex === previous.lineSelection.hunkIndex &&
+      lineSelection.side === previous.lineSelection.side &&
+      lineSelection.line === previous.lineSelection.line &&
+      lineSelection.contentId === previous.lineSelection.contentId &&
+      lineSelection.contextDigest === previous.lineSelection.contextDigest)
   // Idempotent when generation and patch digest unchanged and all derived slices equal – avoids spurious revision bump for no-op reconciliation (I3)
-  if (
-    viewed === previous.viewed &&
-    feedback === previous.feedback &&
-    expandedGaps === previous.expandedGaps &&
-    selection === previous.selection &&
-    lineSelectionEqual &&
-    document.generation.id === previous.document.generation.id &&
-    document.aggregatePatchDigest === previous.document.aggregatePatchDigest
-  ) {
+  if (viewed === previous.viewed && feedback === previous.feedback && expandedGaps === previous.expandedGaps && selection === previous.selection && lineSelectionEqual && document.generation.id === previous.document.generation.id && document.aggregatePatchDigest === previous.document.aggregatePatchDigest) {
     return previous
   }
   return reduceReviewState(previous, { type: "document/reconciled", document, viewed, feedback, selection, lineSelection, expandedGaps })

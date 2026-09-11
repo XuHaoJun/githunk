@@ -15,7 +15,7 @@ const prJson = (overrides: Record<string, unknown> = {}): Record<string, unknown
   headRefName: "feature/thing",
   headRepositoryOwner: { login: "acme" },
   statusCheckRollup: [],
-  ...overrides,
+  ...overrides
 })
 
 describe("PULL_REQUEST_LIST_ARGS", () => {
@@ -36,7 +36,7 @@ describe("parsePullRequests", () => {
       checksState: "",
       url: "https://github.com/acme/repo/pull/7",
       headRefName: "feature/thing",
-      headRepositoryOwner: "acme",
+      headRepositoryOwner: "acme"
     })
   })
 
@@ -53,7 +53,14 @@ describe("parsePullRequests", () => {
     const withChecks = (checks: readonly unknown[]): string => JSON.stringify([prJson({ statusCheckRollup: checks })])
     expect(parsePullRequests(withChecks([{ conclusion: "SUCCESS", status: "COMPLETED" }]))[0]!.checksState).toBe("SUCCESS")
     expect(parsePullRequests(withChecks([{ conclusion: "SUCCESS", status: "COMPLETED" }, { status: "IN_PROGRESS" }]))[0]!.checksState).toBe("PENDING")
-    expect(parsePullRequests(withChecks([{ conclusion: "SUCCESS", status: "COMPLETED" }, { conclusion: "FAILURE", status: "COMPLETED" }]))[0]!.checksState).toBe("FAILURE")
+    expect(
+      parsePullRequests(
+        withChecks([
+          { conclusion: "SUCCESS", status: "COMPLETED" },
+          { conclusion: "FAILURE", status: "COMPLETED" }
+        ])
+      )[0]!.checksState
+    ).toBe("FAILURE")
     expect(parsePullRequests(withChecks([]))[0]!.checksState).toBe("")
   })
 
@@ -69,7 +76,7 @@ describe("loadPullRequests", () => {
     const runner = async (): Promise<{ exitCode: number; stdout: string; stderr: string }> => ({
       exitCode: 4,
       stdout: "",
-      stderr: "gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable",
+      stderr: "gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable"
     })
     await expect(loadPullRequests(runner)).rejects.toBeInstanceOf(PullRequestsUnavailableError)
   })
@@ -102,7 +109,6 @@ describe("loadPullRequests", () => {
   })
 })
 
-
 describe("remoteOwner", () => {
   test("reads the owner out of both URL shapes", () => {
     expect(remoteOwner("git@github.com:acme/repo.git")).toBe("acme")
@@ -117,19 +123,16 @@ describe("remoteOwner", () => {
 describe("pullRequestsByBranch", () => {
   const remotes: readonly Remote[] = [
     { name: "origin", fetchUrl: "git@github.com:acme/repo.git" },
-    { name: "fork", fetchUrl: "https://github.com/contributor/repo.git" },
+    { name: "fork", fetchUrl: "https://github.com/contributor/repo.git" }
   ]
   const branches: readonly LocalBranch[] = [
     { name: "thing", isCurrent: false, upstreamRemote: "origin", upstreamBranch: "feature/thing" },
     { name: "forked", isCurrent: false, upstreamRemote: "fork", upstreamBranch: "feature/thing" },
-    { name: "untracked", isCurrent: true },
+    { name: "untracked", isCurrent: true }
   ]
 
   test("matches on head owner as well as branch name, so a fork's PR lands on the fork's branch", () => {
-    const prs: readonly PullRequest[] = [
-      { ...(parsePullRequests(JSON.stringify([prJson({ headRepositoryOwner: { login: "contributor" }, number: 9 })]))[0]!) },
-      { ...(parsePullRequests(JSON.stringify([prJson()]))[0]!) },
-    ]
+    const prs: readonly PullRequest[] = [{ ...parsePullRequests(JSON.stringify([prJson({ headRepositoryOwner: { login: "contributor" }, number: 9 })]))[0]! }, { ...parsePullRequests(JSON.stringify([prJson()]))[0]! }]
     const map = pullRequestsByBranch(prs, branches, remotes)
     expect(map.forked?.number).toBe(9)
     expect(map.thing?.number).toBe(7)

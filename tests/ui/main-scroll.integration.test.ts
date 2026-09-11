@@ -42,7 +42,7 @@ describe("main view scrolling", () => {
         await repository.git(["add", "tall.txt"])
         await repository.git(["commit", "-m", "add tall file"])
         await repository.write("tall.txt", Array.from({ length: 400 }, (_, index) => `changed ${index}`).join("\n") + "\n")
-      },
+      }
     })
     await created.pressKey("0")
     await created.flush()
@@ -57,12 +57,12 @@ describe("main view scrolling", () => {
       setup: async (repository: TempRepository) => {
         const lineCount = 7000
         const original = Array.from({ length: lineCount }, (_, index) => `base ${index}`)
-        const changed = original.map((line, index) => index % 2 === 0 || index === lineCount - 1 ? `changed ${index}` : line)
+        const changed = original.map((line, index) => (index % 2 === 0 || index === lineCount - 1 ? `changed ${index}` : line))
         await repository.write("large.txt", `${original.join("\n")}\n`)
         await repository.git(["add", "large.txt"])
         await repository.git(["commit", "-m", "base"])
         await repository.write("large.txt", `${changed.join("\n")}\n`)
-      },
+      }
     })
     await created.pressKey("0")
     await created.flush()
@@ -76,14 +76,14 @@ describe("main view scrolling", () => {
       setup: async (repository: TempRepository) => {
         const lineCount = 7000
         const original = Array.from({ length: lineCount }, (_, index) => `base ${index}`)
-        const changed = original.map((line, index) => index % 2 === 0 || index === lineCount - 1 ? `changed ${index}` : line)
+        const changed = original.map((line, index) => (index % 2 === 0 || index === lineCount - 1 ? `changed ${index}` : line))
         await repository.write("large.txt", `${original.join("\n")}\n`)
         await repository.git(["add", "large.txt"])
         await repository.git(["commit", "-m", "base"])
         await repository.write("large.txt", `${changed.join("\n")}\n`)
         await repository.git(["add", "large.txt"])
         await repository.git(["commit", "-m", "large change"])
-      },
+      }
     })
     await created.pressKey("4")
     await created.app.view!.whenPreviewSettled()
@@ -224,7 +224,7 @@ describe("main view scrolling", () => {
 
   test("a branch's commit graph scrolls with j and k, though it is no diff at all", async () => {
     harness = await createShellHarness({
-      commits: Array.from({ length: 40 }, (_, index) => `commit number ${index}`),
+      commits: Array.from({ length: 40 }, (_, index) => `commit number ${index}`)
     })
     await harness.pressKey("3")
     await harness.app.view!.whenPreviewSettled()
@@ -255,7 +255,7 @@ describe("main view scrolling", () => {
         // sit well below the viewport.
         for (let index = 5; index < 300; index += 10) lines[index] = `edited ${index}`
         await repository.write("a.txt", `${lines.join("\n")}\n`)
-      },
+      }
     })
     await harness.pressKey("0")
     await harness.flush()
@@ -287,7 +287,10 @@ describe("main view scrolling", () => {
 
     const PAGE_DOWN = "\u001b[6~"
     const PAGE_UP = "\u001b[5~"
-    for (const [down, up, modifiers] of [["J", "K", { shift: true }], [PAGE_DOWN, PAGE_UP, undefined]] as const) {
+    for (const [down, up, modifiers] of [
+      ["J", "K", { shift: true }],
+      [PAGE_DOWN, PAGE_UP, undefined]
+    ] as const) {
       const start = scrollY(harness)
       await harness.pressKey(down, modifiers)
       expect(scrollY(harness)).toBe(start + MAIN_SCROLL_HEIGHT)
@@ -322,7 +325,7 @@ describe("main view scrolling", () => {
 
   test("comma and period still page a side panel's list when that panel has focus", async () => {
     harness = await createShellHarness({
-      commits: Array.from({ length: 30 }, (_, index) => `commit number ${index}`),
+      commits: Array.from({ length: 30 }, (_, index) => `commit number ${index}`)
     })
     await harness.pressKey("4")
     await harness.flush()

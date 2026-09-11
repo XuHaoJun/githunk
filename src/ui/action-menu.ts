@@ -37,17 +37,10 @@ function highlightChunk(chunk: TextChunk, selectedBg: (input: TextChunk) => Text
 
 export function renderActionMenuLines(items: readonly ActionMenuItem[], selectedIndex: number): readonly string[] {
   const keyWidth = items.reduce((widest, item) => Math.max(widest, item.key.length), 0)
-  return items.map((item, index) =>
-    `${index === selectedIndex ? ">" : " "} ${item.key.padEnd(keyWidth, " ")}  ${actionMenuLabel(item)}`,
-  )
+  return items.map((item, index) => `${index === selectedIndex ? ">" : " "} ${item.key.padEnd(keyWidth, " ")}  ${actionMenuLabel(item)}`)
 }
 
-function renderActionMenuStyledContent(
-  items: readonly ActionMenuItem[],
-  selectedIndex: number,
-  prompt: string,
-  contentWidth: number,
-): StyledText {
+function renderActionMenuStyledContent(items: readonly ActionMenuItem[], selectedIndex: number, prompt: string, contentWidth: number): StyledText {
   const chunks: TextChunk[] = []
   const wrapped = prompt.length === 0 ? [] : wrapMessage(prompt, contentWidth)
   for (let i = 0; i < wrapped.length; i++) {
@@ -110,7 +103,7 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
     position: "absolute",
     overflow: "hidden",
     backgroundColor: POPUP_BACKGROUND,
-    zIndex: POPUP_Z_INDEX,
+    zIndex: POPUP_Z_INDEX
   })
   const text = new TextRenderable(renderer, {
     id: "action-menu-text",
@@ -120,7 +113,7 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
     selectable: false,
     wrapMode: "none",
     width: "100%",
-    height: "100%",
+    height: "100%"
   })
   box.add(text)
   box.visible = false
@@ -172,9 +165,7 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
         return true
       }
       // An item's own key fires it wherever the cursor is, as lazygit's MenuItem.Keys do.
-      const pressed = name === "return" || name === "enter"
-        ? items[selectedIndex]
-        : items.find((item) => item.key === name)
+      const pressed = name === "return" || name === "enter" ? items[selectedIndex] : items.find((item) => item.key === name)
       if (pressed === undefined) return false
       if (pressed.disabledReason !== undefined) {
         pressed.onDisabled?.()
@@ -212,6 +203,6 @@ export function createActionMenu(renderer: CliRenderer): ActionMenuHandle {
       box.visible = true
       // Re-render with the width-correct wrapped prompt
       paint()
-    },
+    }
   }
 }

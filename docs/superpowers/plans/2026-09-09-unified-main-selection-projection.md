@@ -26,11 +26,13 @@
 ### Task 1: Pure selection projection resolver
 
 **Files:**
+
 - Create: `src/domain/diff/selection-projection.ts`
 - Modify: `src/domain/diff/selection.ts`
 - Modify: `tests/domain/diff/selection.test.ts`
 
 **Interfaces:**
+
 - Consumes: `DiffDocument`, `DisplaySourceSegment` and `DocumentSelection`.
 - Produces: `NativeSelectionRange`, `MainSelectionProjection`, `MainSelectionProjectionSegment`, `MainSelection`, `resolveMainSelection()` and eager/text projection builders.
 
@@ -52,21 +54,21 @@ const projection: MainSelectionProjection = {
       displayEndUtf16: 20,
       rawStartUtf16: addition.startUtf16,
       rawEndUtf16: addition.startUtf16 + 5,
-      lineIndex: additionIndex,
-    },
-  ],
+      lineIndex: additionIndex
+    }
+  ]
 }
 
 expect(resolveMainSelection(projection, { start: 16, end: 19 }, "new")).toMatchObject({
   valid: true,
   kind: "document",
-  selection: { startUtf16: addition.startUtf16 + 1, endUtf16: addition.startUtf16 + 4 },
+  selection: { startUtf16: addition.startUtf16 + 1, endUtf16: addition.startUtf16 + 4 }
 })
 
 expect(resolveMainSelection(projection, { start: 7, end: 10 }, "abc")).toEqual({
   valid: true,
   kind: "text",
-  text: "abc",
+  text: "abc"
 })
 ```
 
@@ -107,10 +109,7 @@ export type MainSelectionProjection = {
   readonly document?: DiffDocument
 }
 
-export type MainSelection =
-  | { readonly valid: true; readonly kind: "document"; readonly selection: DocumentSelection }
-  | { readonly valid: true; readonly kind: "text"; readonly text: string }
-  | { readonly valid: false; readonly reason: "native/display selection mismatch" }
+export type MainSelection = { readonly valid: true; readonly kind: "document"; readonly selection: DocumentSelection } | { readonly valid: true; readonly kind: "text"; readonly text: string } | { readonly valid: false; readonly reason: "native/display selection mismatch" }
 ```
 
 Implement one normalizer that tries explicit UTF-8 only when `unit === "utf8"`; otherwise try UTF-16 first and UTF-8 second. A candidate is valid only when `projection.text.slice(startUtf16, endUtf16) === selectedText`. Do not search for `selectedText` elsewhere.
@@ -124,13 +123,7 @@ Add:
 ```ts
 export function textSelectionProjection(generation: number, text: string): MainSelectionProjection
 
-export function eagerDiffSelectionProjection(input: {
-  readonly generation: number
-  readonly document: DiffDocument
-  readonly text: string
-  readonly preambleLength: number
-  readonly bodySegments: readonly DisplaySourceSegment[]
-}): MainSelectionProjection
+export function eagerDiffSelectionProjection(input: { readonly generation: number; readonly document: DiffDocument; readonly text: string; readonly preambleLength: number; readonly bodySegments: readonly DisplaySourceSegment[] }): MainSelectionProjection
 ```
 
 `textSelectionProjection` emits one text segment for non-empty text and no segments for empty text. `eagerDiffSelectionProjection` offsets document segments by `preambleLength`, emits a leading text segment for the preamble, and fills every uncovered body interval with decoration segments. It validates ordered segment bounds while constructing, not at copy time.
@@ -164,12 +157,14 @@ git commit -m "refactor: resolve selections through exact projections"
 ### Task 2: Renderer-owned installed text snapshots
 
 **Files:**
+
 - Modify: `src/ui/panes/diff-text.ts`
 - Modify: `src/ui/panes/ansi-text.ts`
 - Modify: `tests/ui/diff-text.test.ts`
 - Modify: `tests/ui/ansi-text.test.ts`
 
 **Interfaces:**
+
 - Consumes: current `DiffTextContent` and `AnsiTextContent`.
 - Produces: `InstalledPaneText = { readonly text: string; readonly preambleLength: number }` from both installers.
 
@@ -226,11 +221,13 @@ git commit -m "refactor: expose installed pane text snapshots"
 ### Task 3: Main-pane projection and semantic selection lifecycle
 
 **Files:**
+
 - Modify: `src/ui/panes/main-pane.ts`
 - Modify: `src/ui/panes/virtual-main-pane.ts`
 - Modify: `tests/ui/main-pane-virtual.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1 projection builders/resolver and Task 2 installer snapshots.
 - Produces:
   - `getMainSelectionProjection(pane): MainSelectionProjection | undefined`;
@@ -334,6 +331,7 @@ git commit -m "refactor: own main selections in pane projections"
 ### Task 4: RootView clean cutover and panel-4 regressions
 
 **Files:**
+
 - Modify: `src/ui/root-view.ts`
 - Modify: `src/domain/diff/selection.ts`
 - Modify: `src/ui/panes/main-pane.ts`
@@ -342,6 +340,7 @@ git commit -m "refactor: own main selections in pane projections"
 - Modify: `tests/acceptance/lazygit-core-ui.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 3 semantic-selection API.
 - Produces: one mouse-selection lifecycle shared by eager and virtual content; copy/stage/discard consume `getMainSelection()`.
 
@@ -390,9 +389,7 @@ if (resolved?.valid && resolved.kind === "text") {
   if (mode !== "text") return reject()
   return emit(resolved.text)
 }
-const selection = resolved?.valid && resolved.kind === "document"
-  ? resolved.selection
-  : cursorSelectionForWholeMode(document, mode)
+const selection = resolved?.valid && resolved.kind === "document" ? resolved.selection : cursorSelectionForWholeMode(document, mode)
 return emit(document === undefined ? "" : copySelection(document, selection, mode))
 ```
 
@@ -444,10 +441,12 @@ git commit -m "fix: unify main pane selection ownership"
 ### Task 5: Final cleanup and verification
 
 **Files:**
+
 - Modify only if required by verification: files already named above.
 - Verify unchanged: `docs/lazygit-compatibility-v0.1.md`.
 
 **Interfaces:**
+
 - Consumes: completed Tasks 1–4.
 - Produces: a clean, reviewed branch with no legacy selection path.
 

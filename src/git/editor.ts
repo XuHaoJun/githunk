@@ -26,7 +26,7 @@ function standardTerminalPreset(editor: string): Preset {
   return {
     edit: `${editor} -- {{filename}}`,
     editAtLine: `${editor} +{{line}} -- {{filename}}`,
-    suspend: true,
+    suspend: true
   }
 }
 
@@ -44,48 +44,48 @@ function presetForBase(base: string): Preset | undefined {
     micro: {
       edit: "micro {{filename}}",
       editAtLine: "micro +{{line}} {{filename}}",
-      suspend: true,
+      suspend: true
     },
     helix: {
       edit: "helix -- {{filename}}",
       editAtLine: "helix -- {{filename}}:{{line}}",
-      suspend: true,
+      suspend: true
     },
     "helix (hx)": {
       edit: "hx -- {{filename}}",
       editAtLine: "hx -- {{filename}}:{{line}}",
-      suspend: true,
+      suspend: true
     },
     vscode: {
       edit: "code --reuse-window -- {{filename}}",
       editAtLine: "code --reuse-window --goto -- {{filename}}:{{line}}",
-      suspend: false,
+      suspend: false
     },
     sublime: {
       edit: "subl -- {{filename}}",
       editAtLine: "subl -- {{filename}}:{{line}}",
-      suspend: false,
+      suspend: false
     },
     bbedit: {
       edit: "bbedit -- {{filename}}",
       editAtLine: "bbedit +{{line}} -- {{filename}}",
-      suspend: false,
+      suspend: false
     },
     xcode: {
       edit: "xed -- {{filename}}",
       editAtLine: "xed --line {{line}} -- {{filename}}",
-      suspend: false,
+      suspend: false
     },
     zed: {
       edit: "zed -- {{filename}}",
       editAtLine: "zed -- {{filename}}:{{line}}",
-      suspend: false,
+      suspend: false
     },
     acme: {
       edit: "B {{filename}}",
       editAtLine: "B {{filename}}:{{line}}",
-      suspend: false,
-    },
+      suspend: false
+    }
   }
   if (table[base] !== undefined) return table[base]
   // Aliases that lazygit normalises via `editorToPreset` (editor_presets.go:157-164).
@@ -94,7 +94,7 @@ function presetForBase(base: string): Preset | undefined {
     hx: "helix (hx)",
     code: "vscode",
     subl: "sublime",
-    xed: "xcode",
+    xed: "xcode"
   }
   const canonical = alias[base]
   if (canonical !== undefined) return table[canonical]
@@ -103,7 +103,7 @@ function presetForBase(base: string): Preset | undefined {
 
 function shellQuote(arg: string): string {
   if (arg.length === 0) return "''"
-  if (/^[a-zA-Z0-9_\/.,:+-]+$/.test(arg)) return arg
+  if (/^[a-zA-Z0-9_/.,:+-]+$/.test(arg)) return arg
   return `'${arg.replace(/'/g, `'\\''`)}'`
 }
 
@@ -139,7 +139,7 @@ export async function resolveEditCommand(
     readonly runner?: GitRunner
     readonly env?: Record<string, string | undefined>
     readonly cwd?: string
-  } = {},
+  } = {}
 ): Promise<EditCommand> {
   const env = options.env ?? (process.env as Record<string, string | undefined>)
   let gitEditor: string | undefined
@@ -160,9 +160,7 @@ export async function resolveEditCommand(
   // the preset, which is useful for `code --wait` etc.
   const overrideEdit = env.GITHUNK_EDIT?.trim()
   const overrideEditAtLine = env.GITHUNK_EDIT_AT_LINE?.trim()
-  const template = options.line !== undefined
-    ? (overrideEditAtLine !== undefined && overrideEditAtLine.length > 0 ? overrideEditAtLine : preset.editAtLine)
-    : (overrideEdit !== undefined && overrideEdit.length > 0 ? overrideEdit : preset.edit)
+  const template = options.line !== undefined ? (overrideEditAtLine !== undefined && overrideEditAtLine.length > 0 ? overrideEditAtLine : preset.editAtLine) : overrideEdit !== undefined && overrideEdit.length > 0 ? overrideEdit : preset.edit
 
   const quoted = files.map(shellQuote).join(" ")
   const values: Record<string, string> = { filename: quoted }

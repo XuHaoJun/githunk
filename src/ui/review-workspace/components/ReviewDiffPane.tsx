@@ -52,16 +52,7 @@ type SectionWindow = Readonly<{
   last: number
 }>
 
-function sectionWindow(
-  files: readonly HunkReviewFile[],
-  state: ReviewState,
-  layout: "split" | "stack",
-  scrollTop: number,
-  viewportHeight: number,
-  overscan: number,
-  expandedSourceByGap: ReadonlyMap<string, readonly string[]> | undefined,
-  replies: ReviewReplies | undefined,
-): SectionWindow {
+function sectionWindow(files: readonly HunkReviewFile[], state: ReviewState, layout: "split" | "stack", scrollTop: number, viewportHeight: number, overscan: number, expandedSourceByGap: ReadonlyMap<string, readonly string[]> | undefined, replies: ReviewReplies | undefined): SectionWindow {
   const heights: number[] = []
   const offsets: number[] = [0]
   let total = 0
@@ -108,7 +99,7 @@ export function ReviewDiffPane({
   selectedFileRevealToken,
   selectedHunkRevealToken,
   focused,
-  scrollRef: externalScrollRef,
+  scrollRef: externalScrollRef
 }: ReviewDiffPaneProps) {
   const ownedScrollRef = useRef<ScrollBoxRenderable | null>(null)
   const scrollRef = externalScrollRef ?? ownedScrollRef
@@ -132,10 +123,7 @@ export function ReviewDiffPane({
    * pending reveal.
    */
   const revealScrollTopRef = useRef<number | null>(null)
-  const window = useMemo(
-    () => sectionWindow(files, state, layout, scrollTop, viewportHeight, overscan, expandedSourceByGap, replies),
-    [expandedSourceByGap, files, layout, overscan, replies, scrollTop, state.expandedGaps, state.feedback, viewportHeight],
-  )
+  const window = useMemo(() => sectionWindow(files, state, layout, scrollTop, viewportHeight, overscan, expandedSourceByGap, replies), [expandedSourceByGap, files, layout, overscan, replies, scrollTop, state.expandedGaps, state.feedback, viewportHeight])
   // The native bar overlays the right edge when visible; reserve its cell only for overflowing
   // streams so short diffs retain their full width.
   const scrollbarGutter = window.total > viewportHeight ? PANE_SCROLLBAR_GUTTER : 0
@@ -189,23 +177,12 @@ export function ReviewDiffPane({
   useLayoutEffect(() => {
     const currentSelection = { fileKey: selectedFileKey, hunkIndex: selectedHunkIndex }
     const previousSelection = previousSelectionRef.current
-    const selectionChanged = previousSelection === null
-      || previousSelection.fileKey !== selectedFileKey
-      || previousSelection.hunkIndex !== selectedHunkIndex
+    const selectionChanged = previousSelection === null || previousSelection.fileKey !== selectedFileKey || previousSelection.hunkIndex !== selectedHunkIndex
     const previousHunkRevealToken = previousHunkRevealTokenRef.current
-    const hunkRevealRequested = selectedHunkRevealToken !== undefined
-      && previousHunkRevealToken !== selectedHunkRevealToken
+    const hunkRevealRequested = selectedHunkRevealToken !== undefined && previousHunkRevealToken !== selectedHunkRevealToken
     const pendingRequest = pendingSelectionRevealRequestRef.current
-    const pendingRequestMatches = pendingRequest !== null
-      && pendingRequest.fileKey === selectedFileKey
-      && pendingRequest.hunkIndex === selectedHunkIndex
-      && pendingRequest.token === selectedHunkRevealToken
-      && pendingRequest.fileRevealToken === selectedFileRevealToken
-    const shouldReveal = selectedHunkRevealToken === undefined
-      ? selectionChanged || pendingRequestMatches
-      : hunkRevealRequested
-        || (state.reveal.scrollToFeedback && selectionChanged)
-        || pendingRequestMatches
+    const pendingRequestMatches = pendingRequest !== null && pendingRequest.fileKey === selectedFileKey && pendingRequest.hunkIndex === selectedHunkIndex && pendingRequest.token === selectedHunkRevealToken && pendingRequest.fileRevealToken === selectedFileRevealToken
+    const shouldReveal = selectedHunkRevealToken === undefined ? selectionChanged || pendingRequestMatches : hunkRevealRequested || (state.reveal.scrollToFeedback && selectionChanged) || pendingRequestMatches
     const clearPendingTimers = () => {
       for (const timer of pendingSelectionRevealTimersRef.current) clearTimeout(timer)
       pendingSelectionRevealTimersRef.current = []
@@ -237,7 +214,7 @@ export function ReviewDiffPane({
         fileKey: selectedFileKey,
         hunkIndex: selectedHunkIndex,
         token: selectedHunkRevealToken,
-        fileRevealToken: selectedFileRevealToken,
+        fileRevealToken: selectedFileRevealToken
       }
       return
     }
@@ -248,7 +225,7 @@ export function ReviewDiffPane({
       fileKey: selectedFileKey,
       hunkIndex: selectedHunkIndex,
       token: selectedHunkRevealToken,
-      fileRevealToken: selectedFileRevealToken,
+      fileRevealToken: selectedFileRevealToken
     }
     pendingSelectionRevealRequestRef.current = request
     clearPendingTimers()
@@ -257,13 +234,9 @@ export function ReviewDiffPane({
     const sectionHeight = window.heights[index] ?? 0
     // Aim at the objection's own row when one is being revealed; its hunk
     // header can sit comfortably on screen while the objection itself does not.
-    const feedbackOffset = state.reveal.scrollToFeedback && selectedFeedbackId !== undefined && selectedFeedbackId !== null
-      ? feedbackSectionRowOffset(selectedFile, layout, selectedFeedbackId, state, expandedSourceByGap, index > 0, replies)
-      : -1
+    const feedbackOffset = state.reveal.scrollToFeedback && selectedFeedbackId !== undefined && selectedFeedbackId !== null ? feedbackSectionRowOffset(selectedFile, layout, selectedFeedbackId, state, expandedSourceByGap, index > 0, replies) : -1
     const revealingFeedback = feedbackOffset >= 0
-    const rowOffset = revealingFeedback
-      ? feedbackOffset
-      : hunkSectionRowOffset(selectedFile, layout, Math.max(0, selectedHunkIndex), state, expandedSourceByGap, index > 0, replies)
+    const rowOffset = revealingFeedback ? feedbackOffset : hunkSectionRowOffset(selectedFile, layout, Math.max(0, selectedHunkIndex), state, expandedSourceByGap, index > 0, replies)
     const target = sectionTop + Math.min(Math.max(0, rowOffset), Math.max(0, sectionHeight - 1))
 
     const revealSelection = () => {
@@ -291,51 +264,46 @@ export function ReviewDiffPane({
       if (target < currentTop || target + 1 > currentEnd) scrollTo(target)
     }
 
-    revealScrollTopRef.current = scrollRef.current === null
-      ? null
-      : Math.max(0, Math.floor(scrollRef.current.scrollTop))
+    revealScrollTopRef.current = scrollRef.current === null ? null : Math.max(0, Math.floor(scrollRef.current.scrollTop))
     revealSelection()
     const retryDelays = [0, 16, 48]
-    pendingSelectionRevealTimersRef.current = retryDelays.map((delay, retryIndex) => setTimeout(() => {
-      const currentRequest = pendingSelectionRevealRequestRef.current
-      if (
-        currentRequest === null
-        || currentRequest.fileKey !== request.fileKey
-        || currentRequest.hunkIndex !== request.hunkIndex
-        || currentRequest.token !== request.token
-        || currentRequest.fileRevealToken !== request.fileRevealToken
-      ) return
-      // The reader scrolled after this reveal was scheduled; leave them where
-      // they are rather than dragging them back to a selection they moved past.
-      const scrollBox = scrollRef.current
-      const owned = revealScrollTopRef.current
-      if (scrollBox !== null && owned !== null && Math.max(0, Math.floor(scrollBox.scrollTop)) !== owned) {
-        pendingSelectionRevealRequestRef.current = null
-        clearPendingTimers()
-        return
-      }
-      revealSelection()
-      if (retryIndex === retryDelays.length - 1) {
-        pendingSelectionRevealRequestRef.current = null
-        pendingSelectionRevealTimersRef.current = []
-      }
-    }, delay))
+    pendingSelectionRevealTimersRef.current = retryDelays.map((delay, retryIndex) =>
+      setTimeout(() => {
+        const currentRequest = pendingSelectionRevealRequestRef.current
+        if (currentRequest === null || currentRequest.fileKey !== request.fileKey || currentRequest.hunkIndex !== request.hunkIndex || currentRequest.token !== request.token || currentRequest.fileRevealToken !== request.fileRevealToken) return
+        // The reader scrolled after this reveal was scheduled; leave them where
+        // they are rather than dragging them back to a selection they moved past.
+        const scrollBox = scrollRef.current
+        const owned = revealScrollTopRef.current
+        if (scrollBox !== null && owned !== null && Math.max(0, Math.floor(scrollBox.scrollTop)) !== owned) {
+          pendingSelectionRevealRequestRef.current = null
+          clearPendingTimers()
+          return
+        }
+        revealSelection()
+        if (retryIndex === retryDelays.length - 1) {
+          pendingSelectionRevealRequestRef.current = null
+          pendingSelectionRevealTimersRef.current = []
+        }
+      }, delay)
+    )
     return clearPendingTimers
   }, [expandedSourceByGap, files, layout, onViewportChange, selectedFileKey, selectedFeedbackId, selectedFileRevealToken, selectedHunkIndex, selectedHunkRevealToken, state, viewportHeight])
 
   const sticky = useMemo(
-    () => (stickyRows === 0
-      ? undefined
-      : resolveStickyDiffHeader({
-          files,
-          state,
-          layout,
-          scrollTop,
-          sectionOffsets: window.offsets,
-          ...(expandedSourceByGap ? { expandedSourceByGap } : {}),
-          ...(replies ? { replies } : {}),
-        })),
-    [expandedSourceByGap, files, layout, replies, scrollTop, state, stickyRows, window.offsets],
+    () =>
+      stickyRows === 0
+        ? undefined
+        : resolveStickyDiffHeader({
+            files,
+            state,
+            layout,
+            scrollTop,
+            sectionOffsets: window.offsets,
+            ...(expandedSourceByGap ? { expandedSourceByGap } : {}),
+            ...(replies ? { replies } : {})
+          }),
+    [expandedSourceByGap, files, layout, replies, scrollTop, state, stickyRows, window.offsets]
   )
 
   const leadingSpacer = window.offsets[window.first] ?? 0
@@ -344,65 +312,65 @@ export function ReviewDiffPane({
   return (
     <box id="review-diff-pane" style={{ width: "100%", height: "100%", flexDirection: "column" }}>
       {sticky ? <ReviewStickyHeader sticky={sticky} width={renderWidth} /> : null}
-    <scrollbox
-      id="review-diff-scrollbox"
-      ref={scrollRef}
-      {...(focused === undefined ? {} : { focused })}
-      width="100%"
-      flexGrow={1}
-      minHeight={0}
-      scrollY={true}
-      viewportCulling={true}
-      contentOptions={{ minHeight: 0 }}
-      verticalScrollbarOptions={{ position: "absolute", top: 0, bottom: 0, right: 0, width: PANE_SCROLLBAR_GUTTER }}
-      onMouseScroll={(event: MouseEvent) => {
-        const direction = event.scroll?.direction
-        const delta = Math.max(1, Math.floor(event.scroll?.delta ?? 1))
-        const target = event.currentTarget as ScrollBoxRenderable | null
-        const scrollBox = target && typeof target.scrollBy === "function" ? target : scrollRef.current
-        if (direction === "down") scrollBox?.scrollBy(delta)
-        else if (direction === "up") scrollBox?.scrollBy(-delta)
-      }}
-    >
-      <box id="review-diff-content" style={{ width: "100%", flexDirection: "column" }}>
-        {leadingSpacer > 0 ? <box key="review-leading-spacer" style={{ width: "100%", height: leadingSpacer }} /> : null}
-        {window.first <= window.last
-          ? files.slice(window.first, window.last + 1).map((file, offset) => {
-              const fileIndex = window.first + offset
-              const sectionTop = window.offsets[fileIndex] ?? 0
-              const sectionHeight = window.heights[fileIndex] ?? 0
-              const rowStart = Math.max(0, Math.floor(scrollTop - sectionTop - overscan))
-              const rowEnd = Math.min(sectionHeight, Math.ceil(scrollTop + viewportHeight + overscan - sectionTop))
-              const highlight = highlightByFileKey?.get(file.id)
-              const select = onSelectFile ? () => onSelectFile(file.id) : undefined
-              return (
-                <ReviewDiffSection
-                  {...(replies ? { replies } : {})}
-                  key={file.id}
-                  file={file}
-                  state={state}
-                  layout={layout}
-                  width={renderWidth}
-                  selectedHunkIndex={file.id === selectedFileKey ? selectedHunkIndex : -1}
-                  showDivider={fileIndex > 0}
-                  showLineNumbers={showLineNumbers}
-                  wrapLines={wrapLines}
-                  rowStart={rowStart}
-                  rowEnd={Math.max(rowStart, rowEnd)}
-                  {...(highlight ? { highlight } : {})}
-                  {...(expandedSourceByGap ? { expandedSourceByGap } : {})}
-                  {...(select ? { onSelect: select } : {})}
-                  {...(onSelectFeedback ? { onSelectFeedback } : {})}
-                  {...(onSelectDiffAddress ? { onSelectDiffAddress } : {})}
-                  {...(selectedFeedbackId !== undefined ? { selectedFeedbackId } : {})}
-                  {...(onToggleGap ? { onToggleGap: (gapId: string) => onToggleGap(file.id, gapId) } : {})}
-                />
-              )
-            })
-          : null}
-        {trailingSpacer > 0 ? <box key="review-trailing-spacer" style={{ width: "100%", height: trailingSpacer }} /> : null}
-      </box>
-    </scrollbox>
+      <scrollbox
+        id="review-diff-scrollbox"
+        ref={scrollRef}
+        {...(focused === undefined ? {} : { focused })}
+        width="100%"
+        flexGrow={1}
+        minHeight={0}
+        scrollY={true}
+        viewportCulling={true}
+        contentOptions={{ minHeight: 0 }}
+        verticalScrollbarOptions={{ position: "absolute", top: 0, bottom: 0, right: 0, width: PANE_SCROLLBAR_GUTTER }}
+        onMouseScroll={(event: MouseEvent) => {
+          const direction = event.scroll?.direction
+          const delta = Math.max(1, Math.floor(event.scroll?.delta ?? 1))
+          const target = event.currentTarget as ScrollBoxRenderable | null
+          const scrollBox = target && typeof target.scrollBy === "function" ? target : scrollRef.current
+          if (direction === "down") scrollBox?.scrollBy(delta)
+          else if (direction === "up") scrollBox?.scrollBy(-delta)
+        }}
+      >
+        <box id="review-diff-content" style={{ width: "100%", flexDirection: "column" }}>
+          {leadingSpacer > 0 ? <box key="review-leading-spacer" style={{ width: "100%", height: leadingSpacer }} /> : null}
+          {window.first <= window.last
+            ? files.slice(window.first, window.last + 1).map((file, offset) => {
+                const fileIndex = window.first + offset
+                const sectionTop = window.offsets[fileIndex] ?? 0
+                const sectionHeight = window.heights[fileIndex] ?? 0
+                const rowStart = Math.max(0, Math.floor(scrollTop - sectionTop - overscan))
+                const rowEnd = Math.min(sectionHeight, Math.ceil(scrollTop + viewportHeight + overscan - sectionTop))
+                const highlight = highlightByFileKey?.get(file.id)
+                const select = onSelectFile ? () => onSelectFile(file.id) : undefined
+                return (
+                  <ReviewDiffSection
+                    {...(replies ? { replies } : {})}
+                    key={file.id}
+                    file={file}
+                    state={state}
+                    layout={layout}
+                    width={renderWidth}
+                    selectedHunkIndex={file.id === selectedFileKey ? selectedHunkIndex : -1}
+                    showDivider={fileIndex > 0}
+                    showLineNumbers={showLineNumbers}
+                    wrapLines={wrapLines}
+                    rowStart={rowStart}
+                    rowEnd={Math.max(rowStart, rowEnd)}
+                    {...(highlight ? { highlight } : {})}
+                    {...(expandedSourceByGap ? { expandedSourceByGap } : {})}
+                    {...(select ? { onSelect: select } : {})}
+                    {...(onSelectFeedback ? { onSelectFeedback } : {})}
+                    {...(onSelectDiffAddress ? { onSelectDiffAddress } : {})}
+                    {...(selectedFeedbackId !== undefined ? { selectedFeedbackId } : {})}
+                    {...(onToggleGap ? { onToggleGap: (gapId: string) => onToggleGap(file.id, gapId) } : {})}
+                  />
+                )
+              })
+            : null}
+          {trailingSpacer > 0 ? <box key="review-trailing-spacer" style={{ width: "100%", height: trailingSpacer }} /> : null}
+        </box>
+      </scrollbox>
     </box>
   )
 }

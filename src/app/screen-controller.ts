@@ -61,10 +61,18 @@ export class AppScreenController {
     return this._lastError
   }
 
-  get keyHandlerCount(): number { return 1 + this._reviewHandlerCount }
-  get handlerCount(): number { return this.keyHandlerCount }
-  get timerCount(): number { return this._timerCount + (this.activeScreen.kind === "branch-review" ? this.countReviewTimers(this.activeScreen.controller) : 0) }
-  get activeTimers(): number { return this.timerCount }
+  get keyHandlerCount(): number {
+    return 1 + this._reviewHandlerCount
+  }
+  get handlerCount(): number {
+    return this.keyHandlerCount
+  }
+  get timerCount(): number {
+    return this._timerCount + (this.activeScreen.kind === "branch-review" ? this.countReviewTimers(this.activeScreen.controller) : 0)
+  }
+  get activeTimers(): number {
+    return this.timerCount
+  }
 
   shouldRenderRepository(): boolean {
     return this.activeScreen.kind === "repository"
@@ -75,17 +83,23 @@ export class AppScreenController {
     this._lastError = msg
     const viewObj = this.opts.repositoryView as unknown as { root?: { visible?: boolean } } | undefined
     if (viewObj?.root) {
-      try { (viewObj.root as { visible: boolean }).visible = true } catch {}
+      try {
+        ;(viewObj.root as { visible: boolean }).visible = true
+      } catch {}
     }
     const showable = this.opts.repositoryView as unknown as { show?: () => void } | undefined
     if (showable?.show) {
-      try { showable.show() } catch {}
+      try {
+        showable.show()
+      } catch {}
     }
     const repoCtrl = this.opts.repositoryController as unknown as Record<string, unknown>
     if (repoCtrl && typeof repoCtrl === "object" && "state" in repoCtrl) {
       const state = repoCtrl["state"] as Record<string, unknown> | undefined
       if (state && typeof state === "object") {
-        try { state["banner"] = msg } catch {}
+        try {
+          state["banner"] = msg
+        } catch {}
       }
     }
     this.opts.renderer?.requestRender?.()
@@ -120,11 +134,15 @@ export class AppScreenController {
 
       const viewObj = this.opts.repositoryView as unknown as { root?: { visible?: boolean } } | undefined
       if (viewObj?.root) {
-        try { (viewObj.root as { visible: boolean }).visible = false } catch {}
+        try {
+          ;(viewObj.root as { visible: boolean }).visible = false
+        } catch {}
       }
       const hideable = this.opts.repositoryView as unknown as { hide?: () => void } | undefined
       if (hideable?.hide) {
-        try { hideable.hide() } catch {}
+        try {
+          hideable.hide()
+        } catch {}
       }
 
       const reviewController = this.opts.createReviewController()
@@ -132,25 +150,37 @@ export class AppScreenController {
         await reviewController.open(baseRef)
       } catch (err) {
         this.restoreRepositoryAfterReviewOpenFailure(err)
-        try { await reviewController.destroy() } catch {}
+        try {
+          await reviewController.destroy()
+        } catch {}
         throw err
       }
 
       if (myToken !== this.openToken) {
-        try { await reviewController.destroy() } catch {}
+        try {
+          await reviewController.destroy()
+        } catch {}
         throw new Error("open superseded")
       }
       let reviewView: ReviewScreenView
       try {
-        reviewView = this.opts.createReviewView(reviewController, () => { void this.closeBranchReview() })
+        reviewView = this.opts.createReviewView(reviewController, () => {
+          void this.closeBranchReview()
+        })
       } catch (err) {
         this.restoreRepositoryAfterReviewOpenFailure(err)
-        try { await reviewController.destroy() } catch {}
+        try {
+          await reviewController.destroy()
+        } catch {}
         throw err
       }
       if (myToken !== this.openToken) {
-        try { reviewView.destroy() } catch {}
-        try { await reviewController.destroy() } catch {}
+        try {
+          reviewView.destroy()
+        } catch {}
+        try {
+          await reviewController.destroy()
+        } catch {}
         throw new Error("open superseded")
       }
 
@@ -170,49 +200,69 @@ export class AppScreenController {
   async closeBranchReview(): Promise<void> {
     if (this.activeScreen.kind === "repository") return
     const current = this.activeScreen
-    try { current.view.destroy() } catch {}
-    try { await current.controller.destroy() } catch {}
+    try {
+      current.view.destroy()
+    } catch {}
+    try {
+      await current.controller.destroy()
+    } catch {}
     // React's createRoot unmount clears renderer.root's React-managed subtree;
     // imperative children added before React (githunk-root) are detached as a side effect.
     // Re-attach after the reconciler has flushed. Try immediately, then after microtask and macrotask.
     const viewObj0 = this.opts.repositoryView as unknown as { root?: { visible?: boolean; parent?: unknown; id?: string } } | undefined
     const rendererRoot0 = this.opts.renderer?.root as unknown as { add?: (node: unknown) => void; id?: string } | undefined
     if (viewObj0?.root && (viewObj0.root as unknown as { parent?: unknown }).parent == null && rendererRoot0?.add) {
-      try { rendererRoot0.add(viewObj0.root) } catch {}
+      try {
+        rendererRoot0.add(viewObj0.root)
+      } catch {}
     }
     await Promise.resolve()
     const viewObj2 = this.opts.repositoryView as unknown as { root?: { visible?: boolean; parent?: unknown; id?: string } } | undefined
     const rendererRoot2 = this.opts.renderer?.root as unknown as { add?: (node: unknown) => void; id?: string } | undefined
     if (viewObj2?.root && (viewObj2.root as unknown as { parent?: unknown }).parent == null && rendererRoot2?.add) {
-      try { rendererRoot2.add(viewObj2.root) } catch {}
+      try {
+        rendererRoot2.add(viewObj2.root)
+      } catch {}
     }
     // In case the first microtask was too early for flushSyncWork, retry on next tick.
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     const viewObj3 = this.opts.repositoryView as unknown as { root?: { visible?: boolean; parent?: unknown } } | undefined
     const rendererRoot3 = this.opts.renderer?.root as unknown as { add?: (node: unknown) => void } | undefined
     if (viewObj3?.root && (viewObj3.root as unknown as { parent?: unknown }).parent == null && rendererRoot3?.add) {
-      try { rendererRoot3.add(viewObj3.root) } catch {}
+      try {
+        rendererRoot3.add(viewObj3.root)
+      } catch {}
     }
     const viewObj = viewObj3
     if (viewObj?.root) {
-      try { (viewObj.root as { visible: boolean }).visible = true } catch {}
+      try {
+        ;(viewObj.root as { visible: boolean }).visible = true
+      } catch {}
     }
     const showable = this.opts.repositoryView as unknown as { show?: () => void } | undefined
     if (showable?.show) {
-      try { showable.show() } catch {}
+      try {
+        showable.show()
+      } catch {}
     }
     const repoView = this.opts.repositoryView as unknown as Record<string, unknown> | undefined
     if (repoView && typeof repoView === "object" && repoView !== null && this.rememberedFocus !== undefined) {
       if ("focusManager" in repoView) {
         const fm = repoView["focusManager"] as { focus?: (id: string) => void } | undefined
-        try { fm?.focus?.(this.rememberedFocus) } catch {}
+        try {
+          fm?.focus?.(this.rememberedFocus)
+        } catch {}
       }
       if ("focusId" in repoView) {
-        try { (repoView as Record<string, unknown>)["focusId"] = this.rememberedFocus } catch {}
+        try {
+          ;(repoView as Record<string, unknown>)["focusId"] = this.rememberedFocus
+        } catch {}
       }
     }
     if (repoView && typeof repoView === "object" && repoView !== null && this.rememberedSelection !== undefined) {
-      try { (repoView as Record<string, unknown>)["selectionId"] = this.rememberedSelection } catch {}
+      try {
+        ;(repoView as Record<string, unknown>)["selectionId"] = this.rememberedSelection
+      } catch {}
     }
 
     this.activeScreen = { kind: "repository", controller: this.opts.repositoryController, view: this.opts.repositoryView }
@@ -237,16 +287,24 @@ export class AppScreenController {
     const pendingOpen = this.pendingOpen
     this.pendingOpen = undefined
     if (this.activeScreen.kind === "branch-review") {
-      try { this.activeScreen.view.destroy() } catch {}
-      try { await this.activeScreen.controller.destroy() } catch {}
+      try {
+        this.activeScreen.view.destroy()
+      } catch {}
+      try {
+        await this.activeScreen.controller.destroy()
+      } catch {}
       this._reviewHandlerCount = 0
     }
     if (pendingOpen) {
-      try { await pendingOpen } catch {}
+      try {
+        await pendingOpen
+      } catch {}
     }
     this._timerCount = 0
     if (this.opts.renderer) {
-      try { ReactReviewHost.disposeRenderer(this.opts.renderer) } catch {}
+      try {
+        ReactReviewHost.disposeRenderer(this.opts.renderer)
+      } catch {}
     }
   }
 
@@ -259,5 +317,7 @@ export class AppScreenController {
     return timers + pending
   }
 
-  get keyHandlers(): number { return this.keyHandlerCount }
+  get keyHandlers(): number {
+    return this.keyHandlerCount
+  }
 }

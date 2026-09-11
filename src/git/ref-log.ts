@@ -16,7 +16,7 @@ export type RefLogTarget = {
 const PREFIXES: Readonly<Record<RefLogTarget["kind"], string>> = {
   "local-branch": "refs/heads/",
   "remote-branch": "refs/remotes/",
-  tag: "refs/tags/",
+  tag: "refs/tags/"
 }
 
 /**
@@ -45,20 +45,7 @@ export function refLogFullName(target: RefLogTarget): string {
  * comes from a panel selection, and a branch may legally be named `--help`.
  */
 export function refLogArgs(fullRefName: string, depth: number = REF_LOG_DEPTH): readonly string[] {
-  return [
-    "log",
-    "--graph",
-    "--color=always",
-    "--abbrev-commit",
-    "--decorate",
-    "--date=relative",
-    "--pretty=medium",
-    "-n",
-    String(depth),
-    "--end-of-options",
-    fullRefName,
-    "--",
-  ]
+  return ["log", "--graph", "--color=always", "--abbrev-commit", "--decorate", "--date=relative", "--pretty=medium", "-n", String(depth), "--end-of-options", fullRefName, "--"]
 }
 
 /** The raw, still-escaped output; ../ui/ansi turns it into text plus highlight spans. */

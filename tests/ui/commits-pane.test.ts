@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { renderCommitRows } from "../../src/ui/panes/commits-pane"
 import type { CommitSummary } from "../../src/domain/commit"
-import {
-  COMMIT_HASH_DEFAULT_FG,
-  COMMIT_HASH_MERGED_FG,
-  COMMIT_HASH_PUSHED_FG,
-  COMMIT_HASH_UNPUSHED_FG,
-} from "../../src/ui/theme"
+import { COMMIT_HASH_DEFAULT_FG, COMMIT_HASH_MERGED_FG, COMMIT_HASH_PUSHED_FG, COMMIT_HASH_UNPUSHED_FG } from "../../src/ui/theme"
 
 const now = new Date("2026-08-25T00:00:00Z")
 
@@ -18,14 +13,14 @@ function mkCommit(overrides: Partial<CommitSummary> & { oid: string }): CommitSu
     authoredAt: "2026-08-24T00:00:00Z",
     subject: "Subject line",
     body: "",
-    ...overrides,
+    ...overrides
   }
 }
 
 const commits: readonly CommitSummary[] = [
   mkCommit({ oid: "abc1234567890", shortOid: "abc1234", subject: "First commit with a very long subject line that should be truncated when width is narrow", authorName: "Author Name", authoredAt: "2026-08-24T12:00:00Z" }),
   mkCommit({ oid: "def1234567890", shortOid: "def1234", subject: "Second commit", authorName: "Other", authoredAt: "2026-08-20T00:00:00Z" }),
-  mkCommit({ oid: "ghi1234567890", shortOid: "ghi1234", subject: "Third", authorName: "Author Name", authoredAt: "2026-08-10T00:00:00Z" }),
+  mkCommit({ oid: "ghi1234567890", shortOid: "ghi1234", subject: "Third", authorName: "Author Name", authoredAt: "2026-08-10T00:00:00Z" })
 ]
 
 describe("commits pane rows", () => {
@@ -56,11 +51,7 @@ describe("commits pane rows", () => {
   })
 
   test("keeps the author column two cells wide whatever the name", () => {
-    const mixed = [
-      mkCommit({ oid: "aaa1234567890", parentOids: ["bbb1234567890"], authorName: "Author Name", subject: "one" }),
-      mkCommit({ oid: "bbb1234567890", parentOids: ["ccc1234567890"], authorName: "Solo", subject: "two" }),
-      mkCommit({ oid: "ccc1234567890", authorName: "X", subject: "three" }),
-    ]
+    const mixed = [mkCommit({ oid: "aaa1234567890", parentOids: ["bbb1234567890"], authorName: "Author Name", subject: "one" }), mkCommit({ oid: "bbb1234567890", parentOids: ["ccc1234567890"], authorName: "Solo", subject: "two" }), mkCommit({ oid: "ccc1234567890", authorName: "X", subject: "three" })]
     const lines = renderCommitRows(mixed, { focused: false, width: 80, now }).plainText.split("\n")
     // "Author Name" → "AN", "Solo" → "So", "X" → "X " (padded); the graph then starts at a fixed offset.
     expect(lines.map((line) => line.slice(9, 11))).toEqual(["AN", "So", "X "])
@@ -79,7 +70,7 @@ describe("commits pane rows", () => {
       ["7", ["4", "A"]],
       ["4", ["B"]],
       ["B", ["C"]],
-      ["C", ["D"]],
+      ["C", ["D"]]
     ]
     const merged = seq.map(([hash, parents], index) =>
       mkCommit({
@@ -88,8 +79,8 @@ describe("commits pane rows", () => {
           const parentIndex = seq.findIndex(([h]) => h === p)
           return parentIndex === -1 ? id(p) + "z" : id(p) + parentIndex
         }),
-        subject: `subject-${hash}`,
-      }),
+        subject: `subject-${hash}`
+      })
     )
     const lines = renderCommitRows(merged, { focused: false, width: 80, now }).plainText.split("\n")
     // The narrow lane must not pad out to the widest lane: single space, not a blank run.
@@ -118,19 +109,9 @@ describe("commits pane rows", () => {
    * throw away the panel's only signal for how far a commit has travelled.
    */
   test("colours the hash by commit status", () => {
-    const statuses = [
-      mkCommit({ oid: "aaa1234567890", subject: "local", status: "unpushed" }),
-      mkCommit({ oid: "bbb1234567890", subject: "on the remote", status: "pushed" }),
-      mkCommit({ oid: "ccc1234567890", subject: "on main", status: "merged" }),
-      mkCommit({ oid: "ddd1234567890", subject: "unknown" }),
-    ]
+    const statuses = [mkCommit({ oid: "aaa1234567890", subject: "local", status: "unpushed" }), mkCommit({ oid: "bbb1234567890", subject: "on the remote", status: "pushed" }), mkCommit({ oid: "ccc1234567890", subject: "on main", status: "merged" }), mkCommit({ oid: "ddd1234567890", subject: "unknown" })]
     const result = renderCommitRows(statuses, { focused: false, width: 80, now })
     const hashChunks = result.content.chunks.filter((chunk) => chunk.text.length === 8 && /^[a-f0-9]{8}$/.test(chunk.text))
-    expect(hashChunks.map((chunk) => chunk.fg)).toEqual([
-      COMMIT_HASH_UNPUSHED_FG,
-      COMMIT_HASH_PUSHED_FG,
-      COMMIT_HASH_MERGED_FG,
-      COMMIT_HASH_DEFAULT_FG,
-    ])
+    expect(hashChunks.map((chunk) => chunk.fg)).toEqual([COMMIT_HASH_UNPUSHED_FG, COMMIT_HASH_PUSHED_FG, COMMIT_HASH_MERGED_FG, COMMIT_HASH_DEFAULT_FG])
   })
 })

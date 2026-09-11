@@ -44,7 +44,7 @@ export function parseReflog(raw: string, ref = "HEAD"): readonly ReflogEntry[] {
       committedAt: new Date(seconds * 1000).toISOString(),
       committedAtUnix: seconds,
       index,
-      selector: `${ref}@{${index}}`,
+      selector: `${ref}@{${index}}`
     })
   }
   return entries

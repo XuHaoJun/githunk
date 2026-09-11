@@ -92,38 +92,38 @@ width.
 
 **Created**
 
-| Path | Responsibility |
-| --- | --- |
-| `src/app/create-app.ts` | Wires a `GitRunner`, `AppController`, and `RootView` together. The single wiring path, used by both `main.ts` and tests. |
-| `src/ui/boxlayout.ts` | Pure box-layout engine. Ported from lazygit. Knows nothing about githunk. |
-| `src/ui/bindings.ts` | Declarative binding registry: declarations, dispatch resolution, hints formatting, menu grouping. |
-| `src/ui/hints-bar.ts` | Renderables for the bottom row: hints segment plus right-aligned review status. |
-| `src/ui/keybinding-menu.ts` | The `?` modal menu renderable. |
-| `src/ui/splitter.ts` | Divider renderable: rule glyphs, hover state, grab affordance. |
-| `src/storage/local-state-file.ts` | Atomic, symlink-refusing, `0600` file helper extracted from `src/review/store.ts`. Shared by both stores, hence not under `src/ui`. |
-| `src/ui/ui-state-store.ts` | Loads and saves `.git/githunk/ui-state-v1.json` via `local-state-file.ts`. |
-| `tests/helpers/shell-harness.ts` | Boots a real `RootView` over a real temp repository with a test renderer. |
-| `tests/ui/boxlayout.test.ts` | Engine unit tests. |
-| `tests/ui/bindings.test.ts` | Registry unit tests. |
-| `tests/ui/hints-bar.test.ts` | Status text and menu rendering unit tests. |
-| `tests/ui/splitter.test.ts` | Divider glyph unit tests. |
-| `tests/ui/dispatch.integration.test.ts` | Real key and mouse input through a real view, grown by Tasks 5-9. |
-| `tests/app/create-app.integration.test.ts` | Real temp repository through the real wiring. |
-| `tests/storage/local-state-file.integration.test.ts` | Atomic write, permissions and quarantine against a real repository. |
-| `tests/ui/ui-state-store.integration.test.ts` | Geometry round-trip and corrupt-file fallback. |
-| `tests/ui/acceptance/shell.integration.test.ts` | The regression gate for every reported symptom. |
+| Path                                                 | Responsibility                                                                                                                      |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `src/app/create-app.ts`                              | Wires a `GitRunner`, `AppController`, and `RootView` together. The single wiring path, used by both `main.ts` and tests.            |
+| `src/ui/boxlayout.ts`                                | Pure box-layout engine. Ported from lazygit. Knows nothing about githunk.                                                           |
+| `src/ui/bindings.ts`                                 | Declarative binding registry: declarations, dispatch resolution, hints formatting, menu grouping.                                   |
+| `src/ui/hints-bar.ts`                                | Renderables for the bottom row: hints segment plus right-aligned review status.                                                     |
+| `src/ui/keybinding-menu.ts`                          | The `?` modal menu renderable.                                                                                                      |
+| `src/ui/splitter.ts`                                 | Divider renderable: rule glyphs, hover state, grab affordance.                                                                      |
+| `src/storage/local-state-file.ts`                    | Atomic, symlink-refusing, `0600` file helper extracted from `src/review/store.ts`. Shared by both stores, hence not under `src/ui`. |
+| `src/ui/ui-state-store.ts`                           | Loads and saves `.git/githunk/ui-state-v1.json` via `local-state-file.ts`.                                                          |
+| `tests/helpers/shell-harness.ts`                     | Boots a real `RootView` over a real temp repository with a test renderer.                                                           |
+| `tests/ui/boxlayout.test.ts`                         | Engine unit tests.                                                                                                                  |
+| `tests/ui/bindings.test.ts`                          | Registry unit tests.                                                                                                                |
+| `tests/ui/hints-bar.test.ts`                         | Status text and menu rendering unit tests.                                                                                          |
+| `tests/ui/splitter.test.ts`                          | Divider glyph unit tests.                                                                                                           |
+| `tests/ui/dispatch.integration.test.ts`              | Real key and mouse input through a real view, grown by Tasks 5-9.                                                                   |
+| `tests/app/create-app.integration.test.ts`           | Real temp repository through the real wiring.                                                                                       |
+| `tests/storage/local-state-file.integration.test.ts` | Atomic write, permissions and quarantine against a real repository.                                                                 |
+| `tests/ui/ui-state-store.integration.test.ts`        | Geometry round-trip and corrupt-file fallback.                                                                                      |
+| `tests/ui/acceptance/shell.integration.test.ts`      | The regression gate for every reported symptom.                                                                                     |
 
 **Modified**
 
-| Path | Change |
-| --- | --- |
-| `src/app/controller.ts:103-106,124,147,163,188-189,210,872` | Remove the three `automatic*` flags. |
-| `src/main.ts` | Reduce to repository-root resolution, renderer creation, `createApp`, refresh. |
-| `src/ui/layout.ts` | Rewritten to build a box tree. New request/geometry types. |
-| `src/ui/root-view.ts` | Consume arranged dimensions and the binding registry instead of computing layout and comparing `key.name`. |
-| `src/ui/focus.ts` | Add pane cycling (`nextPane` / `previousPane`) for `h` / `l` / `tab`. |
-| `src/review/store.ts` | Use the extracted `local-state-file.ts`. |
-| `tests/ui/layout.test.ts` | Rewritten against the new layout API. |
+| Path                                                        | Change                                                                                                     |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `src/app/controller.ts:103-106,124,147,163,188-189,210,872` | Remove the three `automatic*` flags.                                                                       |
+| `src/main.ts`                                               | Reduce to repository-root resolution, renderer creation, `createApp`, refresh.                             |
+| `src/ui/layout.ts`                                          | Rewritten to build a box tree. New request/geometry types.                                                 |
+| `src/ui/root-view.ts`                                       | Consume arranged dimensions and the binding registry instead of computing layout and comparing `key.name`. |
+| `src/ui/focus.ts`                                           | Add pane cycling (`nextPane` / `previousPane`) for `h` / `l` / `tab`.                                      |
+| `src/review/store.ts`                                       | Use the extracted `local-state-file.ts`.                                                                   |
+| `tests/ui/layout.test.ts`                                   | Rewritten against the new layout API.                                                                      |
 
 ### Public members the tests read
 
@@ -143,14 +143,17 @@ of `automaticCommitHistory` at `controller.ts:124`, so `loadCommitHistory`
 returns `{ commits: [] }` unconditionally in the shipped app.
 
 **Files:**
+
 - Modify: `src/app/controller.ts:103-106`, `:124`, `:147`, `:163`, `:188-189`, `:210`, `:872`
 - Create: `src/app/create-app.ts`
 - Modify: `src/main.ts`
 - Test: `tests/app/create-app.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AppController` from `src/app/controller.ts`, `RootView` from `src/ui/root-view.ts`, `GitRunner` from `src/git/runner.ts`.
 - Produces:
+
   ```ts
   export type CreateAppOptions = {
     readonly repositoryRoot: string
@@ -166,6 +169,7 @@ returns `{ commits: [] }` unconditionally in the shipped app.
   }
   export function createApp(options: CreateAppOptions): App
   ```
+
   `renderer` is optional so the controller-level test can use `createApp` without
   a terminal; when it is omitted, `view` is `undefined` and `destroy()` is a
   no-op. Task 10 passes a real test renderer.
@@ -182,7 +186,9 @@ import { createApp } from "../../src/app/create-app"
 
 describe("createApp real wiring", () => {
   let repository: TempRepository | undefined
-  afterEach(async () => { await repository?.cleanup() })
+  afterEach(async () => {
+    await repository?.cleanup()
+  })
 
   test("loads commit history, branches and stashes through the shipped wiring", async () => {
     repository = await createTempRepository()
@@ -226,39 +232,39 @@ currently, verify by reading before editing):
 Delete the assignment at line 124 entirely:
 
 ```ts
-    this.automaticCommitHistory = options instanceof GitRunner || options.loadCommits !== undefined || options.commitsLoader !== undefined
+this.automaticCommitHistory = options instanceof GitRunner || options.loadCommits !== undefined || options.commitsLoader !== undefined
 ```
 
 Delete the assignment at line 147:
 
 ```ts
-    this.automaticBranchListing = options instanceof GitRunner || (options.loadBranches !== undefined || options.branchesLoader !== undefined) || (options.load === undefined && options.loader === undefined && runner !== undefined)
+this.automaticBranchListing = options instanceof GitRunner || options.loadBranches !== undefined || options.branchesLoader !== undefined || (options.load === undefined && options.loader === undefined && runner !== undefined)
 ```
 
 Delete the assignment at line 163:
 
 ```ts
-    this.automaticStashListing = options instanceof GitRunner || options.loadStashes !== undefined || (load === undefined && runner !== undefined)
+this.automaticStashListing = options instanceof GitRunner || options.loadStashes !== undefined || (load === undefined && runner !== undefined)
 ```
 
 Replace the three read sites. At line 188-189:
 
 ```ts
-    const stashWarning = this.automaticStashListing ? await this.refreshStashes() : undefined
-    const branchWarning = this.automaticBranchListing ? await this.refreshBranches() : undefined
+const stashWarning = this.automaticStashListing ? await this.refreshStashes() : undefined
+const branchWarning = this.automaticBranchListing ? await this.refreshBranches() : undefined
 ```
 
 becomes:
 
 ```ts
-    const stashWarning = await this.refreshStashes()
-    const branchWarning = await this.refreshBranches()
+const stashWarning = await this.refreshStashes()
+const branchWarning = await this.refreshBranches()
 ```
 
 At line 210, replace:
 
 ```ts
-    if (!this.automaticStashListing) return undefined
+if (!this.automaticStashListing) return undefined
 ```
 
 with nothing — delete the line. `loadStashesListing` already falls back to
@@ -268,7 +274,7 @@ redundant.
 At line 872, replace:
 
 ```ts
-    if (!this.automaticCommitHistory) return { commits: [] }
+if (!this.automaticCommitHistory) return { commits: [] }
 ```
 
 with nothing — delete the line. `loadCommitList` already falls back to
@@ -317,7 +323,7 @@ export type App = {
 export function createApp(options: CreateAppOptions): App {
   const controller = new AppController({
     repositoryRoot: options.repositoryRoot,
-    runner: options.runner,
+    runner: options.runner
   })
   const renderer = options.renderer
   if (renderer === undefined) {
@@ -325,18 +331,22 @@ export function createApp(options: CreateAppOptions): App {
       controller,
       view: undefined,
       refresh: () => controller.refresh(),
-      destroy: () => undefined,
+      destroy: () => undefined
     }
   }
 
   let view: RootView
   view = new RootView(renderer, controller.state, {
     onStageFile: async (path) => {
-      try { await controller.stageFile(path) } finally { view.update(controller.state) }
+      try {
+        await controller.stageFile(path)
+      } finally {
+        view.update(controller.state)
+      }
     },
     // ... every remaining handler from src/main.ts, copied unchanged ...
     onFilterBranches: async () => undefined,
-    onQuit: () => options.onQuit?.(),
+    onQuit: () => options.onQuit?.()
   })
 
   return {
@@ -346,7 +356,7 @@ export function createApp(options: CreateAppOptions): App {
       await controller.refresh()
       view.update(controller.state)
     },
-    destroy: () => view.destroy(),
+    destroy: () => view.destroy()
   }
 }
 ```
@@ -376,14 +386,14 @@ export async function startApp(): Promise<number> {
     exitOnCtrlC: true,
     useMouse: true,
     enableMouseMovement: true,
-    targetFps: 30,
+    targetFps: 30
   })
 
   const app = createApp({
     repositoryRoot,
     runner,
     renderer,
-    onQuit: () => renderer.destroy(),
+    onQuit: () => renderer.destroy()
   })
   renderer.once("destroy", () => app.destroy())
 
@@ -434,13 +444,16 @@ integration test through one createApp wiring."
 ## Task 2: Port lazygit's box-layout engine
 
 **Files:**
+
 - Create: `src/ui/boxlayout.ts`
 - Test: `tests/ui/boxlayout.test.ts`
 - Read for reference: `learn-projects/lazygit/vendor/github.com/jesseduffield/lazycore/pkg/boxlayout/boxlayout.go`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces:
+
   ```ts
   export type Direction = "row" | "column"
   export type Dimensions = { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
@@ -457,6 +470,7 @@ integration test through one createApp wiring."
   export function calcSizes(boxes: readonly Box[], availableSpace: number): readonly number[]
   export function arrangeWindows(root: Box, x0: number, y0: number, width: number, height: number): Readonly<Record<string, Dimensions>>
   ```
+
   `Dimensions` is inclusive on both ends, matching lazygit: a box at `x0: 0`
   with width 10 has `x1: 9`.
 
@@ -516,7 +530,7 @@ describe("calcSizes", () => {
 describe("arrangeWindows", () => {
   test("maps a leaf window to the full region, inclusive of both ends", () => {
     expect(arrangeWindows({ window: "main" }, 0, 0, 10, 4)).toEqual({
-      main: { x0: 0, y0: 0, x1: 9, y1: 3 },
+      main: { x0: 0, y0: 0, x1: 9, y1: 3 }
     })
   })
 
@@ -525,67 +539,115 @@ describe("arrangeWindows", () => {
   })
 
   test("stacks row children vertically", () => {
-    expect(arrangeWindows({
-      direction: "row",
-      children: [{ window: "top", size: 1 }, { window: "bottom", weight: 1 }],
-    }, 0, 0, 8, 4)).toEqual({
+    expect(
+      arrangeWindows(
+        {
+          direction: "row",
+          children: [
+            { window: "top", size: 1 },
+            { window: "bottom", weight: 1 }
+          ]
+        },
+        0,
+        0,
+        8,
+        4
+      )
+    ).toEqual({
       top: { x0: 0, y0: 0, x1: 7, y1: 0 },
-      bottom: { x0: 0, y0: 1, x1: 7, y1: 3 },
+      bottom: { x0: 0, y0: 1, x1: 7, y1: 3 }
     })
   })
 
   test("places column children side by side", () => {
-    expect(arrangeWindows({
-      direction: "column",
-      children: [{ window: "left", size: 3 }, { window: "right", weight: 1 }],
-    }, 0, 0, 8, 2)).toEqual({
+    expect(
+      arrangeWindows(
+        {
+          direction: "column",
+          children: [
+            { window: "left", size: 3 },
+            { window: "right", weight: 1 }
+          ]
+        },
+        0,
+        0,
+        8,
+        2
+      )
+    ).toEqual({
       left: { x0: 0, y0: 0, x1: 2, y1: 1 },
-      right: { x0: 3, y0: 0, x1: 7, y1: 1 },
+      right: { x0: 3, y0: 0, x1: 7, y1: 1 }
     })
   })
 
   test("arranges nested boxes and merges their windows", () => {
-    const result = arrangeWindows({
-      direction: "column",
-      children: [
-        { window: "side", size: 2 },
-        {
-          direction: "row",
-          weight: 1,
-          children: [{ window: "main", weight: 1 }, { window: "log", size: 1 }],
-        },
-      ],
-    }, 0, 0, 6, 3)
+    const result = arrangeWindows(
+      {
+        direction: "column",
+        children: [
+          { window: "side", size: 2 },
+          {
+            direction: "row",
+            weight: 1,
+            children: [
+              { window: "main", weight: 1 },
+              { window: "log", size: 1 }
+            ]
+          }
+        ]
+      },
+      0,
+      0,
+      6,
+      3
+    )
     expect(result).toEqual({
       side: { x0: 0, y0: 0, x1: 1, y1: 2 },
       main: { x0: 2, y0: 0, x1: 5, y1: 1 },
-      log: { x0: 2, y0: 2, x1: 5, y1: 2 },
+      log: { x0: 2, y0: 2, x1: 5, y1: 2 }
     })
   })
 
   test("resolves conditionalChildren with the region it was given", () => {
-    const result = arrangeWindows({
-      direction: "row",
-      conditionalChildren: (_width, height) =>
-        height >= 4 ? [{ window: "tall", weight: 1 }] : [{ window: "short", weight: 1 }],
-    }, 0, 0, 5, 2)
+    const result = arrangeWindows(
+      {
+        direction: "row",
+        conditionalChildren: (_width, height) => (height >= 4 ? [{ window: "tall", weight: 1 }] : [{ window: "short", weight: 1 }])
+      },
+      0,
+      0,
+      5,
+      2
+    )
     expect(Object.keys(result)).toEqual(["short"])
   })
 
   test("resolves conditionalDirection with the region it was given", () => {
     const box = {
-      conditionalDirection: (width: number) => (width >= 10 ? "column" as const : "row" as const),
-      children: [{ window: "a", weight: 1 }, { window: "b", weight: 1 }],
+      conditionalDirection: (width: number) => (width >= 10 ? ("column" as const) : ("row" as const)),
+      children: [
+        { window: "a", weight: 1 },
+        { window: "b", weight: 1 }
+      ]
     }
     expect(arrangeWindows(box, 0, 0, 4, 4).a).toEqual({ x0: 0, y0: 0, x1: 3, y1: 1 })
     expect(arrangeWindows(box, 0, 0, 10, 4).a).toEqual({ x0: 0, y0: 0, x1: 4, y1: 3 })
   })
 
   test("gives a zero-sized child an empty region without going negative", () => {
-    const result = arrangeWindows({
-      direction: "column",
-      children: [{ window: "hidden", size: 0, weight: 0 }, { window: "shown", weight: 1 }],
-    }, 0, 0, 6, 1)
+    const result = arrangeWindows(
+      {
+        direction: "column",
+        children: [
+          { window: "hidden", size: 0, weight: 0 },
+          { window: "shown", weight: 1 }
+        ]
+      },
+      0,
+      0,
+      6,
+      1
+    )
     expect(result.hidden).toEqual({ x0: 0, y0: 0, x1: -1, y1: 0 })
     expect(result.shown).toEqual({ x0: 0, y0: 0, x1: 5, y1: 0 })
   })
@@ -671,11 +733,7 @@ export function calcSizes(boxes: readonly Box[], availableSpace: number): readon
   const unitSize = totalWeight > 0 ? Math.floor(dynamicSpace / totalWeight) : 0
   let extraSpace = totalWeight > 0 ? dynamicSpace % totalWeight : 0
 
-  const result = boxes.map((box, index) =>
-    isStatic(box)
-      ? Math.min(availableSpace, box.size ?? 0)
-      : unitSize * (weights[index] ?? 0),
-  )
+  const result = boxes.map((box, index) => (isStatic(box) ? Math.min(availableSpace, box.size ?? 0) : unitSize * (weights[index] ?? 0)))
 
   // Deal the remainder out one cell at a time, decrementing the weight each
   // time a box is served, so wider boxes take proportionally more of it.
@@ -695,13 +753,7 @@ export function calcSizes(boxes: readonly Box[], availableSpace: number): readon
   return result
 }
 
-export function arrangeWindows(
-  root: Box,
-  x0: number,
-  y0: number,
-  width: number,
-  height: number,
-): Readonly<Record<string, Dimensions>> {
+export function arrangeWindows(root: Box, x0: number, y0: number, width: number, height: number): Readonly<Record<string, Dimensions>> {
   const children = root.conditionalChildren?.(width, height) ?? root.children ?? []
   if (children.length === 0) {
     if (root.window === undefined || root.window === "") return {}
@@ -715,9 +767,7 @@ export function arrangeWindows(
   let offset = 0
   for (const [index, child] of children.entries()) {
     const boxSize = sizes[index] ?? 0
-    const arranged = direction === "column"
-      ? arrangeWindows(child, x0 + offset, y0, boxSize, height)
-      : arrangeWindows(child, x0, y0 + offset, width, boxSize)
+    const arranged = direction === "column" ? arrangeWindows(child, x0 + offset, y0, boxSize, height) : arrangeWindows(child, x0, y0 + offset, width, boxSize)
     Object.assign(result, arranged)
     offset += boxSize
   }
@@ -751,6 +801,7 @@ minimum-size logic: those belong to the caller that builds the tree."
 ## Task 3: Rewrite the layout module onto a box tree
 
 **Files:**
+
 - Modify: `src/ui/layout.ts` (full rewrite)
 - Test: `tests/ui/layout.test.ts` (full rewrite)
 - Read for reference: `learn-projects/lazygit/pkg/gui/controllers/helpers/window_arrangement_helper.go`
@@ -761,8 +812,10 @@ To keep the suite green in between, this task leaves the two old helpers
 which Task 6 deletes.
 
 **Interfaces:**
+
 - Consumes: `arrangeWindows`, `Box`, `Dimensions` from `src/ui/boxlayout.ts`; `FocusId` from `src/ui/focus.ts`.
 - Produces:
+
   ```ts
   export type ScreenMode = "normal" | "half" | "full"
   export const SCREEN_MODES: readonly ScreenMode[]
@@ -772,14 +825,14 @@ which Task 6 deletes.
 
   export type TerminalSize = { readonly width: number; readonly height: number }
   export type LayoutRequest = {
-    readonly sidePanelRatio?: number   // default DEFAULT_SIDE_PANEL_RATIO
-    readonly logHeight?: number        // default 8
-    readonly logVisible?: boolean      // default false
-    readonly focus?: FocusId           // default "main"
-    readonly screenMode?: ScreenMode   // default "normal"
-    readonly hintsVisible?: boolean    // default true
-    readonly statusWidth?: number      // default 0
-    readonly accordion?: boolean       // default true
+    readonly sidePanelRatio?: number // default DEFAULT_SIDE_PANEL_RATIO
+    readonly logHeight?: number // default 8
+    readonly logVisible?: boolean // default false
+    readonly focus?: FocusId // default "main"
+    readonly screenMode?: ScreenMode // default "normal"
+    readonly hintsVisible?: boolean // default true
+    readonly statusWidth?: number // default 0
+    readonly accordion?: boolean // default true
   }
   export type LayoutGeometry = {
     readonly terminalWidth: number
@@ -802,6 +855,7 @@ which Task 6 deletes.
   export function nextScreenMode(current: ScreenMode): ScreenMode
   export function previousScreenMode(current: ScreenMode): ScreenMode
   ```
+
   **A window absent from `geometry.windows` means that region is hidden.** This
   is the contract Task 6 relies on: `root-view.ts` sets
   `renderable.visible = windows[name] !== undefined`.
@@ -812,21 +866,7 @@ Replace the whole contents of `tests/ui/layout.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test"
-import {
-  computeLayout,
-  heightOf,
-  logHeightForMouseY,
-  nextScreenMode,
-  previousScreenMode,
-  ratioForMouseX,
-  widthOf,
-  DEFAULT_SIDE_PANEL_RATIO,
-  MIN_LEFT_WIDTH,
-  MIN_MAIN_WIDTH,
-  SIDE_WINDOWS,
-  STATUS_PANE_HEIGHT,
-  FOLDED_PANE_HEIGHT,
-} from "../../src/ui/layout"
+import { computeLayout, heightOf, logHeightForMouseY, nextScreenMode, previousScreenMode, ratioForMouseX, widthOf, DEFAULT_SIDE_PANEL_RATIO, MIN_LEFT_WIDTH, MIN_MAIN_WIDTH, SIDE_WINDOWS, STATUS_PANE_HEIGHT, FOLDED_PANE_HEIGHT } from "../../src/ui/layout"
 
 describe("computeLayout side region", () => {
   test("sizes the side region by ratio rather than a fixed column count", () => {
@@ -1120,11 +1160,7 @@ export function previousScreenMode(current: ScreenMode): ScreenMode {
  * layouts where every other pane is statically sized, because boxlayout needs
  * at least one weighted box to soak up the remaining rows.
  */
-function sideChildren(
-  focusedSide: SideWindow | undefined,
-  accordion: boolean,
-  enlargedSide: boolean,
-): (width: number, height: number) => readonly Box[] {
+function sideChildren(focusedSide: SideWindow | undefined, accordion: boolean, enlargedSide: boolean): (width: number, height: number) => readonly Box[] {
   const absorber = focusedSide ?? "files"
   return (_width, height) => {
     if (enlargedSide) {
@@ -1141,9 +1177,7 @@ function sideChildren(
       })
     }
     const squashed = height >= MIN_HEIGHT_FOR_TALL_SQUASHED ? FOLDED_PANE_HEIGHT : 1
-    return SIDE_WINDOWS.map((window) =>
-      window === absorber ? { window, weight: 1 } : { window, size: squashed },
-    )
+    return SIDE_WINDOWS.map((window) => (window === absorber ? { window, weight: 1 } : { window, size: squashed }))
   }
 }
 
@@ -1155,20 +1189,14 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
   const accordion = requested.accordion !== false
   const hintsVisible = requested.hintsVisible !== false
   const logVisible = requested.logVisible === true
-  const requestedRatio = Number.isFinite(requested.sidePanelRatio ?? Number.NaN)
-    ? clamp(requested.sidePanelRatio as number, 0, 1)
-    : DEFAULT_SIDE_PANEL_RATIO
-  const requestedLog = Number.isFinite(requested.logHeight ?? Number.NaN)
-    ? Math.floor(requested.logHeight as number)
-    : DEFAULT_LOG_HEIGHT
+  const requestedRatio = Number.isFinite(requested.sidePanelRatio ?? Number.NaN) ? clamp(requested.sidePanelRatio as number, 0, 1) : DEFAULT_SIDE_PANEL_RATIO
+  const requestedLog = Number.isFinite(requested.logHeight ?? Number.NaN) ? Math.floor(requested.logHeight as number) : DEFAULT_LOG_HEIGHT
 
   const infoHeight = hintsVisible && terminalHeight >= 2 ? 1 : 0
   const bodyHeight = terminalHeight - infoHeight
 
   const widthTooSmall = terminalWidth < MIN_LEFT_WIDTH + SPLITTER_SIZE + MIN_MAIN_WIDTH
-  const heightTooSmall = logVisible
-    ? bodyHeight < MIN_MAIN_HEIGHT + SPLITTER_SIZE + MIN_LOG_HEIGHT
-    : bodyHeight < MIN_MAIN_HEIGHT
+  const heightTooSmall = logVisible ? bodyHeight < MIN_MAIN_HEIGHT + SPLITTER_SIZE + MIN_LOG_HEIGHT : bodyHeight < MIN_MAIN_HEIGHT
   const tooSmall = widthTooSmall || heightTooSmall
 
   const focusedSide = isSideWindow(focus) ? focus : undefined
@@ -1195,9 +1223,7 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
   const mainWidth = mainHidden ? 0 : terminalWidth - sideWidth - splitterWidth
 
   const logCapacity = bodyHeight - SPLITTER_SIZE - MIN_MAIN_HEIGHT
-  const logHeight = !logVisible || mainWidth === 0 || logCapacity < MIN_LOG_HEIGHT
-    ? 0
-    : clamp(requestedLog, MIN_LOG_HEIGHT, logCapacity)
+  const logHeight = !logVisible || mainWidth === 0 || logCapacity < MIN_LOG_HEIGHT ? 0 : clamp(requestedLog, MIN_LOG_HEIGHT, logCapacity)
   const logSplitterHeight = logHeight > 0 ? SPLITTER_SIZE : 0
 
   const mainSectionChildren: Box[] = [{ window: "main", weight: 1 }]
@@ -1211,28 +1237,20 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
     bodyChildren.push({
       direction: "row",
       ...(mainWidth === 0 ? { weight: 1 } : { size: sideWidth }),
-      conditionalChildren: sideChildren(focusedSide, accordion, enlargedSide),
+      conditionalChildren: sideChildren(focusedSide, accordion, enlargedSide)
     })
   }
   if (splitterWidth > 0) bodyChildren.push({ window: "vsplit", size: splitterWidth })
   if (mainWidth > 0) bodyChildren.push({ direction: "row", weight: 1, children: mainSectionChildren })
 
-  const statusWidth = Number.isFinite(requested.statusWidth ?? Number.NaN)
-    ? clamp(Math.floor(requested.statusWidth as number), 0, terminalWidth)
-    : 0
+  const statusWidth = Number.isFinite(requested.statusWidth ?? Number.NaN) ? clamp(Math.floor(requested.statusWidth as number), 0, terminalWidth) : 0
   const infoChildren: Box[] = [{ window: "hints", weight: 1 }]
   if (statusWidth > 0) infoChildren.push({ window: "info", size: statusWidth })
 
   const rootChildren: Box[] = [{ direction: "column", weight: 1, children: bodyChildren }]
   if (infoHeight > 0) rootChildren.push({ direction: "column", size: infoHeight, children: infoChildren })
 
-  const rawWindows = arrangeWindows(
-    { direction: "row", children: rootChildren },
-    0,
-    0,
-    terminalWidth,
-    terminalHeight,
-  )
+  const rawWindows = arrangeWindows({ direction: "row", children: rootChildren }, 0, 0, terminalWidth, terminalHeight)
   // Drop zero-extent entries so "absent from this map means hidden" is literally
   // true for every consumer, including a pane squeezed to nothing by a degenerate
   // terminal size.
@@ -1251,7 +1269,7 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
     logVisible,
     screenMode,
     hintsVisible: infoHeight > 0,
-    tooSmall,
+    tooSmall
   }
 }
 
@@ -1275,18 +1293,12 @@ export function logHeightForMouseY(geometry: LayoutGeometry, mouseY: number): nu
 ```ts
 /** @deprecated Removed in the root-view migration. Use ratioForMouseX. */
 export function resizeLeftPane(current: LayoutGeometry, mouseX: number): LayoutGeometry {
-  return computeLayout(
-    { width: current.terminalWidth, height: current.terminalHeight },
-    { sidePanelRatio: ratioForMouseX(current, mouseX), logHeight: current.logHeight, logVisible: current.logVisible },
-  )
+  return computeLayout({ width: current.terminalWidth, height: current.terminalHeight }, { sidePanelRatio: ratioForMouseX(current, mouseX), logHeight: current.logHeight, logVisible: current.logVisible })
 }
 
 /** @deprecated Removed in the root-view migration. Use logHeightForMouseY. */
 export function resizeCommandLog(current: LayoutGeometry, mouseY: number): LayoutGeometry {
-  return computeLayout(
-    { width: current.terminalWidth, height: current.terminalHeight },
-    { sidePanelRatio: current.sidePanelRatio, logHeight: logHeightForMouseY(current, mouseY), logVisible: current.logVisible },
-  )
+  return computeLayout({ width: current.terminalWidth, height: current.terminalHeight }, { sidePanelRatio: current.sidePanelRatio, logHeight: logHeightForMouseY(current, mouseY), logVisible: current.logVisible })
 }
 ```
 
@@ -1364,6 +1376,7 @@ is migrated."
 ## Task 4: The declarative binding registry
 
 **Files:**
+
 - Create: `src/ui/bindings.ts`
 - Test: `tests/ui/bindings.test.ts`
 - Read for reference: `learn-projects/lazygit/pkg/gui/options_map.go`
@@ -1373,10 +1386,12 @@ is migrated."
 Task 5 deletes it.
 
 **Interfaces:**
+
 - Consumes: `normalizeKey`, `type KeyLike`, `type KeyStroke` from `src/ui/keymap.ts`; `type AppModel` from `src/app/model.ts`; `type FocusId` from `src/ui/focus.ts`; `type ScreenMode` from `src/ui/layout.ts`.
 - Produces:
+
   ```ts
-  export const ACTIONS: readonly string[]              // frozen tuple, see Step 3
+  export const ACTIONS: readonly string[] // frozen tuple, see Step 3
   export type Action = (typeof ACTIONS)[number]
   export type BindingContext = FocusId | "global" | "modal"
 
@@ -1432,16 +1447,7 @@ Create `tests/ui/bindings.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test"
-import {
-  ACTIONS,
-  BindingRegistry,
-  GITHUNK_BINDINGS,
-  assertHandlersCover,
-  createRegistry,
-  formatHints,
-  type Binding,
-  type UiState,
-} from "../../src/ui/bindings"
+import { ACTIONS, BindingRegistry, GITHUNK_BINDINGS, assertHandlersCover, createRegistry, formatHints, type Binding, type UiState } from "../../src/ui/bindings"
 import type { AppModel } from "../../src/app/model"
 
 function model(overrides: Partial<AppModel> = {}): AppModel {
@@ -1458,7 +1464,7 @@ function model(overrides: Partial<AppModel> = {}): AppModel {
     commandLog: [],
     title: "Working Tree — Unstaged",
     commits: [],
-    ...overrides,
+    ...overrides
   } as AppModel
 }
 
@@ -1469,31 +1475,38 @@ function ui(overrides: Partial<UiState> = {}): UiState {
     modal: false,
     mainScope: "unstaged",
     selectedBranchKind: undefined,
-    ...overrides,
+    ...overrides
   }
 }
 
 describe("formatHints", () => {
   test("renders description then key, joined by a pipe", () => {
-    expect(formatHints([
-      { description: "stage", key: "space" },
-      { description: "reviewed", key: "r" },
-    ], 80)).toBe("stage: space | reviewed: r")
+    expect(
+      formatHints(
+        [
+          { description: "stage", key: "space" },
+          { description: "reviewed", key: "r" }
+        ],
+        80
+      )
+    ).toBe("stage: space | reviewed: r")
   })
 
   test("truncates with an ellipsis rather than overflowing", () => {
-    const rendered = formatHints([
-      { description: "stage", key: "space" },
-      { description: "reviewed", key: "r" },
-      { description: "discard", key: "d" },
-    ], 20)
+    const rendered = formatHints(
+      [
+        { description: "stage", key: "space" },
+        { description: "reviewed", key: "r" },
+        { description: "discard", key: "d" }
+      ],
+      20
+    )
     expect(rendered).toBe("stage: space | …")
     expect(rendered.length).toBeLessThanOrEqual(20)
   })
 
   test("keeps the first entry even when it alone exceeds the width", () => {
-    expect(formatHints([{ description: "a-very-long-description", key: "x" }], 5))
-      .toBe("a-very-long-description: x")
+    expect(formatHints([{ description: "a-very-long-description", key: "x" }], 5)).toBe("a-very-long-description: x")
   })
 
   test("renders nothing for no entries", () => {
@@ -1503,36 +1516,41 @@ describe("formatHints", () => {
 
 describe("BindingRegistry validation", () => {
   test("rejects two bindings sharing a keystroke in one context", () => {
-    expect(() => new BindingRegistry([
-      { keys: ["x"], action: "quit", description: "one" },
-      { keys: ["x"], action: "refresh", description: "two" },
-    ])).toThrow(/collision/i)
+    expect(
+      () =>
+        new BindingRegistry([
+          { keys: ["x"], action: "quit", description: "one" },
+          { keys: ["x"], action: "refresh", description: "two" }
+        ])
+    ).toThrow(/collision/i)
   })
 
   test("treats a physical uppercase name as shift plus the lowercase key", () => {
-    expect(() => new BindingRegistry([
-      { keys: ["X"], action: "quit", description: "one" },
-      { keys: ["shift+x"], action: "refresh", description: "two" },
-    ])).toThrow(/collision/i)
+    expect(
+      () =>
+        new BindingRegistry([
+          { keys: ["X"], action: "quit", description: "one" },
+          { keys: ["shift+x"], action: "refresh", description: "two" }
+        ])
+    ).toThrow(/collision/i)
   })
 
   test("allows the same keystroke in different contexts", () => {
-    expect(() => new BindingRegistry([
-      { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"] },
-      { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"] },
-    ])).not.toThrow()
+    expect(
+      () =>
+        new BindingRegistry([
+          { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"] },
+          { keys: ["d"], action: "stash-drop", description: "drop", contexts: ["stash"] }
+        ])
+    ).not.toThrow()
   })
 
   test("rejects a binding with an empty description", () => {
-    expect(() => new BindingRegistry([
-      { keys: ["x"], action: "quit", description: "" },
-    ])).toThrow(/description/i)
+    expect(() => new BindingRegistry([{ keys: ["x"], action: "quit", description: "" }])).toThrow(/description/i)
   })
 
   test("rejects an action outside the declared action list", () => {
-    expect(() => new BindingRegistry([
-      { keys: ["x"], action: "not-a-real-action" as Binding["action"], description: "nope" },
-    ])).toThrow(/action/i)
+    expect(() => new BindingRegistry([{ keys: ["x"], action: "not-a-real-action" as Binding["action"], description: "nope" }])).toThrow(/action/i)
   })
 })
 
@@ -1541,7 +1559,7 @@ describe("BindingRegistry resolution", () => {
     { keys: ["escape"], action: "back", description: "back" },
     { keys: ["escape"], action: "commit-back", description: "back", contexts: ["commits"] },
     { keys: ["escape"], action: "modal-cancel", description: "cancel", contexts: ["modal"] },
-    { keys: ["h", "left"], action: "pane-previous", description: "pane" },
+    { keys: ["h", "left"], action: "pane-previous", description: "pane" }
   ])
 
   test("prefers modal over context over global", () => {
@@ -1567,7 +1585,7 @@ describe("BindingRegistry hints", () => {
     { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"], displayOnScreen: true, available: (m) => m.reviewTarget.kind === "working-tree" },
     { keys: ["enter"], action: "inspect", description: "open", contexts: ["files"] },
     { keys: ["l", "right"], action: "pane-next", description: "pane", displayKeys: "h/l", displayOnScreen: true },
-    { keys: ["q"], action: "quit", description: "quit" },
+    { keys: ["q"], action: "quit", description: "quit" }
   ])
 
   test("includes only bindings marked for the screen", () => {
@@ -1596,7 +1614,7 @@ describe("BindingRegistry hints", () => {
   test("does not repeat a global binding whose key the context overrides", () => {
     const shadowing = new BindingRegistry([
       { keys: ["d"], action: "discard-file", description: "discard file", contexts: ["files"], displayOnScreen: true },
-      { keys: ["d"], action: "discard-selection", description: "discard lines", displayOnScreen: true },
+      { keys: ["d"], action: "discard-selection", description: "discard lines", displayOnScreen: true }
     ])
     expect(shadowing.hintsFor("files", model(), ui(), 200)).toBe("discard file: d")
   })
@@ -1606,7 +1624,7 @@ describe("BindingRegistry menu", () => {
   const registry = new BindingRegistry([
     { keys: ["space"], action: "stage-file", description: "stage", menuDescription: "stage the selected file", contexts: ["files"] },
     { keys: ["d"], action: "discard-file", description: "discard", contexts: ["files"], available: (m) => m.reviewTarget.kind === "working-tree" },
-    { keys: ["q"], action: "quit", description: "quit" },
+    { keys: ["q"], action: "quit", description: "quit" }
   ])
 
   test("groups context bindings first and uses the long description", () => {
@@ -1625,7 +1643,7 @@ describe("assertHandlersCover", () => {
   test("names every action with no handler", () => {
     const registry = new BindingRegistry([
       { keys: ["x"], action: "quit", description: "quit" },
-      { keys: ["y"], action: "refresh", description: "refresh" },
+      { keys: ["y"], action: "refresh", description: "refresh" }
     ])
     expect(() => assertHandlersCover(registry, new Set(["quit"]))).toThrow(/refresh/)
     expect(() => assertHandlersCover(registry, new Set(["quit", "refresh"]))).not.toThrow()
@@ -1740,30 +1758,78 @@ import { normalizeKey, type KeyLike, type KeyStroke } from "./keymap"
 
 export const ACTIONS = [
   // focus and layout
-  "focus-main", "focus-status", "focus-files", "focus-branches", "focus-commits", "focus-stash",
-  "command-log", "pane-next", "pane-previous",
-  "screen-mode-next", "screen-mode-previous", "keybinding-menu",
+  "focus-main",
+  "focus-status",
+  "focus-files",
+  "focus-branches",
+  "focus-commits",
+  "focus-stash",
+  "command-log",
+  "pane-next",
+  "pane-previous",
+  "screen-mode-next",
+  "screen-mode-previous",
+  "keybinding-menu",
   // list and document navigation
-  "next", "previous", "page-next", "page-previous", "goto-top", "goto-bottom",
-  "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
-  "main-half-page-down", "main-half-page-up",
-  "hunk-next", "hunk-previous", "scope-next", "scope-previous",
+  "next",
+  "previous",
+  "page-next",
+  "page-previous",
+  "goto-top",
+  "goto-bottom",
+  "main-scroll-down",
+  "main-scroll-up",
+  "main-scroll-left",
+  "main-scroll-right",
+  "main-half-page-down",
+  "main-half-page-up",
+  "hunk-next",
+  "hunk-previous",
+  "scope-next",
+  "scope-previous",
   // review targets
-  "mode-branch", "mode-working-tree", "mark-reviewed",
+  "mode-branch",
+  "mode-working-tree",
+  "mark-reviewed",
   // working tree
-  "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection",
+  "stage-file",
+  "discard-file",
+  "stage-all",
+  "stage-selection",
+  "discard-selection",
   // commits
-  "commit", "amend", "commit-drilldown", "commit-back",
+  "commit",
+  "amend",
+  "commit-drilldown",
+  "commit-back",
   // branches and remotes
-  "branch-checkout", "branch-create", "branch-delete", "branch-rename", "fetch-remote",
+  "branch-checkout",
+  "branch-create",
+  "branch-delete",
+  "branch-rename",
+  "fetch-remote",
   // stash
-  "stash-create", "stash-apply", "stash-pop", "stash-drop", "stash-inspect",
+  "stash-create",
+  "stash-apply",
+  "stash-pop",
+  "stash-drop",
+  "stash-inspect",
   // sync
-  "fetch", "pull", "push", "refresh",
+  "fetch",
+  "pull",
+  "push",
+  "refresh",
   // copy
-  "copy-menu", "copy-exact",
+  "copy-menu",
+  "copy-exact",
   // generic
-  "filter", "inspect", "back", "modal-cancel", "modal-confirm", "filter-backspace", "quit",
+  "filter",
+  "inspect",
+  "back",
+  "modal-cancel",
+  "modal-confirm",
+  "filter-backspace",
+  "quit"
 ] as const
 
 export type Action = (typeof ACTIONS)[number]
@@ -1892,10 +1958,7 @@ export class BindingRegistry {
   private orderedFor(context: BindingContext): readonly Binding[] {
     const contextBindings = this.bindings.filter((binding) => (binding.contexts ?? []).includes(context))
     const shadowed = new Set(contextBindings.flatMap((binding) => binding.keys.map((key) => strokeId(normalizeKey(key)))))
-    const globalBindings = this.bindings.filter((binding) =>
-      binding.contexts === undefined &&
-      !binding.keys.some((key) => shadowed.has(strokeId(normalizeKey(key)))),
-    )
+    const globalBindings = this.bindings.filter((binding) => binding.contexts === undefined && !binding.keys.some((key) => shadowed.has(strokeId(normalizeKey(key)))))
     return [...contextBindings, ...globalBindings]
   }
 
@@ -1907,22 +1970,18 @@ export class BindingRegistry {
   }
 
   menuFor(context: BindingContext, model: AppModel, ui: UiState): readonly MenuEntry[] {
-    const contextActions = new Set(this.bindings
-      .filter((binding) => (binding.contexts ?? []).includes(context))
-      .map((binding) => binding.action))
+    const contextActions = new Set(this.bindings.filter((binding) => (binding.contexts ?? []).includes(context)).map((binding) => binding.action))
     return this.orderedFor(context).map((binding) => ({
-      group: contextActions.has(binding.action) ? "context" as const : "global" as const,
+      group: contextActions.has(binding.action) ? ("context" as const) : ("global" as const),
       keys: displayKeyFor(binding),
       description: binding.menuDescription ?? binding.description,
-      enabled: isAvailable(binding, model, ui),
+      enabled: isAvailable(binding, model, ui)
     }))
   }
 }
 
 export function assertHandlersCover(registry: BindingRegistry, handlers: ReadonlySet<string>): void {
-  const missing = [...new Set(registry.bindings.map((binding) => binding.action))]
-    .filter((action) => !handlers.has(action))
-    .sort()
+  const missing = [...new Set(registry.bindings.map((binding) => binding.action))].filter((action) => !handlers.has(action)).sort()
   if (missing.length > 0) throw new Error(`Bindings declare actions with no handler: ${missing.join(", ")}`)
 }
 ```
@@ -1942,9 +2001,7 @@ const inCommit = (model: AppModel): boolean => model.reviewTarget.kind === "comm
  * AppController.ensureStashOperation, which permits them from a working-tree or a
  * stash review target but refuses a branch or commit one.
  */
-const stashOperation = (model: AppModel, ui: UiState): boolean =>
-  ui.hasSelectedStash &&
-  (model.reviewTarget.kind === "working-tree" || model.reviewTarget.kind === "stash")
+const stashOperation = (model: AppModel, ui: UiState): boolean => ui.hasSelectedStash && (model.reviewTarget.kind === "working-tree" || model.reviewTarget.kind === "stash")
 
 export const GITHUNK_BINDINGS: readonly Binding[] = [
   // ---- focus and layout ----
@@ -2058,7 +2115,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   // ---- modal ----
   { keys: ["escape"], action: "modal-cancel", description: "cancel", contexts: ["modal"] },
   { keys: ["enter"], action: "modal-confirm", description: "confirm", contexts: ["modal"] },
-  { keys: ["backspace"], action: "filter-backspace", description: "delete", contexts: ["modal"] },
+  { keys: ["backspace"], action: "filter-backspace", description: "delete", contexts: ["modal"] }
 ]
 
 export function createRegistry(bindings: readonly Binding[] = GITHUNK_BINDINGS): BindingRegistry {
@@ -2108,6 +2165,7 @@ been tested end to end. This task builds the harness that makes that possible
 and then migrates dispatch onto it.
 
 **Files:**
+
 - Create: `tests/helpers/shell-harness.ts`
 - Create: `tests/ui/dispatch.integration.test.ts`
 - Modify: `src/ui/root-view.ts`
@@ -2116,8 +2174,10 @@ and then migrates dispatch onto it.
 - Modify: `tests/ui/keymap.test.ts` (drop the `CORE_KEYMAP` and `Keymap` cases)
 
 **Interfaces:**
+
 - Consumes: `createRegistry`, `assertHandlersCover`, `type Action`, `type UiState` from `src/ui/bindings.ts`; `createApp` from `src/app/create-app.ts`; `createTestRenderer` from `@opentui/core/testing`.
 - Produces:
+
   ```ts
   // tests/helpers/shell-harness.ts
   export type ShellHarness = {
@@ -2131,9 +2191,9 @@ and then migrates dispatch onto it.
     cleanup(): Promise<void>
   }
   export type ShellHarnessOptions = {
-    readonly width?: number      // default 120
-    readonly height?: number     // default 40
-    readonly commits?: readonly string[]  // commit subjects to create, oldest first
+    readonly width?: number // default 120
+    readonly height?: number // default 40
+    readonly commits?: readonly string[] // commit subjects to create, oldest first
     readonly stash?: boolean
   }
   export function createShellHarness(options?: ShellHarnessOptions): Promise<ShellHarness>
@@ -2196,13 +2256,13 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     width: options.width ?? 120,
     height: options.height ?? 40,
     useMouse: true,
-    enableMouseMovement: true,
+    enableMouseMovement: true
   })
 
   const app = createApp({
     repositoryRoot: repository.path,
     runner: new GitRunner(repository.path),
-    renderer: setup.renderer,
+    renderer: setup.renderer
   })
   await app.refresh()
   await setup.flush()
@@ -2227,7 +2287,7 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
       app.destroy()
       setup.renderer.destroy()
       await repository.cleanup()
-    },
+    }
   }
 }
 ```
@@ -2243,7 +2303,9 @@ import { getMainCursorTarget } from "../../src/ui/panes/main-pane"
 
 describe("root view dispatch", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("h and l move focus between panes", async () => {
     harness = await createShellHarness()
@@ -2353,35 +2415,35 @@ is now the binding's `available` predicate** (listed in the third column). Keep
 every other guard, especially `this.mutationInFlight` and the two-press
 confirmation state.
 
-| New method | Body comes from | Delete this guard, now covered by `available` |
-| --- | --- | --- |
-| `actionStageFile()` | `handleMutationKey`, files branch, `key.name === "space"` | — |
-| `actionDiscardFile()` | files branch, `key.name === "d"` | — |
-| `actionStageAll()` | files branch, `key.name === "a"` | — |
-| `actionMarkReviewed()` | files branch, `key.name === "r"` | — |
-| `actionOpenFile()` | files branch, `key.name === "enter"` | — |
-| `actionStageSelection()` | main branch, `key.name === "space"` | the `scope === "all"` early return at the top of the main branch |
-| `actionDiscardSelection()` | main branch, `key.name === "d"` | the same `scope === "all"` early return |
-| `actionScopeCycle(direction)` | main branch, `key.name === "tab"` | — |
-| `actionBranchCheckout()` | branches branch, `key.name === "space"` | — |
-| `actionBranchCreate()` | branches branch, `key.name === "n"` | — |
-| `actionBranchDelete(force)` | branches branch, `key.name === "d"` | `selected?.kind === "local"` |
-| `actionBranchRename()` | branches branch, `key.name === "r"` | `selected?.kind === "local"` |
-| `actionFetchRemote()` | branches branch, `key.name === "f"` | the `else` that sets "Fetch is available for a selected remote" |
-| `actionBranchInspect()` | branches branch, `key.name === "enter"` | — |
-| `actionCommitDrilldown()` | commits branch, `key.name === "enter"` | — |
-| `actionCommitBack()` | the three `key.name === "escape"` commit-back blocks | `reviewTarget.kind === "commit"` |
-| `actionStashApply()` | stash branch, `key.name === "space"` | `reviewTarget.kind === "working-tree"` |
-| `actionStashPop()` | stash branch, `key.name === "g"` | same |
-| `actionStashDrop()` | stash branch, `key.name === "d"` | same |
-| `actionStashInspect()` | stash branch, `key.name === "enter"` | same |
-| `actionStashCreate()` | `key.name === "s"` | — |
-| `actionCommit()` / `actionAmend()` | the `key.name === "c"` / `amendShortcut` block | — |
-| `actionFetch()` / `actionPull()` / `actionPush()` / `actionRefresh()` | the matching blocks | — |
-| `actionModeBranch()` / `actionModeWorkingTree()` | `key.name === "b"` / `key.name === "w"` | — |
-| `actionFilter()` | branches branch, `key.name === "/"` | — |
-| `actionCopyMenu()` / `actionCopyExact()` | `handleCopyKey` | `this.focusManager.active !== "main"` |
-| `actionMoveCursor(direction)` | the six `j`/`k` blocks, dispatching on `this.focusManager.active` | — |
+| New method                                                            | Body comes from                                                   | Delete this guard, now covered by `available`                    |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `actionStageFile()`                                                   | `handleMutationKey`, files branch, `key.name === "space"`         | —                                                                |
+| `actionDiscardFile()`                                                 | files branch, `key.name === "d"`                                  | —                                                                |
+| `actionStageAll()`                                                    | files branch, `key.name === "a"`                                  | —                                                                |
+| `actionMarkReviewed()`                                                | files branch, `key.name === "r"`                                  | —                                                                |
+| `actionOpenFile()`                                                    | files branch, `key.name === "enter"`                              | —                                                                |
+| `actionStageSelection()`                                              | main branch, `key.name === "space"`                               | the `scope === "all"` early return at the top of the main branch |
+| `actionDiscardSelection()`                                            | main branch, `key.name === "d"`                                   | the same `scope === "all"` early return                          |
+| `actionScopeCycle(direction)`                                         | main branch, `key.name === "tab"`                                 | —                                                                |
+| `actionBranchCheckout()`                                              | branches branch, `key.name === "space"`                           | —                                                                |
+| `actionBranchCreate()`                                                | branches branch, `key.name === "n"`                               | —                                                                |
+| `actionBranchDelete(force)`                                           | branches branch, `key.name === "d"`                               | `selected?.kind === "local"`                                     |
+| `actionBranchRename()`                                                | branches branch, `key.name === "r"`                               | `selected?.kind === "local"`                                     |
+| `actionFetchRemote()`                                                 | branches branch, `key.name === "f"`                               | the `else` that sets "Fetch is available for a selected remote"  |
+| `actionBranchInspect()`                                               | branches branch, `key.name === "enter"`                           | —                                                                |
+| `actionCommitDrilldown()`                                             | commits branch, `key.name === "enter"`                            | —                                                                |
+| `actionCommitBack()`                                                  | the three `key.name === "escape"` commit-back blocks              | `reviewTarget.kind === "commit"`                                 |
+| `actionStashApply()`                                                  | stash branch, `key.name === "space"`                              | `reviewTarget.kind === "working-tree"`                           |
+| `actionStashPop()`                                                    | stash branch, `key.name === "g"`                                  | same                                                             |
+| `actionStashDrop()`                                                   | stash branch, `key.name === "d"`                                  | same                                                             |
+| `actionStashInspect()`                                                | stash branch, `key.name === "enter"`                              | same                                                             |
+| `actionStashCreate()`                                                 | `key.name === "s"`                                                | —                                                                |
+| `actionCommit()` / `actionAmend()`                                    | the `key.name === "c"` / `amendShortcut` block                    | —                                                                |
+| `actionFetch()` / `actionPull()` / `actionPush()` / `actionRefresh()` | the matching blocks                                               | —                                                                |
+| `actionModeBranch()` / `actionModeWorkingTree()`                      | `key.name === "b"` / `key.name === "w"`                           | —                                                                |
+| `actionFilter()`                                                      | branches branch, `key.name === "/"`                               | —                                                                |
+| `actionCopyMenu()` / `actionCopyExact()`                              | `handleCopyKey`                                                   | `this.focusManager.active !== "main"`                            |
+| `actionMoveCursor(direction)`                                         | the six `j`/`k` blocks, dispatching on `this.focusManager.active` | —                                                                |
 
 Each `available` guard removed above is already asserted by a test in
 `tests/ui/bindings.test.ts`, so removing it does not lose coverage.
@@ -2404,63 +2466,111 @@ construction:
 Add the handler set and the assertion at the end of the constructor:
 
 ```ts
-    assertHandlersCover(this.registry, HANDLED_ACTIONS)
+assertHandlersCover(this.registry, HANDLED_ACTIONS)
 ```
 
 with, at module scope:
 
 ```ts
 const HANDLED_ACTIONS: ReadonlySet<string> = new Set<Action>([
-  "focus-main", "focus-status", "focus-files", "focus-branches", "focus-commits", "focus-stash",
-  "command-log", "pane-next", "pane-previous",
-  "screen-mode-next", "screen-mode-previous", "keybinding-menu",
-  "next", "previous", "page-next", "page-previous", "goto-top", "goto-bottom",
-  "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
-  "main-half-page-down", "main-half-page-up",
-  "hunk-next", "hunk-previous", "scope-next", "scope-previous",
-  "mode-branch", "mode-working-tree", "mark-reviewed",
-  "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection",
-  "commit", "amend", "commit-drilldown", "commit-back",
-  "branch-checkout", "branch-create", "branch-delete", "branch-rename", "fetch-remote",
-  "stash-create", "stash-apply", "stash-pop", "stash-drop", "stash-inspect",
-  "fetch", "pull", "push", "refresh",
-  "copy-menu", "copy-exact",
-  "filter", "inspect", "back", "modal-cancel", "modal-confirm", "filter-backspace", "quit",
+  "focus-main",
+  "focus-status",
+  "focus-files",
+  "focus-branches",
+  "focus-commits",
+  "focus-stash",
+  "command-log",
+  "pane-next",
+  "pane-previous",
+  "screen-mode-next",
+  "screen-mode-previous",
+  "keybinding-menu",
+  "next",
+  "previous",
+  "page-next",
+  "page-previous",
+  "goto-top",
+  "goto-bottom",
+  "main-scroll-down",
+  "main-scroll-up",
+  "main-scroll-left",
+  "main-scroll-right",
+  "main-half-page-down",
+  "main-half-page-up",
+  "hunk-next",
+  "hunk-previous",
+  "scope-next",
+  "scope-previous",
+  "mode-branch",
+  "mode-working-tree",
+  "mark-reviewed",
+  "stage-file",
+  "discard-file",
+  "stage-all",
+  "stage-selection",
+  "discard-selection",
+  "commit",
+  "amend",
+  "commit-drilldown",
+  "commit-back",
+  "branch-checkout",
+  "branch-create",
+  "branch-delete",
+  "branch-rename",
+  "fetch-remote",
+  "stash-create",
+  "stash-apply",
+  "stash-pop",
+  "stash-drop",
+  "stash-inspect",
+  "fetch",
+  "pull",
+  "push",
+  "refresh",
+  "copy-menu",
+  "copy-exact",
+  "filter",
+  "inspect",
+  "back",
+  "modal-cancel",
+  "modal-confirm",
+  "filter-backspace",
+  "quit"
 ])
 ```
 
 Replace `this.handleKey` with:
 
 ```ts
-    this.handleKey = (key: KeyEvent) => {
-      const normalized = normalizeKey(key)
-      const routedKey = {
-        ...key,
-        name: normalized.name,
-        ctrl: normalized.ctrl,
-        shift: normalized.shift,
-        meta: normalized.meta,
-        option: normalized.option,
-      } as KeyEvent
+this.handleKey = (key: KeyEvent) => {
+  const normalized = normalizeKey(key)
+  const routedKey = {
+    ...key,
+    name: normalized.name,
+    ctrl: normalized.ctrl,
+    shift: normalized.shift,
+    meta: normalized.meta,
+    option: normalized.option
+  } as KeyEvent
 
-      // Dialogs consume raw characters, so modal input keeps its own path.
-      if (this.modalInputActive()) {
-        this.handleModalKey(routedKey)
-        key.preventDefault()
-        key.stopPropagation()
-        return
-      }
+  // Dialogs consume raw characters, so modal input keeps its own path.
+  if (this.modalInputActive()) {
+    this.handleModalKey(routedKey)
+    key.preventDefault()
+    key.stopPropagation()
+    return
+  }
 
-      const action = this.registry.dispatch(routedKey, {
-        context: this.focusManager.active,
-        model: this.model,
-        ui: this.uiState(),
-      })
-      if (action === undefined) return
-      this.handleAction(action, routedKey)
-      key.preventDefault()
-      key.stopPropagation()
-    }
+  const action = this.registry.dispatch(routedKey, {
+    context: this.focusManager.active,
+    model: this.model,
+    ui: this.uiState()
+  })
+  if (action === undefined) return
+  this.handleAction(action, routedKey)
+  key.preventDefault()
+  key.stopPropagation()
+}
 ```
 
 Add the UI state accessor and the action switch:
@@ -2602,11 +2712,13 @@ real repository, so h/l, tab and the relocated scope keys are covered."
 ## Task 6: Consume the arranged layout and add screen modes
 
 **Files:**
+
 - Modify: `src/ui/root-view.ts`
 - Modify: `src/ui/layout.ts` (delete the two deprecated wrappers)
 - Test: `tests/ui/dispatch.integration.test.ts` (extend)
 
 **Interfaces:**
+
 - Consumes: `computeLayout`, `widthOf`, `heightOf`, `ratioForMouseX`, `logHeightForMouseY`, `nextScreenMode`, `previousScreenMode`, `SIDE_WINDOWS`, `type LayoutGeometry`, `type ScreenMode`, `type WindowName` from `src/ui/layout.ts`.
 - Produces: `RootView.screenMode: ScreenMode` (readable by tests), and `RootView` accepting `sidePanelRatio` in `RootViewOptions` in place of `leftWidth`.
 
@@ -2617,7 +2729,9 @@ Append to `tests/ui/dispatch.integration.test.ts`:
 ```ts
 describe("screen modes and layout", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("the side region takes a third of the width by default, not thirty columns", async () => {
     harness = await createShellHarness({ width: 200, height: 40 })
@@ -2649,8 +2763,8 @@ describe("screen modes and layout", () => {
     const commits = view.geometry.windows.commits
     const branches = view.geometry.windows.branches
     const stash = view.geometry.windows.stash
-    expect((commits!.y1 - commits!.y0 + 1)).toBeGreaterThan(branches!.y1 - branches!.y0 + 1)
-    expect((stash!.y1 - stash!.y0 + 1)).toBe(3)
+    expect(commits!.y1 - commits!.y0 + 1).toBeGreaterThan(branches!.y1 - branches!.y0 + 1)
+    expect(stash!.y1 - stash!.y0 + 1).toBe(3)
 
     await harness.pressKey("5")
     const focusedStash = view.geometry.windows.stash!
@@ -2767,14 +2881,14 @@ Replace the placeholder cases in `handleAction`:
 In `installMouseHandlers`, replace the two drag handlers:
 
 ```ts
-    this.verticalSplitter.onMouseDrag = (event: MouseEvent) => {
-      this.sidePanelRatio = ratioForMouseX(this.geometry, event.x)
-      this.recomputeLayout()
-    }
-    this.horizontalSplitter.onMouseDrag = (event: MouseEvent) => {
-      this.logHeight = logHeightForMouseY(this.geometry, event.y)
-      this.recomputeLayout()
-    }
+this.verticalSplitter.onMouseDrag = (event: MouseEvent) => {
+  this.sidePanelRatio = ratioForMouseX(this.geometry, event.x)
+  this.recomputeLayout()
+}
+this.horizontalSplitter.onMouseDrag = (event: MouseEvent) => {
+  this.logHeight = logHeightForMouseY(this.geometry, event.y)
+  this.recomputeLayout()
+}
 ```
 
 Then delete `resizeLeftPane` and `resizeCommandLog` from `src/ui/layout.ts` and
@@ -2812,6 +2926,7 @@ unfocused, and +/_ cycle the three screen modes."
 ## Task 7: The hints bar and the `?` menu
 
 **Files:**
+
 - Create: `src/ui/hints-bar.ts`
 - Create: `src/ui/keybinding-menu.ts`
 - Create: `tests/ui/hints-bar.test.ts`
@@ -2819,8 +2934,10 @@ unfocused, and +/_ cycle the three screen modes."
 - Test: `tests/ui/dispatch.integration.test.ts` (extend)
 
 **Interfaces:**
+
 - Consumes: `BindingRegistry`, `type MenuEntry`, `type UiState` from `src/ui/bindings.ts`; `widthOf`, `heightOf` from `src/ui/layout.ts`.
 - Produces:
+
   ```ts
   // src/ui/hints-bar.ts
   export type HintsBarHandle = {
@@ -2865,7 +2982,7 @@ function model(overrides: Partial<AppModel> = {}): AppModel {
     commandLog: [],
     title: "Working Tree — Unstaged",
     commits: [],
-    ...overrides,
+    ...overrides
   } as AppModel
 }
 
@@ -2878,14 +2995,14 @@ describe("reviewStatusText", () => {
     const invalidated = model({
       reviewSummary: { reviewed: 17, invalidated: 2, commits: 7, files: 24, additions: 0, deletions: 0 },
       reviewTarget: { kind: "branch", baseRef: "origin/main" },
-      title: "feature/payment vs origin/main",
+      title: "feature/payment vs origin/main"
     })
     expect(reviewStatusText(invalidated)).toBe("feature/payment vs origin/main  17/24 ●  2!")
   })
 
   test("omits the progress segment when there are no files", () => {
     const empty = model({
-      reviewSummary: { reviewed: 0, invalidated: 0, commits: 0, files: 0, additions: 0, deletions: 0 },
+      reviewSummary: { reviewed: 0, invalidated: 0, commits: 0, files: 0, additions: 0, deletions: 0 }
     })
     expect(reviewStatusText(empty)).toBe("Working Tree — Unstaged")
   })
@@ -2895,7 +3012,7 @@ describe("renderMenuLines", () => {
   const entries: readonly MenuEntry[] = [
     { group: "context", keys: "space", description: "stage the selected file", enabled: true },
     { group: "context", keys: "d", description: "discard the file's changes", enabled: false },
-    { group: "global", keys: "q", description: "quit", enabled: true },
+    { group: "global", keys: "q", description: "quit", enabled: true }
   ]
 
   test("groups context bindings under the pane name and global ones after", () => {
@@ -2911,10 +3028,13 @@ describe("renderMenuLines", () => {
   })
 
   test("aligns the key column to the widest key", () => {
-    const lines = renderMenuLines([
-      { group: "context", keys: "space", description: "stage", enabled: true },
-      { group: "context", keys: "d", description: "discard", enabled: true },
-    ], "Files")
+    const lines = renderMenuLines(
+      [
+        { group: "context", keys: "space", description: "stage", enabled: true },
+        { group: "context", keys: "d", description: "discard", enabled: true }
+      ],
+      "Files"
+    )
     expect(lines[1]).toBe("  space  stage")
     expect(lines[2]).toBe("  d      discard")
   })
@@ -2950,7 +3070,7 @@ export function createHintsBar(renderer: CliRenderer): HintsBarHandle {
     selectable: false,
     wrapMode: "none",
     position: "absolute",
-    fg: HINTS_COLOR,
+    fg: HINTS_COLOR
   })
   const status = new TextRenderable(renderer, {
     id: "review-status-text",
@@ -2958,7 +3078,7 @@ export function createHintsBar(renderer: CliRenderer): HintsBarHandle {
     selectable: false,
     wrapMode: "none",
     position: "absolute",
-    fg: STATUS_COLOR,
+    fg: STATUS_COLOR
   })
   return {
     hints,
@@ -2966,7 +3086,7 @@ export function createHintsBar(renderer: CliRenderer): HintsBarHandle {
     update(hintsText: string, statusText: string) {
       hints.content = hintsText
       status.content = statusText
-    },
+    }
   }
 }
 
@@ -3020,7 +3140,7 @@ export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandl
     bottomTitle: "Escape or ? to close",
     position: "absolute",
     overflow: "hidden",
-    backgroundColor: "#101010",
+    backgroundColor: "#101010"
   })
   const text = new TextRenderable(renderer, {
     id: "keybinding-menu-text",
@@ -3028,7 +3148,7 @@ export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandl
     selectable: false,
     wrapMode: "none",
     width: "100%",
-    height: "100%",
+    height: "100%"
   })
   box.add(text)
   box.visible = false
@@ -3036,7 +3156,7 @@ export function createKeybindingMenu(renderer: CliRenderer): KeybindingMenuHandl
     box,
     update(entries: readonly MenuEntry[], contextTitle: string) {
       text.content = renderMenuLines(entries, contextTitle).join("\n")
-    },
+    }
   }
 }
 ```
@@ -3053,7 +3173,9 @@ Append to `tests/ui/dispatch.integration.test.ts`:
 ```ts
 describe("hints bar and keybinding menu", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("the hints bar changes with the focused pane", async () => {
     harness = await createShellHarness()
@@ -3108,11 +3230,11 @@ In `src/ui/root-view.ts`:
 
 - Construct and add both renderables:
   ```ts
-    this.hintsBar = createHintsBar(renderer)
-    this.keybindingMenu = createKeybindingMenu(renderer)
-    this.root.add(this.hintsBar.hints)
-    this.root.add(this.hintsBar.status)
-    this.root.add(this.keybindingMenu.box)
+  this.hintsBar = createHintsBar(renderer)
+  this.keybindingMenu = createKeybindingMenu(renderer)
+  this.root.add(this.hintsBar.hints)
+  this.root.add(this.hintsBar.status)
+  this.root.add(this.keybindingMenu.box)
   ```
 - Make `statusSegmentWidth()` real:
   ```ts
@@ -3125,41 +3247,43 @@ In `src/ui/root-view.ts`:
   `{ left: number; top: number; width: number | string; height: number | string; visible: boolean }`.
 - At the end of `applyLayout`, position and fill the bar, and centre the menu
   over the main region:
-  ```ts
-    place(this.hintsBar.hints, "hints")
-    place(this.hintsBar.status, "info")
-    const hintsWidth = widthOf(windows.hints)
-    this.hintsBar.update(
-      hintsWidth === 0 ? "" : this.registry.hintsFor(this.focusManager.active, this.model, this.uiState(), hintsWidth),
-      reviewStatusText(this.model),
-    )
 
-    const menuHost = windows.main ?? windows.hints
-    if (this.menuOpen && menuHost !== undefined) {
-      const width = Math.max(20, Math.min(72, widthOf(menuHost) - 4))
-      const height = Math.max(6, Math.min(this.geometry.terminalHeight - 4, heightOf(menuHost) - 2))
-      this.keybindingMenu.box.left = menuHost.x0 + Math.floor((widthOf(menuHost) - width) / 2)
-      this.keybindingMenu.box.top = menuHost.y0 + Math.floor((heightOf(menuHost) - height) / 2)
-      this.keybindingMenu.box.width = width
-      this.keybindingMenu.box.height = height
-      this.keybindingMenu.update(
-        this.registry.menuFor(this.focusManager.active, this.model, this.uiState()),
-        paneTitleFor(this.focusManager.active),
-      )
-    }
-    this.keybindingMenu.box.visible = this.menuOpen
+  ```ts
+  place(this.hintsBar.hints, "hints")
+  place(this.hintsBar.status, "info")
+  const hintsWidth = widthOf(windows.hints)
+  this.hintsBar.update(hintsWidth === 0 ? "" : this.registry.hintsFor(this.focusManager.active, this.model, this.uiState(), hintsWidth), reviewStatusText(this.model))
+
+  const menuHost = windows.main ?? windows.hints
+  if (this.menuOpen && menuHost !== undefined) {
+    const width = Math.max(20, Math.min(72, widthOf(menuHost) - 4))
+    const height = Math.max(6, Math.min(this.geometry.terminalHeight - 4, heightOf(menuHost) - 2))
+    this.keybindingMenu.box.left = menuHost.x0 + Math.floor((widthOf(menuHost) - width) / 2)
+    this.keybindingMenu.box.top = menuHost.y0 + Math.floor((heightOf(menuHost) - height) / 2)
+    this.keybindingMenu.box.width = width
+    this.keybindingMenu.box.height = height
+    this.keybindingMenu.update(this.registry.menuFor(this.focusManager.active, this.model, this.uiState()), paneTitleFor(this.focusManager.active))
+  }
+  this.keybindingMenu.box.visible = this.menuOpen
   ```
+
   with a module-scope lookup:
+
   ```ts
   const PANE_TITLES: Readonly<Record<FocusId, string>> = {
-    main: "Main", status: "Review", files: "Files",
-    branches: "Branches", commits: "Commits", stash: "Stash",
-    "command-log": "Command Log",
+    main: "Main",
+    status: "Review",
+    files: "Files",
+    branches: "Branches",
+    commits: "Commits",
+    stash: "Stash",
+    "command-log": "Command Log"
   }
   function paneTitleFor(focus: FocusId): string {
     return PANE_TITLES[focus]
   }
   ```
+
 - Add `private menuOpen = false`, include it in `modalInputActive()`, implement
   the action, and handle its keys in `handleModalKey` before every other modal
   branch:
@@ -3170,14 +3294,14 @@ In `src/ui/root-view.ts`:
         return
   ```
   ```ts
-    // at the top of handleModalKey
-    if (this.menuOpen) {
-      if (key.name === "escape" || key.name === "?") {
-        this.menuOpen = false
-        this.recomputeLayout()
-      }
-      return
+  // at the top of handleModalKey
+  if (this.menuOpen) {
+    if (key.name === "escape" || key.name === "?") {
+      this.menuOpen = false
+      this.recomputeLayout()
     }
+    return
+  }
   ```
 - Call `this.recomputeLayout()` at the end of `update(model)` so a model change
   that widens the status segment re-arranges the row.
@@ -3217,11 +3341,13 @@ list for the focused pane, with unavailable bindings shown as such."
 Fills in the placeholder cases left in `handleAction` by Task 5.
 
 **Files:**
+
 - Modify: `src/ui/root-view.ts`
 - Modify: `src/ui/panes/main-pane.ts`
 - Test: `tests/ui/dispatch.integration.test.ts` (extend)
 
 **Interfaces:**
+
 - Consumes: `scrollX`, `scrollY`, `maxScrollX`, `maxScrollY` on `TextRenderable` (from `@opentui/core`'s `TextBufferRenderable`); `getMainDocument`, `getMainCursorTarget`, `setMainCursorTarget` from `src/ui/panes/main-pane.ts`.
 - Produces:
   ```ts
@@ -3234,7 +3360,7 @@ Fills in the placeholder cases left in `handleAction` by Task 5.
 **Do not add a hunk-navigation function.** `MainCursorTarget` is
 `{ fileIndex, hunkIndex?, filePath?, hunkKey? }` (`main-pane.ts:10`) — it has no
 line index — and `moveMainCursor` (`main-pane.ts:50`) already builds one target
-per hunk. So `hunk-next` / `hunk-previous` *are* `moveMainCursor`, and in the
+per hunk. So `hunk-next` / `hunk-previous` _are_ `moveMainCursor`, and in the
 main pane `h`/`l` and `j`/`k` do the same thing for now. That is honest rather
 than ideal: lazygit's `j`/`k` move by line because it has a line cursor and
 githunk does not. Giving the main pane a line-granular cursor is follow-on work,
@@ -3247,7 +3373,9 @@ Append to `tests/ui/dispatch.integration.test.ts`:
 ```ts
 describe("navigation keys", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("J and K scroll the main pane while a left pane keeps focus", async () => {
     harness = await createShellHarness({ height: 20 })
@@ -3438,6 +3566,7 @@ main pane."
 ## Task 9: Divider affordance and persisted geometry
 
 **Files:**
+
 - Create: `src/ui/splitter.ts`
 - Create: `src/storage/local-state-file.ts`
 - Create: `src/ui/ui-state-store.ts`
@@ -3450,8 +3579,10 @@ main pane."
 - Modify: `tests/helpers/shell-harness.ts`
 
 **Interfaces:**
+
 - Consumes: `GitRunner` from `src/git/runner.ts`; `ratioForMouseX`, `logHeightForMouseY`, `DEFAULT_SIDE_PANEL_RATIO`, `DEFAULT_LOG_HEIGHT` from `src/ui/layout.ts`.
 - Produces:
+
   ```ts
   // src/ui/splitter.ts
   export type SplitterAxis = "vertical" | "horizontal"
@@ -3487,6 +3618,7 @@ main pane."
     save(state: UiState): Promise<void>
   }
   ```
+
   Note the name clash: `bindings.ts` also exports a `UiState`. Import the
   persisted one as `import { type UiState as PersistedUiState } from "./ui-state-store"`
   wherever both are in scope.
@@ -3555,13 +3687,11 @@ export function splitterGlyphs(axis: SplitterAxis, width: number, height: number
   if (axis === "vertical") {
     if (height <= 0 || width <= 0) return ""
     const midpoint = Math.floor(height / 2)
-    return Array.from({ length: height }, (_value, row) =>
-      hovered && row === midpoint ? VERTICAL_GRAB : VERTICAL_RULE).join("\n")
+    return Array.from({ length: height }, (_value, row) => (hovered && row === midpoint ? VERTICAL_GRAB : VERTICAL_RULE)).join("\n")
   }
   if (width <= 0 || height <= 0) return ""
   const midpoint = Math.floor(width / 2)
-  return Array.from({ length: width }, (_value, column) =>
-    hovered && column === midpoint ? HORIZONTAL_GRAB : HORIZONTAL_RULE).join("")
+  return Array.from({ length: width }, (_value, column) => (hovered && column === midpoint ? HORIZONTAL_GRAB : HORIZONTAL_RULE)).join("")
 }
 
 export type SplitterHandle = {
@@ -3575,7 +3705,7 @@ export function createSplitter(renderer: CliRenderer, axis: SplitterAxis, id: st
     id,
     position: "absolute",
     width: axis === "vertical" ? 1 : "100%",
-    height: axis === "vertical" ? "100%" : 1,
+    height: axis === "vertical" ? "100%" : 1
   })
   const text = new TextRenderable(renderer, {
     id: `${id}-glyphs`,
@@ -3584,7 +3714,7 @@ export function createSplitter(renderer: CliRenderer, axis: SplitterAxis, id: st
     wrapMode: "none",
     width: "100%",
     height: "100%",
-    fg: IDLE_COLOR,
+    fg: IDLE_COLOR
   })
   box.add(text)
   // A drag must never begin a text selection, and a selection must never drag.
@@ -3608,7 +3738,7 @@ export function createSplitter(renderer: CliRenderer, axis: SplitterAxis, id: st
       lastWidth = width
       lastHeight = height
       text.content = splitterGlyphs(axis, width, height, hovered)
-    },
+    }
   }
 }
 ```
@@ -3626,7 +3756,9 @@ import { LocalStateFile } from "../../src/storage/local-state-file"
 
 describe("LocalStateFile", () => {
   let repository: TempRepository | undefined
-  afterEach(async () => { await repository?.cleanup() })
+  afterEach(async () => {
+    await repository?.cleanup()
+  })
 
   test("returns undefined for a file that does not exist", async () => {
     repository = await createTempRepository()
@@ -3665,7 +3797,9 @@ import { UiStateStore, defaultUiState } from "../../src/ui/ui-state-store"
 
 describe("UiStateStore", () => {
   let repository: TempRepository | undefined
-  afterEach(async () => { await repository?.cleanup() })
+  afterEach(async () => {
+    await repository?.cleanup()
+  })
 
   test("returns defaults when nothing has been saved", async () => {
     repository = await createTempRepository()
@@ -3790,14 +3924,23 @@ export class LocalStateFile {
     await rename(temporary, path)
     try {
       const directory = await open(dirname(path), "r")
-      try { await directory.sync() } finally { await directory.close() }
+      try {
+        await directory.sync()
+      } finally {
+        await directory.close()
+      }
     } catch {
       // Directory fsync is not available on every supported filesystem.
     }
     const mode = (await stat(path)).mode & 0o777
     if (mode !== 0o600) {
       const fix = await open(path, "r+")
-      try { await fix.chmod(0o600); await fix.sync() } finally { await fix.close() }
+      try {
+        await fix.chmod(0o600)
+        await fix.sync()
+      } finally {
+        await fix.close()
+      }
     }
     await unlink(temporary).catch(() => undefined)
   }
@@ -3839,21 +3982,24 @@ export function defaultUiState(): UiState {
   return {
     sidePanelRatio: DEFAULT_SIDE_PANEL_RATIO,
     commandLogHeight: DEFAULT_LOG_HEIGHT,
-    commandLogVisible: false,
+    commandLogVisible: false
   }
 }
 
 function isUiState(value: unknown): value is UiState & { readonly version: 1 } {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false
   const candidate = value as Record<string, unknown>
-  return candidate.version === 1 &&
+  return (
+    candidate.version === 1 &&
     typeof candidate.sidePanelRatio === "number" &&
     Number.isFinite(candidate.sidePanelRatio) &&
-    candidate.sidePanelRatio > 0 && candidate.sidePanelRatio < 1 &&
+    candidate.sidePanelRatio > 0 &&
+    candidate.sidePanelRatio < 1 &&
     typeof candidate.commandLogHeight === "number" &&
     Number.isInteger(candidate.commandLogHeight) &&
     candidate.commandLogHeight >= MIN_LOG_HEIGHT &&
     typeof candidate.commandLogVisible === "boolean"
+  )
 }
 
 export class UiStateStore {
@@ -3881,7 +4027,7 @@ export class UiStateStore {
       return {
         sidePanelRatio: parsed.sidePanelRatio,
         commandLogHeight: parsed.commandLogHeight,
-        commandLogVisible: parsed.commandLogVisible,
+        commandLogVisible: parsed.commandLogVisible
       }
     } catch {
       return defaultUiState()
@@ -3917,8 +4063,8 @@ First extend the harness so a second shell can open the same repository. In
 and at the top of `createShellHarness`:
 
 ```ts
-  const reused = options.repository !== undefined
-  const repository = options.repository ?? await createTempRepository()
+const reused = options.repository !== undefined
+const repository = options.repository ?? (await createTempRepository())
 ```
 
 skipping the commit and stash setup when `reused` is true, and in `cleanup`
@@ -3929,7 +4075,9 @@ Append to `tests/ui/dispatch.integration.test.ts`:
 ```ts
 describe("dividers", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("dragging the vertical divider changes the side width", async () => {
     harness = await createShellHarness({ width: 160, height: 40 })
@@ -3983,47 +4131,52 @@ In `src/ui/root-view.ts`:
   `this.verticalSplitter.box.<x>`.
 - In `applyLayout`, after placing each splitter, draw its glyphs:
   ```ts
-    const vsplit = windows.vsplit
-    if (vsplit !== undefined) this.verticalSplitter.render(widthOf(vsplit), heightOf(vsplit))
-    const hsplit = windows.hsplit
-    if (hsplit !== undefined) this.horizontalSplitter.render(widthOf(hsplit), heightOf(hsplit))
+  const vsplit = windows.vsplit
+  if (vsplit !== undefined) this.verticalSplitter.render(widthOf(vsplit), heightOf(vsplit))
+  const hsplit = windows.hsplit
+  if (hsplit !== undefined) this.horizontalSplitter.render(widthOf(hsplit), heightOf(hsplit))
   ```
 - Add hover and double-click handlers in `installMouseHandlers`. OpenTUI's
   `MouseEvent` (`node_modules/@opentui/core/renderer.d.ts:144`) carries
   `type`, `button`, `x`, `y`, `modifiers`, `scroll`, `target` and `isDragging`
   — **there is no click count and no double-click event type** — so track it in
   the view:
+
   ```ts
   const DOUBLE_CLICK_MS = 400
 
   // in installMouseHandlers
-    for (const [splitter, axis] of [[this.verticalSplitter, "vertical"], [this.horizontalSplitter, "horizontal"]] as const) {
-      splitter.box.onMouseOver = () => splitter.setHovered(true)
-      splitter.box.onMouseOut = () => splitter.setHovered(false)
-      splitter.box.onMouseDown = (event: MouseEvent) => {
-        const previous = this.lastSplitterPress
-        const now = Date.now()
-        this.lastSplitterPress = { axis, x: event.x, y: event.y, at: now }
-        const isDoubleClick = previous !== undefined &&
-          previous.axis === axis &&
-          now - previous.at <= DOUBLE_CLICK_MS &&
-          Math.abs(previous.x - event.x) <= 1 &&
-          Math.abs(previous.y - event.y) <= 1
-        if (!isDoubleClick) return
-        this.lastSplitterPress = undefined
-        if (axis === "vertical") this.toggleSideCollapsed()
-        else this.toggleCommandLog()
-      }
+  for (const [splitter, axis] of [
+    [this.verticalSplitter, "vertical"],
+    [this.horizontalSplitter, "horizontal"]
+  ] as const) {
+    splitter.box.onMouseOver = () => splitter.setHovered(true)
+    splitter.box.onMouseOut = () => splitter.setHovered(false)
+    splitter.box.onMouseDown = (event: MouseEvent) => {
+      const previous = this.lastSplitterPress
+      const now = Date.now()
+      this.lastSplitterPress = { axis, x: event.x, y: event.y, at: now }
+      const isDoubleClick = previous !== undefined && previous.axis === axis && now - previous.at <= DOUBLE_CLICK_MS && Math.abs(previous.x - event.x) <= 1 && Math.abs(previous.y - event.y) <= 1
+      if (!isDoubleClick) return
+      this.lastSplitterPress = undefined
+      if (axis === "vertical") this.toggleSideCollapsed()
+      else this.toggleCommandLog()
     }
+  }
   ```
+
   with the field:
+
   ```ts
     private lastSplitterPress: { readonly axis: "vertical" | "horizontal"; readonly x: number; readonly y: number; readonly at: number } | undefined
   ```
+
   A drag clears it (`onMouseDrag` sets `this.lastSplitterPress = undefined`), so
   dragging and releasing twice in quick succession does not read as a
   double click.
+
 - Implement the two double-click behaviours, exactly as spec §8 defines them:
+
   ```ts
     /** Collapse the left region and focus main; a second double click restores both. */
     private toggleSideCollapsed(): void {
@@ -4042,12 +4195,15 @@ In `src/ui/root-view.ts`:
       this.focusManager.handleKey("@")
     }
   ```
+
   `focusManager.focus` already triggers `onChange`, which recomputes the layout;
   add an explicit `this.recomputeLayout()` to the branch that does not change
   focus.
+
 - Add the store and the persisted geometry. `RootViewOptions` gains
   `readonly onGeometryChange?: (state: PersistedUiState) => void`, called from
   the two drag handlers and from `toggleCommandLog`:
+
   ```ts
     private notifyGeometry(): void {
       this.onGeometryChange?.({
@@ -4069,8 +4225,8 @@ In `src/app/create-app.ts`:
 - In `refresh()`, on the first call only, load the persisted state and apply it
   to the view before updating:
   ```ts
-    const persisted = await uiStateStore.load()
-    view.applyPersistedGeometry(persisted)
+  const persisted = await uiStateStore.load()
+  view.applyPersistedGeometry(persisted)
   ```
   `RootView.applyPersistedGeometry(state)` sets `sidePanelRatio`, `logHeight`
   and `focusManager.logVisible`, then calls `recomputeLayout()`.
@@ -4119,6 +4275,7 @@ the reported bugs, and reading it should show what "fixed" means without
 tracing unit tests.
 
 **Files:**
+
 - Create: `tests/ui/acceptance/shell.integration.test.ts`
 - Modify: `docs/lazygit-compatibility-v0.1.md`
 - Modify: `docs/release-checklist-v0.1.md`
@@ -4134,7 +4291,9 @@ import { FOLDED_PANE_HEIGHT, MIN_LEFT_WIDTH } from "../../../src/ui/layout"
 
 describe("review shell acceptance", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("the commits pane lists the branch's commits", async () => {
     harness = await createShellHarness({ commits: ["oldest work", "middle work", "newest work"] })
@@ -4147,7 +4306,11 @@ describe("review shell acceptance", () => {
 
   test("the bottom row always says which keys the focused pane accepts", async () => {
     harness = await createShellHarness()
-    for (const [key, expected] of [["2", "stage: space"], ["3", "checkout: space"], ["5", "apply: space"]] as const) {
+    for (const [key, expected] of [
+      ["2", "stage: space"],
+      ["3", "checkout: space"],
+      ["5", "apply: space"]
+    ] as const) {
       await harness.pressKey(key)
       expect(harness.frame()).toContain(expected)
     }
@@ -4202,7 +4365,12 @@ describe("review shell acceptance", () => {
 
   test("a resize never corrupts the layout", async () => {
     harness = await createShellHarness({ width: 200, height: 50 })
-    for (const [width, height] of [[100, 30], [70, 20], [200, 50], [60, 14]] as const) {
+    for (const [width, height] of [
+      [100, 30],
+      [70, 20],
+      [200, 50],
+      [60, 14]
+    ] as const) {
       await harness.resize(width, height)
       const geometry = harness.app.view!.geometry
       expect(geometry.terminalWidth).toBe(width)
@@ -4265,6 +4433,7 @@ Owner request (2026-08-25): panes whose content overflows show a scrollbar, and 
 navigation keeps the selected line visible automatically — behavior every lazygit list has.
 
 **OpenTUI ground truth (verified against node_modules/@opentui/core 0.5.6 source):**
+
 - `TextBufferRenderable` (base of `TextRenderable`) exposes `scrollY/scrollX/maxScrollY/maxScrollX/scrollHeight`
   (`renderables/TextBufferRenderable.d.ts:59-66`); the `scrollY` setter clamps. No scrollTo/scrollBy.
 - `ScrollBarRenderable` (`renderables/ScrollBar.d.ts`) draws track+thumb natively with
@@ -4279,6 +4448,7 @@ navigation keeps the selected line visible automatically — behavior every lazy
   hook `onSizeChange` instead. Reading `text.scrollHeight` immediately after `pane.update()` is valid.
 
 **Files:**
+
 - Modify: `src/ui/panes/common.ts` — `createPane` attaches a vertical `ScrollBarRenderable`
   (width 1, absolute, top 1 / bottom 1 / right 0, default colors, no arrows) and `PaneHandle.update()`
   syncs `bar.scrollSize = text.scrollHeight`, `bar.viewportSize = text.height`,
@@ -4297,6 +4467,7 @@ navigation keeps the selected line visible automatically — behavior every lazy
   height at cursor-move time, read it from `this.geometry.windows[name]`.
 
 **Interfaces:**
+
 ```ts
 // src/ui/panes/common.ts (additions)
 export function scrollYToReveal(top: number, bottom: number, viewportLines: number): number
@@ -4314,17 +4485,18 @@ clamps at 0 and at max; single-line viewport edge cases.
 Append to `tests/ui/dispatch.integration.test.ts`:
 
 ```ts
-  test("moving down a long commit list scrolls the pane to keep the cursor visible", async () => {
-    const subjects = Array.from({ length: 30 }, (_v, i) => `commit number ${String(i).padStart(2, "0")}`)
-    harness = await createShellHarness({ commits: subjects, height: 24 })
-    await harness.pressKey("4")
-    expect(harness.frame()).toContain("commit number 00")
-    for (let moved = 0; moved < 15; moved += 1) await harness.pressKey("j")
-    const frame = harness.frame()
-    expect(frame).toContain("commit number 15") // cursor row revealed
-    expect(frame).toContain("commit number 02") // earliest rows scrolled away is fine; presence proves scroll
-  })
+test("moving down a long commit list scrolls the pane to keep the cursor visible", async () => {
+  const subjects = Array.from({ length: 30 }, (_v, i) => `commit number ${String(i).padStart(2, "0")}`)
+  harness = await createShellHarness({ commits: subjects, height: 24 })
+  await harness.pressKey("4")
+  expect(harness.frame()).toContain("commit number 00")
+  for (let moved = 0; moved < 15; moved += 1) await harness.pressKey("j")
+  const frame = harness.frame()
+  expect(frame).toContain("commit number 15") // cursor row revealed
+  expect(frame).toContain("commit number 02") // earliest rows scrolled away is fine; presence proves scroll
+})
 ```
+
 Adjust the exact assertions to the pane's real inner height; the property under test is "the newly
 selected row is on screen after the move", not specific line numbers.
 
@@ -4367,15 +4539,15 @@ keeps its placeholder for the empty case; once commits exist the bottomTitle is 
 Append to `tests/ui/dispatch.integration.test.ts` inside the existing describe:
 
 ```ts
-  test("the commits pane does not echo the selected commit's subject beneath the list", async () => {
-    harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
+test("the commits pane does not echo the selected commit's subject beneath the list", async () => {
+  harness = await createShellHarness({ commits: ["alpha commit", "beta commit", "gamma commit"] })
 
-    await harness.pressKey("4")
-    const frame = harness.frame()
-    expect(frame).toContain("gamma commit") // the row itself stays
-    expect(frame).not.toContain("1/3") // no counter/title strip below the border
-    expect(frame).toContain("revision 2") // the preview from the commits-preview suite keeps passing
-  })
+  await harness.pressKey("4")
+  const frame = harness.frame()
+  expect(frame).toContain("gamma commit") // the row itself stays
+  expect(frame).not.toContain("1/3") // no counter/title strip below the border
+  expect(frame).toContain("revision 2") // the preview from the commits-preview suite keeps passing
+})
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -4388,8 +4560,8 @@ Expected: FAIL — `1/3` appears via the current bottomTitle.
 Replace the bottomTitle assignment at `src/ui/panes/commits-pane.ts:47` with clearing it:
 
 ```ts
-  // lazygit shows nothing beneath a list; the selected row already carries the subject.
-  pane.box.bottomTitle = undefined
+// lazygit shows nothing beneath a list; the selected row already carries the subject.
+pane.box.bottomTitle = undefined
 ```
 
 - [ ] **Step 4: Sweep for siblings, report only**

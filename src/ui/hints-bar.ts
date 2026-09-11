@@ -18,7 +18,7 @@ export function createHintsBar(renderer: CliRenderer): HintsBarHandle {
     selectable: false,
     wrapMode: "none",
     position: "absolute",
-    fg: HINTS_COLOR,
+    fg: HINTS_COLOR
   })
   const status = new TextRenderable(renderer, {
     id: "review-status-text",
@@ -26,7 +26,7 @@ export function createHintsBar(renderer: CliRenderer): HintsBarHandle {
     selectable: false,
     wrapMode: "none",
     position: "absolute",
-    fg: STATUS_COLOR,
+    fg: STATUS_COLOR
   })
   return {
     hints,
@@ -34,7 +34,7 @@ export function createHintsBar(renderer: CliRenderer): HintsBarHandle {
     update(hintsText: string, statusText: string) {
       hints.content = hintsText
       status.content = statusText
-    },
+    }
   }
 }
 

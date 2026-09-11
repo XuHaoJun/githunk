@@ -29,10 +29,12 @@
 ### Task 1: Immutable contiguous list-range state
 
 **Files:**
+
 - Modify: `src/ui/list-view.ts`
 - Test: `tests/ui/list-view.test.ts`
 
 **Interfaces:**
+
 - Produces `ListRangeMode = "none" | "sticky" | "non-sticky"`.
 - Extends `ListState` with `readonly rangeMode: ListRangeMode` and optional `readonly rangeStartId?: string`.
 - Produces `getListSelectionRange(state): { readonly startIndex: number; readonly endIndex: number }`.
@@ -113,12 +115,14 @@ git commit -m "feat: add stable contiguous list ranges"
 ### Task 2: List bindings, cursor dispatch, refresh, and mouse gestures
 
 **Files:**
+
 - Modify: `src/ui/bindings.ts`
 - Modify: `src/ui/root-view.ts`
 - Test: `tests/ui/bindings.test.ts`
 - Test: `tests/ui/list-selection.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes Task 1's `ListRangeMode`, range helpers, and `setListRangeSelection`.
 - Adds `Action` values `"toggle-range-select"`, `"range-select-up"`, and `"range-select-down"`.
 - Binds `v`, `Shift+Up`, and `Shift+Down` in `files`, `branches`, `commits`, and `stash`; binds the same actions in `main` only when `ui.hasMainDocument === true`.
@@ -178,12 +182,14 @@ git commit -m "feat: route lazygit range selection keys"
 ### Task 3: Explicit batch mutation APIs with one refresh
 
 **Files:**
+
 - Modify: `src/git/mutations.ts`
 - Modify: `src/app/controller.ts`
 - Test: `tests/git/staging.integration.test.ts`
 - Test: `tests/app/controller.test.ts`
 
 **Interfaces:**
+
 - Produces `GitMutations.stageFiles(paths: readonly string[]): Promise<void>`, `GitMutations.unstageFiles(paths: readonly string[]): Promise<void>`, and `GitMutations.discardFiles(paths: readonly string[], mode: DiscardFileMode): Promise<void>`; each serializes all Git commands and invokes its configured refresh once after the batch.
 - Produces `AppController.stageFiles(paths: readonly string[]): Promise<void>`, `AppController.unstageFiles(paths: readonly string[]): Promise<void>`, `AppController.discardFiles(paths: readonly string[], mode: DiscardFileMode): Promise<void>`, `AppController.dropStashes(refs: readonly string[], options: StashDropOptions): Promise<void>`, and `AppController.deleteBranches(requests: readonly BranchDeleteRequest[]): Promise<void>`.
 - `RootViewOptions` receives explicit callbacks `onStageFiles(paths, stage)`, `onDiscardFiles(paths, mode)`, `onDropStashes(refs)`, and `onDeleteBranches(requests)` in Task 4; singular callbacks remain intact.
@@ -231,6 +237,7 @@ git commit -m "feat: add serialized batch mutations"
 ### Task 4: Range-aware Files, Branches, and Stash actions
 
 **Files:**
+
 - Modify: `src/ui/root-view.ts`
 - Modify: `src/app/create-app.ts`
 - Modify: `src/ui/branch-dialogs.ts`
@@ -241,6 +248,7 @@ git commit -m "feat: add serialized batch mutations"
 - Test: `tests/ui/list-selection.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes Task 1 range resolution and Task 3 callbacks `onStageFiles(paths, stage)`, `onDiscardFiles(paths, mode)`, `onDeleteBranches(requests)`, and `onDropStashes(refs)`.
 - Adds stable-id resolution helpers in `RootView` for the active list: inclusive rows come from `getListSelectionRange`; no model index is persisted.
 - Files range resolution expands selected directory nodes through `forEachFile`, removes duplicate paths, removes descendant duplication when a parent directory is selected, rejects any conflicted selected file before invoking Git, and chooses stage vs unstage exactly as lazygit (`stage` if any selected file has unstaged changes, otherwise unstage files with staged changes).
@@ -306,6 +314,7 @@ git commit -m "feat: apply side-pane actions to ranges"
 ### Task 5: Main diff keyboard line ranges
 
 **Files:**
+
 - Create: `src/domain/diff/line-selection.ts`
 - Modify: `src/ui/panes/main-pane.ts`
 - Modify: `src/ui/root-view.ts`
@@ -313,6 +322,7 @@ git commit -m "feat: apply side-pane actions to ranges"
 - Modify: `tests/ui/main-diff.integration.test.ts`
 
 **Interfaces:**
+
 - Produces pure `DiffLineRangeMode = "none" | "sticky" | "non-sticky"` and `DiffLineRangeState` with `lineCount`, `selectedIndex`, `rangeMode`, and optional `rangeStartIndex`.
 - Produces pure transitions `createDiffLineRangeState(document)`, `toggleDiffLineRange(state)`, `expandDiffLineRange(state, direction)`, `moveDiffLineSelection(state, direction)`, `clearDiffLineRange(state)`, `diffLineSelectionRange(state)`, and `changedIndexesInDiffLineRange(document, state)`.
 - `main-pane.ts` stores this state separately from side-list `ListState`, initializes the cursor at the first addition/deletion line, preserves it only for identical document identity/text, exposes selected changed indexes and raw offsets, and uses OpenTUI's existing UTF-16 `setSelection(start, end)` for visual selection. Display offsets include the normalized preamble and rendered line-number gutter; raw mutation indexes still come from `DiffDocument.lines`.
@@ -368,10 +378,12 @@ git commit -m "feat: select contiguous main diff lines"
 ### Task 6: Acceptance coverage, parity documentation, and final verification
 
 **Files:**
+
 - Modify: `docs/lazygit-compatibility-v0.1.md`
 - Modify: `tests/acceptance/lazygit-core-ui.test.ts`
 
 **Interfaces:**
+
 - Consumes all prior range transitions and batch callbacks.
 - Documents row 24 as `partially compatible`, explicitly listing implemented list `v`/shift ranges and main stage/discard/copy ranges, while retaining non-goals for absent commit mutations and non-contiguous selection.
 - Produces final evidence from focused tests, `bun run check`, and a real `bun run start` TUI smoke; documentation status must distinguish automated tests from manual smoke observations.
@@ -415,13 +427,16 @@ git commit -m "docs: record contiguous range parity"
 ```
 
 The branch is ready for the final whole-branch review only after the gate and smoke output are captured.
+
 ### Task 7: Restore commit drilldown compatibility regression (out-of-scope repair, not range-select)
 
 **Files:**
+
 - Modify: `src/ui/root-view.ts`
 - Test: `tests/ui/dispatch.integration.test.ts`
 
 **Reason:** Historical verification found the existing commit-files drilldown passed at `10a1840` and failed at `569ddbe`; Task 5's import rewrite removed `commitFileRows` while its runtime usages remained. This is a compatibility regression exposed while validating Task 4 and must be repaired before final acceptance. It is explicitly out-of-scope for the range-select design (spec Non-goals) and is tracked here only as a one-off repair to keep the branch green.
+
 - [ ] **Step 1: Add a focused regression assertion**
 
 Run `bun test tests/ui/dispatch.integration.test.ts` against the current branch and retain the three failing `commitsContextKind` assertions as the observable contract: Enter in Commits opens commit-files, Escape closes a menu before preserving the child, and the transient commit-files workflow opens and restores.

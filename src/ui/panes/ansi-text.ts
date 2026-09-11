@@ -54,7 +54,7 @@ function styleIdFor(buffer: PaneTextBuffer, styleIds: Map<string, number>, span:
   const id = buffer.registerStyle(`githunk.ansi.${key}`, {
     ...(span.fg === undefined ? {} : { fg: span.fg }),
     ...(span.bold === true ? { bold: true } : {}),
-    ...(span.dim === true ? { dim: true } : {}),
+    ...(span.dim === true ? { dim: true } : {})
   })
   styleIds.set(key, id)
   return id
@@ -87,11 +87,7 @@ function groupByRow(spans: readonly AnsiSpan[], offset: number): AnsiPaint {
  * Whole-document chunk rendering: correct, and what this module exists to avoid. Reached only if a
  * future OpenTUI stops exposing the buffer, so the pane degrades in speed rather than colour.
  */
-function paintAsChunks(
-  text: TextRenderable,
-  content: AnsiTextContent,
-  installed: InstalledPaneText & { readonly firstBodyRow: number },
-): InstalledPaneText {
+function paintAsChunks(text: TextRenderable, content: AnsiTextContent, installed: InstalledPaneText & { readonly firstBodyRow: number }): InstalledPaneText {
   const { text: full, firstBodyRow } = installed
   const spansByRow = groupByRow(content.spans, firstBodyRow)
   const rows = full.split("\n")
@@ -147,8 +143,8 @@ export function installAnsiText(text: TextRenderable, content: AnsiTextContent):
           for (const span of spans) {
             buffer.addHighlight(row, { start: span.start, end: span.end, styleId: styleIdFor(buffer, styleIds, span) })
           }
-        },
-      }),
+        }
+      })
     }
     painters.set(text, painter)
   }

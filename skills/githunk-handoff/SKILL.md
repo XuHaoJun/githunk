@@ -30,13 +30,13 @@ Treat the handoff as the human reviewer's durable work queue. Change code or rec
 
 ## Quick reference
 
-| Need | Command or action |
-|---|---|
-| Structured objections | `githunk handoff --json` |
-| Human-readable objections | `githunk handoff` |
+| Need                           | Command or action                                 |
+| ------------------------------ | ------------------------------------------------- |
+| Structured objections          | `githunk handoff --json`                          |
+| Human-readable objections      | `githunk handoff`                                 |
 | Disagree or intentionally skip | `githunk handoff reply --id <id> --body <reason>` |
-| Accept an objection | Edit and verify the code; write no reply |
-| Resolve an objection | Do not do this; only the reviewer can resolve it |
+| Accept an objection            | Edit and verify the code; write no reply          |
+| Resolve an objection           | Do not do this; only the reviewer can resolve it  |
 
 `UNTOUCHED` means the anchored lines stayed byte-identical after `HEAD` advanced. `DISPUTED` means those lines stayed unchanged and the agent replied. Neither is an agent-controlled status.
 

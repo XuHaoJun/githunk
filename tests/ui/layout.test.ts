@@ -1,23 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  computeLayout,
-  heightOf,
-  logHeightForMouseY,
-  nextScreenMode,
-  previousScreenMode,
-  ratioForMouseX,
-  widthOf,
-  DEFAULT_LOG_HEIGHT,
-  DEFAULT_SIDE_PANEL_RATIO,
-  MIN_LEFT_WIDTH,
-  MIN_LOG_HEIGHT,
-  MIN_MAIN_HEIGHT,
-  MIN_MAIN_WIDTH,
-  SIDE_WINDOWS,
-  SPLITTER_SIZE,
-  STATUS_PANE_HEIGHT,
-  FOLDED_PANE_HEIGHT,
-} from "../../src/ui/layout"
+import { computeLayout, heightOf, logHeightForMouseY, nextScreenMode, previousScreenMode, ratioForMouseX, widthOf, DEFAULT_LOG_HEIGHT, DEFAULT_SIDE_PANEL_RATIO, MIN_LEFT_WIDTH, MIN_LOG_HEIGHT, MIN_MAIN_HEIGHT, MIN_MAIN_WIDTH, SIDE_WINDOWS, SPLITTER_SIZE, STATUS_PANE_HEIGHT } from "../../src/ui/layout"
 
 describe("computeLayout side region", () => {
   test("sizes the side region by ratio rather than a fixed column count", () => {

@@ -13,7 +13,23 @@ import { fingerprintWorkingTreeFile, workingTreeTargetKey } from "../review/work
 import { emptyWorkingTreeReviewDatabase, WorkingTreeReviewStore } from "../review/working-tree-store"
 import { GitMutations, type SelectionMutationOptions } from "../git/mutations"
 import { CommitMutations } from "../git/commit-mutations"
-import { checkoutRemoteTracking, createBranch, deleteBranch, deleteRemoteBranch as deleteRemoteGitBranch, isBranchMerged as isGitBranchMerged, fetchRemote, listBranches, listRemoteBranches, renameBranch, switchLocal, type CheckoutRemoteTrackingOptions, type CheckoutRemoteTrackingResult, type CreateBranchOptions, type DeleteBranchOptions, type RemoteBranchSelection } from "../git/branches"
+import {
+  checkoutRemoteTracking,
+  createBranch,
+  deleteBranch,
+  deleteRemoteBranch as deleteRemoteGitBranch,
+  isBranchMerged as isGitBranchMerged,
+  fetchRemote,
+  listBranches,
+  listRemoteBranches,
+  renameBranch,
+  switchLocal,
+  type CheckoutRemoteTrackingOptions,
+  type CheckoutRemoteTrackingResult,
+  type CreateBranchOptions,
+  type DeleteBranchOptions,
+  type RemoteBranchSelection
+} from "../git/branches"
 import { listStashes, loadStash, createStash as createGitStash, applyStash as applyGitStash, popStash as popGitStash, dropStash as dropGitStash } from "../git/stash"
 import { fetch as fetchSync, pull as pullSync, push as pushSync, type FetchOptions, type PullOptions, type PushOptions, type PushResult } from "../git/sync"
 import type { StashCreateOptions, StashDropOptions, StashEntry } from "../domain/stash"
@@ -29,10 +45,7 @@ import type { SubmoduleConfig } from "../domain/submodule"
 import { listSubmodules } from "../git/submodules"
 import { MutationQueue } from "./mutation-queue"
 import { LOG_ACTIONS } from "./log-actions"
-export type WorkingTreeLoader = (
-  target: Extract<ReviewTarget, { readonly kind: "working-tree" }>,
-  options?: { readonly background?: boolean },
-) => Promise<WorkingTreeSnapshot>
+export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>, options?: { readonly background?: boolean }) => Promise<WorkingTreeSnapshot>
 export type BranchListingLoader = () => Promise<BranchListing>
 export type CommitListLoader = (range: string, filter?: string, options?: CommitListOptions) => Promise<readonly CommitSummary[]>
 export type CommitLoader = (oid: string) => Promise<CommitDetails>
@@ -46,7 +59,6 @@ export type PullRequestListLoader = () => Promise<readonly PullRequest[]>
 type BranchMutationOptions = {
   readonly refreshOnFailure?: boolean
 }
-
 
 /** The Git-backed reads a controller performs; tests replace any subset. */
 export type AppLoaders = {
@@ -71,16 +83,22 @@ const LOADER_KEYS = ["load", "loadBranches", "loadCommits", "loadCommit", "loadC
 function defaultLoaders(runner: GitRunner | undefined): AppLoaders {
   if (runner === undefined) {
     return {
-      load: async () => { throw new Error("AppController requires a GitRunner or loader") },
+      load: async () => {
+        throw new Error("AppController requires a GitRunner or loader")
+      },
       loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
       loadCommits: async () => [],
-      loadCommit: async () => { throw new Error("Commit details require a GitRunner") },
-      loadCommitFilePatch: async () => { throw new Error("Commit file patches require a GitRunner") },
+      loadCommit: async () => {
+        throw new Error("Commit details require a GitRunner")
+      },
+      loadCommitFilePatch: async () => {
+        throw new Error("Commit file patches require a GitRunner")
+      },
       loadStashes: async () => [],
       loadTags: async () => [],
       loadReflog: async () => [],
       loadWorktrees: async () => [],
-      loadSubmodules: async () => [],
+      loadSubmodules: async () => []
     }
   }
   return {
@@ -93,7 +111,7 @@ function defaultLoaders(runner: GitRunner | undefined): AppLoaders {
     loadTags: () => listTags(runner),
     loadReflog: () => listReflog(runner),
     loadWorktrees: () => listWorktrees(runner),
-    loadSubmodules: () => listSubmodules(runner),
+    loadSubmodules: () => listSubmodules(runner)
   }
 }
 
@@ -119,7 +137,7 @@ export type AppControllerOptions = Partial<AppLoaders> & {
   readonly commitMutations?: CommitMutations
   readonly reviewStore?: WorkingTreeReviewStore
 }
-function titleFor(target: ReviewTarget, branch = ""): string {
+function titleFor(target: ReviewTarget): string {
   if (target.kind === "working-tree") {
     return `Working Tree — ${target.scope[0]?.toUpperCase() ?? "A"}${target.scope.slice(1)}`
   }
@@ -158,7 +176,8 @@ function workingTreeSnapshotMatchesModel(snapshot: WorkingTreeSnapshot, model: A
     model.reviewTarget.scope !== snapshot.reviewTarget.scope ||
     model.files.length !== snapshot.files.length ||
     model.rawPatchSections.length !== snapshot.patches.length
-  ) return false
+  )
+    return false
   for (let index = 0; index < snapshot.files.length; index++) {
     const previous = model.files[index]!
     const next = snapshot.files[index]!
@@ -171,7 +190,8 @@ function workingTreeSnapshotMatchesModel(snapshot: WorkingTreeSnapshot, model: A
       previous.conflicted !== next.conflicted ||
       previous.additions !== next.additions ||
       previous.deletions !== next.deletions
-    ) return false
+    )
+      return false
   }
   for (let index = 0; index < snapshot.patches.length; index++) {
     const previous = model.rawPatchSections[index]!
@@ -186,16 +206,18 @@ function changedFilesFromDocument(document: DiffDocument): readonly ChangedFile[
     if (path === undefined || path === "/dev/null") return []
     const additions = file.lines.filter((line) => line.kind === "addition").length
     const deletions = file.lines.filter((line) => line.kind === "deletion").length
-    return [{
-      path,
-      ...(file.oldPath !== undefined && file.newPath !== undefined && file.oldPath !== "/dev/null" && file.newPath !== "/dev/null" && file.oldPath !== file.newPath ? { previousPath: file.oldPath } : {}),
-      indexStatus: ".",
-      worktreeStatus: ".",
-      untracked: false,
-      conflicted: false,
-      additions,
-      deletions,
-    }]
+    return [
+      {
+        path,
+        ...(file.oldPath !== undefined && file.newPath !== undefined && file.oldPath !== "/dev/null" && file.newPath !== "/dev/null" && file.oldPath !== file.newPath ? { previousPath: file.oldPath } : {}),
+        indexStatus: ".",
+        worktreeStatus: ".",
+        untracked: false,
+        conflicted: false,
+        additions,
+        deletions
+      }
+    ]
   })
 }
 
@@ -232,26 +254,15 @@ export class AppController {
 
   constructor(options: AppControllerOptions | GitRunner, loader?: WorkingTreeLoader) {
     const runner = options instanceof GitRunner ? options : options.runner
-    const provided: Partial<AppLoaders> = options instanceof GitRunner
-      ? (loader === undefined ? {} : { load: loader })
-      : providedLoaders(options)
+    const provided: Partial<AppLoaders> = options instanceof GitRunner ? (loader === undefined ? {} : { load: loader }) : providedLoaders(options)
     const loaders: AppLoaders = { ...defaultLoaders(runner), ...provided }
-    const repositoryRoot = options instanceof GitRunner ? options.cwd : options.repositoryRoot ?? runner?.cwd
+    const repositoryRoot = options instanceof GitRunner ? options.cwd : (options.repositoryRoot ?? runner?.cwd)
     const shouldUseDefaultReviewStore = provided.load === undefined
-    this.reviewStore = options instanceof GitRunner
-      ? shouldUseDefaultReviewStore ? new WorkingTreeReviewStore({ repositoryRoot, runner }) : undefined
-      : options.reviewStore ?? (!shouldUseDefaultReviewStore || runner === undefined || repositoryRoot === undefined ? undefined : new WorkingTreeReviewStore({ repositoryRoot, runner }))
+    this.reviewStore =
+      options instanceof GitRunner ? (shouldUseDefaultReviewStore ? new WorkingTreeReviewStore({ repositoryRoot, runner }) : undefined) : (options.reviewStore ?? (!shouldUseDefaultReviewStore || runner === undefined || repositoryRoot === undefined ? undefined : new WorkingTreeReviewStore({ repositoryRoot, runner })))
     this.runner = runner
-    this.mutations = runner === undefined
-      ? undefined
-      : options instanceof GitRunner
-        ? new GitMutations(runner)
-        : options.mutations ?? new GitMutations(runner)
-    this.commitMutations = runner === undefined
-      ? undefined
-      : options instanceof GitRunner
-        ? new CommitMutations(runner)
-        : options.commitMutations ?? new CommitMutations(runner)
+    this.mutations = runner === undefined ? undefined : options instanceof GitRunner ? new GitMutations(runner) : (options.mutations ?? new GitMutations(runner))
+    this.commitMutations = runner === undefined ? undefined : options instanceof GitRunner ? new CommitMutations(runner) : (options.commitMutations ?? new CommitMutations(runner))
     this.loadSnapshot = loaders.load
     this.loadBranchesListing = loaders.loadBranches
     this.loadCommitList = loaders.loadCommits
@@ -279,7 +290,7 @@ export class AppController {
       commandLog: runner?.log.lines() ?? [],
       ...(runner?.log === undefined ? {} : { commandLogAutoscrollArms: runner.log.autoscrollArms() }),
       title: titleFor(target),
-      commits: [],
+      commits: []
     }
   }
   get state(): AppModel {
@@ -312,18 +323,13 @@ export class AppController {
    * expired reflog, a bare or partially initialised worktree list all legitimately produce nothing,
    * so a failure only raises a banner and never aborts the refresh.
    */
-  private async loadAuxiliary<T>(
-    load: () => Promise<T>,
-    apply: (value: T) => Partial<AppModel>,
-  ): Promise<{ readonly patch: Partial<AppModel> } | { readonly warning: string }> {
+  private async loadAuxiliary<T>(load: () => Promise<T>, apply: (value: T) => Partial<AppModel>): Promise<{ readonly patch: Partial<AppModel> } | { readonly warning: string }> {
     try {
       return { patch: apply(await load()) }
     } catch (error) {
       return { warning: describeGitError(error) }
     }
   }
-
-
 
   /**
    * The last pull requests fetched, kept so a branch refresh can re-key them against the new branch
@@ -336,7 +342,7 @@ export class AppController {
     if (this.pullRequestList.length === 0) return
     const listing = this.currentState.branches
     this.setState({
-      pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? []),
+      pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? [])
     })
   }
 
@@ -365,7 +371,7 @@ export class AppController {
     this.pullRequestList = pullRequests
     const listing = this.currentState.branches
     this.setState({
-      pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? []),
+      pullRequests: pullRequestsByBranch(this.pullRequestList, listing?.localBranches ?? [], listing?.remotes ?? [])
     })
     this.onPullRequestsChanged?.(this.currentState)
   }
@@ -384,7 +390,7 @@ export class AppController {
       this.loadAuxiliary(this.loadTagsListing, (tags) => ({ tags })),
       this.loadAuxiliary(this.loadReflogListing, (reflog) => ({ reflog })),
       this.loadAuxiliary(this.loadWorktreesListing, (worktrees) => ({ worktrees })),
-      this.loadAuxiliary(this.loadSubmodulesListing, (submodules) => ({ submodules })),
+      this.loadAuxiliary(this.loadSubmodulesListing, (submodules) => ({ submodules }))
     ])
     if (generation !== this.generation) return
     let lastWarning: string | undefined
@@ -449,18 +455,22 @@ export class AppController {
   }
 
   async createBranchWithAutostash(branch: string, startPoint?: string, options: CreateBranchOptions = {}): Promise<void> {
-    await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
-      const stash = await createGitStash(runner, `Auto-stashing changes for creating new branch ${branch}`, { includeUntracked: true })
-      if (stash === undefined) {
-        await createBranch(runner, branch, startPoint, options)
-        return
-      }
-      try {
-        await createBranch(runner, branch, startPoint, options)
-      } finally {
-        await popGitStash(runner, stash.oid)
-      }
-    }), { refreshOnFailure: true })
+    await this.runBranchMutation(
+      () =>
+        this.requireRunnerOperation(async (runner) => {
+          const stash = await createGitStash(runner, `Auto-stashing changes for creating new branch ${branch}`, { includeUntracked: true })
+          if (stash === undefined) {
+            await createBranch(runner, branch, startPoint, options)
+            return
+          }
+          try {
+            await createBranch(runner, branch, startPoint, options)
+          } finally {
+            await popGitStash(runner, stash.oid)
+          }
+        }),
+      { refreshOnFailure: true }
+    )
   }
 
   async branchIsMerged(branch: string, upstream?: string): Promise<boolean> {
@@ -488,7 +498,7 @@ export class AppController {
         this.priorStashStateForRefresh = this.currentState
         this.setState({
           reviewTarget: { kind: "working-tree", scope: "all" },
-          title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch),
+          title: titleFor({ kind: "working-tree", scope: "all" })
         })
       }
     })
@@ -502,7 +512,7 @@ export class AppController {
         this.priorStashStateForRefresh = this.currentState
         this.setState({
           reviewTarget: { kind: "working-tree", scope: "all" },
-          title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch),
+          title: titleFor({ kind: "working-tree", scope: "all" })
         })
       }
     })
@@ -530,7 +540,7 @@ export class AppController {
           this.priorStashStateForRefresh = this.currentState
           this.setState({
             reviewTarget: { kind: "working-tree", scope: "all" },
-            title: titleFor({ kind: "working-tree", scope: "all" }, this.currentState.branch),
+            title: titleFor({ kind: "working-tree", scope: "all" })
           })
         }
       }
@@ -614,62 +624,64 @@ export class AppController {
     let mutationFailed = false
     let mutationError: unknown
     try {
-      await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
-        for (const request of requests) {
-          if (request.mode === "local") continue
-          if (request.remote === undefined || request.remoteBranch === undefined) {
-            throw new Error(request.mode === "remote"
-              ? "remote branch deletion requires an upstream"
-              : "local and remote deletion requires an upstream")
-          }
-        }
-        for (let index = 0; index < requests.length; index += 1) {
-          const request = requests[index]
-          if (request === undefined || request.mode !== "local-and-remote") continue
-          const merged = await isGitBranchMerged(runner, request.branch)
-          if (!merged && request.force !== true) {
-            throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
-          }
-        }
-        let localActionLogged = false
-        const remoteActionsLogged = new Set<string>()
-        for (let index = 0; index < requests.length; index += 1) {
-          const request = requests[index]
-          if (request === undefined) continue
-          if (request.mode === "local") {
-            if (!localActionLogged) {
-              this.logAction(LOG_ACTIONS.deleteLocalBranch)
-              localActionLogged = true
+      await this.runBranchMutation(
+        () =>
+          this.requireRunnerOperation(async (runner) => {
+            for (const request of requests) {
+              if (request.mode === "local") continue
+              if (request.remote === undefined || request.remoteBranch === undefined) {
+                throw new Error(request.mode === "remote" ? "remote branch deletion requires an upstream" : "local and remote deletion requires an upstream")
+              }
             }
-            await deleteBranch(runner, request.branch, request.force ? { force: true, confirmed: true } : {})
-            continue
-          }
-          if (request.mode === "remote") {
-            if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
-            affectedRemotes.add(request.remote)
-            if (!remoteActionsLogged.has(request.remote)) {
-              this.logAction(LOG_ACTIONS.deleteRemoteBranch)
-              remoteActionsLogged.add(request.remote)
+            for (let index = 0; index < requests.length; index += 1) {
+              const request = requests[index]
+              if (request === undefined || request.mode !== "local-and-remote") continue
+              const merged = await isGitBranchMerged(runner, request.branch)
+              if (!merged && request.force !== true) {
+                throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
+              }
             }
-            await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
-            continue
-          }
-          if (request.remote === undefined || request.remoteBranch === undefined) {
-            throw new Error("local and remote deletion requires an upstream")
-          }
-          affectedRemotes.add(request.remote)
-          if (!remoteActionsLogged.has(request.remote)) {
-            this.logAction(LOG_ACTIONS.deleteRemoteBranch)
-            remoteActionsLogged.add(request.remote)
-          }
-          await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
-          if (!localActionLogged) {
-            this.logAction(LOG_ACTIONS.deleteLocalBranch)
-            localActionLogged = true
-          }
-          await deleteBranch(runner, request.branch, { force: true, confirmed: true })
-        }
-      }), { refreshOnFailure: true })
+            let localActionLogged = false
+            const remoteActionsLogged = new Set<string>()
+            for (let index = 0; index < requests.length; index += 1) {
+              const request = requests[index]
+              if (request === undefined) continue
+              if (request.mode === "local") {
+                if (!localActionLogged) {
+                  this.logAction(LOG_ACTIONS.deleteLocalBranch)
+                  localActionLogged = true
+                }
+                await deleteBranch(runner, request.branch, request.force ? { force: true, confirmed: true } : {})
+                continue
+              }
+              if (request.mode === "remote") {
+                if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
+                affectedRemotes.add(request.remote)
+                if (!remoteActionsLogged.has(request.remote)) {
+                  this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+                  remoteActionsLogged.add(request.remote)
+                }
+                await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
+                continue
+              }
+              if (request.remote === undefined || request.remoteBranch === undefined) {
+                throw new Error("local and remote deletion requires an upstream")
+              }
+              affectedRemotes.add(request.remote)
+              if (!remoteActionsLogged.has(request.remote)) {
+                this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+                remoteActionsLogged.add(request.remote)
+              }
+              await deleteRemoteGitBranch(runner, request.remote, request.remoteBranch)
+              if (!localActionLogged) {
+                this.logAction(LOG_ACTIONS.deleteLocalBranch)
+                localActionLogged = true
+              }
+              await deleteBranch(runner, request.branch, { force: true, confirmed: true })
+            }
+          }),
+        { refreshOnFailure: true }
+      )
     } catch (error) {
       mutationFailed = true
       mutationError = error
@@ -688,7 +700,6 @@ export class AppController {
     for (const remote of affectedRemotes) await this.browseRemote(remote)
   }
 
-
   async deleteRemoteBranch(remote: string, branch: string): Promise<void> {
     this.logAction(LOG_ACTIONS.deleteRemoteBranch)
     await this.runBranchMutation(() => this.requireRunnerOperation((runner) => deleteRemoteGitBranch(runner, remote, branch)))
@@ -696,42 +707,43 @@ export class AppController {
   }
 
   async deleteLocalAndRemoteBranch(branch: string, remote: string, remoteBranch: string, options?: DeleteBranchOptions): Promise<void> {
-    await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
-      this.logAction(LOG_ACTIONS.deleteRemoteBranch)
-      await deleteRemoteGitBranch(runner, remote, remoteBranch)
-      this.logAction(LOG_ACTIONS.deleteLocalBranch)
-      await deleteBranch(runner, branch, options)
-    }))
+    await this.runBranchMutation(() =>
+      this.requireRunnerOperation(async (runner) => {
+        this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+        await deleteRemoteGitBranch(runner, remote, remoteBranch)
+        this.logAction(LOG_ACTIONS.deleteLocalBranch)
+        await deleteBranch(runner, branch, options)
+      })
+    )
     await this.browseRemote(remote)
   }
-  async deleteBranchFromWorktree(
-    worktreePath: string,
-    action: "remove" | "detach",
-    request: BranchDeleteRequest,
-    forceWorktree = false,
-  ): Promise<void> {
-    await this.runBranchMutation(() => this.requireRunnerOperation(async (runner) => {
-      if (request.mode === "local-and-remote" && (request.remote === undefined || request.remoteBranch === undefined)) {
-        throw new Error("local and remote deletion requires an upstream")
-      }
-      const merged = await isGitBranchMerged(runner, request.branch)
-      if (!merged && request.force !== true) {
-        throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
-      }
-      const localOptions = { force: true, confirmed: true }
-      this.logAction(LOG_ACTIONS.removeWorktree)
-      if (action === "remove") await removeWorktree(runner, worktreePath, forceWorktree)
-      else await detachWorktree(runner, worktreePath)
-      if (request.mode === "local") {
-        this.logAction(LOG_ACTIONS.deleteLocalBranch)
-        await deleteBranch(runner, request.branch, localOptions)
-        return
-      }
-      this.logAction(LOG_ACTIONS.deleteRemoteBranch)
-      await deleteRemoteGitBranch(runner, request.remote!, request.remoteBranch!)
-      this.logAction(LOG_ACTIONS.deleteLocalBranch)
-      await deleteBranch(runner, request.branch, localOptions)
-    }), { refreshOnFailure: true })
+  async deleteBranchFromWorktree(worktreePath: string, action: "remove" | "detach", request: BranchDeleteRequest, forceWorktree = false): Promise<void> {
+    await this.runBranchMutation(
+      () =>
+        this.requireRunnerOperation(async (runner) => {
+          if (request.mode === "local-and-remote" && (request.remote === undefined || request.remoteBranch === undefined)) {
+            throw new Error("local and remote deletion requires an upstream")
+          }
+          const merged = await isGitBranchMerged(runner, request.branch)
+          if (!merged && request.force !== true) {
+            throw new Error(`force deletion requires separate confirmation for ${request.branch}`)
+          }
+          const localOptions = { force: true, confirmed: true }
+          this.logAction(LOG_ACTIONS.removeWorktree)
+          if (action === "remove") await removeWorktree(runner, worktreePath, forceWorktree)
+          else await detachWorktree(runner, worktreePath)
+          if (request.mode === "local") {
+            this.logAction(LOG_ACTIONS.deleteLocalBranch)
+            await deleteBranch(runner, request.branch, localOptions)
+            return
+          }
+          this.logAction(LOG_ACTIONS.deleteRemoteBranch)
+          await deleteRemoteGitBranch(runner, request.remote!, request.remoteBranch!)
+          this.logAction(LOG_ACTIONS.deleteLocalBranch)
+          await deleteBranch(runner, request.branch, localOptions)
+        }),
+      { refreshOnFailure: true }
+    )
     if (request.mode === "local-and-remote" && request.remote !== undefined) await this.browseRemote(request.remote)
   }
 
@@ -754,8 +766,8 @@ export class AppController {
         this.setState({
           branches: {
             ...listing,
-            remotes: listing.remotes.map((candidate) => candidate.name === remote ? { ...candidate, branches } : candidate),
-          },
+            remotes: listing.remotes.map((candidate) => (candidate.name === remote ? { ...candidate, branches } : candidate))
+          }
         })
       } catch (error) {
         const banner = describeGitError(error)
@@ -767,18 +779,19 @@ export class AppController {
   async inspectBranch(branchRef: string): Promise<void> {
     await this.mutationQueue.run(async () => {
       const history = await this.loadCommitHistory(branchRef)
-      this.setState({
-        commits: history.commits,
-        ...(history.warning === undefined ? {} : { banner: history.warning }),
-      }, ["banner"])
+      this.setState(
+        {
+          commits: history.commits,
+          ...(history.warning === undefined ? {} : { banner: history.warning })
+        },
+        ["banner"]
+      )
     })
   }
 
   async checkoutRemoteTracking(remoteRef: string | RemoteBranchSelection, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult | undefined> {
     this.logAction(LOG_ACTIONS.checkoutBranch)
-    return this.runBranchMutation(() => this.requireRunnerOperation((runner) => typeof remoteRef === "string"
-      ? checkoutRemoteTracking(runner, remoteRef, options)
-      : checkoutRemoteTracking(runner, remoteRef, options)))
+    return this.runBranchMutation(() => this.requireRunnerOperation((runner) => (typeof remoteRef === "string" ? checkoutRemoteTracking(runner, remoteRef, options) : checkoutRemoteTracking(runner, remoteRef, options))))
   }
 
   private async requireRunnerOperation<T>(operation: (runner: GitRunner) => Promise<T>): Promise<T> {
@@ -838,7 +851,7 @@ export class AppController {
     const history = await this.loadCommitHistory("HEAD")
     this.setState({
       commits: history.commits,
-      ...(history.warning === undefined ? {} : { banner: history.warning }),
+      ...(history.warning === undefined ? {} : { banner: history.warning })
     })
     return true
   }
@@ -867,16 +880,13 @@ export class AppController {
     this.setState({ banner })
   }
 
-
-
-
   selectFile(path: string): void {
     const status = ownValue(this.currentState.reviewStatuses, path)
     if (status === undefined || status === "not-reviewed" || status === "reviewing") {
       this.setState({
         selectionId: path,
         focusId: path,
-        reviewStatuses: { ...(this.currentState.reviewStatuses ?? {}), [path]: "reviewing" },
+        reviewStatuses: { ...this.currentState.reviewStatuses, [path]: "reviewing" }
       })
     } else {
       this.setState({ selectionId: path, focusId: path })
@@ -885,9 +895,7 @@ export class AppController {
 
   async markFocusedFileReviewed(path?: string): Promise<void> {
     const requestedPath = path ?? this.currentState.focusId ?? this.currentState.selectionId
-    const resolvedPath = requestedPath !== undefined && this.currentState.files.some((file) => file.path === requestedPath)
-      ? requestedPath
-      : this.currentState.files[0]?.path
+    const resolvedPath = requestedPath !== undefined && this.currentState.files.some((file) => file.path === requestedPath) ? requestedPath : this.currentState.files[0]?.path
     if (resolvedPath === undefined) return
     await this.markFileReviewed(resolvedPath)
   }
@@ -902,7 +910,7 @@ export class AppController {
     const fingerprint = fingerprintWorkingTreeFile(this.currentState.reviewTarget as Extract<ReviewTarget, { kind: "working-tree" } | { kind: "stash" }>, {
       currentPath: file.path,
       previousPath: file.previousPath,
-      rawPatch: rawPatchForFile(file, indexPatchSections(this.currentState.rawPatchSections)),
+      rawPatch: rawPatchForFile(file, indexPatchSections(this.currentState.rawPatchSections))
     })
     const key = workingTreeTargetKey(this.currentState.reviewTarget as Extract<ReviewTarget, { kind: "working-tree" } | { kind: "stash" }>)
     const targetRecord = ownValue(this.reviewDatabase.targets, key) ?? { files: {} }
@@ -913,17 +921,17 @@ export class AppController {
         [key]: {
           files: {
             ...targetRecord.files,
-            [file.path]: { reviewedFingerprint: fingerprint, reviewedAt: new Date().toISOString() },
-          },
-        },
-      },
+            [file.path]: { reviewedFingerprint: fingerprint, reviewedAt: new Date().toISOString() }
+          }
+        }
+      }
     }
     this.reviewDatabase = database
     await this.reviewStore?.save(database)
-    const reviewStatuses = { ...(this.currentState.reviewStatuses ?? {}), [path]: "reviewed" as const }
+    const reviewStatuses = { ...this.currentState.reviewStatuses, [path]: "reviewed" as const }
     this.setState({
       reviewStatuses,
-      reviewSummary: this.reviewSummaryFor(reviewStatuses, this.currentState.files, this.currentState.reviewSummary?.commits ?? 0),
+      reviewSummary: this.reviewSummaryFor(reviewStatuses, this.currentState.files, this.currentState.reviewSummary?.commits ?? 0)
     })
   }
   async commit(message: string): Promise<void> {
@@ -965,8 +973,6 @@ export class AppController {
     this.logAction(LOG_ACTIONS.unstageAllFiles)
     await this.runMutation(() => this.mutations?.unstageFiles(paths), true)
   }
-
-
 
   async unstageFile(path: string): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
@@ -1093,7 +1099,11 @@ export class AppController {
     })
   }
 
-  private reviewSummaryFor(statuses: Readonly<Record<string, ReviewFileState>>, files: readonly ChangedFile[], commits = 0): {
+  private reviewSummaryFor(
+    statuses: Readonly<Record<string, ReviewFileState>>,
+    files: readonly ChangedFile[],
+    commits = 0
+  ): {
     readonly reviewed: number
     readonly invalidated: number
     readonly commits: number
@@ -1107,14 +1117,14 @@ export class AppController {
       commits,
       files: files.length,
       additions: files.reduce((total, file) => total + file.additions, 0),
-      deletions: files.reduce((total, file) => total + file.deletions, 0),
+      deletions: files.reduce((total, file) => total + file.deletions, 0)
     }
   }
 
   private async reviewForSnapshot(
     target: ReviewTarget,
     files: readonly ChangedFile[],
-    patches: readonly PatchSection[],
+    patches: readonly PatchSection[]
   ): Promise<{
     readonly statuses: Readonly<Record<string, ReviewFileState>>
     readonly sections: readonly IndexedPatchSection[]
@@ -1136,42 +1146,34 @@ export class AppController {
       const fingerprint = fingerprintWorkingTreeFile(target as Extract<ReviewTarget, { kind: "working-tree" } | { kind: "stash" }>, {
         currentPath: file.path,
         previousPath: file.previousPath,
-        rawPatch: rawPatchForFile(file, sections),
+        rawPatch: rawPatchForFile(file, sections)
       })
       statuses[file.path] = reviewStateFor(ownValue(record?.files, file.path), fingerprint)
     }
     return {
       statuses,
       sections,
-      ...(warning === undefined ? {} : { warning }),
+      ...(warning === undefined ? {} : { warning })
     }
   }
-  private preserveReviewingStatuses(
-    statuses: Readonly<Record<string, ReviewFileState>>,
-    target: ReviewTarget,
-    files: readonly ChangedFile[],
-    sections: readonly IndexedPatchSection[],
-    previousState: AppModel,
-  ): Readonly<Record<string, ReviewFileState>> {
+  private preserveReviewingStatuses(statuses: Readonly<Record<string, ReviewFileState>>, target: ReviewTarget, files: readonly ChangedFile[], sections: readonly IndexedPatchSection[], previousState: AppModel): Readonly<Record<string, ReviewFileState>> {
     const previousTarget = previousState.reviewTarget
     const previousMutableTarget = previousTarget.kind === "working-tree" || previousTarget.kind === "stash" ? previousTarget : undefined
     const mutableTarget = target.kind === "working-tree" || target.kind === "stash" ? target : undefined
-    if (
-      previousMutableTarget === undefined ||
-      mutableTarget === undefined ||
-      workingTreeTargetKey(previousMutableTarget) !== workingTreeTargetKey(mutableTarget) ||
-      !previousState.files.some((file) => ownValue(previousState.reviewStatuses, file.path) === "reviewing")
-    ) return statuses
+    if (previousMutableTarget === undefined || mutableTarget === undefined || workingTreeTargetKey(previousMutableTarget) !== workingTreeTargetKey(mutableTarget) || !previousState.files.some((file) => ownValue(previousState.reviewStatuses, file.path) === "reviewing")) return statuses
 
     const previousSections = indexPatchSections(previousState.rawPatchSections)
     const previousReviewingFingerprints = new Map<string, string>()
     for (const file of previousState.files) {
       if (ownValue(previousState.reviewStatuses, file.path) !== "reviewing") continue
-      previousReviewingFingerprints.set(file.path, fingerprintWorkingTreeFile(previousMutableTarget, {
-        currentPath: file.path,
-        previousPath: file.previousPath,
-        rawPatch: rawPatchForFile(file, previousSections),
-      }))
+      previousReviewingFingerprints.set(
+        file.path,
+        fingerprintWorkingTreeFile(previousMutableTarget, {
+          currentPath: file.path,
+          previousPath: file.previousPath,
+          rawPatch: rawPatchForFile(file, previousSections)
+        })
+      )
     }
 
     let mergedStatuses: Record<string, ReviewFileState> | undefined
@@ -1181,7 +1183,7 @@ export class AppController {
       const fingerprint = fingerprintWorkingTreeFile(mutableTarget, {
         currentPath: file.path,
         previousPath: file.previousPath,
-        rawPatch: rawPatchForFile(file, sections),
+        rawPatch: rawPatchForFile(file, sections)
       })
       if (previousFingerprint !== fingerprint || statuses[file.path] === "reviewing") continue
       mergedStatuses ??= { ...statuses }
@@ -1197,10 +1199,7 @@ export class AppController {
       return { commits: this.currentState.commits ?? [], warning }
     }
   }
-  private async refreshTarget(
-    target: Extract<ReviewTarget, { readonly kind: "working-tree" }>,
-    options: { readonly background?: boolean } = {},
-  ): Promise<void> {
+  private async refreshTarget(target: Extract<ReviewTarget, { readonly kind: "working-tree" }>, options: { readonly background?: boolean } = {}): Promise<void> {
     const previousState = this.priorStashStateForRefresh ?? this.currentState
     const generation = ++this.generation
     this.publishIfCurrent(generation, { loading: true })
@@ -1228,28 +1227,30 @@ export class AppController {
       const reviewState = this.priorStashStateForRefresh ?? this.currentState
       const reviewStatuses = this.preserveReviewingStatuses(review.statuses, snapshot.reviewTarget, snapshot.files, review.sections, reviewState)
       const reviewSummary = this.reviewSummaryFor(reviewStatuses, snapshot.files)
-      const cursor = this.currentState.reviewTarget.kind === "working-tree"
-        ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId }
-        : this.workingTreeCursor
+      const cursor = this.currentState.reviewTarget.kind === "working-tree" ? { selectionId: this.currentState.selectionId, focusId: this.currentState.focusId } : this.workingTreeCursor
       const selectionId = cursor.selectionId !== undefined && snapshot.files.some((file) => file.path === cursor.selectionId) ? cursor.selectionId : undefined
       const focusId = cursor.focusId !== undefined && snapshot.files.some((file) => file.path === cursor.focusId) ? cursor.focusId : undefined
       const warning = historyWarning ?? review.warning
-      this.setState({
-        ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
-        ...(warning === undefined ? {} : { banner: warning }),
-        ...(focusId === undefined ? {} : { focusId }),
-        repositoryRoot: snapshot.repositoryRoot,
-        branch: snapshot.branch,
-        reviewTarget: snapshot.reviewTarget,
-        files: snapshot.files,
-        patches: snapshot.patches,
-        rawPatchSections: snapshot.patches,
-        reviewStatuses,
-        reviewSummary,
-        commits,
-        loading: false,
-        title: titleFor(snapshot.reviewTarget, snapshot.branch),
-      }, ["upstream", "upstreamChoice", "banner", "selectionId", "focusId"])
+      this.setState(
+        {
+          ...(snapshot.upstream === undefined ? {} : { upstream: snapshot.upstream }),
+          ...(warning === undefined ? {} : { banner: warning }),
+          ...(selectionId === undefined ? {} : { selectionId }),
+          ...(focusId === undefined ? {} : { focusId }),
+          repositoryRoot: snapshot.repositoryRoot,
+          branch: snapshot.branch,
+          reviewTarget: snapshot.reviewTarget,
+          files: snapshot.files,
+          patches: snapshot.patches,
+          rawPatchSections: snapshot.patches,
+          reviewStatuses,
+          reviewSummary,
+          commits,
+          loading: false,
+          title: titleFor(snapshot.reviewTarget)
+        },
+        ["upstream", "upstreamChoice", "banner", "selectionId", "focusId"]
+      )
       this.priorStashStateForRefresh = undefined
     } catch (error) {
       if (generation !== this.generation) return
@@ -1269,17 +1270,20 @@ export class AppController {
       const review = await this.reviewForSnapshot(target, files, [patch])
       const reviewStatuses = this.preserveReviewingStatuses(review.statuses, target, files, review.sections, this.currentState)
       const reviewSummary = this.reviewSummaryFor(reviewStatuses, files)
-      this.setState({
-        reviewTarget: target,
-        files,
-        patches: [patch],
-        rawPatchSections: [patch],
-        reviewStatuses,
-        reviewSummary,
-        loading: false,
-        title: titleFor(target, this.currentState.branch),
-        ...(review.warning === undefined ? {} : { banner: review.warning }),
-      }, ["banner"])
+      this.setState(
+        {
+          reviewTarget: target,
+          files,
+          patches: [patch],
+          rawPatchSections: [patch],
+          reviewStatuses,
+          reviewSummary,
+          loading: false,
+          title: titleFor(target),
+          ...(review.warning === undefined ? {} : { banner: review.warning })
+        },
+        ["banner"]
+      )
     } catch (error) {
       const banner = describeGitError(error)
       this.setState({ banner })

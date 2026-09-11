@@ -25,7 +25,7 @@ function makeFile(key: string, lines: readonly string[]): ReviewFile {
     patchDigest: `patch-${key}`,
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount, newStart: 1, newCount, lines })],
-    source: "available",
+    source: "available"
   }
 }
 
@@ -59,18 +59,7 @@ describe("React review diff pane", () => {
   test("renders a persistent split scrollbox with paired left and right cells", async () => {
     const file = makeFile("src/example.ts", ["-const old = 1", "+const next = 2"])
     const state = makeState([file])
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={[toHunkReviewFile(file)]}
-        state={state}
-        layout="split"
-        width={120}
-        height={20}
-        selectedFileKey={file.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 120, height: 20, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewDiffPane files={[toHunkReviewFile(file)]} state={state} layout="split" width={120} height={20} selectedFileKey={file.key} selectedHunkIndex={0} />, { width: 120, height: 20, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -89,33 +78,21 @@ describe("React review diff pane", () => {
     const base = makeState([file])
     const state = {
       ...base,
-      feedback: [{
-        id: "feedback-1",
-        kind: "note" as const,
-        severity: "comment" as const,
-        body: "review the mode change",
-        anchor: createFileAnchor(file),
-        resolution: "active" as const,
-        createdAt: "2026-09-01T00:00:00.000Z",
-        updatedAt: "2026-09-01T00:00:00.000Z",
-      }],
+      feedback: [
+        {
+          id: "feedback-1",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "review the mode change",
+          anchor: createFileAnchor(file),
+          resolution: "active" as const,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z"
+        }
+      ]
     }
-    const replies: ReviewReplies = new Map([
-      ["feedback-1", { id: "feedback-1", body: "response from agent", at: "2026-09-01T01:00:00.000Z" }],
-    ])
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={[toHunkReviewFile(file)]}
-        state={state}
-        layout="stack"
-        width={120}
-        height={10}
-        selectedFileKey={file.key}
-        selectedHunkIndex={0}
-        replies={replies}
-      />,
-      { width: 120, height: 10 },
-    )
+    const replies: ReviewReplies = new Map([["feedback-1", { id: "feedback-1", body: "response from agent", at: "2026-09-01T01:00:00.000Z" }]])
+    const setup = await testRender(<ReviewDiffPane files={[toHunkReviewFile(file)]} state={state} layout="stack" width={120} height={10} selectedFileKey={file.key} selectedHunkIndex={0} replies={replies} />, { width: 120, height: 10 })
 
     try {
       await flush(setup)
@@ -130,18 +107,7 @@ describe("React review diff pane", () => {
   test("keeps a large review windowed instead of mounting every diff row", async () => {
     const files = Array.from({ length: 120 }, (_, index) => makeFile(`src/file-${index}.ts`, ["-const old = 1", "+const next = 2"]))
     const state = makeState(files)
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={files.map((file) => toHunkReviewFile(file))}
-        state={state}
-        layout="stack"
-        width={120}
-        height={20}
-        selectedFileKey={files[0]!.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 120, height: 20, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewDiffPane files={files.map((file) => toHunkReviewFile(file))} state={state} layout="stack" width={120} height={20} selectedFileKey={files[0]!.key} selectedHunkIndex={0} />, { width: 120, height: 20, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -152,20 +118,12 @@ describe("React review diff pane", () => {
     }
   })
   test("bounds mounted rows inside one very large file", async () => {
-    const file = makeFile("src/large.ts", Array.from({ length: 1_000 }, (_, index) => `+const line${index} = ${index}`))
-    const state = makeState([file])
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={[toHunkReviewFile(file)]}
-        state={state}
-        layout="stack"
-        width={120}
-        height={10}
-        selectedFileKey={file.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 120, height: 10, useMouse: true, enableMouseMovement: true },
+    const file = makeFile(
+      "src/large.ts",
+      Array.from({ length: 1_000 }, (_, index) => `+const line${index} = ${index}`)
     )
+    const state = makeState([file])
+    const setup = await testRender(<ReviewDiffPane files={[toHunkReviewFile(file)]} state={state} layout="stack" width={120} height={10} selectedFileKey={file.key} selectedHunkIndex={0} />, { width: 120, height: 10, useMouse: true, enableMouseMovement: true })
 
     try {
       const mountedRows = countDescendants(setup.renderer.root as unknown as TestNode, (id) => id?.includes(":stack:") === true)
@@ -176,19 +134,13 @@ describe("React review diff pane", () => {
   })
 
   test("scrolls the persistent viewport on mouse wheel input", async () => {
-    const files = Array.from({ length: 20 }, (_, index) => makeFile(`src/scroll-${index}.ts`, Array.from({ length: 10 }, () => "+const next = 2")))
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={files.map((file) => toHunkReviewFile(file))}
-        state={makeState(files)}
-        layout="stack"
-        width={120}
-        height={10}
-        selectedFileKey={files[0]!.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 120, height: 10, useMouse: true, enableMouseMovement: true },
+    const files = Array.from({ length: 20 }, (_, index) =>
+      makeFile(
+        `src/scroll-${index}.ts`,
+        Array.from({ length: 10 }, () => "+const next = 2")
+      )
     )
+    const setup = await testRender(<ReviewDiffPane files={files.map((file) => toHunkReviewFile(file))} state={makeState(files)} layout="stack" width={120} height={10} selectedFileKey={files[0]!.key} selectedHunkIndex={0} />, { width: 120, height: 10, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -205,19 +157,13 @@ describe("React review diff pane", () => {
     }
   })
   test("scrolls the persistent viewport from the native scrollbar track", async () => {
-    const files = Array.from({ length: 20 }, (_, index) => makeFile(`src/bar-${index}.ts`, Array.from({ length: 10 }, () => "+const next = 2")))
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={files.map((file) => toHunkReviewFile(file))}
-        state={makeState(files)}
-        layout="stack"
-        width={120}
-        height={10}
-        selectedFileKey={files[0]!.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 120, height: 10, useMouse: true, enableMouseMovement: true },
+    const files = Array.from({ length: 20 }, (_, index) =>
+      makeFile(
+        `src/bar-${index}.ts`,
+        Array.from({ length: 10 }, () => "+const next = 2")
+      )
     )
+    const setup = await testRender(<ReviewDiffPane files={files.map((file) => toHunkReviewFile(file))} state={makeState(files)} layout="stack" width={120} height={10} selectedFileKey={files[0]!.key} selectedHunkIndex={0} />, { width: 120, height: 10, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -227,10 +173,7 @@ describe("React review diff pane", () => {
       }
       expect(scrollBox.verticalScrollBar.visible).toBe(true)
       await act(async () => {
-        await setup.mockMouse.click(
-          scrollBox.verticalScrollBar.screenX,
-          scrollBox.verticalScrollBar.screenY + Math.floor(scrollBox.verticalScrollBar.height * 0.75),
-        )
+        await setup.mockMouse.click(scrollBox.verticalScrollBar.screenX, scrollBox.verticalScrollBar.screenY + Math.floor(scrollBox.verticalScrollBar.height * 0.75))
         await setup.renderOnce()
         await Bun.sleep(0)
         await setup.renderOnce()
@@ -242,18 +185,7 @@ describe("React review diff pane", () => {
   })
   test("shows the diff scrollbar only after crossing the content boundary", async () => {
     const exactFile = makeFile("src/exact.ts", ["-old", "+new"])
-    const exactSetup = await testRender(
-      <ReviewDiffPane
-        files={[toHunkReviewFile(exactFile)]}
-        state={makeState([exactFile])}
-        layout="stack"
-        width={120}
-        height={5}
-        selectedFileKey={exactFile.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 120, height: 5 },
-    )
+    const exactSetup = await testRender(<ReviewDiffPane files={[toHunkReviewFile(exactFile)]} state={makeState([exactFile])} layout="stack" width={120} height={5} selectedFileKey={exactFile.key} selectedHunkIndex={0} />, { width: 120, height: 5 })
     try {
       await flush(exactSetup)
       const scrollBox = exactSetup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
@@ -266,18 +198,7 @@ describe("React review diff pane", () => {
     }
 
     const overflowFile = makeFile("src/overflow.ts", ["-old", "+new", "+third"])
-    const overflowSetup = await testRender(
-      <ReviewDiffPane
-        files={[toHunkReviewFile(overflowFile)]}
-        state={makeState([overflowFile])}
-        layout="stack"
-        width={120}
-        height={5}
-        selectedFileKey={overflowFile.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 120, height: 5 },
-    )
+    const overflowSetup = await testRender(<ReviewDiffPane files={[toHunkReviewFile(overflowFile)]} state={makeState([overflowFile])} layout="stack" width={120} height={5} selectedFileKey={overflowFile.key} selectedHunkIndex={0} />, { width: 120, height: 5 })
     try {
       await flush(overflowSetup)
       const scrollBox = overflowSetup.renderer.root.findDescendantById("review-diff-scrollbox") as unknown as {
@@ -290,22 +211,8 @@ describe("React review diff pane", () => {
     }
   })
   test("renders a divider between adjacent file sections", async () => {
-    const files = [
-      makeFile("src/first.ts", ["-const old = 1", "+const next = 2"]),
-      makeFile("src/second.ts", ["-const old = 3", "+const next = 4"]),
-    ]
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={files.map((file) => toHunkReviewFile(file))}
-        state={makeState(files)}
-        layout="stack"
-        width={80}
-        height={20}
-        selectedFileKey={files[0]!.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 80, height: 20, useMouse: true, enableMouseMovement: true },
-    )
+    const files = [makeFile("src/first.ts", ["-const old = 1", "+const next = 2"]), makeFile("src/second.ts", ["-const old = 3", "+const next = 4"])]
+    const setup = await testRender(<ReviewDiffPane files={files.map((file) => toHunkReviewFile(file))} state={makeState(files)} layout="stack" width={80} height={20} selectedFileKey={files[0]!.key} selectedHunkIndex={0} />, { width: 80, height: 20, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -322,22 +229,8 @@ describe("React review diff pane", () => {
     }
   })
   test("pins the current file path above the stream", async () => {
-    const files = [
-      makeFile("src/first.ts", ["-const old = 1", "+const next = 2"]),
-      makeFile("src/second.ts", ["-const old = 3", "+const next = 4"]),
-    ]
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={files.map((file) => toHunkReviewFile(file))}
-        state={makeState(files)}
-        layout="stack"
-        width={80}
-        height={20}
-        selectedFileKey={files[0]!.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 80, height: 20, useMouse: true, enableMouseMovement: true },
-    )
+    const files = [makeFile("src/first.ts", ["-const old = 1", "+const next = 2"]), makeFile("src/second.ts", ["-const old = 3", "+const next = 4"])]
+    const setup = await testRender(<ReviewDiffPane files={files.map((file) => toHunkReviewFile(file))} state={makeState(files)} layout="stack" width={80} height={20} selectedFileKey={files[0]!.key} selectedHunkIndex={0} />, { width: 80, height: 20, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -352,19 +245,11 @@ describe("React review diff pane", () => {
   })
 
   test("a pending reveal does not drag a reader back after they scroll away", async () => {
-    const file = makeFile("src/large.ts", Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`))
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={[toHunkReviewFile(file)]}
-        state={makeState([file])}
-        layout="stack"
-        width={80}
-        height={10}
-        selectedFileKey={file.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 80, height: 10, useMouse: true, enableMouseMovement: true },
+    const file = makeFile(
+      "src/large.ts",
+      Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`)
     )
+    const setup = await testRender(<ReviewDiffPane files={[toHunkReviewFile(file)]} state={makeState([file])} layout="stack" width={80} height={10} selectedFileKey={file.key} selectedHunkIndex={0} />, { width: 80, height: 10, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -389,19 +274,11 @@ describe("React review diff pane", () => {
   })
 
   test("keeps the file and hunk visible after their headers scroll off the top", async () => {
-    const file = makeFile("src/large.ts", Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`))
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={[toHunkReviewFile(file)]}
-        state={makeState([file])}
-        layout="stack"
-        width={80}
-        height={10}
-        selectedFileKey={file.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 80, height: 10, useMouse: true, enableMouseMovement: true },
+    const file = makeFile(
+      "src/large.ts",
+      Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`)
     )
+    const setup = await testRender(<ReviewDiffPane files={[toHunkReviewFile(file)]} state={makeState([file])} layout="stack" width={80} height={10} selectedFileKey={file.key} selectedHunkIndex={0} />, { width: 80, height: 10, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -435,19 +312,7 @@ describe("React review diff pane", () => {
 
   test("omits the pinned header when the caller opts out", async () => {
     const file = makeFile("src/example.ts", ["-const old = 1", "+const next = 2"])
-    const setup = await testRender(
-      <ReviewDiffPane
-        files={[toHunkReviewFile(file)]}
-        state={makeState([file])}
-        layout="stack"
-        width={80}
-        height={20}
-        showStickyHeader={false}
-        selectedFileKey={file.key}
-        selectedHunkIndex={0}
-      />,
-      { width: 80, height: 20, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewDiffPane files={[toHunkReviewFile(file)]} state={makeState([file])} layout="stack" width={80} height={20} showStickyHeader={false} selectedFileKey={file.key} selectedHunkIndex={0} />, { width: 80, height: 20, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)

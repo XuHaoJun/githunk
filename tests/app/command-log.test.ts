@@ -51,13 +51,7 @@ describe("CommandLog", () => {
     const writer = log.outputWriter()
     writer.write("Enumerating objects: 3\n")
     writer.write("To github.com:o/r.git\n")
-    expect(texts(log.lines())).toEqual([
-      "  git push",
-      "",
-      "Git output:",
-      "Enumerating objects: 3",
-      "To github.com:o/r.git",
-    ])
+    expect(texts(log.lines())).toEqual(["  git push", "", "Git output:", "Enumerating objects: 3", "To github.com:o/r.git"])
     expect(styles(log.lines())).toEqual(["command", "", "output-heading", "output", "output"])
   })
 
@@ -101,7 +95,7 @@ describe("CommandLog", () => {
     expect(log.lines()).toHaveLength(1)
     expect(log.lines()[0]?.spans).toEqual([
       { style: "tip-label", text: "Random tip: " },
-      { style: "tip", text: "Press '@' to hide this" },
+      { style: "tip", text: "Press '@' to hide this" }
     ])
   })
 

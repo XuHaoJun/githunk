@@ -27,7 +27,7 @@ function makeFile(key: string, lines: readonly string[]): ReviewFile {
     patchDigest: `patch-${key}`,
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount, newStart: 1, newCount, lines })],
-    source: "available",
+    source: "available"
   }
 }
 
@@ -41,7 +41,9 @@ function makeController(files: readonly ReviewFile[]): ReviewWorkspaceController
     error: undefined,
     subscribe(listener: () => void) {
       listeners.add(listener)
-      return () => { listeners.delete(listener) }
+      return () => {
+        listeners.delete(listener)
+      }
     },
     dispatchIntent(intent: Parameters<ReviewWorkspaceController["dispatchIntent"]>[0]): boolean {
       try {
@@ -51,7 +53,7 @@ function makeController(files: readonly ReviewFile[]): ReviewWorkspaceController
       } catch {
         return false
       }
-    },
+    }
   }
   return controller as unknown as ReviewWorkspaceController
 }
@@ -68,7 +70,7 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 }
 function makeInteractiveSession(
   files: readonly ReviewFile[],
-  feedback: NonNullable<ReviewWorkspaceController["state"]>["feedback"],
+  feedback: NonNullable<ReviewWorkspaceController["state"]>["feedback"]
 ): {
   session: ReactReviewSession
   getState: () => NonNullable<ReviewWorkspaceController["state"]>
@@ -77,11 +79,15 @@ function makeInteractiveSession(
   let state = { ...makeController(files).state!, feedback }
   const listeners = new Set<(next: typeof state) => void>()
   const controller = {
-    get state() { return state },
+    get state() {
+      return state
+    },
     error: undefined,
     subscribe(listener: (next: typeof state) => void) {
       listeners.add(listener)
-      return () => { listeners.delete(listener) }
+      return () => {
+        listeners.delete(listener)
+      }
     },
     dispatch(action: Parameters<typeof reduceReviewState>[1]) {
       state = reduceReviewState(state, action)
@@ -97,7 +103,7 @@ function makeInteractiveSession(
       }
     },
     getExpandedSourceByGap: () => new Map(),
-    expandGap: async () => undefined,
+    expandGap: async () => undefined
   } as unknown as ReviewWorkspaceController
   return {
     session: new ReactReviewSession(controller, () => undefined),
@@ -105,20 +111,14 @@ function makeInteractiveSession(
     setState: (next) => {
       state = next
       for (const listener of listeners) listener(state)
-    },
+    }
   }
 }
 
 describe("React review workspace", () => {
   test("renders the Hunk-style header, sidebar, and continuous diff pane", async () => {
-    const files = [
-      makeFile("src/first.ts", ["-const old = 1", "+const next = 2"]),
-      makeFile("src/second.ts", ["-const before = true", "+const after = false"]),
-    ]
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession(files)} />,
-      { width: 120, height: 30 },
-    )
+    const files = [makeFile("src/first.ts", ["-const old = 1", "+const next = 2"]), makeFile("src/second.ts", ["-const before = true", "+const after = false"])]
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession(files)} />, { width: 120, height: 30 })
 
     try {
       await flush(setup)
@@ -135,14 +135,13 @@ describe("React review workspace", () => {
     }
   })
   test("shows scrollbars when the file and diff panels overflow", async () => {
-    const files = Array.from({ length: 20 }, (_, fileIndex) => makeFile(
-      `src/scroll-${fileIndex}.ts`,
-      Array.from({ length: 8 }, (_, lineIndex) => `+const line${lineIndex} = ${fileIndex}`),
-    ))
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession(files)} />,
-      { width: 120, height: 12, useMouse: true, enableMouseMovement: true },
+    const files = Array.from({ length: 20 }, (_, fileIndex) =>
+      makeFile(
+        `src/scroll-${fileIndex}.ts`,
+        Array.from({ length: 8 }, (_, lineIndex) => `+const line${lineIndex} = ${fileIndex}`)
+      )
     )
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession(files)} />, { width: 120, height: 12, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -163,10 +162,7 @@ describe("React review workspace", () => {
       expect(firstSection.width).toBe(diff.width - 1)
       expect(sidebar.verticalScrollBar.visible).toBe(true)
       await act(async () => {
-        await setup.mockMouse.click(
-          sidebar.verticalScrollBar.screenX,
-          sidebar.verticalScrollBar.screenY + Math.floor(sidebar.verticalScrollBar.height * 0.75),
-        )
+        await setup.mockMouse.click(sidebar.verticalScrollBar.screenX, sidebar.verticalScrollBar.screenY + Math.floor(sidebar.verticalScrollBar.height * 0.75))
       })
       await flush(setup)
       expect(sidebar.scrollTop).toBeGreaterThan(0)
@@ -175,14 +171,8 @@ describe("React review workspace", () => {
     }
   })
   test("hides scrollbars when the file and diff panels fit", async () => {
-    const files = [
-      makeFile("src/first.ts", ["-old", "+new"]),
-      makeFile("src/second.ts", ["-before", "+after"]),
-    ]
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession(files)} />,
-      { width: 120, height: 30 },
-    )
+    const files = [makeFile("src/first.ts", ["-old", "+new"]), makeFile("src/second.ts", ["-before", "+after"])]
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession(files)} />, { width: 120, height: 30 })
 
     try {
       await flush(setup)
@@ -199,14 +189,8 @@ describe("React review workspace", () => {
     }
   })
   test("shows the sidebar scrollbar only after crossing the viewport boundary", async () => {
-    const boundaryFiles = Array.from({ length: 5 }, (_, index) => makeFile(
-      `src/boundary-${index}.ts`,
-      ["-old", "+new"],
-    ))
-    const exactSetup = await testRender(
-      <ReviewWorkspaceApp session={makeSession(boundaryFiles.slice(0, 4))} />,
-      { width: 120, height: 12 },
-    )
+    const boundaryFiles = Array.from({ length: 5 }, (_, index) => makeFile(`src/boundary-${index}.ts`, ["-old", "+new"]))
+    const exactSetup = await testRender(<ReviewWorkspaceApp session={makeSession(boundaryFiles.slice(0, 4))} />, { width: 120, height: 12 })
     try {
       await flush(exactSetup)
       const sidebar = exactSetup.renderer.root.findDescendantById("react-review-sidebar-scrollbox") as unknown as {
@@ -218,10 +202,7 @@ describe("React review workspace", () => {
       await act(async () => exactSetup.renderer.destroy())
     }
 
-    const overflowSetup = await testRender(
-      <ReviewWorkspaceApp session={makeSession(boundaryFiles)} />,
-      { width: 120, height: 12 },
-    )
+    const overflowSetup = await testRender(<ReviewWorkspaceApp session={makeSession(boundaryFiles)} />, { width: 120, height: 12 })
     try {
       await flush(overflowSetup)
       const sidebar = overflowSetup.renderer.root.findDescendantById("react-review-sidebar-scrollbox") as unknown as {
@@ -236,7 +217,7 @@ describe("React review workspace", () => {
   test("scrolls diff with j/k while stream focus starts active", async () => {
     const file = makeFile(
       "src/scroll.ts",
-      Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`),
+      Array.from({ length: 40 }, (_, index) => `+const line${index} = ${index}`)
     )
     const setup = await testRender(<ReviewWorkspaceApp session={makeSession([file])} />, { width: 120, height: 10 })
 
@@ -267,11 +248,10 @@ describe("React review workspace", () => {
   test("routes Escape through the React host close boundary", async () => {
     const file = makeFile("src/only.ts", ["-const old = 1", "+const next = 2"])
     let closeCalls = 0
-    const session = makeSession([file], () => { closeCalls += 1 })
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={session} />,
-      { width: 120, height: 30 },
-    )
+    const session = makeSession([file], () => {
+      closeCalls += 1
+    })
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
 
     try {
       await flush(setup)
@@ -287,10 +267,7 @@ describe("React review workspace", () => {
   })
   test("cycles layout through the L key without consuming panel numbers", async () => {
     const file = makeFile("src/layout.ts", ["-const old = 1", "+const next = 2"])
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession([file])} />,
-      { width: 120, height: 30 },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession([file])} />, { width: 120, height: 30 })
 
     try {
       await flush(setup)
@@ -319,14 +296,8 @@ describe("React review workspace", () => {
     }
   })
   test("focuses lazygit panels with 0 and 1 and highlights active chrome", async () => {
-    const files = [
-      makeFile("src/first.ts", ["-old", "+new"]),
-      makeFile("src/second.ts", ["-before", "+after"]),
-    ]
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession(files)} />,
-      { width: 120, height: 30 },
-    )
+    const files = [makeFile("src/first.ts", ["-old", "+new"]), makeFile("src/second.ts", ["-before", "+after"])]
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession(files)} />, { width: 120, height: 30 })
 
     try {
       await flush(setup)
@@ -405,14 +376,8 @@ describe("React review workspace", () => {
     }
   })
   test("focuses the clicked panel and keeps its chrome highlighted", async () => {
-    const files = [
-      makeFile("src/first.ts", ["-old", "+new"]),
-      makeFile("src/second.ts", ["-before", "+after"]),
-    ]
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession(files)} />,
-      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
-    )
+    const files = [makeFile("src/first.ts", ["-old", "+new"]), makeFile("src/second.ts", ["-before", "+after"])]
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession(files)} />, { width: 120, height: 30, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -447,14 +412,8 @@ describe("React review workspace", () => {
     }
   })
   test("resizes the sidebar by dragging the center bar", async () => {
-    const files = [
-      makeFile("src/first.ts", ["-old", "+new"]),
-      makeFile("src/second.ts", ["-before", "+after"]),
-    ]
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession(files)} />,
-      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
-    )
+    const files = [makeFile("src/first.ts", ["-old", "+new"]), makeFile("src/second.ts", ["-before", "+after"])]
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession(files)} />, { width: 120, height: 30, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -462,12 +421,14 @@ describe("React review workspace", () => {
         x: number
         width: number
       }
-      const resizeBar = setup.renderer.root.findDescendantById("review-pane-resize-bar") as unknown as {
-        x: number
-        y: number
-        width: number
-        height: number
-      } | undefined
+      const resizeBar = setup.renderer.root.findDescendantById("review-pane-resize-bar") as unknown as
+        | {
+            x: number
+            y: number
+            width: number
+            height: number
+          }
+        | undefined
       const resizeGlyphs = setup.renderer.root.findDescendantById("review-pane-resize-bar-glyphs") as unknown as {
         content: { chunks: readonly { text: string }[] }
         fg: { intent: string; slot?: number }
@@ -514,10 +475,7 @@ describe("React review workspace", () => {
     }
   })
   test("uses the final release coordinate when resizing", async () => {
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession([makeFile("src/release.ts", ["-old", "+new"])])} />,
-      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession([makeFile("src/release.ts", ["-old", "+new"])])} />, { width: 120, height: 30, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -541,15 +499,9 @@ describe("React review workspace", () => {
     }
   })
   test("does not select diff content when a resize ends over it", async () => {
-    const files = [
-      makeFile("src/first.ts", ["-old", "+new"]),
-      makeFile("src/second.ts", ["-before", "+after"]),
-    ]
+    const files = [makeFile("src/first.ts", ["-old", "+new"]), makeFile("src/second.ts", ["-before", "+after"])]
     const { session, getState } = makeInteractiveSession(files, [])
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={session} />,
-      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -575,10 +527,7 @@ describe("React review workspace", () => {
     }
   })
   test("clamps the center bar to usable pane widths", async () => {
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession([makeFile("src/bounds.ts", ["-old", "+new"])])} />,
-      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession([makeFile("src/bounds.ts", ["-old", "+new"])])} />, { width: 120, height: 30, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -616,10 +565,7 @@ describe("React review workspace", () => {
     }
   })
   test("retains the dragged width across terminal resizing", async () => {
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession([makeFile("src/resize.ts", ["-old", "+new"])])} />,
-      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession([makeFile("src/resize.ts", ["-old", "+new"])])} />, { width: 120, height: 30, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -658,10 +604,7 @@ describe("React review workspace", () => {
     }
   })
   test("clears the resize gesture when the sidebar becomes hidden", async () => {
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession([makeFile("src/hide-resize.ts", ["-old", "+new"])])} />,
-      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession([makeFile("src/hide-resize.ts", ["-old", "+new"])])} />, { width: 120, height: 30, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -712,7 +655,7 @@ describe("React review workspace", () => {
         anchor: createFileAnchor(first),
         resolution: "active" as const,
         createdAt: "2026-09-08T00:00:00.000Z",
-        updatedAt: "2026-09-08T00:00:00.000Z",
+        updatedAt: "2026-09-08T00:00:00.000Z"
       },
       {
         id: "obj-b",
@@ -724,15 +667,18 @@ describe("React review workspace", () => {
         status: "handed-off" as const,
         handoff: { at: "2026-09-08T00:00:00.000Z", headOid: "0".repeat(40) },
         createdAt: "2026-09-08T00:00:00.000Z",
-        updatedAt: "2026-09-08T00:00:00.000Z",
-      },
+        updatedAt: "2026-09-08T00:00:00.000Z"
+      }
     ]
     const { session, getState } = makeInteractiveSession([first, second], feedback)
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
 
     try {
       await flush(setup)
-      await act(async () => { await setup.mockInput.typeText("L"); await Bun.sleep(30) })
+      await act(async () => {
+        await setup.mockInput.typeText("L")
+        await Bun.sleep(30)
+      })
       await flush(setup)
       const frame = setup.captureCharFrame()
       expect(frame).toContain("Objections")
@@ -744,9 +690,15 @@ describe("React review workspace", () => {
       expect(frame).toContain("Enter jump")
 
       // j then Enter selects the second entry and lands on its file.
-      await act(async () => { await setup.mockInput.typeText("j"); await Bun.sleep(30) })
+      await act(async () => {
+        await setup.mockInput.typeText("j")
+        await Bun.sleep(30)
+      })
       await flush(setup)
-      await act(async () => { await setup.mockInput.pressKey("RETURN"); await Bun.sleep(30) })
+      await act(async () => {
+        await setup.mockInput.pressKey("RETURN")
+        await Bun.sleep(30)
+      })
       await flush(setup)
       expect(setup.captureCharFrame()).not.toContain("Enter jump")
       expect(getState().selection.fileKey).toBe(second.key)
@@ -769,7 +721,7 @@ describe("React review workspace", () => {
       anchor: createFileAnchor(file),
       resolution: "active" as const,
       createdAt: "2026-09-08T00:00:00.000Z",
-      updatedAt: "2026-09-08T00:00:00.000Z",
+      updatedAt: "2026-09-08T00:00:00.000Z"
     }))
     const { session } = makeInteractiveSession([file], feedback)
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 12 })
@@ -795,16 +747,18 @@ describe("React review workspace", () => {
     // Long enough that an objection near the bottom starts off screen at 30 rows.
     const lines = Array.from({ length: 60 }, (_, index) => (index === 54 ? "+needle line" : ` context ${index}`))
     const file = makeFile("src/long.ts", lines)
-    const feedback = [{
-      id: "deep-objection",
-      kind: "note" as const,
-      severity: "blocking" as const,
-      body: "OBJECTION-MARKER deep in the file",
-      anchor: createRangeAnchor(file, { side: "new", startLine: 55, endLine: 55 }),
-      resolution: "active" as const,
-      createdAt: "2026-09-08T00:00:00.000Z",
-      updatedAt: "2026-09-08T00:00:00.000Z",
-    }]
+    const feedback = [
+      {
+        id: "deep-objection",
+        kind: "note" as const,
+        severity: "blocking" as const,
+        body: "OBJECTION-MARKER deep in the file",
+        anchor: createRangeAnchor(file, { side: "new", startLine: 55, endLine: 55 }),
+        resolution: "active" as const,
+        createdAt: "2026-09-08T00:00:00.000Z",
+        updatedAt: "2026-09-08T00:00:00.000Z"
+      }
+    ]
     const { session } = makeInteractiveSession([file], feedback)
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
 
@@ -812,9 +766,15 @@ describe("React review workspace", () => {
       await flush(setup)
       expect(setup.captureCharFrame()).not.toContain("OBJECTION-MARKER")
 
-      await act(async () => { await setup.mockInput.typeText("L"); await Bun.sleep(30) })
+      await act(async () => {
+        await setup.mockInput.typeText("L")
+        await Bun.sleep(30)
+      })
       await flush(setup)
-      await act(async () => { await setup.mockInput.pressKey("RETURN"); await Bun.sleep(60) })
+      await act(async () => {
+        await setup.mockInput.pressKey("RETURN")
+        await Bun.sleep(60)
+      })
       await flush(setup)
 
       const frame = setup.captureCharFrame()
@@ -830,10 +790,7 @@ describe("React review workspace", () => {
   })
 
   test("documents numeric panel focus in the help dialog", async () => {
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession([makeFile("src/help.ts", ["-old", "+new"])])} />,
-      { width: 120, height: 30 },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession([makeFile("src/help.ts", ["-old", "+new"])])} />, { width: 120, height: 30 })
 
     try {
       await flush(setup)
@@ -858,10 +815,7 @@ describe("React review workspace", () => {
     }
   })
   test("keeps the visible diff focused when the sidebar is hidden", async () => {
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={makeSession([makeFile("src/narrow.ts", ["-old", "+new"])])} />,
-      { width: 70, height: 30 },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={makeSession([makeFile("src/narrow.ts", ["-old", "+new"])])} />, { width: 70, height: 30 })
 
     try {
       await flush(setup)
@@ -910,16 +864,25 @@ describe("React review workspace", () => {
     const session = makeSession([file])
     let submits = 0
     const realSubmit = session.finishDialog.submit.bind(session.finishDialog)
-    session.finishDialog.submit = async () => { submits += 1; return realSubmit() }
+    session.finishDialog.submit = async () => {
+      submits += 1
+      return realSubmit()
+    }
     session.finishDialog.open()
     session.invalidate()
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
 
     try {
       await flush(setup)
-      await act(async () => { await setup.mockInput.typeText("done"); await Bun.sleep(30) })
+      await act(async () => {
+        await setup.mockInput.typeText("done")
+        await Bun.sleep(30)
+      })
       expect(session.finishDialog.getSummary()).toContain("done")
-      await act(async () => { await setup.mockInput.pressKey("RETURN"); await Bun.sleep(60) })
+      await act(async () => {
+        await setup.mockInput.pressKey("RETURN")
+        await Bun.sleep(60)
+      })
       await flush(setup)
       expect(submits).toBe(1)
       // Enter must not have been swallowed as a newline in the summary instead.
@@ -974,8 +937,8 @@ describe("React review workspace", () => {
         anchor: createFileAnchor(file),
         kind: "note",
         severity: "comment",
-        body: "please rename this",
-      },
+        body: "please rename this"
+      }
     }
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
 
@@ -1003,9 +966,13 @@ describe("React review workspace", () => {
     try {
       await flush(setup)
       expect(setup.renderer.root.findDescendantById("review-file-row:src/unreviewed-a.ts")).toBeDefined()
-      await act(async () => { await setup.mockInput.pressKey("/") })
+      await act(async () => {
+        await setup.mockInput.pressKey("/")
+      })
       await flush(setup)
-      await act(async () => { await setup.mockInput.typeText("b") })
+      await act(async () => {
+        await setup.mockInput.typeText("b")
+      })
       await flush(setup)
       const filter = setup.renderer.root.findDescendantById("review-file-filter-input") as unknown as { value: string }
       expect(filter.value).toContain("b")
@@ -1018,9 +985,9 @@ describe("React review workspace", () => {
               path: files[0]!.path,
               contentId: files[0]!.contentId,
               generationId: getState().document.generation.id,
-              viewedAt: "2026-08-28T00:00:00.000Z",
-            },
-          },
+              viewedAt: "2026-08-28T00:00:00.000Z"
+            }
+          }
         })
         session.invalidate()
       })
@@ -1045,16 +1012,18 @@ describe("React review workspace", () => {
       expect(setup.renderer.root.findDescendantById("review-file-row:src/feedback.ts")).toBeUndefined()
       controller.state = {
         ...controller.state,
-        feedback: [{
-          id: "feedback-filter",
-          kind: "note",
-          severity: "comment",
-          body: "keep this visible",
-          anchor: createFileAnchor(file),
-          resolution: "active",
-          createdAt: "2026-08-28T00:00:00.000Z",
-          updatedAt: "2026-08-28T00:00:00.000Z",
-        }],
+        feedback: [
+          {
+            id: "feedback-filter",
+            kind: "note",
+            severity: "comment",
+            body: "keep this visible",
+            anchor: createFileAnchor(file),
+            resolution: "active",
+            createdAt: "2026-08-28T00:00:00.000Z",
+            updatedAt: "2026-08-28T00:00:00.000Z"
+          }
+        ]
       }
       await act(async () => session.invalidate())
       await flush(setup)
@@ -1066,16 +1035,18 @@ describe("React review workspace", () => {
   })
   test("edits selected feedback from the React composer", async () => {
     const file = makeFile("src/edit.ts", ["-old", "+new"])
-    const feedback = [{
-      id: "edit-feedback",
-      kind: "note" as const,
-      severity: "comment" as const,
-      body: "old body",
-      anchor: createFileAnchor(file),
-      resolution: "active" as const,
-      createdAt: "2026-08-28T00:00:00.000Z",
-      updatedAt: "2026-08-28T00:00:00.000Z",
-    }]
+    const feedback = [
+      {
+        id: "edit-feedback",
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "old body",
+        anchor: createFileAnchor(file),
+        resolution: "active" as const,
+        createdAt: "2026-08-28T00:00:00.000Z",
+        updatedAt: "2026-08-28T00:00:00.000Z"
+      }
+    ]
     const { session, getState } = makeInteractiveSession([file], feedback)
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
 
@@ -1091,7 +1062,6 @@ describe("React review workspace", () => {
         await Bun.sleep(30)
       })
       await flush(setup)
-      const body = setup.renderer.root.findDescendantById("review-feedback-body") as unknown as { plainText: string }
       await act(async () => {
         await setup.mockInput.typeText(" revised")
         await Bun.sleep(30)
@@ -1109,17 +1079,19 @@ describe("React review workspace", () => {
   })
   test("does not show resolved orphaned feedback in recovery rows", async () => {
     const file = makeFile("src/current.ts", ["-old", "+new"])
-    const feedback = [{
-      id: "resolved-orphan",
-      kind: "note" as const,
-      severity: "comment" as const,
-      body: "already closed",
-      anchor: { kind: "file" as const, fileKey: "src/deleted.ts", contentId: "gone" },
-      resolution: "active" as const,
-      status: "resolved" as const,
-      createdAt: "2026-08-28T00:00:00.000Z",
-      updatedAt: "2026-08-28T00:00:00.000Z",
-    }]
+    const feedback = [
+      {
+        id: "resolved-orphan",
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "already closed",
+        anchor: { kind: "file" as const, fileKey: "src/deleted.ts", contentId: "gone" },
+        resolution: "active" as const,
+        status: "resolved" as const,
+        createdAt: "2026-08-28T00:00:00.000Z",
+        updatedAt: "2026-08-28T00:00:00.000Z"
+      }
+    ]
     const { session } = makeInteractiveSession([file], feedback)
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
 
@@ -1142,7 +1114,7 @@ describe("React review workspace", () => {
         anchor: createFileAnchor(file),
         resolution: "stale" as const,
         createdAt: "2026-08-28T00:00:00.000Z",
-        updatedAt: "2026-08-28T00:00:00.000Z",
+        updatedAt: "2026-08-28T00:00:00.000Z"
       },
       {
         id: "reanchor-feedback",
@@ -1152,8 +1124,8 @@ describe("React review workspace", () => {
         anchor: staleRange,
         resolution: "stale" as const,
         createdAt: "2026-08-28T00:00:00.000Z",
-        updatedAt: "2026-08-28T00:00:00.000Z",
-      },
+        updatedAt: "2026-08-28T00:00:00.000Z"
+      }
     ]
     const { session, getState } = makeInteractiveSession([file], feedback)
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
@@ -1188,18 +1160,15 @@ describe("React review workspace", () => {
   test("selects split sides semantically and creates an exact same-side range", async () => {
     const file = makeFile("src/semantic-click.ts", ["-old one", "-old two", "+new one", "+new two"])
     const { session, getState } = makeInteractiveSession([file], [])
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={session} />,
-      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
       const firstRow = setup.renderer.root.findDescendantById("src/semantic-click.ts:split:0:change:0:0") as unknown as { x: number; y: number; width: number }
       const secondRow = setup.renderer.root.findDescendantById("src/semantic-click.ts:split:0:change:1:1") as unknown as { x: number; y: number; width: number }
       await act(async () => {
-        await setup.mockMouse.click(firstRow.x + Math.max(1, Math.floor(firstRow.width * 3 / 4)), firstRow.y)
-        await setup.mockMouse.click(secondRow.x + Math.max(1, Math.floor(secondRow.width * 3 / 4)), secondRow.y)
+        await setup.mockMouse.click(firstRow.x + Math.max(1, Math.floor((firstRow.width * 3) / 4)), firstRow.y)
+        await setup.mockMouse.click(secondRow.x + Math.max(1, Math.floor((secondRow.width * 3) / 4)), secondRow.y)
       })
       await flush(setup)
       expect(getState().lineSelection).toMatchObject({ fileKey: file.key, hunkIndex: 0, side: "new", line: 2 })
@@ -1216,30 +1185,27 @@ describe("React review workspace", () => {
   test("drops a pending range when the document generation changes", async () => {
     const file = makeFile("src/refresh-range.ts", ["-old one", "-old two", "+new one", "+new two"])
     const { session, getState, setState } = makeInteractiveSession([file], [])
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={session} />,
-      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
       const firstRow = setup.renderer.root.findDescendantById("src/refresh-range.ts:split:0:change:0:0") as unknown as { x: number; y: number; width: number }
       await act(async () => {
-        await setup.mockMouse.click(firstRow.x + Math.max(1, Math.floor(firstRow.width * 3 / 4)), firstRow.y)
+        await setup.mockMouse.click(firstRow.x + Math.max(1, Math.floor((firstRow.width * 3) / 4)), firstRow.y)
       })
       await flush(setup)
       const refreshedFile: ReviewFile = {
         ...file,
         contentId: "content-refresh-range",
         patchDigest: "patch-refresh-range",
-        hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: ["-changed one", "-changed two", "+fresh one", "+fresh two"] })],
+        hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 2, newStart: 1, newCount: 2, lines: ["-changed one", "-changed two", "+fresh one", "+fresh two"] })]
       }
       const headOid = "d".repeat(40)
       const refreshedDocument = createReviewDocument({
         identity: createReviewIdentity({ headRef: "refs/heads/feature", headOid, baseRef: "refs/heads/main" }),
         generation: createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "c".repeat(40), headOid }),
         commits: [],
-        files: [refreshedFile],
+        files: [refreshedFile]
       })
       await act(async () => {
         setState({ ...getState(), document: refreshedDocument })
@@ -1248,7 +1214,7 @@ describe("React review workspace", () => {
       await flush(setup)
       const secondRow = setup.renderer.root.findDescendantById("src/refresh-range.ts:split:0:change:1:1") as unknown as { x: number; y: number; width: number }
       await act(async () => {
-        await setup.mockMouse.click(secondRow.x + Math.max(1, Math.floor(secondRow.width * 3 / 4)), secondRow.y)
+        await setup.mockMouse.click(secondRow.x + Math.max(1, Math.floor((secondRow.width * 3) / 4)), secondRow.y)
         setup.mockInput.typeText("c")
         await Bun.sleep(30)
       })
@@ -1262,10 +1228,7 @@ describe("React review workspace", () => {
     const fileA = makeFile("src/range-a.ts", ["-old", "+new"])
     const fileB = makeFile("src/range-b.ts", ["-old one", "-old two", "+new one", "+new two"])
     const { session, getState } = makeInteractiveSession([fileA, fileB], [])
-    const setup = await testRender(
-      <ReviewWorkspaceApp session={session} />,
-      { width: 120, height: 30, useMouse: true, enableMouseMovement: true },
-    )
+    const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30, useMouse: true, enableMouseMovement: true })
 
     try {
       await flush(setup)
@@ -1273,7 +1236,7 @@ describe("React review workspace", () => {
       const rowB1 = setup.renderer.root.findDescendantById("src/range-b.ts:split:0:change:0:0") as unknown as { x: number; y: number; width: number }
       const rowB2 = setup.renderer.root.findDescendantById("src/range-b.ts:split:0:change:1:1") as unknown as { x: number; y: number; width: number }
       const clickNewSide = async (row: { x: number; y: number; width: number }) => {
-        await setup.mockMouse.click(row.x + Math.max(1, Math.floor(row.width * 3 / 4)), row.y)
+        await setup.mockMouse.click(row.x + Math.max(1, Math.floor((row.width * 3) / 4)), row.y)
       }
       await act(async () => {
         await clickNewSide(rowA)
@@ -1298,8 +1261,8 @@ describe("React review workspace", () => {
         anchor: createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 }),
         kind: "suggestion",
         severity: "comment",
-        body: "fix this",
-      },
+        body: "fix this"
+      }
     }
     const setup = await testRender(<ReviewWorkspaceApp session={session} />, { width: 120, height: 30 })
     try {

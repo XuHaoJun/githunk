@@ -22,7 +22,7 @@ function makeFile(): ReviewFile {
     patchDigest: "patch-example",
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-const old = 1", "+const next = 2"] })],
-    source: "available",
+    source: "available"
   }
 }
 
@@ -36,7 +36,7 @@ const payload = (fileKey: string, text: string): HighlightPayload => ({
   fileKey,
   additionLines: [[{ text, fg: "#fff" }]],
   deletionLines: [[{ text, fg: "#f00" }]],
-  theme: "dark",
+  theme: "dark"
 })
 
 async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
@@ -91,7 +91,9 @@ describe("useReviewHighlights", () => {
     }
     function Probe() {
       const [generationId, setGenerationId] = useState("generation-1")
-      useEffect(() => { changeGeneration = setGenerationId }, [])
+      useEffect(() => {
+        changeGeneration = setGenerationId
+      }, [])
       const result = useReviewHighlights({ files: hunkFiles, state, reviewId: "review", generationId, selectedFileKey: file.key, appearance: "dark", loadHighlight: loader })
       return <text content={`${generationId}:${result.highlights.size}`} />
     }

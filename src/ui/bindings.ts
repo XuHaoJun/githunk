@@ -5,33 +5,88 @@ import { normalizeKey, type KeyLike, type KeyStroke } from "./keymap"
 
 export const ACTIONS = [
   // focus and layout
-  "focus-main", "focus-status", "focus-files", "focus-branches", "focus-commits", "focus-stash",
-  "command-log", "pane-next", "pane-previous",
-  "screen-mode-next", "screen-mode-previous", "keybinding-menu",
+  "focus-main",
+  "focus-status",
+  "focus-files",
+  "focus-branches",
+  "focus-commits",
+  "focus-stash",
+  "command-log",
+  "pane-next",
+  "pane-previous",
+  "screen-mode-next",
+  "screen-mode-previous",
+  "keybinding-menu",
   // list and document navigation
-  "next", "previous", "toggle-range-select", "range-select-up", "range-select-down", "page-next", "page-previous", "goto-top", "goto-bottom",
-  "main-scroll-down", "main-scroll-up", "main-scroll-left", "main-scroll-right",
-  "hunk-next", "hunk-previous", "tab-next", "tab-previous", "scope-next", "scope-previous",
+  "next",
+  "previous",
+  "toggle-range-select",
+  "range-select-up",
+  "range-select-down",
+  "page-next",
+  "page-previous",
+  "goto-top",
+  "goto-bottom",
+  "main-scroll-down",
+  "main-scroll-up",
+  "main-scroll-left",
+  "main-scroll-right",
+  "hunk-next",
+  "hunk-previous",
+  "tab-next",
+  "tab-previous",
+  "scope-next",
+  "scope-previous",
   // review targets
-  "open-branch-review", "mark-reviewed",
+  "open-branch-review",
+  "mark-reviewed",
   // working tree
-  "stage-file", "discard-file", "stage-all", "stage-selection", "discard-selection", "edit-file",
+  "stage-file",
+  "discard-file",
+  "stage-all",
+  "stage-selection",
+  "discard-selection",
+  "edit-file",
   // file tree
-  "toggle-file-tree", "collapse-files", "expand-files",
+  "toggle-file-tree",
+  "collapse-files",
+  "expand-files",
   // commits
-  "commit", "amend", "commit-drilldown", "commit-back",
+  "commit",
+  "amend",
+  "commit-drilldown",
+  "commit-back",
   // branches and remotes
-  "branch-checkout", "branch-create", "branch-delete", "branch-rename", "fetch-remote",
+  "branch-checkout",
+  "branch-create",
+  "branch-delete",
+  "branch-rename",
+  "fetch-remote",
   // stash
-  "stash-create", "stash-apply", "stash-pop", "stash-drop", "stash-inspect",
+  "stash-create",
+  "stash-apply",
+  "stash-pop",
+  "stash-drop",
+  "stash-inspect",
   // sync
-  "fetch", "pull", "push", "refresh",
+  "fetch",
+  "pull",
+  "push",
+  "refresh",
   // copy
-  "copy-menu", "copy-exact",
+  "copy-menu",
+  "copy-exact",
   // generic
-  "filter", "inspect", "back", "modal-cancel", "modal-confirm", "filter-backspace", "quit",
+  "filter",
+  "inspect",
+  "back",
+  "modal-cancel",
+  "modal-confirm",
+  "filter-backspace",
+  "quit",
   // search (lazygit's n/N for ISearchable contexts, pkg/gocui/gui.go:303)
-  "search-next", "search-previous",
+  "search-next",
+  "search-previous"
 ] as const
 export type Action = (typeof ACTIONS)[number]
 
@@ -167,10 +222,7 @@ export class BindingRegistry {
     // Skip a binding whose `available` predicate returns false, rather than matching it, so
     // resolution can continue to the next priority level. Without model/ui we can't evaluate
     // `available`, so behave exactly as before: no filtering.
-    const admit = (binding: Binding | undefined): Binding | undefined =>
-      binding !== undefined && hasAvailability && !isAvailable(binding, options.model as AppModel, options.ui as UiState)
-        ? undefined
-        : binding
+    const admit = (binding: Binding | undefined): Binding | undefined => (binding !== undefined && hasAvailability && !isAvailable(binding, options.model as AppModel, options.ui as UiState) ? undefined : binding)
 
     // A modal is a hard input boundary: it never falls through to pane or global bindings,
     // even when the matched binding itself is unavailable.
@@ -201,17 +253,10 @@ export class BindingRegistry {
    * `enabled` candidate in that order already claims one of its keys — mirroring the fall-through
    * in `resolve`, where an unavailable binding is skipped rather than shadowing the next one.
    */
-  private candidatesFor(
-    context: BindingContext,
-    model: AppModel,
-    ui: UiState,
-  ): readonly { readonly binding: Binding; readonly group: "context" | "global"; readonly enabled: boolean; readonly superseded: boolean }[] {
+  private candidatesFor(context: BindingContext, model: AppModel, ui: UiState): readonly { readonly binding: Binding; readonly group: "context" | "global"; readonly enabled: boolean; readonly superseded: boolean }[] {
     const contextBindings = this.bindings.filter((binding) => (binding.contexts ?? []).includes(context))
     const globalBindings = this.bindings.filter((binding) => binding.contexts === undefined)
-    const ordered = [
-      ...contextBindings.map((binding) => ({ binding, group: "context" as const })),
-      ...globalBindings.map((binding) => ({ binding, group: "global" as const })),
-    ]
+    const ordered = [...contextBindings.map((binding) => ({ binding, group: "context" as const })), ...globalBindings.map((binding) => ({ binding, group: "global" as const }))]
 
     const claimedByEnabled = new Set<string>()
     return ordered.map(({ binding, group }) => {
@@ -242,24 +287,20 @@ export class BindingRegistry {
         group,
         keys: displayKeyFor(binding),
         description: binding.menuDescription ?? binding.description,
-        enabled,
+        enabled
       }))
   }
 }
 
 export function assertHandlersCover(registry: BindingRegistry, handlers: ReadonlySet<string>): void {
-  const missing = [...new Set(registry.bindings.map((binding) => binding.action))]
-    .filter((action) => !handlers.has(action))
-    .sort()
+  const missing = [...new Set(registry.bindings.map((binding) => binding.action))].filter((action) => !handlers.has(action)).sort()
   if (missing.length > 0) throw new Error(`Bindings declare actions with no handler: ${missing.join(", ")}`)
 }
 
 const writable = (model: AppModel): boolean => model.reviewTarget.kind === "working-tree"
 const lineActions = (model: AppModel, ui: UiState): boolean => writable(model) && ui.mainScope !== "all"
 const inCommit = (model: AppModel): boolean => model.reviewTarget.kind === "commit"
-const branchRangeSelection = (_model: AppModel, ui: UiState): boolean =>
-  ui.selectedBranchKind === "local" || ui.selectedBranchKind === "remote-branch"
-
+const branchRangeSelection = (_model: AppModel, ui: UiState): boolean => ui.selectedBranchKind === "local" || ui.selectedBranchKind === "remote-branch"
 
 /**
  * Only panel 4's Commits tab drills into commit files. lazygit attaches
@@ -281,9 +322,7 @@ const onFilesTab = (_model: AppModel, ui: UiState): boolean => (ui.filesTab ?? "
  * AppController.ensureStashOperation, which permits them from a working-tree or a
  * stash review target but refuses a branch or commit one.
  */
-const stashOperation = (model: AppModel, ui: UiState): boolean =>
-  ui.hasSelectedStash &&
-  (model.reviewTarget.kind === "working-tree" || model.reviewTarget.kind === "stash")
+const stashOperation = (model: AppModel, ui: UiState): boolean => ui.hasSelectedStash && (model.reviewTarget.kind === "working-tree" || model.reviewTarget.kind === "stash")
 
 export const GITHUNK_BINDINGS: readonly Binding[] = [
   // ---- focus and layout ----
@@ -437,7 +476,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   // ---- modal ----
   { keys: ["escape"], action: "modal-cancel", description: "cancel", contexts: ["modal"] },
   { keys: ["enter"], action: "modal-confirm", description: "confirm", contexts: ["modal"] },
-  { keys: ["backspace"], action: "filter-backspace", description: "delete", contexts: ["modal"] },
+  { keys: ["backspace"], action: "filter-backspace", description: "delete", contexts: ["modal"] }
 ]
 
 export function createRegistry(bindings: readonly Binding[] = GITHUNK_BINDINGS): BindingRegistry {

@@ -28,9 +28,9 @@ index 111..222 100644
 +const y: string = "hi"
 `
     const payload = await loadHighlightForPatch(patch, "foo.ts", "dark")
-    const addition = payload?.additionLines.find((line) => line?.some((token) => token.text.includes("\"hi\"")))
+    const addition = payload?.additionLines.find((line) => line?.some((token) => token.text.includes('"hi"')))
     const keyword = addition?.find((token) => token.text.trim() === "const")
-    const string = addition?.find((token) => token.text.includes("\"hi\""))
+    const string = addition?.find((token) => token.text.includes('"hi"'))
     expect(keyword?.fg).toBe("#FF7B72")
     expect(string?.fg).toBe("#A5D6FF")
   })

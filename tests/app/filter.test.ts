@@ -6,7 +6,7 @@ describe("Unicode-aware filtering", () => {
   const items = [
     { id: "one", label: "Résumé immédiat" },
     { id: "two", label: "Straße" },
-    { id: "three", label: "Other" },
+    { id: "three", label: "Other" }
   ] as const
 
   test("matches case-insensitive Unicode substrings in source order", () => {
@@ -22,7 +22,7 @@ describe("Unicode-aware filtering", () => {
   test("retains a stable selection identifier when the filtered list changes", () => {
     const filtered = filterItems("e", items, (item) => item.label)
     expect(indexForStableId(filtered, "three", (item) => item.id, 0)).toBe(1)
-    expect(indexForStableId<typeof items[number]>([], "two", (item) => item.id)).toBe(0)
+    expect(indexForStableId<(typeof items)[number]>([], "two", (item) => item.id)).toBe(0)
   })
   test("filter input treats OpenTUI space and shifted payloads as printable text", () => {
     const input = new FilterInput()
@@ -32,7 +32,6 @@ describe("Unicode-aware filtering", () => {
     input.handleKey({ name: "enter" })
     expect(input.state.query).toBe(" P")
   })
-
 
   test("backspace removes one grapheme rather than one UTF-16 code unit", () => {
     expect(removeLastSearchCharacter("a😀")).toBe("a")

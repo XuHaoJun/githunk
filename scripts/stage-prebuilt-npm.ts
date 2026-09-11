@@ -1,27 +1,8 @@
 #!/usr/bin/env bun
 
-import {
-  chmodSync,
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs"
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import {
-  copyBundledSkill,
-  binaryFilenameForSpec,
-  buildOptionalDependencyMap,
-  buildPlatformPackageManifest,
-  getHostPlatformPackageSpec,
-  getPlatformPackageSpecByName,
-  listStagedPackageDirs,
-  releaseNpmDir,
-  sortPlatformPackageSpecs,
-  type PlatformPackageSpec,
-} from "./prebuilt-package-helpers"
+import { copyBundledSkill, binaryFilenameForSpec, buildOptionalDependencyMap, buildPlatformPackageManifest, getHostPlatformPackageSpec, getPlatformPackageSpecByName, listStagedPackageDirs, releaseNpmDir, sortPlatformPackageSpecs, type PlatformPackageSpec } from "./prebuilt-package-helpers"
 
 type RootPackageJson = {
   readonly name: string
@@ -69,12 +50,7 @@ function writeJson(filePath: string, value: unknown): void {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`)
 }
 
-function stageMetaPackage(
-  repoRoot: string,
-  rootPackage: RootPackageJson,
-  releaseRoot: string,
-  specs: readonly PlatformPackageSpec[],
-): void {
+function stageMetaPackage(repoRoot: string, rootPackage: RootPackageJson, releaseRoot: string, specs: readonly PlatformPackageSpec[]): void {
   for (const required of ["bin/githunk.js", "dist/githunk.js", "README.md", "LICENSE"]) {
     if (!existsSync(path.join(repoRoot, required))) {
       throw new Error(`Missing ${required}. Run \`bun run build\` before staging the npm release.`)
@@ -95,7 +71,7 @@ function stageMetaPackage(
     version: rootPackage.version,
     ...(rootPackage.description === undefined ? {} : { description: rootPackage.description }),
     bin: {
-      githunk: "bin/githunk.js",
+      githunk: "bin/githunk.js"
     },
     files: ["bin", "dist", "skills/githunk-handoff", "README.md", "LICENSE"],
     ...(rootPackage.type === undefined ? {} : { type: rootPackage.type }),
@@ -108,18 +84,12 @@ function stageMetaPackage(
     optionalDependencies: buildOptionalDependencyMap(rootPackage.version, specs),
     ...(rootPackage.license === undefined ? {} : { license: rootPackage.license }),
     publishConfig: {
-      access: "public",
-    },
+      access: "public"
+    }
   })
 }
 
-function stagePlatformPackage(
-  rootPackage: RootPackageJson,
-  releaseRoot: string,
-  repoRoot: string,
-  spec: PlatformPackageSpec,
-  compiledBinary: string,
-): void {
+function stagePlatformPackage(rootPackage: RootPackageJson, releaseRoot: string, repoRoot: string, spec: PlatformPackageSpec, compiledBinary: string): void {
   if (!existsSync(compiledBinary)) {
     throw new Error(`Missing compiled binary at ${compiledBinary}`)
   }
@@ -155,7 +125,7 @@ function collectArtifactSpecs(artifactRoot: string): { spec: PlatformPackageSpec
 
     return {
       spec,
-      compiledBinary: path.join(directory, binaryFilenameForSpec(spec)),
+      compiledBinary: path.join(directory, binaryFilenameForSpec(spec))
     }
   })
 }

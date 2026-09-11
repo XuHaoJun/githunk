@@ -33,7 +33,7 @@ describe("branch review — open-objections ledger", () => {
 
       const controller = new ReviewWorkspaceController({
         runner: new GitRunner({ cwd: repo.path }),
-        stateStore: new ReviewStateStore(new GitRunner({ cwd: repo.path })),
+        stateStore: new ReviewStateStore(new GitRunner({ cwd: repo.path }))
       })
       await controller.open("refs/heads/master")
       const file = controller.state!.document.files[0]!
@@ -41,7 +41,7 @@ describe("branch review — open-objections ledger", () => {
       // Two objections: line 2 the agent will act on, line 4 it will ignore.
       const objections = [
         { line: 2, body: "rename AGENT-A, it shadows the import" },
-        { line: 4, body: "AGENT-B does an extra O(n) pass" },
+        { line: 4, body: "AGENT-B does an extra O(n) pass" }
       ] as const
       objections.forEach(({ line, body }, index) => {
         const anchor = createRangeAnchor(file, { side: "new", startLine: line, endLine: line })
@@ -73,13 +73,11 @@ describe("branch review — open-objections ledger", () => {
 
       const reopened = new ReviewWorkspaceController({
         runner: new GitRunner({ cwd: repo.path }),
-        stateStore: new ReviewStateStore(new GitRunner({ cwd: repo.path })),
+        stateStore: new ReviewStateStore(new GitRunner({ cwd: repo.path }))
       })
       await reopened.open("refs/heads/master")
       const head = reopened.state!.document.generation.headOid
-      const verdicts = Object.fromEntries(
-        reopened.state!.feedback.map((f) => [f.anchor.kind === "range" ? f.anchor.startLine : 0, ledgerVerdict(f, head)]),
-      )
+      const verdicts = Object.fromEntries(reopened.state!.feedback.map((f) => [f.anchor.kind === "range" ? f.anchor.startLine : 0, ledgerVerdict(f, head)]))
       expect(verdicts).toEqual({ 2: "addressed", 4: "untouched" })
 
       // "What did the agent change?" answered from the handoff, with no review
@@ -95,12 +93,7 @@ describe("branch review — open-objections ledger", () => {
       // evidence has to reach the row model here.
       const addressed = reopened.state!.feedback.find((f) => ledgerVerdict(f, head) === "addressed")!
       expect(addressed.handoff?.excerpt).toEqual(["AGENT-A"])
-      const rows = buildHunkStackRows(
-        toHunkReviewFile(reopened.state!.document.files[0]!),
-        reopened.state!,
-        undefined,
-        { width: 120, showLineNumbers: true, wrapLines: false },
-      )
+      const rows = buildHunkStackRows(toHunkReviewFile(reopened.state!.document.files[0]!), reopened.state!, undefined, { width: 120, showLineNumbers: true, wrapLines: false })
       // The objection sits under the line it was written against, not at the
       // end of the file: GitLab renders a discussion in the notes holder that
       // follows its own diff row (diffs/components/diff_view.vue:224-250).
@@ -123,14 +116,11 @@ describe("branch review — open-objections ledger", () => {
       // are unchanged reads DISPUTED, which is a question for the reviewer.
       const disputedItem = reopened.state!.feedback.find((f) => ledgerVerdict(f, head) === "untouched")!
       const repliesFile = (await new GitRunner({ cwd: repo.path }).run(["rev-parse", "--git-path", HANDOFF_REPLIES_PATH])).stdout.trim()
-      await Bun.write(
-        `${repo.path}/${repliesFile}`,
-        serializeReviewReplies([{ id: disputedItem.id, body: "the sort is needed for the range query", at: new Date().toISOString() }]),
-      )
+      await Bun.write(`${repo.path}/${repliesFile}`, serializeReviewReplies([{ id: disputedItem.id, body: "the sort is needed for the range query", at: new Date().toISOString() }]))
 
       const withReplies = new ReviewWorkspaceController({
         runner: new GitRunner({ cwd: repo.path }),
-        stateStore: new ReviewStateStore(new GitRunner({ cwd: repo.path })),
+        stateStore: new ReviewStateStore(new GitRunner({ cwd: repo.path }))
       })
       await withReplies.open("refs/heads/master")
       const replies = withReplies.replies
@@ -140,12 +130,7 @@ describe("branch review — open-objections ledger", () => {
       const addressedItem = reopened.state!.feedback.find((f) => ledgerVerdict(f, head) === "addressed")!
       expect(ledgerVerdict(addressedItem, head, { replied: true })).toBe("addressed")
 
-      const replyRows = buildHunkStackRows(
-        toHunkReviewFile(withReplies.state!.document.files[0]!),
-        withReplies.state!,
-        undefined,
-        { width: 120, showLineNumbers: true, wrapLines: false, replies },
-      ).filter((r) => r.type === "feedback-reply")
+      const replyRows = buildHunkStackRows(toHunkReviewFile(withReplies.state!.document.files[0]!), withReplies.state!, undefined, { width: 120, showLineNumbers: true, wrapLines: false, replies }).filter((r) => r.type === "feedback-reply")
       expect(replyRows.length).toBe(1)
       expect((replyRows[0] as { text: string }).text).toContain("range query")
       await withReplies.destroy()
@@ -183,14 +168,14 @@ describe("branch review — open-objections ledger", () => {
           anchor,
           kind: "note",
           severity: "comment",
-          body: id,
+          body: id
         })
         controller.dispatchIntent({ type: "feedback/create", id, createdAt: "2026-09-08T01:00:00.000Z" })
       }
       const current = controller.state!
       ;(controller as unknown as { _state: ReviewState })._state = {
         ...current,
-        feedback: current.feedback.map((feedback) => feedback.id === "stale" ? { ...feedback, resolution: "stale" as const } : feedback),
+        feedback: current.feedback.map((feedback) => (feedback.id === "stale" ? { ...feedback, resolution: "stale" as const } : feedback))
       }
 
       const outcome = await controller.handoffFeedback()
@@ -219,17 +204,21 @@ describe("branch review — open-objections ledger", () => {
       const runner = new GitRunner({ cwd: repo.path })
       const controller = new ReviewWorkspaceController({
         runner,
-        stateStore: new ReviewStateStore(new GitRunner({ cwd: repo.path })),
+        stateStore: new ReviewStateStore(new GitRunner({ cwd: repo.path }))
       })
       await controller.open("refs/heads/master")
       expect(controller.replies.size).toBe(0)
 
       const repliesFile = new LocalStateFile({ runner, relativePath: HANDOFF_REPLIES_PATH, pathKind: "handoff" })
-      await repliesFile.writeText(serializeReviewReplies([{
-        id: "fb-1",
-        body: "the change is intentional",
-        at: "2026-09-08T02:00:00.000Z",
-      }]))
+      await repliesFile.writeText(
+        serializeReviewReplies([
+          {
+            id: "fb-1",
+            body: "the change is intentional",
+            at: "2026-09-08T02:00:00.000Z"
+          }
+        ])
+      )
 
       await controller.refreshGeneration()
 
@@ -256,7 +245,7 @@ describe("branch review — open-objections ledger", () => {
       const runner = new GitRunner({ cwd: repo.path })
       const mailboxFile = new LocalStateFile({ runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
       const repliesFile = new LocalStateFile({ runner, relativePath: HANDOFF_REPLIES_PATH, pathKind: "handoff" })
-      const malformed = "{\"version\":1,\"replies\":["
+      const malformed = '{"version":1,"replies":['
       await mailboxFile.writeText(JSON.stringify({ version: 1, items: [{ id: "fb-1" }] }))
       await repliesFile.writeText(malformed)
       const outcome = await runHandoffReply({ id: "fb-1", body: "reason", cwd: repo.path })
@@ -283,23 +272,27 @@ describe("branch review — open-objections ledger", () => {
       const runner = new GitRunner({ cwd: repo.path })
       const jsonFile = new LocalStateFile({ runner, relativePath: HANDOFF_JSON_PATH, pathKind: "handoff" })
       const markdownFile = new LocalStateFile({ runner, relativePath: HANDOFF_MARKDOWN_PATH, pathKind: "handoff" })
-      await jsonFile.writeText(JSON.stringify({
-        version: 1,
-        generatedAt: "2026-09-08T01:00:00.000Z",
-        reviewId: "review-1",
-        headOid: "a".repeat(40),
-        baseRef: "refs/heads/master",
-        items: [{
-          id: "new-id",
-          path: "app.ts",
-          side: "new",
-          startLine: 2,
-          endLine: 2,
-          severity: "comment",
-          kind: "note",
-          body: "use the new path",
-        }],
-      }))
+      await jsonFile.writeText(
+        JSON.stringify({
+          version: 1,
+          generatedAt: "2026-09-08T01:00:00.000Z",
+          reviewId: "review-1",
+          headOid: "a".repeat(40),
+          baseRef: "refs/heads/master",
+          items: [
+            {
+              id: "new-id",
+              path: "app.ts",
+              side: "new",
+              startLine: 2,
+              endLine: 2,
+              severity: "comment",
+              kind: "note",
+              body: "use the new path"
+            }
+          ]
+        })
+      )
       await markdownFile.writeText("# stale handoff\n- [old-id] app.ts:1\n")
 
       const outcome = await runHandoff({ json: false, cwd: repo.path })
@@ -325,14 +318,13 @@ describe("branch review — open-objections ledger", () => {
         load: async () => database,
         saveSemanticChange: async (updater: (value: typeof database) => typeof database) => {
           const next = updater(database)
-          const includesHandoff = Object.values(next.reviews).some((review) =>
-            review.feedback.some((feedback) => feedback.status === "handed-off"))
+          const includesHandoff = Object.values(next.reviews).some((review) => review.feedback.some((feedback) => feedback.status === "handed-off"))
           if (includesHandoff) throw new Error("checkpoint persistence failed")
           database = next
         },
         quarantineWarning: undefined,
         saveDraftDebounced: () => {},
-        flush: async () => {},
+        flush: async () => {}
       } as unknown as ReviewStateStore
       const runner = new GitRunner({ cwd: repo.path })
       const controller = new ReviewWorkspaceController({ runner, stateStore })
@@ -366,15 +358,18 @@ describe("branch review — open-objections ledger", () => {
       let database = emptyReviewDatabaseV2()
       let releaseHandoff!: () => void
       let signalHandoffStarted!: () => void
-      const handoffStarted = new Promise<void>((resolve) => { signalHandoffStarted = resolve })
-      const release = new Promise<void>((resolve) => { releaseHandoff = resolve })
+      const handoffStarted = new Promise<void>((resolve) => {
+        signalHandoffStarted = resolve
+      })
+      const release = new Promise<void>((resolve) => {
+        releaseHandoff = resolve
+      })
       let blocked = false
       const stateStore = {
         load: async () => database,
         saveSemanticChange: async (updater: (value: typeof database) => typeof database) => {
           const next = updater(database)
-          const isBlockedHandoff = Object.values(next.reviews).some((review) =>
-            review.feedback.some((feedback) => feedback.status === "handed-off" && feedback.body === "original"))
+          const isBlockedHandoff = Object.values(next.reviews).some((review) => review.feedback.some((feedback) => feedback.status === "handed-off" && feedback.body === "original"))
           if (isBlockedHandoff && !blocked) {
             blocked = true
             signalHandoffStarted()
@@ -385,7 +380,7 @@ describe("branch review — open-objections ledger", () => {
         },
         quarantineWarning: undefined,
         saveDraftDebounced: () => {},
-        flush: async () => {},
+        flush: async () => {}
       } as unknown as ReviewStateStore
       const runner = new GitRunner({ cwd: repo.path })
       const controller = new ReviewWorkspaceController({ runner, stateStore })
@@ -424,15 +419,18 @@ describe("branch review — open-objections ledger", () => {
       let database = emptyReviewDatabaseV2()
       let releaseHandoff!: () => void
       let signalHandoffStarted!: () => void
-      const handoffStarted = new Promise<void>((resolve) => { signalHandoffStarted = resolve })
-      const release = new Promise<void>((resolve) => { releaseHandoff = resolve })
+      const handoffStarted = new Promise<void>((resolve) => {
+        signalHandoffStarted = resolve
+      })
+      const release = new Promise<void>((resolve) => {
+        releaseHandoff = resolve
+      })
       let blocked = false
       const stateStore = {
         load: async () => database,
         saveSemanticChange: async (updater: (value: typeof database) => typeof database) => {
           const next = updater(database)
-          const isBlockedHandoff = Object.values(next.reviews).some((review) =>
-            review.feedback.some((feedback) => feedback.status === "handed-off" && feedback.body === "original"))
+          const isBlockedHandoff = Object.values(next.reviews).some((review) => review.feedback.some((feedback) => feedback.status === "handed-off" && feedback.body === "original"))
           if (isBlockedHandoff && !blocked) {
             blocked = true
             signalHandoffStarted()
@@ -442,7 +440,7 @@ describe("branch review — open-objections ledger", () => {
         },
         quarantineWarning: undefined,
         saveDraftDebounced: () => {},
-        flush: async () => {},
+        flush: async () => {}
       } as unknown as ReviewStateStore
       const runner = new GitRunner({ cwd: repo.path })
       const controller = new ReviewWorkspaceController({ runner, stateStore })
@@ -518,21 +516,25 @@ describe("branch review — open-objections ledger", () => {
             reviewId: aggregate.identity.id,
             generationId: aggregate.generation.id,
             projection: { kind: "since-last-review" as const, fromHeadOid },
-            files: [{
-              ...aggregate.files[0]!,
-              path: "lens/app.ts",
-              contentId: "projection-content",
-              hunks: [createReviewHunk({
-                index: 0,
-                oldStart: 1,
-                oldCount: 1,
-                newStart: 1,
-                newCount: 1,
-                lines: ["-one", "+lens"],
-              })],
-            }],
-          },
-        }),
+            files: [
+              {
+                ...aggregate.files[0]!,
+                path: "lens/app.ts",
+                contentId: "projection-content",
+                hunks: [
+                  createReviewHunk({
+                    index: 0,
+                    oldStart: 1,
+                    oldCount: 1,
+                    newStart: 1,
+                    newCount: 1,
+                    lines: ["-one", "+lens"]
+                  })
+                ]
+              }
+            ]
+          }
+        })
       })
       await controller.open("refs/heads/master")
       const file = controller.state!.document.files[0]!
@@ -547,8 +549,8 @@ describe("branch review — open-objections ledger", () => {
           artifactId: "artifact-1",
           generationId: state.document.generation.id,
           headOid: "b".repeat(40),
-          submittedAt: "2026-09-08T00:00:00.000Z",
-        },
+          submittedAt: "2026-09-08T00:00:00.000Z"
+        }
       }
 
       expect(await controller.enterSinceLastReview()).toMatchObject({ ok: true })
@@ -556,17 +558,18 @@ describe("branch review — open-objections ledger", () => {
       const outcome = await controller.handoffFeedback()
 
       expect(outcome.ok).toBe(true)
-      const mailbox: unknown = JSON.parse(await new LocalStateFile({
-        runner,
-        relativePath: HANDOFF_JSON_PATH,
-        pathKind: "handoff",
-      }).readText() ?? "{}")
+      const mailbox: unknown = JSON.parse(
+        (await new LocalStateFile({
+          runner,
+          relativePath: HANDOFF_JSON_PATH,
+          pathKind: "handoff"
+        }).readText()) ?? "{}"
+      )
       expect(mailbox).toMatchObject({
-        items: [{ id: "fb-1", path: "app.ts", side: "new", startLine: 1, endLine: 1, severity: "comment", kind: "note", body: "change this" }],
+        items: [{ id: "fb-1", path: "app.ts", side: "new", startLine: 1, endLine: 1, severity: "comment", kind: "note", body: "change this" }]
       })
       expect(controller.state!.feedback[0]!.handoff?.excerpt).toEqual(["two"])
       await controller.destroy()
-
     } finally {
       await repo.cleanup()
     }

@@ -22,7 +22,13 @@ describe("CommitMutations", () => {
     const message = "subject Ω\n\nbody 中文"
     await new CommitMutations(runner).commit(message)
     expect((await repo.git(["log", "-1", "--format=%B"])).stdout).toBe(`${message}\n\n`)
-    expect(runner.log.lines().at(-1)?.spans.map((span) => span.text).join("")).toBe("  git commit -F -")
+    expect(
+      runner.log
+        .lines()
+        .at(-1)
+        ?.spans.map((span) => span.text)
+        .join("")
+    ).toBe("  git commit -F -")
   })
 
   test("rejects an empty message before invoking Git", async () => {
@@ -66,6 +72,13 @@ describe("CommitMutations", () => {
     await repo.git(["add", "--", "file.txt"])
     await Promise.all([commit(runner, "first"), amend(runner, "second")])
     expect((await repo.git(["log", "-1", "--format=%s"])).stdout.trim()).toBe("second")
-    expect(runner.log.lines().filter((line) => line.spans.map((span) => span.text).join("").startsWith("  git commit"))).toHaveLength(2)
+    expect(
+      runner.log.lines().filter((line) =>
+        line.spans
+          .map((span) => span.text)
+          .join("")
+          .startsWith("  git commit")
+      )
+    ).toHaveLength(2)
   })
 })

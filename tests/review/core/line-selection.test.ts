@@ -29,12 +29,15 @@ describe("semantic line selection", () => {
     expect(moved?.line).toBe(2)
   })
   test("reducer clears semantic line when viewport navigation changes", () => {
-    const d = doc(); const s = createInitialReviewState(d); const line = createLineSelection(file(), { hunkIndex: 0, side: "new", line: 1 })
+    const d = doc()
+    const s = createInitialReviewState(d)
+    const line = createLineSelection(file(), { hunkIndex: 0, side: "new", line: 1 })
     const withLine = reduceReviewState(s, { type: "selection/set-line", selection: line })
     expect(reduceReviewState(withLine, { type: "selection/viewport-anchor", fileKey: "a", hunkIndex: 0, reveal: "hunk" }).lineSelection).toBeNull()
   })
   test("reconciliation preserves identity and null/null is a no-op", () => {
-    const d = doc(); const initial = createInitialReviewState(d)
+    const d = doc()
+    const initial = createInitialReviewState(d)
     expect(reconcileReviewState(initial, doc())).toBe(initial)
     const line = createLineSelection(file(), { hunkIndex: 0, side: "new", line: 2 })
     const selected = reduceReviewState(initial, { type: "selection/set-line", selection: line })
@@ -46,7 +49,7 @@ describe("semantic line selection", () => {
     const oldFile = file("old")
     const newFile = {
       ...file("new"),
-      hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 4, newStart: 1, newCount: 4, lines: [" x", " a", " b", " c"] })],
+      hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 4, newStart: 1, newCount: 4, lines: [" x", " a", " b", " c"] })]
     } as unknown as ReviewFile
     const oldDoc = doc([oldFile])
     const newDoc = doc([newFile])
@@ -57,7 +60,8 @@ describe("semantic line selection", () => {
     expect(reconciled.lineSelection?.contentId).toBe("new")
   })
   test("non-null line selection survives strict persistence round trip", () => {
-    const d = doc(); const line = createLineSelection(file(), { hunkIndex: 0, side: "new", line: 2 })
+    const d = doc()
+    const line = createLineSelection(file(), { hunkIndex: 0, side: "new", line: 2 })
     const state = reduceReviewState(createInitialReviewState(d), { type: "selection/set-line", selection: line })
     const db = { version: 2 as const, baseByHead: {}, reviews: { [d.identity.id]: persistedFromReviewState(state) } }
     const parsed = parseReviewDatabaseV2(JSON.parse(serializeReviewDatabaseV2(db)))
@@ -73,7 +77,9 @@ describe("semantic line selection", () => {
     expect(buildReviewArtifact(state, { id: "x", submittedAt: new Date().toISOString(), decision: "comment", summary: "s" }).projection).toEqual({ kind: "aggregate" })
   })
   test("blank replacement persists in open draft but strict create rejects it", () => {
-    const d = doc(); const f = file(); const line = createLineSelection(f, { hunkIndex: 0, side: "new", line: 1 })
+    const d = doc()
+    const f = file()
+    const line = createLineSelection(f, { hunkIndex: 0, side: "new", line: 1 })
     const anchor = { kind: "range" as const, fileKey: "a", contentId: "cid", side: "new" as const, startLine: 1, endLine: 1, ownerHunkIndex: 0, contextDigest: line.contextDigest }
     let state = createInitialReviewState(d)
     state = reduceReviewState(state, planReviewIntent(state, { type: "feedback/start-draft", anchor, kind: "suggestion", severity: "comment", body: "fix", replacement: " " }))

@@ -26,7 +26,7 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [],
     source: "available",
-    ...overrides,
+    ...overrides
   } as unknown as ReviewFile
 }
 function makeDoc(files: ReviewFile[], generation = makeGeneration()): ReviewDocument {
@@ -60,7 +60,7 @@ describe("matchReviewFiles explicit distinctions", () => {
     const prev = [makeFile({ key: "src/a.ts", path: "src/a.ts", contentId: "c1" })]
     const next = [
       makeFile({ key: "src/b.ts", path: "src/b.ts", previousPath: "src/a.ts", kind: "renamed", contentId: "c1" } as Partial<ReviewFile> & { key: string; path: string }),
-      makeFile({ key: "src/c.ts", path: "src/c.ts", previousPath: "src/a.ts", kind: "renamed", contentId: "c1" } as Partial<ReviewFile> & { key: string; path: string }),
+      makeFile({ key: "src/c.ts", path: "src/c.ts", previousPath: "src/a.ts", kind: "renamed", contentId: "c1" } as Partial<ReviewFile> & { key: string; path: string })
     ]
     const m = matchReviewFiles(prev, next)
     const isAmb = m.ambiguous?.has?.("src/a.ts") ?? (m as unknown as { ambiguousPreviousKeys: Set<string> }).ambiguousPreviousKeys?.has("src/a.ts")
@@ -71,16 +71,14 @@ describe("matchReviewFiles explicit distinctions", () => {
 
   test("copied file is new not rename", () => {
     const prev = [makeFile({ key: "src/a.ts", path: "src/a.ts", contentId: "c1" })]
-    const next = [
-      makeFile({ key: "src/a.ts", path: "src/a.ts", contentId: "c1" }),
-      makeFile({ key: "src/copy.ts", path: "src/copy.ts", previousPath: "src/a.ts", kind: "copied", contentId: "c1" } as Partial<ReviewFile> & { key: string; path: string }),
-    ]
+    const next = [makeFile({ key: "src/a.ts", path: "src/a.ts", contentId: "c1" }), makeFile({ key: "src/copy.ts", path: "src/copy.ts", previousPath: "src/a.ts", kind: "copied", contentId: "c1" } as Partial<ReviewFile> & { key: string; path: string })]
     const m = matchReviewFiles(prev, next)
     // copied should be in copiedFiles not in rename
     const hasRename = m.rename?.has?.("src/a.ts") ?? false
     // rename map should be empty or not include copy
     // copiedFiles should contain src/copy.ts
     const hasCopied = (m.copiedFiles ?? (m as unknown as { copied: unknown[] }).copied)?.some?.((f: ReviewFile) => f.key === "src/copy.ts") ?? false
+    expect(hasCopied).toBe(true)
     // At least ensure copy not treated as rename transfer
     expect(hasRename).toBe(false)
     // exact for original should remain
@@ -170,7 +168,7 @@ describe("reconcileReviewState atomic", () => {
     // ambiguous rename: two files claim previousPath src/a.ts
     const nextFiles = [
       makeFile({ key: "src/b.ts", path: "src/b.ts", previousPath: "src/a.ts", kind: "renamed", contentId: "c1" } as Partial<ReviewFile> & { key: string; path: string }),
-      makeFile({ key: "src/c.ts", path: "src/c.ts", previousPath: "src/a.ts", kind: "renamed", contentId: "c1" } as Partial<ReviewFile> & { key: string; path: string }),
+      makeFile({ key: "src/c.ts", path: "src/c.ts", previousPath: "src/a.ts", kind: "renamed", contentId: "c1" } as Partial<ReviewFile> & { key: string; path: string })
     ]
     const doc2 = makeDoc(nextFiles, makeGeneration({ headOid: "h2" }))
     const next = reconcileReviewState(state, doc2)
@@ -189,14 +187,11 @@ describe("reconcileReviewState atomic", () => {
     const doc1 = makeDoc([f])
     let state = createInitialReviewState(doc1)
     state = addViewed(state, "src/a.ts")
-    const doc2 = makeDoc([
-      makeFile({ key: "src/a.ts", path: "src/a.ts", contentId: "c1" }),
-      makeFile({ key: "src/copy.ts", path: "src/copy.ts", previousPath: "src/a.ts", kind: "copied", contentId: "c1" } as Partial<ReviewFile> & { key: string; path: string }),
-    ], makeGeneration({ headOid: "h2" }))
+    const doc2 = makeDoc([makeFile({ key: "src/a.ts", path: "src/a.ts", contentId: "c1" }), makeFile({ key: "src/copy.ts", path: "src/copy.ts", previousPath: "src/a.ts", kind: "copied", contentId: "c1" } as Partial<ReviewFile> & { key: string; path: string })], makeGeneration({ headOid: "h2" }))
     const next = reconcileReviewState(state, doc2)
     expect(next.viewed["src/a.ts"]).toBeDefined()
     expect(next.viewed["src/copy.ts"]).toBeUndefined()
-    expect(coverageForFile(next.document.files.find(f => f.key === "src/copy.ts") as ReviewFile, next.viewed)).toBe("not-viewed")
+    expect(coverageForFile(next.document.files.find((f) => f.key === "src/copy.ts") as ReviewFile, next.viewed)).toBe("not-viewed")
   })
 
   test("deletion feedback becomes orphaned and viewed removed", () => {
@@ -247,9 +242,9 @@ describe("reconcileReviewState atomic", () => {
     const doc2 = makeDoc([f2renamed], makeGeneration({ headOid: "h2" }))
     const next = reconcileReviewState(state, doc2)
     // gap for deleted file retired, gap for renamed file transferred
-    expect(next.expandedGaps.some(g => g.fileKey === "src/a.ts")).toBe(false)
-    expect(next.expandedGaps.some(g => g.fileKey === "src/c.ts")).toBe(true)
-    expect(next.expandedGaps.find(g => g.fileKey === "src/c.ts")?.gapId).toBe("gap2")
+    expect(next.expandedGaps.some((g) => g.fileKey === "src/a.ts")).toBe(false)
+    expect(next.expandedGaps.some((g) => g.fileKey === "src/c.ts")).toBe(true)
+    expect(next.expandedGaps.find((g) => g.fileKey === "src/c.ts")?.gapId).toBe("gap2")
   })
 
   test("base movement is new generation same matching rules", () => {

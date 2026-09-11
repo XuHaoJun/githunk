@@ -24,12 +24,14 @@
 ### Task 1: Embed CLI version for the compiled binary
 
 **Files:**
+
 - Modify: `src/cli/args.ts:1-37` (replace filesystem walk with a bundled JSON import)
 - Modify: `tsconfig.json` (add `resolveJsonModule: true`; add `scripts/**/*.ts` to `include`)
 - Test: `tests/cli/args.test.ts` (unchanged, must stay green)
 - Test: `tests/package/compiled-binary.integration.test.ts` (new: compile host binary, assert `--version` and non-git boot)
 
 **Interfaces:**
+
 - Consumes: nothing new.
 - Produces: `getCliVersion(): string` keeps its signature; `scripts/*` become typechecked.
 
@@ -118,11 +120,13 @@ git commit -m "feat: embed CLI version for compiled binaries"
 ### Task 2: Host compile script with baseline targets
 
 **Files:**
+
 - Create: `scripts/build-bin.ts`
 - Modify: `package.json` (add `"build:bin": "bun run ./scripts/build-bin.ts"`)
 - Test: `tests/package/compiled-binary.integration.test.ts` (reuse: extend with a baseline-target case on x64 linux, or assert `compileTargetForHost("linux", "x64")` via a unit test in `tests/package/build-bin.test.ts`)
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `compileTargetForHost(platform, arch, isMuslHost?): string | null`; `dist/githunk` (or `dist/githunk.exe` on win32) after `bun run build:bin`.
 
@@ -177,6 +181,7 @@ git commit -m "feat: add host prebuilt binary build"
 ### Task 3: Platform package helpers plus artifact staging
 
 **Files:**
+
 - Create: `scripts/prebuilt-package-helpers.ts` (matrix, manifest builders, dirs; port of hunk's `scripts/prebuilt-package-helpers.ts:35-218`, package names `@xuhaojun/githunk-*`, binary `githunk`)
 - Create: `scripts/build-prebuilt-artifact.ts` (stage host `dist/githunk[.exe]` into `dist/release/artifacts/<pkg>`; `--expect-package` gate; port of hunk's `scripts/build-prebuilt-artifact.ts:43-108`, minus skills bundling)
 - Create: `scripts/stage-prebuilt-npm.ts` (assemble `dist/release/npm/<meta + platforms>` from `--artifact-root` or host binary; port of hunk's `scripts/stage-prebuilt-npm.ts:77-203`; meta ships `bin/`, `dist/githunk.js` fallback, README, LICENSE)
@@ -184,6 +189,7 @@ git commit -m "feat: add host prebuilt binary build"
 - Test: `tests/package/prebuilt-manifest.test.ts` (matrix has 5 specs; platform manifest carries `os`/`cpu`; optional-deps map pins the root version)
 
 **Interfaces:**
+
 - Consumes: `compileTargetForHost` (Task 2, artifact script shells to `build:bin` output only — no import).
 - Produces: `PLATFORM_PACKAGE_MATRIX`, `getHostPlatformPackageSpec()`, `buildPlatformPackageManifest(root, spec)`, `buildOptionalDependencyMap(version)`, `releaseNpmDir()`, `releaseArtifactsDir()`.
 
@@ -213,10 +219,12 @@ git commit -m "feat: stage prebuilt platform npm packages"
 ### Task 4: Launcher with prebuilt lookup
 
 **Files:**
+
 - Modify: `bin/githunk.js` (keep path/shebang; prepend `GITHUNK_BIN_PATH` override + walk-up `node_modules/<platform-pkg>/bin/githunk[.exe]` lookup; fall back to the existing `process.execPath --experimental-ffi dist` spawn; keep signal forwarding and exit-code mapping byte-for-byte)
 - Test: `tests/package/launcher-prebuilt.integration.test.ts` (spawn launcher with `GITHUNK_BIN_PATH` → fake executable asserting passthrough of args/exit code; spawn with a fake `node_modules/<host-pkg>/bin/` tree asserting lookup wins; existing publish tests stay green)
 
 **Interfaces:**
+
 - Consumes: `PLATFORM_PACKAGE_MATRIX` package names (hardcode the 5 names + binary names in the launcher; no TS import — launcher must stay dependency-free).
 - Produces: same CLI behavior on all current paths, plus prebuilt exec when installed.
 
@@ -246,6 +254,7 @@ git commit -m "feat: prefer prebuilt binary in launcher"
 ### Task 5: Release workflow plus publish scripts
 
 **Files:**
+
 - Create: `scripts/check-release-version.ts` (tag `vX.Y.Z` must equal `package.json` version; port hunk's script behavior: strip leading `v`, compare, non-zero exit with message)
 - Create: `scripts/publish-prebuilt-npm.ts` (loop staged dirs, platform packages first, meta last, skip already-published via `npm view`, `--dry-run` + `--tag`; port hunk's `scripts/publish-prebuilt-npm.ts:55-117`)
 - Create: `scripts/check-prebuilt-pack.ts` (assert staged dirs each contain package.json + payload; `npm pack --dry-run` per dir must exit 0)

@@ -89,7 +89,7 @@ export function paneTextBuffer(text: TextRenderable): PaneTextBuffer | undefined
     },
     refresh(): void {
       internals.updateTextInfo()
-    },
+    }
   }
 }
 

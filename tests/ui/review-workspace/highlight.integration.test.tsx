@@ -16,9 +16,18 @@ type CapturedSpan = Readonly<{ text: string; fg?: CapturedColor }>
 
 function makeSession(): ReactReviewSession {
   const file: ReviewFile = {
-    key: "src/highlight.ts", path: "src/highlight.ts", kind: "modified", oldBlobOid: "o", newBlobOid: "n", oldMode: "100644", newMode: "100644",
-    contentId: "content-highlight", patchDigest: "patch-highlight", stats: { additions: 1, deletions: 1 },
-    hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-const answer = 41", "+const answer = 42"] })], source: "available",
+    key: "src/highlight.ts",
+    path: "src/highlight.ts",
+    kind: "modified",
+    oldBlobOid: "o",
+    newBlobOid: "n",
+    oldMode: "100644",
+    newMode: "100644",
+    contentId: "content-highlight",
+    patchDigest: "patch-highlight",
+    stats: { additions: 1, deletions: 1 },
+    hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-const answer = 41", "+const answer = 42"] })],
+    source: "available"
   }
   const identity = createReviewIdentity({ headRef: "refs/heads/feature", headOid: "a".repeat(40), baseRef: "refs/heads/main" })
   const generation = createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "c".repeat(40), headOid: "a".repeat(40) })

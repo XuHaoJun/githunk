@@ -67,11 +67,7 @@ export function calcSizes(boxes: readonly Box[], availableSpace: number): readon
   const unitSize = totalWeight > 0 ? Math.floor(dynamicSpace / totalWeight) : 0
   let extraSpace = totalWeight > 0 ? dynamicSpace % totalWeight : 0
 
-  const result = boxes.map((box, index) =>
-    isStatic(box)
-      ? Math.min(availableSpace, box.size ?? 0)
-      : unitSize * (weights[index] ?? 0),
-  )
+  const result = boxes.map((box, index) => (isStatic(box) ? Math.min(availableSpace, box.size ?? 0) : unitSize * (weights[index] ?? 0)))
 
   // Deal the remainder out one cell at a time, decrementing the weight each
   // time a box is served, so wider boxes take proportionally more of it.
@@ -91,13 +87,7 @@ export function calcSizes(boxes: readonly Box[], availableSpace: number): readon
   return result
 }
 
-export function arrangeWindows(
-  root: Box,
-  x0: number,
-  y0: number,
-  width: number,
-  height: number,
-): Readonly<Record<string, Dimensions>> {
+export function arrangeWindows(root: Box, x0: number, y0: number, width: number, height: number): Readonly<Record<string, Dimensions>> {
   const children = root.conditionalChildren?.(width, height) ?? root.children ?? []
   if (children.length === 0) {
     if (root.window === undefined || root.window === "") return {}
@@ -111,9 +101,7 @@ export function arrangeWindows(
   let offset = 0
   for (const [index, child] of children.entries()) {
     const boxSize = sizes[index] ?? 0
-    const arranged = direction === "column"
-      ? arrangeWindows(child, x0 + offset, y0, boxSize, height)
-      : arrangeWindows(child, x0, y0 + offset, width, boxSize)
+    const arranged = direction === "column" ? arrangeWindows(child, x0 + offset, y0, boxSize, height) : arrangeWindows(child, x0, y0 + offset, width, boxSize)
     Object.assign(result, arranged)
     offset += boxSize
   }

@@ -3,7 +3,13 @@ import { ClipboardService, formatCopyResult, type ClipboardPort } from "../../sr
 describe("truthful OSC52 clipboard status", () => {
   test("reports empty without emitting", () => {
     let emitted = false
-    const port: ClipboardPort = { isOsc52Supported: () => true, copyToClipboardOSC52: () => { emitted = true; return true } }
+    const port: ClipboardPort = {
+      isOsc52Supported: () => true,
+      copyToClipboardOSC52: () => {
+        emitted = true
+        return true
+      }
+    }
     const result = new ClipboardService(port).copy("")
     expect(result).toEqual({ status: "empty", bytes: 0 })
     expect(formatCopyResult(result)).toBe("No text selected")

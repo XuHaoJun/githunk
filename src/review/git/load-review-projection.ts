@@ -6,10 +6,7 @@ import { parseNumstatZ, parseRawDiffZ } from "./raw-diff"
 
 export type { ReviewProjectionDocument } from "../core/types"
 
-
-export type SinceLastProjectionResult =
-  | Readonly<{ kind: "ok"; document: ReviewProjectionDocument }>
-  | Readonly<{ kind: "history-rewritten"; lastHeadOid: string; headOid: string; reason: string }>
+export type SinceLastProjectionResult = Readonly<{ kind: "ok"; document: ReviewProjectionDocument }> | Readonly<{ kind: "history-rewritten"; lastHeadOid: string; headOid: string; reason: string }>
 
 const EMPTY_TREE_OID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
@@ -32,24 +29,12 @@ function sourceFromKind(kind: ReviewFile["kind"], isBinary: boolean): ReviewFile
   return "available"
 }
 
-async function buildFilesForRange(
-  runner: Pick<GitRunner, "run">,
-  rangeArgs: readonly string[],
-): Promise<readonly ReviewFile[]> {
+async function buildFilesForRange(runner: Pick<GitRunner, "run">, rangeArgs: readonly string[]): Promise<readonly ReviewFile[]> {
   // rangeArgs may be single range like "a..b" or two commits "parent oid" or "empty..oid"
   // We pass them as separate args to git diff
-  const patchResult = await runner.run(
-    ["diff", "--no-ext-diff", "--no-color", "--find-renames", "--binary", "--src-prefix=a/", "--dst-prefix=b/", ...rangeArgs, "--"],
-    { readOnly: true },
-  )
-  const rawResult = await runner.run(
-    ["diff", "--no-ext-diff", "--no-color", "--find-renames", "--raw", "-z", ...rangeArgs, "--"],
-    { readOnly: true },
-  )
-  const numstatResult = await runner.run(
-    ["diff", "--no-ext-diff", "--no-color", "--find-renames", "--numstat", "-z", ...rangeArgs, "--"],
-    { readOnly: true },
-  )
+  const patchResult = await runner.run(["diff", "--no-ext-diff", "--no-color", "--find-renames", "--binary", "--src-prefix=a/", "--dst-prefix=b/", ...rangeArgs, "--"], { readOnly: true })
+  const rawResult = await runner.run(["diff", "--no-ext-diff", "--no-color", "--find-renames", "--raw", "-z", ...rangeArgs, "--"], { readOnly: true })
+  const numstatResult = await runner.run(["diff", "--no-ext-diff", "--no-color", "--find-renames", "--numstat", "-z", ...rangeArgs, "--"], { readOnly: true })
 
   const patchText = patchResult.stdout
   const rawText = rawResult.stdout
@@ -59,7 +44,7 @@ async function buildFilesForRange(
   const rawEntries = parseRawDiffZ(rawText)
   const numstatEntries = parseNumstatZ(numstatText)
 
-  const rawByKey = new Map<string, typeof rawEntries[number][]>()
+  const rawByKey = new Map<string, (typeof rawEntries)[number][]>()
   for (const entry of rawEntries) {
     const key = `${normalizePathForJoin(entry.path)}|${entry.previousPath ? normalizePathForJoin(entry.previousPath) : ""}`
     const list = rawByKey.get(key)
@@ -67,7 +52,7 @@ async function buildFilesForRange(
     else rawByKey.set(key, [entry])
   }
 
-  const numstatByKey = new Map<string, typeof numstatEntries[number][]>()
+  const numstatByKey = new Map<string, (typeof numstatEntries)[number][]>()
   for (const entry of numstatEntries) {
     const key = `${normalizePathForJoin(entry.path)}|${entry.previousPath ? normalizePathForJoin(entry.previousPath) : ""}`
     const list = numstatByKey.get(key)
@@ -140,7 +125,7 @@ async function buildFilesForRange(
           patchDigest,
           stats,
           hunks,
-          source,
+          source
         }
       : {
           key: pf.path,
@@ -154,7 +139,7 @@ async function buildFilesForRange(
           patchDigest,
           stats,
           hunks,
-          source,
+          source
         }
 
     files.push(file)
@@ -170,17 +155,13 @@ async function buildFilesForRange(
   return files
 }
 
-export async function isAncestor(
-  runner: Pick<GitRunner, "run">,
-  ancestorOid: string,
-  descendantOid: string,
-): Promise<boolean> {
+export async function isAncestor(runner: Pick<GitRunner, "run">, ancestorOid: string, descendantOid: string): Promise<boolean> {
   if (!ancestorOid || !descendantOid) return false
   if (ancestorOid === descendantOid) return true
   try {
     const result = await runner.run(["merge-base", "--is-ancestor", ancestorOid, descendantOid], {
       readOnly: true,
-      acceptedExitCodes: [0, 1],
+      acceptedExitCodes: [0, 1]
     })
     return result.exitCode === 0
   } catch {
@@ -188,11 +169,7 @@ export async function isAncestor(
   }
 }
 
-export async function loadSinceLastReviewProjection(
-  runner: Pick<GitRunner, "run">,
-  aggregateDocument: ReviewDocument,
-  lastHeadOid: string,
-): Promise<SinceLastProjectionResult> {
+export async function loadSinceLastReviewProjection(runner: Pick<GitRunner, "run">, aggregateDocument: ReviewDocument, lastHeadOid: string): Promise<SinceLastProjectionResult> {
   if (!lastHeadOid || lastHeadOid.trim() === "") {
     throw new Error("lastHeadOid must be non-empty")
   }
@@ -203,7 +180,7 @@ export async function loadSinceLastReviewProjection(
       kind: "history-rewritten",
       lastHeadOid,
       headOid,
-      reason: "history rewritten: last submission head is not an ancestor of current HEAD",
+      reason: "history rewritten: last submission head is not an ancestor of current HEAD"
     }
   }
 
@@ -215,7 +192,7 @@ export async function loadSinceLastReviewProjection(
     reviewId: aggregateDocument.identity.id,
     generationId: aggregateDocument.generation.id,
     projection,
-    files,
+    files
   }
   return { kind: "ok", document: doc }
 }
@@ -232,11 +209,7 @@ async function resolveParentOids(runner: Pick<GitRunner, "run">, oid: string): P
   }
 }
 
-export async function loadCommitProjection(
-  runner: Pick<GitRunner, "run">,
-  aggregateDocument: ReviewDocument,
-  oid: string,
-): Promise<ReviewProjectionDocument> {
+export async function loadCommitProjection(runner: Pick<GitRunner, "run">, aggregateDocument: ReviewDocument, oid: string): Promise<ReviewProjectionDocument> {
   if (!oid || oid.trim() === "") throw new Error("oid must be non-empty")
 
   // Verify oid is a commit; let git verify
@@ -269,6 +242,6 @@ export async function loadCommitProjection(
     reviewId: aggregateDocument.identity.id,
     generationId: aggregateDocument.generation.id,
     projection,
-    files,
+    files
   }
 }

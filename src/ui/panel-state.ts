@@ -7,33 +7,22 @@ export type PanelState<TTab extends string, TChild> = {
   readonly child?: { readonly parentTab: TTab; readonly value: TChild; readonly view: ListState }
 }
 
-export function createPanelState<TTab extends string, TChild = never>(
-  tabs: readonly TTab[],
-  activeTab: TTab,
-  views: Readonly<Record<TTab, ListState>>,
-): PanelState<TTab, TChild> {
+export function createPanelState<TTab extends string, TChild = never>(tabs: readonly TTab[], activeTab: TTab, views: Readonly<Record<TTab, ListState>>): PanelState<TTab, TChild> {
   return {
     tabs: [...tabs],
     activeTab,
-    views: { ...views },
+    views: { ...views }
   }
 }
 
-export function updatePanelView<TTab extends string, TChild>(
-  state: PanelState<TTab, TChild>,
-  tab: TTab,
-  view: ListState,
-): PanelState<TTab, TChild> {
+export function updatePanelView<TTab extends string, TChild>(state: PanelState<TTab, TChild>, tab: TTab, view: ListState): PanelState<TTab, TChild> {
   return {
     ...state,
-    views: { ...state.views, [tab]: view },
+    views: { ...state.views, [tab]: view }
   }
 }
 
-export function cyclePanelTab<TTab extends string, TChild>(
-  state: PanelState<TTab, TChild>,
-  direction: "next" | "previous",
-): PanelState<TTab, TChild> {
+export function cyclePanelTab<TTab extends string, TChild>(state: PanelState<TTab, TChild>, direction: "next" | "previous"): PanelState<TTab, TChild> {
   // Bracket navigation first leaves transient child if present
   let effectiveState: PanelState<TTab, TChild> = state
   if (state.child !== undefined) {
@@ -49,24 +38,18 @@ export function cyclePanelTab<TTab extends string, TChild>(
   const nextTab = effectiveState.tabs[nextIdx]!
   return {
     ...effectiveState,
-    activeTab: nextTab,
+    activeTab: nextTab
   }
 }
 
-export function enterPanelChild<TTab extends string, TChild>(
-  state: PanelState<TTab, TChild>,
-  child: TChild,
-  view: ListState,
-): PanelState<TTab, TChild> {
+export function enterPanelChild<TTab extends string, TChild>(state: PanelState<TTab, TChild>, child: TChild, view: ListState): PanelState<TTab, TChild> {
   return {
     ...state,
-    child: { parentTab: state.activeTab, value: child, view },
+    child: { parentTab: state.activeTab, value: child, view }
   }
 }
 
-export function leavePanelChild<TTab extends string, TChild>(
-  state: PanelState<TTab, TChild>,
-): PanelState<TTab, TChild> {
+export function leavePanelChild<TTab extends string, TChild>(state: PanelState<TTab, TChild>): PanelState<TTab, TChild> {
   if (state.child === undefined) return state
   const { child: _discarded, ...rest } = state
   return rest as PanelState<TTab, TChild>

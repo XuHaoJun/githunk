@@ -173,7 +173,7 @@ describe("branch review workspace – feedback and artifact acceptance", () => {
       path: repoPath,
       git: repository.git,
       write: repository.write,
-      cleanup: async () => {},
+      cleanup: async () => {}
     }
     harness = await createShellHarness({ repository: restartedRepo, width: 120, height: 40 })
     const restartedScreen = harness.app.screenController as unknown as { active: { kind: string } }

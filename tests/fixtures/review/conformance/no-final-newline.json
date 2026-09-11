@@ -36,11 +36,7 @@
             "oldCount": 2,
             "newStart": 1,
             "newCount": 2,
-            "lines": [
-              " line1",
-              "-line2",
-              "+line2"
-            ]
+            "lines": [" line1", "-line2", "+line2"]
           }
         ]
       }

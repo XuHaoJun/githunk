@@ -20,7 +20,6 @@ async function seedTwoRemoteBranches(repository: ShellHarness["repository"], rem
   await repository.git(["fetch", "origin"])
 }
 
-
 async function seedTrackedRemoteBranch(repository: ShellHarness["repository"], remote: ShellHarness["fetchBare"]): Promise<void> {
   await seedRemoteBranch(repository, remote)
   await repository.git(["branch", "--track", "feature/foo", "origin/feature/foo"])
@@ -281,7 +280,6 @@ describe("branch action parity", () => {
     expect(harness.app.view!.selectedListRange("branches")).toEqual(before)
   })
 
-
   test("rename of a tracking branch asks before opening the name prompt", async () => {
     harness = await createShellHarness({ setup: seedTrackedRemoteBranch })
 
@@ -520,7 +518,8 @@ describe("branch action parity", () => {
     expect(harness.app.controller.state.branch).toBe("feature")
     expect(harness.app.controller.state.branches?.localBranches.map((branch) => branch.name)).toContain("feature")
     expect(harness.app.view!.renderedListText("branches")).toContain("feature")
-    const createActions = harness.app.controller.runner?.log.lines()
+    const createActions = harness.app.controller.runner?.log
+      .lines()
       .filter((line) => line.spans.some((span) => span.style === "action"))
       .map((line) => line.spans.map((span) => span.text).join(""))
       .filter((text) => text === "Create branch")
@@ -563,9 +562,11 @@ describe("branch action parity", () => {
 
   test("moving selection while merge check is pending cancels the original delete", async () => {
     let releaseCheck: (merged: boolean) => void = () => undefined
-    const checkFinished = new Promise<boolean>((resolve) => { releaseCheck = resolve })
+    const checkFinished = new Promise<boolean>((resolve) => {
+      releaseCheck = resolve
+    })
     harness = await createShellHarness({
-      onCheckBranchMerged: async () => checkFinished,
+      onCheckBranchMerged: async () => checkFinished
     })
     await harness.repository.git(["branch", "throwaway"])
     await harness.app.refresh()
@@ -583,9 +584,11 @@ describe("branch action parity", () => {
   })
   test("moving selection while a branch range merge check rejects clears the abandoned error", async () => {
     let rejectCheck: (error: unknown) => void = () => undefined
-    const checkFinished = new Promise<boolean>((_, reject) => { rejectCheck = reject })
+    const checkFinished = new Promise<boolean>((_, reject) => {
+      rejectCheck = reject
+    })
     harness = await createShellHarness({
-      onCheckBranchMerged: async () => checkFinished,
+      onCheckBranchMerged: async () => checkFinished
     })
     await harness.repository.git(["branch", "feature-a"])
     await harness.repository.git(["branch", "feature-b"])
@@ -607,9 +610,11 @@ describe("branch action parity", () => {
 
   test("cycling branch tabs while merge check is pending cancels deletion", async () => {
     let releaseCheck: (merged: boolean) => void = () => undefined
-    const checkFinished = new Promise<boolean>((resolve) => { releaseCheck = resolve })
+    const checkFinished = new Promise<boolean>((resolve) => {
+      releaseCheck = resolve
+    })
     harness = await createShellHarness({
-      onCheckBranchMerged: async () => checkFinished,
+      onCheckBranchMerged: async () => checkFinished
     })
     await harness.repository.git(["branch", "throwaway"])
     await harness.app.refresh()
@@ -629,9 +634,11 @@ describe("branch action parity", () => {
 
   test("leaving and re-entering branches while merge check is pending cancels deletion", async () => {
     let releaseCheck: (merged: boolean) => void = () => undefined
-    const checkFinished = new Promise<boolean>((resolve) => { releaseCheck = resolve })
+    const checkFinished = new Promise<boolean>((resolve) => {
+      releaseCheck = resolve
+    })
     harness = await createShellHarness({
-      onCheckBranchMerged: async () => checkFinished,
+      onCheckBranchMerged: async () => checkFinished
     })
     await harness.repository.git(["branch", "throwaway"])
     await harness.app.refresh()
@@ -650,10 +657,12 @@ describe("branch action parity", () => {
 
   test("moving selection while worktree merge check is pending cancels deletion", async () => {
     let releaseCheck: (merged: boolean) => void = () => undefined
-    const checkFinished = new Promise<boolean>((resolve) => { releaseCheck = resolve })
+    const checkFinished = new Promise<boolean>((resolve) => {
+      releaseCheck = resolve
+    })
     harness = await createShellHarness({
       setup: seedLinkedWorktree,
-      onCheckBranchMerged: async () => checkFinished,
+      onCheckBranchMerged: async () => checkFinished
     })
 
     await harness.pressKey("3")
@@ -684,7 +693,7 @@ describe("branch action parity", () => {
         await repository.git(["config", "branch.feature-b.remote", "origin"])
         await repository.git(["config", "branch.feature-b.merge", "refs/heads/feature-b"])
         await repository.git(["branch", "keep"])
-      },
+      }
     })
 
     await harness.pressKey("3")
@@ -712,7 +721,7 @@ describe("branch action parity", () => {
         await repository.git(["branch", "orphan-a"])
         await repository.git(["branch", "orphan-b"])
         await repository.git(["branch", "keep"])
-      },
+      }
     })
 
     await harness.pressKey("3")
@@ -746,7 +755,7 @@ describe("branch action parity", () => {
         await repository.git(["switch", "-c", "feature-b"])
         await repository.git(["push", "-u", "backup", "feature-b"])
         await repository.git(["switch", "master"])
-      },
+      }
     })
 
     await harness.pressKey("3")

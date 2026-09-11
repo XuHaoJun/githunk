@@ -6,8 +6,7 @@ describe("review identity", () => {
     const first = createReviewIdentity({ headRef: "refs/heads/feature", headOid: "h1", baseRef: "refs/remotes/origin/main" })
     const second = createReviewIdentity({ headRef: "refs/heads/feature", headOid: "h2", baseRef: "refs/remotes/origin/main" })
     expect(second.id).toBe(first.id)
-    expect(createReviewGeneration({ mergeBaseOid: "m1", baseOid: "b1", headOid: "h1" }).id)
-      .not.toBe(createReviewGeneration({ mergeBaseOid: "m2", baseOid: "b2", headOid: "h2" }).id)
+    expect(createReviewGeneration({ mergeBaseOid: "m1", baseOid: "b1", headOid: "h1" }).id).not.toBe(createReviewGeneration({ mergeBaseOid: "m2", baseOid: "b2", headOid: "h2" }).id)
   })
 
   test("uses the detached OID as snapshot identity", () => {

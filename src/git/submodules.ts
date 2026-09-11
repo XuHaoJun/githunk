@@ -44,7 +44,7 @@ export function parseGitModules(raw: string): readonly GitModulesEntry[] {
   return entries.map((entry) => ({
     name: entry.name,
     path: entry.path,
-    ...(entry.url === undefined ? {} : { url: entry.url }),
+    ...(entry.url === undefined ? {} : { url: entry.url })
   }))
 }
 
@@ -61,13 +61,8 @@ async function readGitModules(directory: string): Promise<string | undefined> {
   }
 }
 
-async function collectSubmodules(
-  worktreePath: string,
-  parentModule: SubmoduleConfig | undefined,
-  visited: Set<string>,
-): Promise<readonly SubmoduleConfig[]> {
-  const directory =
-    parentModule === undefined ? worktreePath : join(worktreePath, submoduleFullPath(parentModule))
+async function collectSubmodules(worktreePath: string, parentModule: SubmoduleConfig | undefined, visited: Set<string>): Promise<readonly SubmoduleConfig[]> {
+  const directory = parentModule === undefined ? worktreePath : join(worktreePath, submoduleFullPath(parentModule))
   const resolved = resolve(directory)
   // A submodule pointing back at a directory we already read would recurse for ever.
   if (visited.has(resolved)) return []
@@ -82,7 +77,7 @@ async function collectSubmodules(
       name: entry.name,
       path: entry.path,
       ...(entry.url === undefined ? {} : { url: entry.url }),
-      ...(parentModule === undefined ? {} : { parentModule }),
+      ...(parentModule === undefined ? {} : { parentModule })
     }
     configs.push(config)
     // Nested submodules follow their parent, which is what the indented
@@ -99,10 +94,7 @@ async function collectSubmodules(
  * `.gitmodules` of each one. `parentModule` names a module inside that worktree
  * to start from instead of the worktree itself.
  */
-export async function readSubmoduleConfigs(
-  worktreePath: string,
-  parentModule?: SubmoduleConfig,
-): Promise<readonly SubmoduleConfig[]> {
+export async function readSubmoduleConfigs(worktreePath: string, parentModule?: SubmoduleConfig): Promise<readonly SubmoduleConfig[]> {
   return await collectSubmodules(worktreePath, parentModule, new Set<string>())
 }
 

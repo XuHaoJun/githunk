@@ -52,7 +52,6 @@ describe("panel 3 render-to-main", () => {
     await harness.pressKey("0")
 
     const view = harness.app.view!
-    const content = view.mainContent!
     const selected = "second commit"
     const text = view.mainPane.text
     const display = text.plainText

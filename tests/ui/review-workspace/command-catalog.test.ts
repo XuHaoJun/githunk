@@ -26,9 +26,9 @@ function makeState(projection: ReviewState["projection"]): ReviewState {
         patchDigest: "p1",
         stats: { additions: 1, deletions: 1 },
         hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+new"] })],
-        source: "available",
-      },
-    ],
+        source: "available"
+      }
+    ]
   })
   return {
     document: doc,
@@ -42,7 +42,7 @@ function makeState(projection: ReviewState["projection"]): ReviewState {
     feedback: [],
     draft: null,
     expandedGaps: [],
-    lastSubmission: null,
+    lastSubmission: null
   }
 }
 
@@ -86,22 +86,7 @@ describe("command-catalog defaults — exact spec §5.4 keys", () => {
   })
   test("active help and command resolution omit every deferred surface", () => {
     const state = makeState({ kind: "aggregate" })
-    const deferredLabels = [
-      "Since Last Review",
-      "individual commit",
-      "trailing final hunk",
-      "page",
-      "half-page",
-      "horizontal scroll",
-      "current-line",
-      "theme",
-      "copy decorations",
-      "agent annotations",
-      "extension panes",
-      "pager",
-      "editor",
-      "git mutation",
-    ]
+    const deferredLabels = ["Since Last Review", "individual commit", "trailing final hunk", "page", "half-page", "horizontal scroll", "current-line", "theme", "copy decorations", "agent annotations", "extension panes", "pager", "editor", "git mutation"]
     const help = reviewHelp("stream", state)
     const hints = reviewHints("stream", state)
     for (const label of deferredLabels) {
@@ -128,7 +113,7 @@ describe("command-catalog defaults — exact spec §5.4 keys", () => {
       { id: "review.extensionPanes", keys: ["x", "X"] },
       { id: "review.pager", keys: ["p", "P"] },
       { id: "review.editor", keys: ["i", "I"] },
-      { id: "git.mutation", keys: ["o", "O", "m", "M", "w", "W", "u", "U"] },
+      { id: "git.mutation", keys: ["o", "O", "m", "M", "w", "W", "u", "U"] }
     ]
     const focuses: readonly ReviewFocus[] = ["stream", "sidebar", "filter", "composer", "any", "global"]
     for (const command of deferredCommands) {
@@ -138,7 +123,6 @@ describe("command-catalog defaults — exact spec §5.4 keys", () => {
       }
     }
   })
-
 
   test("keeps quit unbound while allowing Branch Review to toggle closed", () => {
     const allKeys = REVIEW_COMMANDS.flatMap((c) => c.keys)
@@ -193,11 +177,7 @@ describe("command-catalog — availability per projection", () => {
   })
 
   test("navigation commands available in all projections", () => {
-    const states = [
-      makeState({ kind: "aggregate" }),
-      makeState({ kind: "since-last-review", fromHeadOid: "x".repeat(40) }),
-      makeState({ kind: "commit", oid: "y".repeat(40) }),
-    ]
+    const states = [makeState({ kind: "aggregate" }), makeState({ kind: "since-last-review", fromHeadOid: "x".repeat(40) }), makeState({ kind: "commit", oid: "y".repeat(40) })]
     const ids = ["review.nextHunk", "review.prevHunk", "review.nextFile", "review.prevFile", "review.nextFeedback", "review.prevFeedback"]
     for (const id of ids) {
       const cmd = REVIEW_COMMANDS.find((c) => c.id === id)!
@@ -223,7 +203,6 @@ describe("command-catalog — context-aware hints/help", () => {
     expect(sidebarHints).toContain("/")
     expect(streamHints).not.toBe(sidebarHints)
     const helpStream = reviewHelp("stream", agg)
-    const helpCommit = reviewHelp("stream", makeState({ kind: "commit", oid: "a".repeat(40) }))
     expect(helpStream).toContain("Mark current file Viewed")
     expect(helpStream).toContain("r")
     expect(helpStream).toContain("0 Diff")
@@ -247,7 +226,7 @@ describe("command-catalog — full keyboard coverage for every mouse action", ()
       lineRangeSelect: ["review.toggleRange"],
       gapExpand: ["review.nextHunk", "review.prevHunk"],
       feedbackSelect: ["review.nextFeedback", "review.prevFeedback"],
-      menuAction: ["review.help", "review.close"],
+      menuAction: ["review.help", "review.close"]
     }
     for (const [mouse, ids] of Object.entries(mouseToKeyboard)) {
       for (const id of ids) {

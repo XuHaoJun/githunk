@@ -6,8 +6,6 @@ import { isAncestor, loadSinceLastReviewProjection } from "../../../src/review/g
 import { ReviewWorkspaceController } from "../../../src/ui/review-workspace/controller"
 import { ReviewStateStore } from "../../../src/review/storage/review-state-store"
 import { ReviewArtifactStore } from "../../../src/review/storage/review-artifact-store"
-import { createReviewHunk } from "../../../src/review/core/document"
-import type { ReviewFile } from "../../../src/review/core/types"
 import { createInvalidBaseError, createHistoryRewrittenError } from "../../../src/ui/review-workspace/error-state"
 
 async function commitAll(repo: TempRepository, message: string): Promise<string> {
@@ -21,100 +19,99 @@ async function commitAll(repo: TempRepository, message: string): Promise<string>
 
 describe("history-rewrite integration", () => {
   describe("future projection loader — isolated direct coverage", () => {
-  test("amend rewrites history: old head not ancestor, Since Last Review returns history-rewritten", async () => {
-    const repo = await createTempRepository()
-    try {
-      await repo.write("f.txt", "base\n")
-      await commitAll(repo, "base")
-      await repo.git(["checkout", "-b", "feature"])
-      await repo.write("f.txt", "one\n")
-      const c1 = await commitAll(repo, "c1")
-      await repo.write("f.txt", "two\n")
-      const c2 = await commitAll(repo, "c2")
-      const oldHead = c2
+    test("amend rewrites history: old head not ancestor, Since Last Review returns history-rewritten", async () => {
+      const repo = await createTempRepository()
+      try {
+        await repo.write("f.txt", "base\n")
+        await commitAll(repo, "base")
+        await repo.git(["checkout", "-b", "feature"])
+        await repo.write("f.txt", "one\n")
+        await commitAll(repo, "c1")
+        await repo.write("f.txt", "two\n")
+        const c2 = await commitAll(repo, "c2")
+        const oldHead = c2
 
-      await repo.git(["commit", "--amend", "--quiet", "-m", "c2 amended"])
-      const newHead = (await repo.git(["rev-parse", "HEAD"])).stdout.trim()
-      expect(newHead).not.toBe(oldHead)
+        await repo.git(["commit", "--amend", "--quiet", "-m", "c2 amended"])
+        const newHead = (await repo.git(["rev-parse", "HEAD"])).stdout.trim()
+        expect(newHead).not.toBe(oldHead)
 
-      const runner = new GitRunner(repo.path)
-      const doc = await loadReviewDocument(runner, "master")
-      expect(doc.generation.headOid).toBe(newHead)
+        const runner = new GitRunner(repo.path)
+        const doc = await loadReviewDocument(runner, "master")
+        expect(doc.generation.headOid).toBe(newHead)
 
-      const result = await loadSinceLastReviewProjection(runner, doc, oldHead)
-      expect(result.kind).toBe("history-rewritten")
-      if (result.kind === "history-rewritten") {
-        expect(result.reason).toMatch(/history/i)
-        expect(result.lastHeadOid).toBe(oldHead)
+        const result = await loadSinceLastReviewProjection(runner, doc, oldHead)
+        expect(result.kind).toBe("history-rewritten")
+        if (result.kind === "history-rewritten") {
+          expect(result.reason).toMatch(/history/i)
+          expect(result.lastHeadOid).toBe(oldHead)
+        }
+        expect(await isAncestor(runner, oldHead, newHead)).toBe(false)
+
+        // Controller should surface history-rewritten error while preserving aggregate document
+        // Simulate a controller that had lastSubmission = oldHead and then refreshes to newHead
+        // We'll use error-state helper to ensure typed error
+        const err = createHistoryRewrittenError(oldHead, newHead)
+        expect(err.kind).toBe("history-rewritten")
+        expect(err.title).toMatch(/History rewritten/i)
+        expect(err.action).toBe("dismiss")
+      } finally {
+        await repo.cleanup()
       }
-      expect(await isAncestor(runner, oldHead, newHead)).toBe(false)
+    })
 
-      // Controller should surface history-rewritten error while preserving aggregate document
-      // Simulate a controller that had lastSubmission = oldHead and then refreshes to newHead
-      // We'll use error-state helper to ensure typed error
-      const err = createHistoryRewrittenError(oldHead, newHead)
-      expect(err.kind).toBe("history-rewritten")
-      expect(err.title).toMatch(/History rewritten/i)
-      expect(err.action).toBe("dismiss")
-    } finally {
-      await repo.cleanup()
-    }
-  })
+    test("force reset + new commit also history-rewritten, aggregate coverage preserved", async () => {
+      const repo = await createTempRepository()
+      try {
+        await repo.write("a.txt", "base\n")
+        await commitAll(repo, "base")
+        await repo.git(["checkout", "-b", "feature"])
+        await repo.write("a.txt", "one\n")
+        const c1 = await commitAll(repo, "c1")
+        await repo.write("a.txt", "two\n")
+        const c2 = await commitAll(repo, "c2")
+        const oldHead = c2
 
-  test("force reset + new commit also history-rewritten, aggregate coverage preserved", async () => {
-    const repo = await createTempRepository()
-    try {
-      await repo.write("a.txt", "base\n")
-      await commitAll(repo, "base")
-      await repo.git(["checkout", "-b", "feature"])
-      await repo.write("a.txt", "one\n")
-      const c1 = await commitAll(repo, "c1")
-      await repo.write("a.txt", "two\n")
-      const c2 = await commitAll(repo, "c2")
-      const oldHead = c2
+        // Reset to c1 and create divergent history
+        await repo.git(["reset", "--hard", c1])
+        await repo.write("a.txt", "diverged\n")
+        const newHead = await commitAll(repo, "diverged commit")
+        expect(newHead).not.toBe(oldHead)
 
-      // Reset to c1 and create divergent history
-      await repo.git(["reset", "--hard", c1])
-      await repo.write("a.txt", "diverged\n")
-      const newHead = await commitAll(repo, "diverged commit")
-      expect(newHead).not.toBe(oldHead)
+        const runner = new GitRunner(repo.path)
+        const doc = await loadReviewDocument(runner, "master")
+        expect(doc.generation.headOid).toBe(newHead)
+        const result = await loadSinceLastReviewProjection(runner, doc, oldHead)
+        expect(result.kind).toBe("history-rewritten")
 
-      const runner = new GitRunner(repo.path)
-      const doc = await loadReviewDocument(runner, "master")
-      expect(doc.generation.headOid).toBe(newHead)
-      const result = await loadSinceLastReviewProjection(runner, doc, oldHead)
-      expect(result.kind).toBe("history-rewritten")
-
-      // Aggregate document still loads successfully and has files
-      expect(doc.files.length).toBeGreaterThanOrEqual(0)
-    } finally {
-      await repo.cleanup()
-    }
-  })
-
-  test("non-rewritten history is ancestor, Since Last Review ok", async () => {
-    const repo = await createTempRepository()
-    try {
-      await repo.write("f.txt", "base\n")
-      await commitAll(repo, "base")
-      await repo.git(["checkout", "-b", "feature"])
-      await repo.write("f.txt", "one\n")
-      const c1 = await commitAll(repo, "c1")
-      await repo.write("f.txt", "two\n")
-      const c2 = await commitAll(repo, "c2")
-      const runner = new GitRunner(repo.path)
-      const doc = await loadReviewDocument(runner, "master")
-      const result = await loadSinceLastReviewProjection(runner, doc, c1)
-      expect(result.kind).toBe("ok")
-      if (result.kind === "ok") {
-        expect(result.document).toBeDefined()
+        // Aggregate document still loads successfully and has files
+        expect(doc.files.length).toBeGreaterThanOrEqual(0)
+      } finally {
+        await repo.cleanup()
       }
-      expect(await isAncestor(runner, c1, c2)).toBe(true)
-    } finally {
-      await repo.cleanup()
-    }
-  })
+    })
 
+    test("non-rewritten history is ancestor, Since Last Review ok", async () => {
+      const repo = await createTempRepository()
+      try {
+        await repo.write("f.txt", "base\n")
+        await commitAll(repo, "base")
+        await repo.git(["checkout", "-b", "feature"])
+        await repo.write("f.txt", "one\n")
+        const c1 = await commitAll(repo, "c1")
+        await repo.write("f.txt", "two\n")
+        const c2 = await commitAll(repo, "c2")
+        const runner = new GitRunner(repo.path)
+        const doc = await loadReviewDocument(runner, "master")
+        const result = await loadSinceLastReviewProjection(runner, doc, c1)
+        expect(result.kind).toBe("ok")
+        if (result.kind === "ok") {
+          expect(result.document).toBeDefined()
+        }
+        expect(await isAncestor(runner, c1, c2)).toBe(true)
+      } finally {
+        await repo.cleanup()
+      }
+    })
   })
   test("aggregate refresh retains the complete document after a rewritten head", async () => {
     const repo = await createTempRepository()

@@ -6,15 +6,13 @@ import type { CommitDetails, CommitSummary } from "../../src/domain/commit"
 import type { TagSummary } from "../../src/domain/tag"
 import type { WorkingTreeSnapshot } from "../../src/domain/repository"
 
-const commits: readonly CommitSummary[] = [
-  { oid: "commit-1", shortOid: "commit", parentOids: ["parent"], authorName: "A", authoredAt: "2026-01-01T00:00:00Z", subject: "one", body: "" },
-]
+const commits: readonly CommitSummary[] = [{ oid: "commit-1", shortOid: "commit", parentOids: ["parent"], authorName: "A", authoredAt: "2026-01-01T00:00:00Z", subject: "one", body: "" }]
 const details: CommitDetails = {
   ...commits[0]!,
   document: { text: "diff --git a/a.txt b/a.txt\n", lines: [], files: [{ fileIndex: 0, oldPath: "a.txt", newPath: "a.txt", startUtf16: 0, endUtf16: 24, lines: [], hunks: [] }] },
   patch: { text: "diff --git a/a.txt b/a.txt\n", lines: [], files: [] },
   raw: "",
-  preamble: "commit commit-1\nAuthor: A\n\n    one\n\n1 file changed",
+  preamble: "commit commit-1\nAuthor: A\n\n    one\n\n1 file changed"
 }
 const emptyDetails: CommitDetails = {
   ...commits[0]!,
@@ -23,10 +21,14 @@ const emptyDetails: CommitDetails = {
   document: { text: "", lines: [], files: [] },
   patch: { text: "", lines: [], files: [] },
   raw: "",
-  preamble: "commit empty-commit\nAuthor: A\n\n    empty\n\n",
+  preamble: "commit empty-commit\nAuthor: A\n\n    empty\n\n"
 }
 const working: WorkingTreeSnapshot = {
-  repositoryRoot: "/tmp/repo", branch: "main", reviewTarget: { kind: "working-tree", scope: "all" }, files: [], patches: [],
+  repositoryRoot: "/tmp/repo",
+  branch: "main",
+  reviewTarget: { kind: "working-tree", scope: "all" },
+  files: [],
+  patches: []
 }
 
 describe("commit drill-down controller", () => {
@@ -50,7 +52,13 @@ describe("commit drill-down controller", () => {
   })
 
   test("failed loadCommitInspection leaves prior state intact", async () => {
-    const controller = new AppController({ load: async () => working, loadCommits: async () => commits, loadCommit: async () => { throw new Error("not found") } })
+    const controller = new AppController({
+      load: async () => working,
+      loadCommits: async () => commits,
+      loadCommit: async () => {
+        throw new Error("not found")
+      }
+    })
     await controller.refresh()
     const target = controller.state.reviewTarget
     await expect(controller.loadCommitInspection("missing")).rejects.toThrow()
@@ -74,7 +82,9 @@ describe("commit drill-down controller", () => {
       await controller.refresh()
       const target = controller.state.reviewTarget
       const tag = { name: "v1", oid: "abc", subject: "", commit: "abc", annotated: false } as unknown as TagSummary
-      try { await controller.loadTagInspection(tag) } catch {}
+      try {
+        await controller.loadTagInspection(tag)
+      } catch {}
       expect(controller.state.reviewTarget).toEqual(target)
     } finally {
       await repository.cleanup()
@@ -94,7 +104,7 @@ describe("commit drill-down controller", () => {
     const controller = new AppController({
       load: async () => working,
       loadCommits: async () => commits,
-      loadCommit: async () => details,
+      loadCommit: async () => details
     })
     await controller.refresh()
     expect(controller.state.reviewTarget.kind).toBe("working-tree")

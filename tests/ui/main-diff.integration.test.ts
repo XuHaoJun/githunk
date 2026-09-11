@@ -8,7 +8,6 @@ import { getMainDiffLineRangeState, getMainDiffLineSelection, getMainDocument, g
 import { VIRTUAL_DIFF_LINE_THRESHOLD } from "../../src/domain/diff/virtual"
 import { paneScrollbar } from "../../src/ui/panes/common"
 
-
 /** The main pane's spans on `row`, clipped to its own text window, in paint order. */
 function mainSpans(harness: ShellHarness, row: number): Array<{ text: string; fg: RGBA; attributes: number }> {
   const geometry = harness.app.view!.paneTextGeometry("main")!
@@ -88,7 +87,6 @@ function mainHasSelectionBackground(harness: ShellHarness, row: number): boolean
   return line?.spans.some((span) => span.bg.intent !== "default" && span.bg.a > 0) ?? false
 }
 
-
 describe("main pane diff rendering", () => {
   let harness: ShellHarness | undefined
   afterEach(async () => {
@@ -105,7 +103,7 @@ describe("main pane diff rendering", () => {
         await repository.git(["add", "-A"])
         await repository.git(["commit", "-m", "base"])
         await repository.write("a.txt", "one\nTWO\nthree\n")
-      },
+      }
     })
     await harness.pressKey("2")
 
@@ -141,7 +139,7 @@ describe("main pane diff rendering", () => {
         await repository.write("a.txt", "one\nTWO\nthree\n")
         await repository.git(["add", "-A"])
         await repository.git(["commit", "-m", "second change"])
-      },
+      }
     })
     await harness.pressKey("4")
     await harness.app.view!.whenPreviewSettled()
@@ -179,7 +177,7 @@ describe("main pane diff rendering", () => {
         await repository.write("a.txt", "one\nTWO\nthree\n")
         await repository.git(["add", "-A"])
         await repository.git(["commit", "-m", "second change"])
-      },
+      }
     })
     await harness.pressKey("4")
     await harness.app.view!.whenPreviewSettled()
@@ -216,7 +214,7 @@ describe("main pane diff rendering", () => {
         await repository.write("a.txt", "one\nTWO\nthree\n")
         await repository.git(["add", "-A"])
         await repository.git(["commit", "-m", "second change"])
-      },
+      }
     })
     await harness.pressKey("4")
     await harness.app.view!.whenPreviewSettled()
@@ -249,7 +247,7 @@ describe("main pane diff rendering", () => {
         await repository.write("a.txt", "one\nTWO\nthree\n")
         await repository.git(["add", "-A"])
         await repository.git(["commit", "-m", "second change"])
-      },
+      }
     })
     await harness.pressKey("4")
     await harness.app.view!.whenPreviewSettled()
@@ -288,7 +286,7 @@ describe("main pane diff rendering", () => {
         await repository.write("a.txt", "one\nTWO\nthree\n")
         await repository.git(["add", "-A"])
         await repository.git(["commit", "-m", "second change"])
-      },
+      }
     })
     await harness.pressKey("4")
     await harness.app.view!.whenPreviewSettled()
@@ -329,7 +327,7 @@ describe("main pane diff rendering", () => {
         await repository.write("large.txt", changed)
         await repository.git(["add", "large.txt"])
         await repository.git(["commit", "-m", message])
-      },
+      }
     })
     await harness.pressKey("4")
     await harness.app.view!.whenPreviewSettled()
@@ -345,12 +343,7 @@ describe("main pane diff rendering", () => {
     expect(start).toBeGreaterThanOrEqual(0)
 
     const geometry = view.paneTextGeometry("main")!
-    await harness.drag(
-      geometry.screenX + start,
-      geometry.screenY,
-      geometry.screenX + start + selected.length - 1,
-      geometry.screenY,
-    )
+    await harness.drag(geometry.screenX + start, geometry.screenY, geometry.screenX + start + selected.length - 1, geometry.screenY)
     expect(view.mainPane.text.getSelectedText()).toBe(selected)
 
     const copied: string[] = []
@@ -374,17 +367,11 @@ describe("main pane diff rendering", () => {
     const selectedColumn = preambleRows[selectedRow]!.indexOf(scrolledSelected)
     view.mainPane.text.scrollY = selectedRow
     await harness.flush()
-    await harness.drag(
-      geometry.screenX + selectedColumn,
-      geometry.screenY,
-      geometry.screenX + selectedColumn + scrolledSelected.length - 1,
-      geometry.screenY,
-    )
+    await harness.drag(geometry.screenX + selectedColumn, geometry.screenY, geometry.screenX + selectedColumn + scrolledSelected.length - 1, geometry.screenY)
     expect(view.mainPane.text.getSelectedText()).toBe(scrolledSelected)
     await harness.pressKey("o", { ctrl: true })
     expect(copied).toEqual([selected, scrolledSelected])
   })
-
 
   test("keeps painting diff colours after scrolling deep into a long diff", async () => {
     harness = await createShellHarness({
@@ -395,7 +382,7 @@ describe("main pane diff rendering", () => {
         await repository.git(["add", "-A"])
         await repository.git(["commit", "-m", "base"])
         await repository.write("a.txt", Array.from({ length: 400 }, (_, i) => `line ${i} changed`).join("\n") + "\n")
-      },
+      }
     })
     await harness.pressKey("2")
     await harness.pressKey("0")
@@ -431,7 +418,7 @@ describe("main pane keyboard line ranges", () => {
         await repository.git(["add", "-A"])
         await repository.git(["commit", "-m", "base"])
         await repository.write("a.txt", "one\nTWO\nthree\n")
-      },
+      }
     })
   }
   async function useUnstagedScope(): Promise<void> {
@@ -447,13 +434,13 @@ describe("main pane keyboard line ranges", () => {
       setup: async (repository: TempRepository) => {
         const lineCount = 11_000
         const original = Array.from({ length: lineCount }, (_, index) => `base ${index}`)
-        const changed = original.map((line, index) => index === 0 ? `changed ${index}` : line)
+        const changed = original.map((line, index) => (index === 0 ? `changed ${index}` : line))
         await repository.write("large.txt", `${original.join("\n")}\n`)
         await repository.git(["add", "large.txt"])
         await repository.git(["commit", "-m", "base"])
         await repository.git(["config", "diff.context", String(lineCount)])
         await repository.write("large.txt", `${changed.join("\n")}\n`)
-      },
+      }
     })
     await created.pressKey("]")
     await created.settle()
@@ -487,19 +474,9 @@ describe("main pane keyboard line ranges", () => {
     const start = layout!.rowAt(startRow)!
     const geometry = view.paneTextGeometry("main")!
     if (reverse) {
-      await harness!.drag(
-        geometry.screenX,
-        geometry.screenY + endRow + 1,
-        geometry.screenX + start.gutterCols,
-        geometry.screenY + startRow,
-      )
+      await harness!.drag(geometry.screenX, geometry.screenY + endRow + 1, geometry.screenX + start.gutterCols, geometry.screenY + startRow)
     } else {
-      await harness!.drag(
-        geometry.screenX + start.gutterCols,
-        geometry.screenY + startRow,
-        geometry.screenX,
-        geometry.screenY + endRow + 1,
-      )
+      await harness!.drag(geometry.screenX + start.gutterCols, geometry.screenY + startRow, geometry.screenX, geometry.screenY + endRow + 1)
     }
     const resolved = getMainSelection(pane)
     if (resolved?.valid !== true || resolved.kind !== "document") throw new Error("main selection was not a document selection")
@@ -632,13 +609,7 @@ describe("main pane keyboard line ranges", () => {
     const visibleEnd = endRow - scrolledY
     expect(visibleEnd).toBeLessThan(geometry.height)
     const start = layout!.rowAt(startRow)!
-    const endColumn = Math.min(geometry.width - 1, start.gutterCols + 24)
-    await harness.drag(
-      geometry.screenX + start.gutterCols,
-      geometry.screenY + visibleStart,
-      geometry.screenX,
-      geometry.screenY + visibleEnd + 1,
-    )
+    await harness.drag(geometry.screenX + start.gutterCols, geometry.screenY + visibleStart, geometry.screenX, geometry.screenY + visibleEnd + 1)
     const resolved = getMainSelection(pane)
     expect(resolved?.valid).toBe(true)
     if (resolved?.valid !== true || resolved.kind !== "document") throw new Error("main selection was not a document selection")
@@ -649,7 +620,6 @@ describe("main pane keyboard line ranges", () => {
     const staged = (await harness.repository.git(["diff", "--cached", "--", "large.txt"])).stdout
     expect(staged).toMatch(/^\+changed 0$/m)
   })
-
 
   test("selects contiguous changed lines for staging and paints the visual range", async () => {
     harness = await changedFileHarness()
@@ -709,7 +679,7 @@ describe("main pane keyboard line ranges", () => {
         await repository.git(["commit", "-m", "base"])
         await repository.write("a.txt", "untracked a\n")
         await repository.write("b.txt", "untracked b\n")
-      },
+      }
     })
     await useUnstagedScope()
     await harness.pressKey("0")
@@ -721,10 +691,12 @@ describe("main pane keyboard line ranges", () => {
     let fileIndexes = new Set<number>()
     for (let step = 0; step < 40; step += 1) {
       const selected = getMainDiffLineSelection(view.mainPane)
-      fileIndexes = new Set((selected?.indexes ?? []).flatMap((index) => {
-        const fileIndex = document?.lines[index]?.fileIndex
-        return fileIndex === undefined ? [] : [fileIndex]
-      }))
+      fileIndexes = new Set(
+        (selected?.indexes ?? []).flatMap((index) => {
+          const fileIndex = document?.lines[index]?.fileIndex
+          return fileIndex === undefined ? [] : [fileIndex]
+        })
+      )
       if (fileIndexes.size >= 2) break
       await harness.pressKey("ARROW_DOWN", { shift: true })
     }
@@ -748,7 +720,7 @@ describe("main pane keyboard line ranges", () => {
         await repository.git(["commit", "-m", "base"])
         await repository.write("tracked.txt", "tracked change\n")
         await repository.write("untracked.txt", "untracked change\n")
-      },
+      }
     })
     await useUnstagedScope()
     await harness.pressKey("0")
@@ -760,10 +732,12 @@ describe("main pane keyboard line ranges", () => {
     let fileIndexes = new Set<number>()
     for (let step = 0; step < 40; step += 1) {
       const selected = getMainDiffLineSelection(view.mainPane)
-      fileIndexes = new Set((selected?.indexes ?? []).flatMap((index) => {
-        const fileIndex = document?.lines[index]?.fileIndex
-        return fileIndex === undefined ? [] : [fileIndex]
-      }))
+      fileIndexes = new Set(
+        (selected?.indexes ?? []).flatMap((index) => {
+          const fileIndex = document?.lines[index]?.fileIndex
+          return fileIndex === undefined ? [] : [fileIndex]
+        })
+      )
       if (fileIndexes.size >= 2) break
       await harness.pressKey("ARROW_DOWN", { shift: true })
     }
@@ -808,7 +782,7 @@ describe("main pane install cost", () => {
         for (let file = 0; file < 8; file++) {
           await repository.write(`src/file-${file}.ts`, Array.from({ length: 250 }, (_, i) => `const value${i} = ${i} // ${i % 3 === 0 ? "changed" : "original"} padding padding`).join("\n") + "\n")
         }
-      },
+      }
     })
     const view = harness.app.view!
     expect(harness.app.controller.state.files.length).toBe(8)
@@ -851,7 +825,7 @@ describe("main pane install cost", () => {
         await repository.git(["commit", "-m", "base"])
         await repository.write("big.txt", Array.from({ length: lines }, (_, i) => `line ${i} ${i % 4 === 0 ? "CHANGED" : "original"} content padding padding`).join("\n") + "\n")
         await repository.write("small.txt", "hello world\n")
-      },
+      }
     })
     const view = harness.app.view!
     await harness.pressKey("2")
@@ -865,7 +839,9 @@ describe("main pane install cost", () => {
     }
 
     // A model update repaints every pane, so nothing it touches may walk the whole patch.
-    await measure("view.update", () => { view.update(harness!.app.controller.state) })
+    await measure("view.update", () => {
+      view.update(harness!.app.controller.state)
+    })
     // Moving the cursor between files re-presents the main pane.
     await measure("select next file", () => harness!.pressKey("j"))
     await measure("select previous file", () => harness!.pressKey("k"))

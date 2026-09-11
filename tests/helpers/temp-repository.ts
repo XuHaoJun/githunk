@@ -23,11 +23,11 @@ export async function createTempRepository(): Promise<TempRepository> {
       cwd: path,
       env: {
         ...process.env,
-        GIT_TERMINAL_PROMPT: "0",
+        GIT_TERMINAL_PROMPT: "0"
       },
       stdin: "pipe",
       stdout: "pipe",
-      stderr: "pipe",
+      stderr: "pipe"
     })
 
     if (stdin !== undefined) {
@@ -35,11 +35,7 @@ export async function createTempRepository(): Promise<TempRepository> {
     }
     proc.stdin.end()
 
-    const [stdout, stderr, exitCode] = await Promise.all([
-      Bun.readableStreamToText(proc.stdout),
-      Bun.readableStreamToText(proc.stderr),
-      proc.exited,
-    ])
+    const [stdout, stderr, exitCode] = await Promise.all([Bun.readableStreamToText(proc.stdout), Bun.readableStreamToText(proc.stderr), proc.exited])
     return { exitCode, stdout, stderr }
   }
 
@@ -60,7 +56,7 @@ export async function createTempRepository(): Promise<TempRepository> {
   }
   for (const [key, value] of [
     ["user.name", "Githunk Test"],
-    ["user.email", "githunk-test@example.invalid"],
+    ["user.email", "githunk-test@example.invalid"]
   ] as const) {
     const configured = await git(["config", key, value])
     if (configured.exitCode !== 0) {
@@ -82,6 +78,6 @@ export async function createTempRepository(): Promise<TempRepository> {
     },
     async cleanup(): Promise<void> {
       await rm(path, { recursive: true, force: true })
-    },
+    }
   }
 }

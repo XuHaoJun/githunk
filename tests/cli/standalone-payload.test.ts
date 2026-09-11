@@ -19,9 +19,7 @@ describe("replaceStandalonePayload", () => {
     const stagedBinary = join(stagedRoot, "githunk")
     const stagedSkill = join(stagedRoot, "skills", "githunk-handoff", "SKILL.md")
     const executablePath = join(installRoot, "githunk")
-    const installedSkill = layout === "archive"
-      ? join(installRoot, "skills", "githunk-handoff", "SKILL.md")
-      : join(installRoot, "githunk-assets", "skills", "githunk-handoff", "SKILL.md")
+    const installedSkill = layout === "archive" ? join(installRoot, "skills", "githunk-handoff", "SKILL.md") : join(installRoot, "githunk-assets", "skills", "githunk-handoff", "SKILL.md")
     await mkdir(join(stagedRoot, "skills", "githunk-handoff"), { recursive: true })
     await mkdir(join(installedSkill, ".."), { recursive: true })
     await writeFile(stagedBinary, "new binary")
@@ -44,14 +42,16 @@ describe("replaceStandalonePayload", () => {
   test("restores the old skill when committing the binary fails", async () => {
     const paths = await fixture("flat")
 
-    await expect(replaceStandalonePayload(paths, {
-      rename: async (source, destination) => {
-        if (source === `${paths.executablePath}.new` && destination === paths.executablePath) {
-          throw new Error("binary locked")
+    await expect(
+      replaceStandalonePayload(paths, {
+        rename: async (source, destination) => {
+          if (source === `${paths.executablePath}.new` && destination === paths.executablePath) {
+            throw new Error("binary locked")
+          }
+          await rename(source, destination)
         }
-        await rename(source, destination)
-      },
-    })).rejects.toThrow("binary locked")
+      })
+    ).rejects.toThrow("binary locked")
 
     expect(await Bun.file(paths.executablePath).text()).toBe("old binary")
     expect(await Bun.file(paths.installedSkill).text()).toBe("old skill")
@@ -64,7 +64,7 @@ describe("replaceStandalonePayload", () => {
     await replaceStandalonePayload({
       stagedBinary: paths.stagedBinary,
       stagedSkill: undefined,
-      executablePath: paths.executablePath,
+      executablePath: paths.executablePath
     })
 
     expect(await Bun.file(paths.executablePath).text()).toBe("new binary")

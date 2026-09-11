@@ -2,13 +2,7 @@ import type { AppModel } from "../../app/model"
 import { filterItems } from "../../app/filter"
 import type { Worktree } from "../../domain/worktree"
 import type { ListColumn, ListRow } from "../list-view"
-import {
-  WORKTREE_BRANCH_FG,
-  WORKTREE_CURRENT_FG,
-  WORKTREE_DETACHED_FG,
-  WORKTREE_INACTIVE_MARKER_FG,
-  WORKTREE_MISSING_FG,
-} from "../theme"
+import { WORKTREE_BRANCH_FG, WORKTREE_CURRENT_FG, WORKTREE_DETACHED_FG, WORKTREE_INACTIVE_MARKER_FG, WORKTREE_MISSING_FG } from "../theme"
 
 /** Shown in place of the list, and in the main pane, when there is no worktree selected — pkg/i18n/english.go:2069. */
 export const NO_WORKTREES_THIS_REPO = "No worktrees"
@@ -47,13 +41,11 @@ export function worktreeRows(model: AppModel, filter = ""): ListRow[] {
   const rows: ListRow[] = (model.worktrees ?? []).map((worktree) => {
     const branch = branchText(worktree)
     const mainLabel = worktree.isMain ? ` ${MAIN_WORKTREE_LABEL}` : ""
-    const marker: ListColumn = worktree.isCurrent
-      ? { text: "  *", priority: 0, color: WORKTREE_CURRENT_FG }
-      : { text: "", priority: 0, color: WORKTREE_INACTIVE_MARKER_FG }
+    const marker: ListColumn = worktree.isCurrent ? { text: "  *", priority: 0, color: WORKTREE_CURRENT_FG } : { text: "", priority: 0, color: WORKTREE_INACTIVE_MARKER_FG }
     const name: ListColumn = {
       text: worktree.isPathMissing ? `${worktree.name} ${MISSING_WORKTREE_LABEL}` : worktree.name,
       priority: 1,
-      ...(worktree.isPathMissing ? { color: WORKTREE_MISSING_FG } : {}),
+      ...(worktree.isPathMissing ? { color: WORKTREE_MISSING_FG } : {})
     }
     // lazygit joins the branch and the main label into one display string with two different
     // styles, which `segments` is exactly for: the label keeps the row's default colour.
@@ -61,12 +53,7 @@ export function worktreeRows(model: AppModel, filter = ""): ListRow[] {
       text: `${branch}${mainLabel}`,
       priority: 2,
       flex: true,
-      segments: [
-        ...(branch.length === 0
-          ? []
-          : [{ text: branch, color: worktree.branch !== undefined && worktree.branch.length > 0 ? WORKTREE_BRANCH_FG : WORKTREE_DETACHED_FG }]),
-        ...(mainLabel.length === 0 ? [] : [{ text: mainLabel }]),
-      ],
+      segments: [...(branch.length === 0 ? [] : [{ text: branch, color: worktree.branch !== undefined && worktree.branch.length > 0 ? WORKTREE_BRANCH_FG : WORKTREE_DETACHED_FG }]), ...(mainLabel.length === 0 ? [] : [{ text: mainLabel }])]
     }
     return { id: worktreeRowId(worktree), columns: [marker, name, trailing] }
   })
@@ -83,7 +70,7 @@ export function worktreePreviewText(worktree: Worktree): string {
   const rows: readonly (readonly [string, string])[] = [
     ["Name:", `${worktree.name}${worktree.isMain ? ` ${MAIN_WORKTREE_LABEL}` : ""}`],
     ["Branch:", branchText(worktree)],
-    ["Path:", `${worktree.path}${worktree.isPathMissing ? ` ${MISSING_WORKTREE_LABEL}` : ""}`],
+    ["Path:", `${worktree.path}${worktree.isPathMissing ? ` ${MISSING_WORKTREE_LABEL}` : ""}`]
   ]
   const width = rows.reduce((max, [label]) => Math.max(max, label.length), 0) + 2
   return rows.map(([label, value]) => `${label}${" ".repeat(width - label.length)}${value}\n`).join("")

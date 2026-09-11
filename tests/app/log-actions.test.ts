@@ -15,7 +15,6 @@ function snapshot(files: readonly ChangedFile[] = []): WorkingTreeSnapshot {
 
 const emptyDiffDocument: DiffDocument = { text: "", lines: [], files: [] }
 
-
 /** No git runs: every method under test is stubbed, so only the label reaches the log. */
 function stubMutations(): GitMutations {
   const noop = async (): Promise<void> => {}
@@ -24,7 +23,7 @@ function stubMutations(): GitMutations {
     unstageFile: noop,
     discardFile: noop,
     applySelection: noop,
-    discardSelection: noop,
+    discardSelection: noop
   } as unknown as GitMutations
 }
 
@@ -42,13 +41,14 @@ function harness(files: readonly ChangedFile[] = []): { readonly controller: App
     loadWorktrees: async () => [],
     loadSubmodules: async () => [],
     mutations: stubMutations(),
-    commitMutations: { commit: async () => {}, amend: async () => {}, currentMessage: async () => "" } as never,
+    commitMutations: { commit: async () => {}, amend: async () => {}, currentMessage: async () => "" } as never
   })
   return { controller, log }
 }
 
 function actions(log: CommandLog): readonly string[] {
-  return log.lines()
+  return log
+    .lines()
     .filter((line) => line.spans.some((span) => span.style === "action"))
     .map((line) => line.spans.map((span) => span.text).join(""))
 }
@@ -294,7 +294,9 @@ describe("action labels", () => {
   test("toggleAllFiles re-reads files after a same-queue refresh empties the tree, not before it", async () => {
     const log = new CommandLog()
     let releaseGate: (() => void) | undefined
-    const gate = new Promise<void>((resolve) => { releaseGate = resolve })
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve
+    })
     let loadCount = 0
     const controller = new AppController({
       repositoryRoot: "/tmp",
@@ -316,7 +318,7 @@ describe("action labels", () => {
       loadWorktrees: async () => [],
       loadSubmodules: async () => [],
       mutations: stubMutations(),
-      commitMutations: { commit: async () => {}, amend: async () => {}, currentMessage: async () => "" } as never,
+      commitMutations: { commit: async () => {}, amend: async () => {}, currentMessage: async () => "" } as never
     })
     await controller.refresh()
     expect(controller.state.files).toEqual([unstagedFile])
@@ -357,7 +359,7 @@ describe("action labels", () => {
     { name: "dropStash", expected: "Drop stash", run: (controller) => controller.dropStash("stash@{0}", { confirmed: true }) },
     { name: "fetch (foreground)", expected: "Fetch", run: (controller) => controller.fetch() },
     { name: "pull", expected: "Pull", run: (controller) => controller.pull() },
-    { name: "push", expected: "Push", run: (controller) => controller.push() },
+    { name: "push", expected: "Push", run: (controller) => controller.push() }
   ]
   for (const { name, expected, run } of realGitCases) {
     test(`${name} logs "${expected}" before the git command it attempts`, async () => {
@@ -382,7 +384,7 @@ describe("action labels", () => {
     const mutableController = controller as unknown as { currentState: typeof controller.state }
     mutableController.currentState = {
       ...controller.state,
-      upstreamChoice: { kind: "upstream-required", branch: "main", candidates: [], operation: "push" },
+      upstreamChoice: { kind: "upstream-required", branch: "main", candidates: [], operation: "push" }
     }
     await controller.chooseUpstream("origin", "main").catch(() => {})
     expect(actions(log)).toEqual(["Set branch upstream", "Push"])

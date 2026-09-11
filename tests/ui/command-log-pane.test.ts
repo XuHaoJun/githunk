@@ -17,7 +17,13 @@ describe("command log pane", () => {
       const lines: readonly CommandLogLine[] = [
         { id: 1, spans: [{ text: "Stage file", style: "action" }] },
         { id: 2, spans: [{ text: "  git add -- a.ts", style: "command" }] },
-        { id: 3, spans: [{ text: "Random tip: ", style: "tip-label" }, { text: "press '@' to hide this panel", style: "tip" }] },
+        {
+          id: 3,
+          spans: [
+            { text: "Random tip: ", style: "tip-label" },
+            { text: "press '@' to hide this panel", style: "tip" }
+          ]
+        }
       ]
       const pane = createCommandLogPane(setup.renderer, lines)
       expect(pane.text.plainText).toBe("Stage file\n  git add -- a.ts\nRandom tip: press '@' to hide this panel")
@@ -41,7 +47,7 @@ describe("command log pane", () => {
     try {
       const lines: readonly CommandLogLine[] = Array.from({ length: 6 }, (_unused, index) => ({
         id: index + 1,
-        spans: [{ text: `  git add -- ${index}.ts`, style: "command" as const }],
+        spans: [{ text: `  git add -- ${index}.ts`, style: "command" as const }]
       }))
       const pane = createCommandLogPane(setup.renderer, lines)
       // Resized so the log is taller than the viewport on purpose: without it `maxScrollY` is 1 and
@@ -67,7 +73,7 @@ describe("command log pane", () => {
     try {
       const first: readonly CommandLogLine[] = Array.from({ length: 6 }, (_unused, index) => ({
         id: index + 1,
-        spans: [{ text: `  git add -- ${index}.ts`, style: "command" as const }],
+        spans: [{ text: `  git add -- ${index}.ts`, style: "command" as const }]
       }))
       const pane = createCommandLogPane(setup.renderer, first)
       pane.resize(40, 5)

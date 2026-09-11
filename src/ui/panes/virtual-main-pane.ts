@@ -62,24 +62,10 @@ function isFiniteNonNegative(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0
 }
 
-function documentSelection(document: DiffDocument, startUtf16: number, endUtf16: number): DocumentSelection {
-  const line = document.lines.find((entry) => startUtf16 >= entry.startUtf16 && startUtf16 <= entry.endUtf16) ?? document.lines[0]
-  return {
-    valid: true,
-    startUtf16,
-    endUtf16,
-    ...(line === undefined ? {} : {
-      fileIndex: line.fileIndex,
-      ...(line.hunkIndex === undefined ? {} : { hunkIndex: line.hunkIndex }),
-    }),
-    active: true,
-  }
-}
-
 function dimensions(text: TextRenderable): { readonly height: number; readonly width: number } {
   return {
     height: Math.max(1, Math.floor(isFiniteNonNegative(text.height))),
-    width: Math.max(0, Math.floor(isFiniteNonNegative(text.width))),
+    width: Math.max(0, Math.floor(isFiniteNonNegative(text.width)))
   }
 }
 function padDisplayRow(value: string, width: number): string {
@@ -118,28 +104,30 @@ function installAccessors(pane: PaneHandle, state: VirtualState, rerender: () =>
         const size = name === "maxScrollY" ? (layout?.totalRows ?? 0) : (layout?.contentWidth ?? 0)
         return Math.max(0, size - viewport)
       },
-      ...(name === "scrollY" || name === "scrollX" ? {
-        set: (value: unknown): void => {
-          if (!state.active) {
-            descriptor.set?.call(text, value)
-            return
+      ...(name === "scrollY" || name === "scrollX"
+        ? {
+            set: (value: unknown): void => {
+              if (!state.active) {
+                descriptor.set?.call(text, value)
+                return
+              }
+              const numeric = typeof value === "number" ? value : Number(value)
+              if (name === "scrollY") {
+                const max = Math.max(0, (state.layout?.totalRows ?? 0) - state.viewportHeight)
+                const next = Math.min(max, Math.floor(isFiniteNonNegative(numeric)))
+                if (state.scrollY === next) return
+                state.scrollY = next
+                rerender()
+              } else {
+                const max = Math.max(0, (state.layout?.contentWidth ?? 0) - state.viewportWidth)
+                const next = Math.min(max, Math.floor(isFiniteNonNegative(numeric)))
+                state.scrollX = next
+                descriptor.set?.call(text, next)
+                pane.text.requestRender()
+              }
+            }
           }
-          const numeric = typeof value === "number" ? value : Number(value)
-          if (name === "scrollY") {
-            const max = Math.max(0, (state.layout?.totalRows ?? 0) - state.viewportHeight)
-            const next = Math.min(max, Math.floor(isFiniteNonNegative(numeric)))
-            if (state.scrollY === next) return
-            state.scrollY = next
-            rerender()
-          } else {
-            const max = Math.max(0, (state.layout?.contentWidth ?? 0) - state.viewportWidth)
-            const next = Math.min(max, Math.floor(isFiniteNonNegative(numeric)))
-            state.scrollX = next
-            descriptor.set?.call(text, next)
-            pane.text.requestRender()
-          }
-        },
-      } : {}),
+        : {})
     }
     Object.defineProperty(text, name, nextDescriptor)
   }
@@ -162,7 +150,7 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
     renderedContentWidth: undefined,
     preambleSpans: new Map(),
     originalDescriptors,
-    originalOwnDescriptors,
+    originalOwnDescriptors
   }
   const restoreAccessors = (): void => {
     const target = text as unknown as Record<string, unknown>
@@ -219,9 +207,7 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
     const overscan = Math.max(VIRTUAL_MAIN_OVERSCAN_MIN, state.viewportHeight)
     const window = state.layout.window(state.scrollY, state.viewportHeight, overscan)
     const previousWindow = state.renderedWindow
-    const projectionWindowChanged = previousWindow === undefined
-      || previousWindow[0] !== window[0]
-      || previousWindow[1] !== window[1]
+    const projectionWindowChanged = previousWindow === undefined || previousWindow[0] !== window[0] || previousWindow[1] !== window[1]
     const projectionContentChanged = state.renderedContentWidth !== state.layout.contentWidth
     const localScrollY = state.scrollY - window[0]
     state.renderedWindow = window
@@ -273,7 +259,7 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
         displayEndUtf16: projectionCursor + body.length,
         rawStartUtf16: line.startUtf16,
         rawEndUtf16: line.startUtf16 + body.length,
-        lineIndex: value.lineIndex,
+        lineIndex: value.lineIndex
       })
       appendDecoration(padded.length - value.text.length)
       if (row < last) {
@@ -285,7 +271,7 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
             displayEndUtf16: projectionCursor + 1,
             rawStartUtf16: rawBodyEnd,
             rawEndUtf16: line.endUtf16,
-            lineIndex: value.lineIndex,
+            lineIndex: value.lineIndex
           })
         } else {
           appendDecoration(1)
@@ -373,15 +359,12 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
       const nextY = Math.min(maxY, Math.max(0, state.scrollY))
       const nextX = Math.min(maxX, Math.max(0, state.scrollX))
       const current = dimensions(text)
-      const unchanged = nextY === state.scrollY
-        && nextX === state.scrollX
-        && current.height === state.viewportHeight
-        && current.width === state.viewportWidth
+      const unchanged = nextY === state.scrollY && nextX === state.scrollX && current.height === state.viewportHeight && current.width === state.viewportWidth
       state.scrollY = nextY
       state.scrollX = nextX
       if (unchanged) return
       renderWindow()
-    },
+    }
   }
   onPaneLifecyclePass(text, () => {
     if (!state.active || state.layout === undefined) return

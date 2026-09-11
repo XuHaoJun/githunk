@@ -28,9 +28,7 @@ describe("compiled binary", () => {
     const project = await mkdtemp(join(tmpdir(), "githunk-notgit-"))
     try {
       const binary = join(workdir, "githunk")
-      expect(
-        Bun.spawnSync(["bun", "build", "--compile", "src/cli.ts", "--outfile", binary], { cwd: root }).exitCode,
-      ).toBe(0)
+      expect(Bun.spawnSync(["bun", "build", "--compile", "src/cli.ts", "--outfile", binary], { cwd: root }).exitCode).toBe(0)
       const run = Bun.spawnSync([binary], { cwd: project, stdout: "pipe", stderr: "pipe" })
       expect(run.exitCode).toBe(1)
       expect(run.stderr.toString()).toContain("githunk: not inside a Git repository")

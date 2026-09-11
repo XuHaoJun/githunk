@@ -58,7 +58,9 @@ export class ReactReviewHost {
     this.session.deactivate()
     const entry = rootsByRenderer.get(this.renderer)
     if (entry?.root === this.reactRoot && entry.mounted) {
-      try { flushSync(() => this.reactRoot.unmount()) } catch {}
+      try {
+        flushSync(() => this.reactRoot.unmount())
+      } catch {}
       entry.mounted = false
     }
     disposeHighlightWorker()
@@ -67,7 +69,9 @@ export class ReactReviewHost {
   static disposeRenderer(renderer: CliRenderer): void {
     const entry = rootsByRenderer.get(renderer)
     if (!entry) return
-    try { flushSync(() => entry.root.unmount()) } catch {}
+    try {
+      flushSync(() => entry.root.unmount())
+    } catch {}
     entry.mounted = false
     rootsByRenderer.delete(renderer)
   }

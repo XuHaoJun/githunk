@@ -17,15 +17,7 @@ export type CommandRecord = {
  * under it (pkg/gui/extras_panel.go:97). `intro`, `tip-label` and `tip` are the startup header's
  * cyan line and its yellow/green random tip (pkg/gui/command_log_panel.go:75,81-82).
  */
-export type CommandLogStyle =
-  | "action"
-  | "command"
-  | "internal"
-  | "output-heading"
-  | "output"
-  | "intro"
-  | "tip-label"
-  | "tip"
+export type CommandLogStyle = "action" | "command" | "internal" | "output-heading" | "output" | "intro" | "tip-label" | "tip"
 
 export type CommandLogSpan = {
   readonly style: CommandLogStyle

@@ -3,12 +3,7 @@ import { parseDiff } from "../../../src/domain/diff/parse"
 import type { DiffDocument } from "../../../src/domain/diff/document"
 import { renderDiff } from "../../../src/domain/diff/render"
 import { copySelection } from "../../../src/domain/diff/selection"
-import {
-  eagerDiffSelectionProjection,
-  resolveMainSelection,
-  textSelectionProjection,
-  type MainSelectionProjection,
-} from "../../../src/domain/diff/selection-projection"
+import { eagerDiffSelectionProjection, resolveMainSelection, textSelectionProjection, type MainSelectionProjection } from "../../../src/domain/diff/selection-projection"
 import { moveMainCursor } from "../../../src/ui/panes/main-pane"
 
 type Fixture = DiffDocument
@@ -21,7 +16,6 @@ function doc(): Fixture {
 }
 
 describe("precise diff selection and copy", () => {
-
   test("resolves exact projection ranges across text, decoration, and document segments", () => {
     const value = doc()
     const additionIndex = value.lines.findIndex((line) => line.kind === "addition")
@@ -39,43 +33,43 @@ describe("precise diff selection and copy", () => {
           displayEndUtf16: 20,
           rawStartUtf16: addition.startUtf16,
           rawEndUtf16: addition.startUtf16 + 5,
-          lineIndex: additionIndex,
-        },
-      ],
+          lineIndex: additionIndex
+        }
+      ]
     }
 
     expect(resolveMainSelection(projection, { start: 16, end: 19 }, "new")).toMatchObject({
       valid: true,
       kind: "document",
-      selection: { startUtf16: addition.startUtf16 + 1, endUtf16: addition.startUtf16 + 4 },
+      selection: { startUtf16: addition.startUtf16 + 1, endUtf16: addition.startUtf16 + 4 }
     })
     expect(resolveMainSelection(projection, { start: 19, end: 16 }, "new")).toMatchObject({
       valid: true,
       kind: "document",
-      selection: { startUtf16: addition.startUtf16 + 1, endUtf16: addition.startUtf16 + 4 },
+      selection: { startUtf16: addition.startUtf16 + 1, endUtf16: addition.startUtf16 + 4 }
     })
     expect(resolveMainSelection(projection, { start: 11, end: 19 }, "  1 +new")).toMatchObject({
       valid: true,
       kind: "document",
-      selection: { startUtf16: addition.startUtf16, endUtf16: addition.startUtf16 + 4 },
+      selection: { startUtf16: addition.startUtf16, endUtf16: addition.startUtf16 + 4 }
     })
     expect(resolveMainSelection(projection, { start: 7, end: 10 }, "abc")).toEqual({
       valid: true,
       kind: "text",
-      text: "abc",
+      text: "abc"
     })
     expect(resolveMainSelection(projection, { start: 9, end: 17 }, "c\n  1 +n")).toEqual({
       valid: true,
       kind: "text",
-      text: "c\n  1 +n",
+      text: "c\n  1 +n"
     })
     expect(resolveMainSelection(projection, { start: 11, end: 15 }, "  1 ")).toEqual({
       valid: false,
-      reason: "native/display selection mismatch",
+      reason: "native/display selection mismatch"
     })
     expect(resolveMainSelection(projection, { start: 16, end: 19 }, "wrong")).toEqual({
       valid: false,
-      reason: "native/display selection mismatch",
+      reason: "native/display selection mismatch"
     })
   })
 
@@ -88,19 +82,21 @@ describe("precise diff selection and copy", () => {
       generation: 1,
       document: value,
       text: `${body}\n`,
-      segments: [{
-        kind: "document",
-        displayStartUtf16: 0,
-        displayEndUtf16: body.length + 1,
-        rawStartUtf16: line.startUtf16,
-        rawEndUtf16: line.endUtf16,
-        lineIndex,
-      }],
+      segments: [
+        {
+          kind: "document",
+          displayStartUtf16: 0,
+          displayEndUtf16: body.length + 1,
+          rawStartUtf16: line.startUtf16,
+          rawEndUtf16: line.endUtf16,
+          lineIndex
+        }
+      ]
     }
     expect(resolveMainSelection(projection, { start: body.length, end: body.length + 1 }, "\n")).toMatchObject({
       valid: true,
       kind: "document",
-      selection: { startUtf16: line.startUtf16 + body.length, endUtf16: line.endUtf16 },
+      selection: { startUtf16: line.startUtf16 + body.length, endUtf16: line.endUtf16 }
     })
   })
 
@@ -123,9 +119,9 @@ describe("precise diff selection and copy", () => {
           displayEndUtf16: text.length,
           rawStartUtf16: addition.startUtf16,
           rawEndUtf16: addition.startUtf16 + 5,
-          lineIndex: additionIndex,
-        },
-      ],
+          lineIndex: additionIndex
+        }
+      ]
     }
     const selectedStart = text.indexOf("new")
     const start = Buffer.byteLength(text.slice(0, selectedStart), "utf8")
@@ -133,7 +129,7 @@ describe("precise diff selection and copy", () => {
     expect(resolveMainSelection(projection, { unit: "utf8", start, end }, "new")).toMatchObject({
       valid: true,
       kind: "document",
-      selection: { startUtf16: addition.startUtf16 + 1, endUtf16: addition.startUtf16 + 4 },
+      selection: { startUtf16: addition.startUtf16 + 1, endUtf16: addition.startUtf16 + 4 }
     })
   })
 
@@ -145,7 +141,7 @@ describe("precise diff selection and copy", () => {
     expect(textProjection).toEqual({
       generation: 2,
       text: "plain output",
-      segments: [{ kind: "text", displayStartUtf16: 0, displayEndUtf16: 12 }],
+      segments: [{ kind: "text", displayStartUtf16: 0, displayEndUtf16: 12 }]
     })
     expect(textSelectionProjection(3, "")).toEqual({ generation: 3, text: "", segments: [] })
 
@@ -154,7 +150,7 @@ describe("precise diff selection and copy", () => {
       document: value,
       text: `${preamble}${rendered.displayText}`,
       preambleLength: preamble.length,
-      bodySegments: rendered.segments,
+      bodySegments: rendered.segments
     })
     expect(projection.generation).toBe(4)
     expect(projection.document).toBe(value)
@@ -198,7 +194,7 @@ describe("precise diff selection and copy", () => {
       endUtf16: 0,
       fileIndex: target!.fileIndex,
       ...(target!.hunkIndex === undefined ? {} : { hunkIndex: target!.hunkIndex }),
-      active: false,
+      active: false
     }
     expect(copySelection(value, cursor, "file")).toBe(second)
   })
@@ -213,7 +209,7 @@ describe("precise diff selection and copy", () => {
       endUtf16: 0,
       fileIndex: target!.fileIndex,
       ...(target!.hunkIndex === undefined ? {} : { hunkIndex: target!.hunkIndex }),
-      active: false,
+      active: false
     }
     expect(copySelection(value, cursor, "file")).toBe(binary)
   })

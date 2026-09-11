@@ -30,7 +30,7 @@ export class GitMutations {
 
   constructor(runner: GitRunner, options?: GitMutationsOptions | MutationRefresh) {
     this.runner = runner
-    this.refresh = typeof options === "function" ? options : options?.refresh ?? (async () => undefined)
+    this.refresh = typeof options === "function" ? options : (options?.refresh ?? (async () => undefined))
   }
   private runBatch(paths: readonly string[], mutate: (path: string) => Promise<void>): Promise<void> {
     if (paths.length === 0) return Promise.resolve()
@@ -144,8 +144,7 @@ export class GitMutations {
     document: DiffDocument,
     includedLineIndexes: readonly number[],
 
-
-    options: SelectionMutationOptions = { reverse: false, wholeFile: false },
+    options: SelectionMutationOptions = { reverse: false, wholeFile: false }
   ): Promise<void> {
     return this.queue.run(async () => {
       const patch = buildPartialPatch(document, includedLineIndexes, options)
@@ -159,11 +158,7 @@ export class GitMutations {
     })
   }
 
-  async discardSelection(
-    document: DiffDocument,
-    includedLineIndexes: readonly number[],
-    options: Omit<SelectionMutationOptions, "reverse"> & { readonly reverse?: false } = { wholeFile: false },
-  ): Promise<void> {
+  async discardSelection(document: DiffDocument, includedLineIndexes: readonly number[], options: Omit<SelectionMutationOptions, "reverse"> & { readonly reverse?: false } = { wholeFile: false }): Promise<void> {
     return this.queue.run(async () => {
       const patch = buildPartialPatch(document, includedLineIndexes, { ...options, reverse: false })
       if (patch.length === 0) return

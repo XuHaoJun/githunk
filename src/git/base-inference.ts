@@ -45,13 +45,10 @@ type BranchRef = {
 // here likewise never choose the comparison on the user's behalf.
 export async function inferReviewBase(runner: CommandRunner, preferredRef?: string): Promise<BaseInference> {
   const [refResult, branchResult, headResult, remoteResult] = await Promise.all([
-    runner.run([
-      "for-each-ref", "--format=%(refname)%09%(objectname)%09%(objecttype)%09%(symref)%09%(upstream:remotename)",
-      "refs/heads", "refs/remotes",
-    ], { readOnly: true }),
+    runner.run(["for-each-ref", "--format=%(refname)%09%(objectname)%09%(objecttype)%09%(symref)%09%(upstream:remotename)", "refs/heads", "refs/remotes"], { readOnly: true }),
     runner.run(["symbolic-ref", "--quiet", "HEAD"], { readOnly: true, acceptedExitCodes: [0, 1] }),
     runner.run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], { readOnly: true, acceptedExitCodes: [0, 1] }),
-    runner.run(["remote"], { readOnly: true }),
+    runner.run(["remote"], { readOnly: true })
   ])
   const branchRef = branchResult.exitCode === 0 ? branchResult.stdout.trim() : undefined
   const headOid = headResult.exitCode === 0 ? headResult.stdout.trim() : undefined
@@ -63,10 +60,13 @@ export async function inferReviewBase(runner: CommandRunner, preferredRef?: stri
     refs.push({ ref, oid, symbolic, upstreamRemote })
   }
   const upstreamRemote = refs.find(({ ref }) => ref === branchRef)?.upstreamRemote
-  const remoteNames = remoteResult.stdout.split(/\r?\n/).filter(Boolean)
+  const remoteNames = remoteResult.stdout
+    .split(/\r?\n/)
+    .filter(Boolean)
     .sort((left, right) => right.length - left.length || (left < right ? -1 : left > right ? 1 : 0))
-  const remoteOrder = (remote: string): number => remote === upstreamRemote ? 0 : remote === "origin" ? 1 : 2
-  const defaults = refs.filter(({ ref, symbolic }) => ref.startsWith("refs/remotes/") && ref.endsWith("/HEAD") && symbolic !== "")
+  const remoteOrder = (remote: string): number => (remote === upstreamRemote ? 0 : remote === "origin" ? 1 : 2)
+  const defaults = refs
+    .filter(({ ref, symbolic }) => ref.startsWith("refs/remotes/") && ref.endsWith("/HEAD") && symbolic !== "")
     .sort((left, right) => {
       const leftRemote = left.ref.slice("refs/remotes/".length, -"/HEAD".length)
       const rightRemote = right.ref.slice("refs/remotes/".length, -"/HEAD".length)
@@ -74,8 +74,7 @@ export async function inferReviewBase(runner: CommandRunner, preferredRef?: stri
     })
   const defaultRanks = new Map(defaults.map(({ symbolic }, index) => [symbolic, index]))
   const defaultRemotes = new Map(defaults.map(({ ref, symbolic }) => [symbolic, ref.slice("refs/remotes/".length, -"/HEAD".length)]))
-  const branches = refs.filter(({ ref, symbolic }) => ref !== branchRef && symbolic === "" &&
-    !(ref.startsWith("refs/remotes/") && ref.endsWith("/HEAD")))
+  const branches = refs.filter(({ ref, symbolic }) => ref !== branchRef && symbolic === "" && !(ref.startsWith("refs/remotes/") && ref.endsWith("/HEAD")))
 
   // One bounded first-parent walk finds stacked parent tips without a subprocess per
   // branch or an unbounded history scan. Older/diverged tips retain the other signals;
@@ -99,8 +98,7 @@ export async function inferReviewBase(runner: CommandRunner, preferredRef?: stri
     const defaultRank = defaultRanks.get(ref)
     const defaultRemote = defaultRemotes.get(ref)
     const conventionalRank = shortName === "main" ? 0 : shortName === "master" ? 1 : shortName === "develop" ? 2 : 3
-    const defaultReason = defaultRemote === undefined ? undefined :
-      `Default branch of ${defaultRemote === upstreamRemote ? "upstream remote " : "remote "}${defaultRemote}`
+    const defaultReason = defaultRemote === undefined ? undefined : `Default branch of ${defaultRemote === upstreamRemote ? "upstream remote " : "remote "}${defaultRemote}`
     let priority: number
     let reason: string
     if (ref === preferredRef) {
@@ -127,17 +125,14 @@ export async function inferReviewBase(runner: CommandRunner, preferredRef?: stri
       candidate: { ref, label, reason },
       priority,
       distance: priority === 1 ? distance! : 0,
-      defaultRank: priority === 1 || priority === 2 ? defaultRank ?? defaults.length : 0,
-      conventionalRank: priority === 1 || priority === 3 ? conventionalRank : 0,
+      defaultRank: priority === 1 || priority === 2 ? (defaultRank ?? defaults.length) : 0,
+      conventionalRank: priority === 1 || priority === 3 ? conventionalRank : 0
     }
   })
-  ranked.sort((left, right) => left.priority - right.priority || left.distance - right.distance ||
-    left.defaultRank - right.defaultRank || left.conventionalRank - right.conventionalRank ||
-    (left.candidate.ref < right.candidate.ref ? -1 : left.candidate.ref > right.candidate.ref ? 1 : 0))
+  ranked.sort((left, right) => left.priority - right.priority || left.distance - right.distance || left.defaultRank - right.defaultRank || left.conventionalRank - right.conventionalRank || (left.candidate.ref < right.candidate.ref ? -1 : left.candidate.ref > right.candidate.ref ? 1 : 0))
   return {
     kind: "choose",
     candidates: ranked.map(({ candidate }) => candidate),
-    reason: headOid === undefined ? "HEAD has no commit" : branchRef === undefined ? "HEAD is detached; choose a review base" :
-      "Choose a review base; likely branches are listed first",
+    reason: headOid === undefined ? "HEAD has no commit" : branchRef === undefined ? "HEAD is detached; choose a review base" : "Choose a review base; likely branches are listed first"
   }
 }

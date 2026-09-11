@@ -42,7 +42,13 @@ function hslToHex(h: number, s: number, l: number): string {
   const t2 = 2 * l - t1
   const hNorm = h / 360
   const channels = [hueToChannel(t1, t2, hNorm + 1 / 3), hueToChannel(t1, t2, hNorm), hueToChannel(t1, t2, hNorm - 1 / 3)]
-  return `#${channels.map((c) => Math.floor(c * 255).toString(16).padStart(2, "0")).join("")}`
+  return `#${channels
+    .map((c) =>
+      Math.floor(c * 255)
+        .toString(16)
+        .padStart(2, "0")
+    )
+    .join("")}`
 }
 
 /** Stable per-author colour: `md5(name)` seeds hue/saturation/lightness, as lazygit's `trueColorStyle` does. */
@@ -50,11 +56,7 @@ export function authorColor(authorName: string): string {
   const cached = colorCache.get(authorName)
   if (cached !== undefined) return cached
   const hash = new Uint8Array(createHash("md5").update(authorName).digest())
-  const color = hslToHex(
-    randFloat(hash.slice(0, 4)) * 360,
-    0.6 + 0.4 * randFloat(hash.slice(4, 8)),
-    0.4 + 0.2 * randFloat(hash.slice(8, 12)),
-  )
+  const color = hslToHex(randFloat(hash.slice(0, 4)) * 360, 0.6 + 0.4 * randFloat(hash.slice(4, 8)), 0.4 + 0.2 * randFloat(hash.slice(8, 12)))
   colorCache.set(authorName, color)
   return color
 }
@@ -78,7 +80,10 @@ function computeInitials(authorName: string): string {
   const first = graphemes[0]!
   // A wide leading character (CJK and friends) already fills the column on its own.
   if (isWide(first)) return first
-  const parts = authorName.trim().split(/\s+/).filter((part) => part.length > 0)
+  const parts = authorName
+    .trim()
+    .split(/\s+/)
+    .filter((part) => part.length > 0)
   if (parts.length === 0) return ""
   if (parts.length === 1) return [...parts[0]!].slice(0, 2).join("")
   return `${[...parts[0]!][0] ?? ""}${[...parts[1]!][0] ?? ""}`

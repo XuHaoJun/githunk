@@ -38,7 +38,7 @@ describe("worktree loader against a real repository", () => {
       branch: "feature",
       isMain: false,
       isCurrent: false,
-      isPathMissing: false,
+      isPathMissing: false
     })
     expect(feature.gitDir).toBe(join(repository.path, ".git", "worktrees", "wt-feature"))
 

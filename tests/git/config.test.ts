@@ -13,8 +13,10 @@ describe("parseRepoConfig", () => {
       "branch.main.remote\norigin",
       "branch.main.merge\nrefs/heads/main",
       "branch.feature/nested.remote\nfork",
-      "branch.feature/nested.merge\nrefs/heads/feature/nested",
-    ].map((record) => `${record}\u0000`).join("")
+      "branch.feature/nested.merge\nrefs/heads/feature/nested"
+    ]
+      .map((record) => `${record}\u0000`)
+      .join("")
 
     const config = parseRepoConfig(raw)
 
@@ -63,7 +65,7 @@ describe("loadRepoConfig", () => {
     expect(countingRunner.calls.length).toBe(1)
     expect(config.remotes.get("origin")).toEqual({
       fetchUrl: "https://example.com/repo.git",
-      pushUrl: "ssh://git@example.com/repo.git",
+      pushUrl: "ssh://git@example.com/repo.git"
     })
     expect(config.branchUpstreams.get("master")).toEqual({ remote: "origin", merge: "refs/heads/master" })
   })

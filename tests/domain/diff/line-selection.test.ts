@@ -1,14 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { parseDiff } from "../../../src/domain/diff/parse"
-import {
-  changedIndexesInDiffLineRange,
-  clearDiffLineRange,
-  createDiffLineRangeState,
-  diffLineSelectionRange,
-  expandDiffLineRange,
-  moveDiffLineSelection,
-  toggleDiffLineRange,
-} from "../../../src/domain/diff/line-selection"
+import { changedIndexesInDiffLineRange, clearDiffLineRange, createDiffLineRangeState, diffLineSelectionRange, expandDiffLineRange, moveDiffLineSelection, toggleDiffLineRange } from "../../../src/domain/diff/line-selection"
 
 describe("diff line range selection", () => {
   const document = parseDiff("diff --git a/a.txt b/a.txt\n@@ -1,2 +1,3 @@\n keep\n-old\n+new\n")

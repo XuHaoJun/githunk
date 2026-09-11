@@ -13,7 +13,7 @@ function fakeRunner(): GitRunner {
     logTip: () => {},
     lines: () => [] as unknown[],
     autoscrollArms: () => false,
-    commandLogSnapshot: () => ({ entries: [] }),
+    commandLogSnapshot: () => ({ entries: [] })
   } as unknown as GitRunner["log"]
   return { run: async () => ({ stdout: "", stderr: "", exitCode: 0 }), log, cwd: "/tmp/fake" } as unknown as GitRunner
 }
@@ -35,7 +35,7 @@ function makeFile(key: string, path: string): ReviewFile {
     patchDigest: `patch-${key}`,
     stats: { additions: 1, deletions: 1 },
     hunks: [makeHunk(0, [" a", "+b"])],
-    source: "available",
+    source: "available"
   } as unknown as ReviewFile
 }
 

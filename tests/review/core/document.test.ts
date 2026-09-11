@@ -21,7 +21,7 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [],
     source: "available",
-    ...overrides,
+    ...overrides
   }
 }
 function makeCommit(overrides: Partial<ReviewCommit> & { oid: string }): ReviewCommit {
@@ -31,7 +31,7 @@ function makeCommit(overrides: Partial<ReviewCommit> & { oid: string }): ReviewC
     timestamp: 1_700_000_000,
     subject: "subject",
     body: "",
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -45,8 +45,8 @@ describe("review document invariants", () => {
         identity,
         generation,
         commits: [],
-        files: [file, makeFile({ key: "k1", path: "b.ts" })],
-      }),
+        files: [file, makeFile({ key: "k1", path: "b.ts" })]
+      })
     ).toThrow(/duplicate file key/)
   })
 
@@ -58,8 +58,8 @@ describe("review document invariants", () => {
         identity,
         generation,
         commits: [],
-        files: [makeFile({ key: "k1", path: "a.ts" }), makeFile({ key: "k2", path: "a.ts" })],
-      }),
+        files: [makeFile({ key: "k1", path: "a.ts" }), makeFile({ key: "k2", path: "a.ts" })]
+      })
     ).toThrow(/duplicate file path/)
   })
 
@@ -71,8 +71,8 @@ describe("review document invariants", () => {
         identity,
         generation,
         commits: [makeCommit({ oid: "c1" }), makeCommit({ oid: "c1" })],
-        files: [],
-      }),
+        files: []
+      })
     ).toThrow(/duplicate commit oid/)
   })
 
@@ -83,7 +83,7 @@ describe("review document invariants", () => {
       identity,
       generation,
       commits: [makeCommit({ oid: "c1" }), makeCommit({ oid: "c2" })],
-      files: [makeFile({ key: "k1", path: "a.ts" }), makeFile({ key: "k2", path: "b.ts" })],
+      files: [makeFile({ key: "k1", path: "a.ts" }), makeFile({ key: "k2", path: "b.ts" })]
     })
     const index = indexReviewDocument(doc)
     expect(index.fileByKey.get("k1")?.path).toBe("a.ts")
@@ -102,7 +102,7 @@ describe("review document invariants", () => {
       generation,
       commits: [],
       files: [makeFile({ key: "k1", path: "a.ts" }), makeFile({ key: "k1", path: "b.ts" })],
-      aggregatePatchDigest: "x",
+      aggregatePatchDigest: "x"
     } as unknown as ReviewDocument
     expect(() => indexReviewDocument(doc)).toThrow(/duplicate file key/)
   })

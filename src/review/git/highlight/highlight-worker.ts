@@ -9,9 +9,7 @@ type WorkerRequest = {
   appearance: "dark" | "light"
 }
 
-type WorkerResponse =
-  | { version: 1; id: number; ok: true; payload: import("./highlight-payload").HighlightPayload | null }
-  | { version: 1; id: number; ok: false; message: string }
+type WorkerResponse = { version: 1; id: number; ok: true; payload: import("./highlight-payload").HighlightPayload | null } | { version: 1; id: number; ok: false; message: string }
 
 declare const self: Worker
 

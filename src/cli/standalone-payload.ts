@@ -36,18 +36,16 @@ function syncRename(source: string, destination: string): void {
  * A binary failure restores the parked skill so old binary never pairs new guidance.
  * A pre-skill `stagedSkill` removes any companion skill after the binary lands.
  */
-export async function replaceStandalonePayload(
-  payload: StandalonePayload & { readonly installRoot?: string; readonly installedSkill?: string },
-  fs: PayloadFs = {},
-): Promise<void> {
+export async function replaceStandalonePayload(payload: StandalonePayload & { readonly installRoot?: string; readonly installedSkill?: string }, fs: PayloadFs = {}): Promise<void> {
   const rename = fs.rename
-  const doRename = rename !== undefined
-    ? async (source: string, destination: string): Promise<void> => {
-      await rename(source, destination)
-    }
-    : async (source: string, destination: string): Promise<void> => {
-      syncRename(source, destination)
-    }
+  const doRename =
+    rename !== undefined
+      ? async (source: string, destination: string): Promise<void> => {
+          await rename(source, destination)
+        }
+      : async (source: string, destination: string): Promise<void> => {
+          syncRename(source, destination)
+        }
 
   const archiveSkill = archiveSkillFor(payload.executablePath)
   const flatSkill = flatSkillFor(payload.executablePath)

@@ -99,13 +99,7 @@ describe("loadReviewDocument integration", () => {
 
       // contentId uses tuple without path; verify deterministic
       for (const f of doc.files) {
-        const expectedContentId = sha256Tuple([
-          f.oldBlobOid ?? "",
-          f.newBlobOid ?? "",
-          f.oldMode ?? "",
-          f.newMode ?? "",
-          f.hunks.flatMap((h) => h.lines).join("\n") + (f.hunks.length > 0 ? "\n" : ""),
-        ])
+        const expectedContentId = sha256Tuple([f.oldBlobOid ?? "", f.newBlobOid ?? "", f.oldMode ?? "", f.newMode ?? "", f.hunks.flatMap((h) => h.lines).join("\n") + (f.hunks.length > 0 ? "\n" : "")])
         expect(f.contentId).toBe(expectedContentId)
       }
 

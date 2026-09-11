@@ -41,6 +41,7 @@ describe("panel 3 tabs and transient children", () => {
 
     await harness.pressKey("[")
     expect(harness.app.view!.activeBranchesTab).toBe("branches")
+    expect(harness.app.controller.state.reviewTarget).toEqual(beforeTarget)
 
     // Bracket in Main must not change tab, but now cycles the working-tree scope ring.
     await harness.pressKey("0")
@@ -175,7 +176,7 @@ describe("panel 3 tabs and transient children", () => {
       loadBranchCommits: async () => {
         loaderStarted.resolve()
         return loaded.promise
-      },
+      }
     })
     await harness.repository.git(["checkout", "-b", "feature", "--quiet"])
     await harness.repository.write("feature.txt", "feature\n")

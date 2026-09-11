@@ -93,6 +93,7 @@ Tests mirror ownership under `tests/review/core`, `tests/review/git`, `tests/rev
 ### Task 1: Core identities and document model
 
 **Files:**
+
 - Create: `src/review/core/types.ts`
 - Create: `src/review/core/identity.ts`
 - Create: `src/review/core/document.ts`
@@ -100,6 +101,7 @@ Tests mirror ownership under `tests/review/core`, `tests/review/git`, `tests/rev
 - Create: `tests/review/core/document.test.ts`
 
 **Interfaces:**
+
 - Produces: `ReviewIdentity`, `ReviewGeneration`, `ReviewFile`, `ReviewDocument`, `ReviewCommit`, `ReviewHunk`, `createReviewIdentity`, `createReviewGeneration`, `createReviewDocument`, `sha256Tuple`.
 - Consumes: only Node `crypto` and plain TypeScript values.
 
@@ -114,8 +116,7 @@ describe("review identity", () => {
     const first = createReviewIdentity({ headRef: "refs/heads/feature", headOid: "h1", baseRef: "refs/remotes/origin/main" })
     const second = createReviewIdentity({ headRef: "refs/heads/feature", headOid: "h2", baseRef: "refs/remotes/origin/main" })
     expect(second.id).toBe(first.id)
-    expect(createReviewGeneration({ mergeBaseOid: "m1", baseOid: "b1", headOid: "h1" }).id)
-      .not.toBe(createReviewGeneration({ mergeBaseOid: "m2", baseOid: "b2", headOid: "h2" }).id)
+    expect(createReviewGeneration({ mergeBaseOid: "m1", baseOid: "b1", headOid: "h1" }).id).not.toBe(createReviewGeneration({ mergeBaseOid: "m2", baseOid: "b2", headOid: "h2" }).id)
   })
 
   test("uses the detached OID as snapshot identity", () => {
@@ -173,7 +174,7 @@ export function createReviewIdentity(input: { headRef?: string; headOid: string;
     id: sha256Tuple(["branch-review-v2", headKey, input.baseRef]),
     headRef: input.headRef ?? null,
     baseRef: input.baseRef,
-    detachedHeadOid: input.headRef === undefined ? input.headOid : null,
+    detachedHeadOid: input.headRef === undefined ? input.headOid : null
   }
 }
 
@@ -203,6 +204,7 @@ git commit -m "feat(review): define stable review document identities"
 ### Task 2: Semantic state, intents, reducer, and navigation
 
 **Files:**
+
 - Create: `src/review/core/state.ts`
 - Create: `src/review/core/actions.ts`
 - Create: `src/review/core/intents.ts`
@@ -213,6 +215,7 @@ git commit -m "feat(review): define stable review document identities"
 - Create: `tests/review/core/navigation.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ReviewDocument`, `ReviewFile`, and document indexes from Task 1.
 - Produces: `ReviewState`, `ReviewIntent`, `ReviewAction`, `ReviewSelection`, `ReviewRevealIntent`, `createInitialReviewState`, `planReviewIntent`, `reduceReviewState`, `visibleReviewFiles`, `moveReviewSelection`.
 
@@ -240,10 +243,7 @@ Expected: FAIL because state and navigation modules do not exist.
 ```ts
 export type ReviewSelection = Readonly<{ fileKey: string | null; hunkIndex: number }>
 export type ReviewRevealIntent = Readonly<{ fileTopToken: number; hunkToken: number; scrollToFeedback: boolean }>
-export type ReviewProjection =
-  | Readonly<{ kind: "aggregate" }>
-  | Readonly<{ kind: "since-last-review"; fromHeadOid: string }>
-  | Readonly<{ kind: "commit"; oid: string }>
+export type ReviewProjection = Readonly<{ kind: "aggregate" }> | Readonly<{ kind: "since-last-review"; fromHeadOid: string }> | Readonly<{ kind: "commit"; oid: string }>
 
 export type ExpandedGap = Readonly<{ fileKey: string; gapId: string; expanded: boolean }>
 export type SubmittedReviewRef = Readonly<{ artifactId: string; generationId: string; headOid: string; submittedAt: string }>
@@ -297,6 +297,7 @@ git commit -m "feat(review): add semantic review state and navigation"
 ### Task 3: Feedback anchors, pending lifecycle, and artifact rules
 
 **Files:**
+
 - Create: `src/review/core/anchors.ts`
 - Create: `src/review/core/artifact.ts`
 - Modify: `src/review/core/types.ts`
@@ -310,6 +311,7 @@ git commit -m "feat(review): add semantic review state and navigation"
 - Create: `tests/review/core/artifact.test.ts`
 
 **Interfaces:**
+
 - Consumes: state/intent/reducer interfaces from Task 2.
 - Produces: `ReviewAnchor`, `ReviewFeedback`, `ReviewFeedbackDraft`, `ReviewArtifactV1`, `createRangeAnchor`, `reconcileAnchor`, `validateFinishReview`, `buildReviewArtifact`, `renderReviewArtifactMarkdown`.
 
@@ -324,7 +326,7 @@ expect(createRangeAnchor(file, { side: "new", startLine: 8, endLine: 10 })).toMa
   contentId: file.contentId,
   side: "new",
   startLine: 8,
-  endLine: 10,
+  endLine: 10
 })
 ```
 
@@ -352,10 +354,7 @@ Expected: FAIL because feedback interfaces are absent.
 Build `contextDigest` from normalized source lines around the selected range and hunk identity. Reconciliation returns exactly one of:
 
 ```ts
-export type AnchorReconciliation =
-  | { resolution: "active"; anchor: ReviewAnchor }
-  | { resolution: "stale"; anchor: ReviewAnchor }
-  | { resolution: "orphaned"; anchor: ReviewAnchor }
+export type AnchorReconciliation = { resolution: "active"; anchor: ReviewAnchor } | { resolution: "stale"; anchor: ReviewAnchor } | { resolution: "orphaned"; anchor: ReviewAnchor }
 ```
 
 Only a unique context match relocates an active range. Never choose the first of multiple matches.
@@ -381,6 +380,7 @@ git commit -m "feat(review): model precise pending review feedback"
 ### Task 4: Viewed coverage and atomic generation reconciliation
 
 **Files:**
+
 - Create: `src/review/core/reconcile.ts`
 - Modify: `src/review/core/state.ts`
 - Modify: `src/review/core/actions.ts`
@@ -391,6 +391,7 @@ git commit -m "feat(review): model precise pending review feedback"
 - Create: `tests/review/core/reconcile.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ReviewDocument`, anchors, feedback, and state from Tasks 1–3.
 - Produces: `ViewedRecord`, `ReviewCoverageState`, `coverageForFile`, `reviewProgress`, `reconcileReviewState`, mark-Viewed intent/action.
 
@@ -450,6 +451,7 @@ git commit -m "feat(review): reconcile viewed coverage across generations"
 ### Task 5: Pierre patch adapter and aggregate Git document loader
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `bun.lock`
 - Create: `src/review/git/patch-adapter.ts`
@@ -464,6 +466,7 @@ git commit -m "feat(review): reconcile viewed coverage across generations"
 - Create: `tests/review/git/load-review-document.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: core document/identity interfaces and existing `GitRunner`, `resolveRefOid`, `listCommits`.
 - Produces: `parseReviewPatch(patchText, metadata)`, `parseRawDiffZ(raw)`, `loadReviewDocument(runner, baseRef): Promise<ReviewDocument>`.
 
@@ -488,13 +491,7 @@ Expected: FAIL because adapter modules do not exist.
 Content identity must use this exact tuple:
 
 ```ts
-sha256Tuple([
-  raw.oldBlobOid ?? "",
-  raw.newBlobOid ?? "",
-  raw.oldMode ?? "",
-  raw.newMode ?? "",
-  normalizedHunkBody,
-])
+sha256Tuple([raw.oldBlobOid ?? "", raw.newBlobOid ?? "", raw.oldMode ?? "", raw.newMode ?? "", normalizedHunkBody])
 ```
 
 Patch digest hashes the normalized complete per-file patch. Paths are excluded from content identity and included in the semantic file key.
@@ -514,7 +511,7 @@ await Promise.all([
   runner.run(["diff", "--no-ext-diff", "--no-color", "--find-renames", "--binary", "--src-prefix=a/", "--dst-prefix=b/", range, "--"], { readOnly: true }),
   runner.run(["diff", "--no-ext-diff", "--no-color", "--find-renames", "--raw", "-z", range, "--"], { readOnly: true }),
   runner.run(["diff", "--no-ext-diff", "--no-color", "--find-renames", "--numstat", "-z", range, "--"], { readOnly: true }),
-  listCommits(runner, `${baseRef}..HEAD`),
+  listCommits(runner, `${baseRef}..HEAD`)
 ])
 ```
 
@@ -537,6 +534,7 @@ git commit -m "feat(review): load canonical branch review documents"
 ### Task 6: Since-last, commit, and source-context projections
 
 **Files:**
+
 - Create: `src/review/git/load-review-projection.ts`
 - Create: `src/review/git/load-source-context.ts`
 - Create: `tests/review/git/projections.integration.test.ts`
@@ -545,6 +543,7 @@ git commit -m "feat(review): load canonical branch review documents"
 - Modify: `src/review/core/intents.ts`
 
 **Interfaces:**
+
 - Consumes: aggregate `ReviewDocument`, `GitRunner`, `SubmittedReviewRef`, patch adapter.
 - Produces: `ReviewProjectionDocument`, `loadSinceLastReviewProjection`, `loadCommitProjection`, `loadSourceContext`, `isAncestor`.
 
@@ -600,6 +599,7 @@ git commit -m "feat(review): add incremental and commit projections"
 ### Task 7: V2 persistence and recoverable artifact transaction
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `bun.lock`
 - Modify: `src/storage/local-state-file.ts`
@@ -612,6 +612,7 @@ git commit -m "feat(review): add incremental and commit projections"
 - Create: `tests/review/storage/review-artifact-store.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: core `ReviewState`, `ReviewArtifactV1`, existing `LocalStateFile` and `GitRunner`.
 - Produces: `ReviewDatabaseV2`, `PersistedReviewState`, `ReviewStateStore`, `ReviewArtifactStore`, `LocalStateFile.createTextExclusive`, `finishReviewTransaction`.
 
@@ -647,12 +648,7 @@ Inject failure after marker write, after artifact exclusive-create, and before f
 - [ ] **Step 8: Implement artifact transaction**
 
 ```ts
-export async function finishReviewTransaction(input: {
-  stateStore: ReviewStateStore
-  artifactStore: ReviewArtifactStore
-  reviewState: ReviewState
-  artifact: ReviewArtifactV1
-}): Promise<ReviewState>
+export async function finishReviewTransaction(input: { stateStore: ReviewStateStore; artifactStore: ReviewArtifactStore; reviewState: ReviewState; artifact: ReviewArtifactV1 }): Promise<ReviewState>
 ```
 
 Persist `submissionInProgress`, exclusive-create or digest-verify the artifact, then finalize `lastSubmission` and clear submitted pending feedback plus the marker. On load, `recoverSubmission` completes the same steps.
@@ -674,6 +670,7 @@ git commit -m "feat(review): persist review state and immutable artifacts"
 ### Task 8: Workspace controller and top-level screen transition
 
 **Files:**
+
 - Create: `src/ui/review-workspace/controller.ts`
 - Create: `src/ui/review-workspace/review-workspace.ts`
 - Create: `src/app/screen-controller.ts`
@@ -683,6 +680,7 @@ git commit -m "feat(review): persist review state and immutable artifacts"
 - Create: `tests/ui/review-workspace/lifecycle.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: document/projection loaders, core store, state/artifact stores, `CliRenderer`, existing repository `AppController` and `RootView`.
 - Produces: `ReviewWorkspaceController`, `ReviewWorkspace`, `AppScreenController`, `openBranchReview`, `closeBranchReview`.
 
@@ -702,9 +700,7 @@ Expose readonly `state`, `open`, `dispatch`, `refreshGeneration`, `loadProjectio
 - [ ] **Step 4: Implement top-level screen ownership**
 
 ```ts
-export type ActiveScreen =
-  | { kind: "repository"; controller: AppController; view: RootView }
-  | { kind: "branch-review"; controller: ReviewWorkspaceController; view: ReviewWorkspace }
+export type ActiveScreen = { kind: "repository"; controller: AppController; view: RootView } | { kind: "branch-review"; controller: ReviewWorkspaceController; view: ReviewWorkspace }
 ```
 
 `AppScreenController` is the only object allowed to mount/destroy top-level views. It remembers repository focus before mounting review. Repository background routines may continue, but they update the hidden repository model without rendering over Review Workspace.
@@ -730,6 +726,7 @@ git commit -m "feat(review): add dedicated review workspace lifecycle"
 ### Task 9: Command catalog, header, file sidebar, and responsive layout
 
 **Files:**
+
 - Create: `src/ui/review-workspace/command-catalog.ts`
 - Create: `src/ui/review-workspace/layout.ts`
 - Create: `src/ui/review-workspace/header.ts`
@@ -743,6 +740,7 @@ git commit -m "feat(review): add dedicated review workspace lifecycle"
 - Create: `tests/ui/review-workspace/navigation.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: core selectors/intents/progress and existing cell-width/theme primitives.
 - Produces: `REVIEW_COMMANDS`, `resolveReviewCommand`, `computeReviewLayout`, `reviewHeaderLines`, `reviewFileRows`.
 
@@ -788,6 +786,7 @@ git commit -m "feat(review): render review header files and commands"
 ### Task 10: Windowed continuous diff stream and context expansion
 
 **Files:**
+
 - Create: `src/ui/review-workspace/row-planner.ts`
 - Create: `src/ui/review-workspace/stream-pane.ts`
 - Modify: `src/ui/review-workspace/review-workspace.ts`
@@ -797,6 +796,7 @@ git commit -m "feat(review): render review header files and commands"
 - Create: `tests/ui/review-workspace/context-expansion.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: core document/projection/selection/reveal, source-context loader, layout rectangles, existing cell-width/ANSI/theme helpers.
 - Produces: `ReviewRow`, `ReviewRowPlan`, `planReviewRows`, `sourceAddressAtViewportRow`, `ReviewStreamPane`.
 
@@ -855,6 +855,7 @@ git commit -m "feat(review): add windowed continuous diff stream"
 ### Task 11: Feedback composer, feedback view, Finish dialog, and export
 
 **Files:**
+
 - Create: `src/ui/review-workspace/feedback-composer.ts`
 - Create: `src/ui/review-workspace/feedback-pane.ts`
 - Create: `src/ui/review-workspace/finish-dialog.ts`
@@ -866,6 +867,7 @@ git commit -m "feat(review): add windowed continuous diff stream"
 - Create: `tests/ui/review-workspace/finish.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: feedback intents, artifact validation/rendering, persistence transaction, existing clipboard adapter.
 - Produces: `FeedbackComposer`, `FeedbackPane`, `FinishDialog`, exact UI routes for create/edit/delete/re-anchor/finish/export.
 
@@ -911,6 +913,7 @@ git commit -m "feat(review): add pending feedback and review submission"
 ### Task 12: Background generation refresh and actionable error states
 
 **Files:**
+
 - Modify: `src/ui/review-workspace/controller.ts`
 - Modify: `src/ui/review-workspace/review-workspace.ts`
 - Modify: `src/app/create-app.ts`
@@ -920,6 +923,7 @@ git commit -m "feat(review): add pending feedback and review submission"
 - Create: `tests/review/git/history-rewrite.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: existing refs watcher/background refresher, `loadReviewDocument`, `reconcileReviewState`, qualified async request contracts.
 - Produces: `ReviewWorkspaceController.refreshGeneration`, `ReviewWorkspaceError`, background refresh routing while review is active.
 
@@ -974,6 +978,7 @@ git commit -m "feat(review): reconcile live branch generations safely"
 ### Task 13: Cleanly remove the old Branch Review implementation
 
 **Files:**
+
 - Delete: `src/git/branch-review.ts`
 - Delete: `src/review/fingerprint.ts`
 - Delete: `src/review/store.ts`
@@ -998,6 +1003,7 @@ git commit -m "feat(review): reconcile live branch generations safely"
 - Modify: Branch Review assertions in `tests/ui/bindings.test.ts`, `tests/app/log-actions.test.ts`, `tests/acceptance/review-workflow.integration.test.ts`, and `tests/acceptance/lazygit-core-ui.test.ts`
 
 **Interfaces:**
+
 - Consumes: completed Review Workspace and screen controller.
 - Produces: one Branch Review entry path with no old exported symbols, model fields, state reader, UI guards, or compatibility behavior; preserves Working Tree/Stash coverage through a restricted store.
 
@@ -1010,9 +1016,7 @@ Create `tests/review/cutover.test.ts` that imports the new public entry interfac
 Move the reusable tuple hashing and non-branch fingerprint logic into:
 
 ```ts
-export type MutableReviewTarget =
-  | Extract<ReviewTarget, { kind: "working-tree" }>
-  | Extract<ReviewTarget, { kind: "stash" }>
+export type MutableReviewTarget = Extract<ReviewTarget, { kind: "working-tree" }> | Extract<ReviewTarget, { kind: "stash" }>
 
 export function workingTreeTargetKey(target: MutableReviewTarget): string
 export function fingerprintWorkingTreeFile(target: MutableReviewTarget, file: FilePatchInput): string
@@ -1054,6 +1058,7 @@ git commit -m "refactor(review): remove legacy branch review mode"
 ### Task 14: Shared conformance corpus and performance guardrails
 
 **Files:**
+
 - Create: `tests/review/conformance/corpus.ts`
 - Create: `tests/review/conformance/patch-adapter.conformance.test.ts`
 - Create: `tests/review/conformance/core-document.conformance.test.ts`
@@ -1066,6 +1071,7 @@ git commit -m "refactor(review): remove legacy branch review mode"
 - Modify: `package.json`
 
 **Interfaces:**
+
 - Consumes: patch adapter, core document/anchors, row planner, reconciliation.
 - Produces: one shared semantic-address fixture vocabulary and repeatable benchmark commands.
 
@@ -1113,6 +1119,7 @@ git commit -m "test(review): add shared conformance and performance corpus"
 ### Task 15: End-to-end acceptance, documentation cutover, and final verification
 
 **Files:**
+
 - Create: `tests/acceptance/branch-review-workspace.integration.test.ts`
 - Create: `tests/acceptance/branch-review-artifact.integration.test.ts`
 - Modify: `docs/githunk-prd-v0.1.md`
@@ -1121,6 +1128,7 @@ git commit -m "test(review): add shared conformance and performance corpus"
 - Modify: `CLAUDE.md` only if its test-directory or command inventory must include the new review suites
 
 **Interfaces:**
+
 - Consumes: the complete feature.
 - Produces: observable proof for every acceptance criterion and current project documentation with no stale old-Branch-Review contract.
 

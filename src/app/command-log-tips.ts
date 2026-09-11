@@ -29,7 +29,7 @@ export const COMMAND_LOG_TIP_KEYS = {
   toggleFileTree: { key: "`", label: "`", action: "toggle-file-tree" },
   amendLastCommit: { key: "A", label: "A", action: "amend" },
   paneNext: { key: "l", label: "l", action: "pane-next" },
-  panePrevious: { key: "h", label: "h", action: "pane-previous" },
+  panePrevious: { key: "h", label: "h", action: "pane-previous" }
 } as const
 
 /**
@@ -91,7 +91,7 @@ export const COMMAND_LOG_TIPS: readonly string[] = [
   "If you ever want to experiment, it's easy to create a new branch off your current one and go nuts, then delete it afterwards",
   "Always read through the diff of your changes before assigning somebody to review your code. Better for you to catch any silly mistakes than your colleagues!",
   "If something goes wrong, you can always checkout a commit from your reflog to return to an earlier state",
-  "The stash is a good place to save snippets of code that you always find yourself adding when debugging.",
+  "The stash is a good place to save snippets of code that you always find yourself adding when debugging."
 ]
 
 /**

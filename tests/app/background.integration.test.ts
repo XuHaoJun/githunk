@@ -46,14 +46,13 @@ describe("background auto-fetch", () => {
       repositoryRoot: repository.path,
       runner: new GitRunner(repository.path),
       renderer: setup.renderer,
-      background: { enabled: true, autoFetch: true, autoRefresh: false, fetchIntervalMs: 50 },
+      background: { enabled: true, autoFetch: true, autoRefresh: false, fetchIntervalMs: 50 }
     })
     await app.refresh()
     await setup.flush()
 
     const currentName = app.controller.state.branches!.localBranches.find((branch) => branch.isCurrent)!.name
-    const behind = (): string | undefined =>
-      app!.controller.state.branches!.localBranches.find((branch) => branch.name === currentName)?.behindForPull
+    const behind = (): string | undefined => app!.controller.state.branches!.localBranches.find((branch) => branch.name === currentName)?.behindForPull
     expect(behind()).toBe("0")
 
     // Somebody else pushes.
@@ -100,8 +99,8 @@ describe("background auto-fetch", () => {
         autoRefresh: false,
         autoDetectExternalChanges: false,
         fetchIntervalMs: 60_000,
-        now: () => now,
-      },
+        now: () => now
+      }
     })
     await app.refresh()
     await setup.flush()
@@ -110,8 +109,7 @@ describe("background auto-fetch", () => {
     await app.controller.mutationQueue.run(async () => undefined)
 
     const currentName = app.controller.state.branches!.localBranches.find((branch) => branch.isCurrent)!.name
-    const behind = (): string | undefined =>
-      app!.controller.state.branches!.localBranches.find((branch) => branch.name === currentName)?.behindForPull
+    const behind = (): string | undefined => app!.controller.state.branches!.localBranches.find((branch) => branch.name === currentName)?.behindForPull
     expect(behind()).toBe("0")
 
     other = await createTempRepository()
@@ -144,7 +142,7 @@ describe("background auto-fetch", () => {
       repositoryRoot: repository.path,
       runner: new GitRunner(repository.path),
       renderer: setup.renderer,
-      background: { enabled: true, autoFetch: false, autoRefresh: false, autoDetectExternalChanges: true, externalChangeIntervalMs: 30 },
+      background: { enabled: true, autoFetch: false, autoRefresh: false, autoDetectExternalChanges: true, externalChangeIntervalMs: 30 }
     })
     await app.refresh()
     await setup.flush()
@@ -174,7 +172,7 @@ describe("background auto-fetch", () => {
       repositoryRoot: repository.path,
       runner: new GitRunner(repository.path),
       renderer: setup.renderer,
-      background: { enabled: true, autoFetch: false, autoRefresh: false, autoDetectExternalChanges: false, externalChangeIntervalMs: 30 },
+      background: { enabled: true, autoFetch: false, autoRefresh: false, autoDetectExternalChanges: false, externalChangeIntervalMs: 30 }
     })
     await app.refresh()
     await setup.flush()
@@ -204,8 +202,8 @@ describe("background auto-fetch", () => {
         autoFetch: false,
         autoDetectExternalChanges: false,
         autoRefresh: true,
-        refreshIntervalMs: 10_000,
-      },
+        refreshIntervalMs: 10_000
+      }
     })
     await app.refresh()
     await setup.flush()
@@ -229,7 +227,6 @@ describe("background auto-fetch", () => {
     expect(file()?.indexStatus).toBe(".")
     expect(file()?.worktreeStatus).toBe("M")
   }, 20_000)
-
 
   test("no background options means no timers at all", async () => {
     repository = await createTempRepository()
@@ -255,7 +252,7 @@ describe("backgroundOptionsFromEnv", () => {
       autoDetectExternalChanges: true,
       fetchIntervalMs: 60_000,
       refreshIntervalMs: 10_000,
-      externalChangeIntervalMs: 2_000,
+      externalChangeIntervalMs: 2_000
     })
     expect(backgroundOptionsFromEnv({ GITHUNK_AUTO_FETCH: "0" }).autoFetch).toBe(false)
     expect(backgroundOptionsFromEnv({ GITHUNK_AUTO_REFRESH: "false" }).autoRefresh).toBe(false)

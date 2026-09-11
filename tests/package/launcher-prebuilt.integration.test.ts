@@ -13,24 +13,15 @@ type ProcessResult = {
   readonly stderr: string
 }
 
-async function run(
-  command: string,
-  args: readonly string[],
-  cwd: string,
-  env: Record<string, string | undefined>,
-): Promise<ProcessResult> {
+async function run(command: string, args: readonly string[], cwd: string, env: Record<string, string | undefined>): Promise<ProcessResult> {
   const child = Bun.spawn([command, ...args], {
     cwd,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...env }
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    Bun.readableStreamToText(child.stdout),
-    Bun.readableStreamToText(child.stderr),
-    child.exited,
-  ])
+  const [stdout, stderr, exitCode] = await Promise.all([Bun.readableStreamToText(child.stdout), Bun.readableStreamToText(child.stderr), child.exited])
   return { exitCode, stdout, stderr }
 }
 
@@ -51,7 +42,7 @@ describe("launcher prebuilt lookup", () => {
     await writeFakeBinary(fake)
 
     const child = await run("node", [join(root, "bin", "githunk.js"), "--version"], workdir, {
-      GITHUNK_BIN_PATH: fake,
+      GITHUNK_BIN_PATH: fake
     })
     expect(child.exitCode).toBe(7)
     expect(child.stdout).toContain("prebuilt-binary:--version")

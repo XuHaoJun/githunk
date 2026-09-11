@@ -33,7 +33,7 @@ function parseArgs(argv: readonly string[]): { dryRun: boolean; npmTag: string }
 function npmViewExists(name: string, version: string): boolean {
   const proc = Bun.spawnSync(["npm", "view", `${name}@${version}`, "version"], {
     stdout: "ignore",
-    stderr: "ignore",
+    stderr: "ignore"
   })
   return proc.exitCode === 0
 }
@@ -42,11 +42,7 @@ function publishDirectory(directory: string, dryRun: boolean, npmTag: string): v
   const packageJson = JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8")) as PackageJson
 
   if (npmViewExists(packageJson.name, packageJson.version)) {
-    console.log(
-      dryRun
-        ? `Skipping npm publish dry-run for ${packageJson.name}@${packageJson.version}; that version already exists on npm.`
-        : `Skipping ${packageJson.name}@${packageJson.version}; already published.`,
-    )
+    console.log(dryRun ? `Skipping npm publish dry-run for ${packageJson.name}@${packageJson.version}; that version already exists on npm.` : `Skipping ${packageJson.name}@${packageJson.version}; already published.`)
     return
   }
 
@@ -60,7 +56,7 @@ function publishDirectory(directory: string, dryRun: boolean, npmTag: string): v
     stdin: "ignore",
     stdout: "inherit",
     stderr: "inherit",
-    env: process.env,
+    env: process.env
   })
 
   if (proc.exitCode !== 0) {
@@ -87,8 +83,4 @@ for (const directory of directories) {
   publishDirectory(directory, options.dryRun, options.npmTag)
 }
 
-console.log(
-  options.dryRun
-    ? `Completed npm publish dry-run for staged prebuilt packages with dist-tag "${options.npmTag}".`
-    : `Published staged prebuilt packages to npm with dist-tag "${options.npmTag}".`,
-)
+console.log(options.dryRun ? `Completed npm publish dry-run for staged prebuilt packages with dist-tag "${options.npmTag}".` : `Published staged prebuilt packages to npm with dist-tag "${options.npmTag}".`)

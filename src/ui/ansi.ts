@@ -1,7 +1,6 @@
 import { RGBA } from "@opentui/core"
 import { indexedColor } from "./theme"
 
-
 /**
  * Turns a git command's own coloured output into plain text plus row-local style spans.
  *
@@ -43,7 +42,6 @@ type AnsiStyle = {
   dim: boolean
 }
 
-
 const DEFAULT_STYLE: AnsiStyle = { fg: undefined, bold: false, dim: false }
 
 function styled(style: AnsiStyle): boolean {
@@ -67,7 +65,6 @@ function color256(index: number): RGBA | undefined {
   if (index < 0 || index > 255) return undefined
   return indexedColor(index)
 }
-
 
 /**
  * Folds one SGR sequence's parameters into `style`. Parameters this renderer has no place for
@@ -110,7 +107,10 @@ function applySgr(style: AnsiStyle, params: readonly number[]): AnsiStyle {
 
 function parseParams(body: string): readonly number[] {
   if (body.length === 0) return [0]
-  return body.split(";").map((part) => (part.length === 0 ? 0 : Number.parseInt(part, 10))).map((value) => (Number.isFinite(value) ? value : 0))
+  return body
+    .split(";")
+    .map((part) => (part.length === 0 ? 0 : Number.parseInt(part, 10)))
+    .map((value) => (Number.isFinite(value) ? value : 0))
 }
 
 /**
@@ -161,7 +161,7 @@ export function parseAnsi(input: string): AnsiText {
         end: column,
         ...(runStyle.fg === undefined ? {} : { fg: runStyle.fg }),
         ...(runStyle.bold ? { bold: true } : {}),
-        ...(runStyle.dim ? { dim: true } : {}),
+        ...(runStyle.dim ? { dim: true } : {})
       })
     }
     runStart = column

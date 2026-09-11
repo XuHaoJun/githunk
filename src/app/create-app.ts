@@ -101,7 +101,7 @@ export function backgroundOptionsFromEnv(env: Record<string, string | undefined>
     autoDetectExternalChanges: flag("GITHUNK_DETECT_EXTERNAL_CHANGES") ?? true,
     fetchIntervalMs: seconds("GITHUNK_FETCH_INTERVAL", DEFAULT_FETCH_INTERVAL_MS),
     refreshIntervalMs: seconds("GITHUNK_REFRESH_INTERVAL", DEFAULT_REFRESH_INTERVAL_MS),
-    externalChangeIntervalMs: seconds("GITHUNK_EXTERNAL_CHANGE_INTERVAL", DEFAULT_EXTERNAL_CHANGE_INTERVAL_MS),
+    externalChangeIntervalMs: seconds("GITHUNK_EXTERNAL_CHANGE_INTERVAL", DEFAULT_EXTERNAL_CHANGE_INTERVAL_MS)
   }
 }
 
@@ -109,8 +109,7 @@ export function createApp(options: CreateAppOptions): App {
   // `gh` is a network call, so the default loader is wired only for background-enabled apps.
   // Tests and embedded callers can inject the same seam without starting background timers.
   const ghRunner = options.background?.enabled === true ? createGhRunner(options.repositoryRoot) : undefined
-  const pullRequestLoader = options.loadPullRequests
-    ?? (ghRunner === undefined ? undefined : () => loadPullRequests(ghRunner))
+  const pullRequestLoader = options.loadPullRequests ?? (ghRunner === undefined ? undefined : () => loadPullRequests(ghRunner))
   // `printCommandLogHeader` runs at startup (pkg/gui/command_log_panel.go:70-85), before the gui's
   // first render; seeding here — before the controller's first `commandLogSnapshot()` — means the
   // controller's very first `AppModel` already carries it, in the headless path (no `renderer`)
@@ -122,7 +121,9 @@ export function createApp(options: CreateAppOptions): App {
     runner: options.runner,
     ...(pullRequestLoader === undefined ? {} : { loadPullRequests: pullRequestLoader }),
     ...(options.loadCommits === undefined ? {} : { loadCommits: options.loadCommits }),
-    onPullRequestsChanged: (state) => { renderPullRequests?.(state) },
+    onPullRequestsChanged: (state) => {
+      renderPullRequests?.(state)
+    }
   })
   const makeReviewController = (): ReviewWorkspaceController => {
     const stateStore = options.reviewLoaders?.stateStore ?? new ReviewStateStore(options.runner)
@@ -131,7 +132,7 @@ export function createApp(options: CreateAppOptions): App {
       runner: options.runner,
       stateStore,
       artifactStore,
-      ...(options.reviewLoaders?.loadDocument ? { loadDocument: options.reviewLoaders.loadDocument } : {}),
+      ...(options.reviewLoaders?.loadDocument ? { loadDocument: options.reviewLoaders.loadDocument } : {})
     })
   }
   const renderer = options.renderer
@@ -143,8 +144,8 @@ export function createApp(options: CreateAppOptions): App {
       createReviewController: makeReviewController,
       createReviewView: (): ReviewScreenView => ({
         root: { findDescendantById: () => undefined },
-        destroy: () => undefined,
-      }),
+        destroy: () => undefined
+      })
     })
     return {
       controller,
@@ -152,7 +153,9 @@ export function createApp(options: CreateAppOptions): App {
       screenController,
       refresh: () => controller.refresh(),
       saveUiState: async () => undefined,
-      destroy: async () => { await screenController.destroy() },
+      destroy: async () => {
+        await screenController.destroy()
+      }
     }
   }
 
@@ -190,7 +193,7 @@ export function createApp(options: CreateAppOptions): App {
             await controller.refreshFiles()
             if (!destroyed) syncView()
           },
-          isBusy: () => refreshInFlight || view.isMutating,
+          isBusy: () => refreshInFlight || view.isMutating
         })
         if (destroyed) {
           watcher.stop()
@@ -205,39 +208,41 @@ export function createApp(options: CreateAppOptions): App {
     })()
     await indexWatcherStart
   }
-  const editFile = options.onEditFile ?? (async (path: string, line?: number): Promise<void> => {
-    const abs = absolutePath(options.repositoryRoot, path)
-    const { cmd, suspend } = await resolveEditCommand([abs], { ...(line === undefined ? {} : { line }), runner: options.runner, cwd: options.repositoryRoot })
-    const shouldSuspend = suspend && renderer !== undefined
-    if (shouldSuspend) {
-      try {
-        const maybeSuspend = renderer as unknown as { suspend?: () => void }
-        maybeSuspend.suspend?.()
-      } catch {}
-    }
-    try {
-      const exitCode = await runInteractiveProcess("sh", ["-c", cmd], {
-        cwd: options.repositoryRoot,
-        env: process.env,
-      })
-      if (exitCode !== 0) {
-        throw new Error(`editor exited with code ${exitCode}`)
-      }
-    } finally {
+  const editFile =
+    options.onEditFile ??
+    (async (path: string, line?: number): Promise<void> => {
+      const abs = absolutePath(options.repositoryRoot, path)
+      const { cmd, suspend } = await resolveEditCommand([abs], { ...(line === undefined ? {} : { line }), runner: options.runner, cwd: options.repositoryRoot })
+      const shouldSuspend = suspend && renderer !== undefined
       if (shouldSuspend) {
         try {
-          const maybeResume = renderer as unknown as { resume?: () => void }
-          maybeResume.resume?.()
-        } catch {}
-        try {
-          renderer.requestRender()
+          const maybeSuspend = renderer as unknown as { suspend?: () => void }
+          maybeSuspend.suspend?.()
         } catch {}
       }
-    }
-    await controller.refresh()
-    syncView()
-    await refsWatcher.resync()
-  })
+      try {
+        const exitCode = await runInteractiveProcess("sh", ["-c", cmd], {
+          cwd: options.repositoryRoot,
+          env: process.env
+        })
+        if (exitCode !== 0) {
+          throw new Error(`editor exited with code ${exitCode}`)
+        }
+      } finally {
+        if (shouldSuspend) {
+          try {
+            const maybeResume = renderer as unknown as { resume?: () => void }
+            maybeResume.resume?.()
+          } catch {}
+          try {
+            renderer.requestRender()
+          } catch {}
+        }
+      }
+      await controller.refresh()
+      syncView()
+      await refsWatcher.resync()
+    })
   // Coalesced review generation refresh: at most one in-flight, one queued.
   let pendingReviewRefresh: Promise<void> | undefined
   let reviewRefreshQueued = false
@@ -265,7 +270,6 @@ export function createApp(options: CreateAppOptions): App {
     }
   }
 
-
   /**
    * Notices refs moving underneath the app. Declared ahead of the view because the view's
    * `onMutationSettled` re-seeds it; created unconditionally (it is inert until polled) so that
@@ -273,18 +277,26 @@ export function createApp(options: CreateAppOptions): App {
    */
   const shouldRender = (): boolean => screenController?.shouldRenderRepository() ?? true
   /** Repaints the repository screen from the controller's model, unless Branch Review owns the screen. */
-  const syncView = (): void => { if (shouldRender()) view.update(controller.state) }
+  const syncView = (): void => {
+    if (shouldRender()) view.update(controller.state)
+  }
   /**
    * Runs a controller call and repaints however it settles. Every UI-driven controller call goes
    * through here so the `try { … } finally { view.update(controller.state) }` contract lives in
    * one place.
    */
-  const ui = <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+  const ui =
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
     async (...args: A): Promise<R> => {
-      try { return await fn(...args) } finally { syncView() }
+      try {
+        return await fn(...args)
+      } finally {
+        syncView()
+      }
     }
   /** `ui`, but a no-op while Branch Review owns the screen: the repository view cannot act then. */
-  const repositoryUi = <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+  const repositoryUi =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
     async (...args: A): Promise<void> => {
       if (!shouldRender()) return
       await ui(fn)(...args)
@@ -305,13 +317,13 @@ export function createApp(options: CreateAppOptions): App {
       await controller.refresh()
       syncView()
     },
-    isBusy,
+    isBusy
   })
   view = new RootView(renderer, controller.state, {
     ports: {
       commands: {
         onStageFile: repositoryUi((path) => controller.stageFile(path)),
-        onStageFiles: repositoryUi((paths, stage) => stage ? controller.stageFiles(paths) : controller.unstageFiles(paths)),
+        onStageFiles: repositoryUi((paths, stage) => (stage ? controller.stageFiles(paths) : controller.unstageFiles(paths))),
         onUnstageFile: repositoryUi((path) => controller.unstageFile(path)),
         onDiscardFile: repositoryUi((path, mode) => controller.discardFile(path, mode)),
         onDiscardFiles: repositoryUi((paths, mode) => controller.discardFiles(paths, mode)),
@@ -320,7 +332,9 @@ export function createApp(options: CreateAppOptions): App {
         onScopeChange: repositoryUi((scope) => controller.setWorkingTreeScope(scope)),
         onOpenBranchReview: async () => {
           if (!shouldRender()) return
-          try { await screenController.openBranchReview() } catch (error) {
+          try {
+            await screenController.openBranchReview()
+          } catch (error) {
             syncView()
             throw error
           }
@@ -373,7 +387,9 @@ export function createApp(options: CreateAppOptions): App {
         }),
         onFetch: ui(() => controller.fetch()),
         onPull: ui(() => controller.pull()),
-        onPush: ui(async () => { await controller.push() }),
+        onPush: ui(async () => {
+          await controller.push()
+        }),
         onChooseUpstream: ui((remote, branch) => controller.chooseUpstream(remote, branch)),
         onCancelUpstream: ui(() => controller.cancelUpstreamChoice()),
         onPopStash: ui((ref) => controller.popStash(ref)),
@@ -401,7 +417,7 @@ export function createApp(options: CreateAppOptions): App {
           // an injected `options.onEditFile` runs.
           options.runner.log.logAction(LOG_ACTIONS.openFile)
           await editFile(path, line)
-        },
+        }
       },
       queries: {
         loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
@@ -410,7 +426,7 @@ export function createApp(options: CreateAppOptions): App {
         loadTagInspection: (tag) => controller.loadTagInspection(tag),
         loadRefLogInspection: (target) => controller.loadRefLogInspection(target),
         onCurrentCommitMessage: ui(() => controller.currentCommitMessage()),
-        onCheckBranchMerged: options.onCheckBranchMerged ?? ((branch, upstream) => controller.branchIsMerged(branch, upstream)),
+        onCheckBranchMerged: options.onCheckBranchMerged ?? ((branch, upstream) => controller.branchIsMerged(branch, upstream))
       },
       host: {
         onQuit: () => options.onQuit?.(),
@@ -420,11 +436,13 @@ export function createApp(options: CreateAppOptions): App {
         },
         // Whatever githunk just did to the repository is now the baseline for ref polling. Index events
         // remain queued because the watcher cannot attribute a concurrent index write safely.
-        onMutationSettled: () => { void refsWatcher.resync() },
+        onMutationSettled: () => {
+          void refsWatcher.resync()
+        },
         onPreviewError: (error) => controller.recordInspectionError(error),
-        isBranchReviewActive: () => screenController?.active.kind === "branch-review",
-      },
-    },
+        isBranchReviewActive: () => screenController?.active.kind === "branch-review"
+      }
+    }
   })
 
   screenController = new AppScreenController({
@@ -432,7 +450,7 @@ export function createApp(options: CreateAppOptions): App {
     repositoryView: view,
     renderer,
     createReviewController: makeReviewController,
-    createReviewView: (rc, onClose) => new ReactReviewHost(renderer, rc, onClose),
+    createReviewView: (rc, onClose) => new ReactReviewHost(renderer, rc, onClose)
   })
   renderPullRequests = (state) => {
     if (destroyed || !screenController.shouldRenderRepository()) return
@@ -444,43 +462,46 @@ export function createApp(options: CreateAppOptions): App {
    * local refs and pull requests begin together and the local model paints before the auxiliary
    * GitHub query completes.
    */
-  const background = backgroundOptions?.enabled === true
-    ? new BackgroundRefresher({
-        fetch: async () => {
-          // lazygit's background fetch is DontLog() while its foreground one is not
-          // (pkg/commands/git_commands/sync.go:65-84).
-          await controller.fetch(undefined, { background: true })
-          syncView()
-          await refsWatcher.resync()
-        },
-        refresh: async () => {
-          await controller.refreshFiles()
-          syncView()
-        },
-        detectExternalChanges: () => refsWatcher.check().then(() => undefined),
-        ...(backgroundOptions.autoFetch === undefined ? {} : { autoFetch: backgroundOptions.autoFetch }),
-        ...(backgroundOptions.autoRefresh === undefined ? {} : { autoRefresh: backgroundOptions.autoRefresh }),
-        ...(backgroundOptions.autoDetectExternalChanges === undefined ? {} : { autoDetectExternalChanges: backgroundOptions.autoDetectExternalChanges }),
-        ...(backgroundOptions.fetchIntervalMs === undefined ? {} : { fetchIntervalMs: backgroundOptions.fetchIntervalMs }),
-        ...(backgroundOptions.refreshIntervalMs === undefined ? {} : { refreshIntervalMs: backgroundOptions.refreshIntervalMs }),
-        ...(backgroundOptions.externalChangeIntervalMs === undefined ? {} : { externalChangeIntervalMs: backgroundOptions.externalChangeIntervalMs }),
-        ...(backgroundOptions.now === undefined ? {} : { now: backgroundOptions.now }),
-        // Everything the UI drives goes through `runUiMutation`, so this is lazygit's
-        // `backgroundRefreshesPaused()` for githunk: no background git while the user's own runs.
-        // Branch Review reconciliation must not be paused by busy/composer – it preserves draft.
-        isBusy,
-        // A background fetch fails whenever the network does. The command log already carries the
-        // failure; a banner would fight with whatever the user is reading.
-        onError: () => undefined,
-      })
-    : undefined
+  const background =
+    backgroundOptions?.enabled === true
+      ? new BackgroundRefresher({
+          fetch: async () => {
+            // lazygit's background fetch is DontLog() while its foreground one is not
+            // (pkg/commands/git_commands/sync.go:65-84).
+            await controller.fetch(undefined, { background: true })
+            syncView()
+            await refsWatcher.resync()
+          },
+          refresh: async () => {
+            await controller.refreshFiles()
+            syncView()
+          },
+          detectExternalChanges: () => refsWatcher.check().then(() => undefined),
+          ...(backgroundOptions.autoFetch === undefined ? {} : { autoFetch: backgroundOptions.autoFetch }),
+          ...(backgroundOptions.autoRefresh === undefined ? {} : { autoRefresh: backgroundOptions.autoRefresh }),
+          ...(backgroundOptions.autoDetectExternalChanges === undefined ? {} : { autoDetectExternalChanges: backgroundOptions.autoDetectExternalChanges }),
+          ...(backgroundOptions.fetchIntervalMs === undefined ? {} : { fetchIntervalMs: backgroundOptions.fetchIntervalMs }),
+          ...(backgroundOptions.refreshIntervalMs === undefined ? {} : { refreshIntervalMs: backgroundOptions.refreshIntervalMs }),
+          ...(backgroundOptions.externalChangeIntervalMs === undefined ? {} : { externalChangeIntervalMs: backgroundOptions.externalChangeIntervalMs }),
+          ...(backgroundOptions.now === undefined ? {} : { now: backgroundOptions.now }),
+          // Everything the UI drives goes through `runUiMutation`, so this is lazygit's
+          // `backgroundRefreshesPaused()` for githunk: no background git while the user's own runs.
+          // Branch Review reconciliation must not be paused by busy/composer – it preserves draft.
+          isBusy,
+          // A background fetch fails whenever the network does. The command log already carries the
+          // failure; a banner would fight with whatever the user is reading.
+          onError: () => undefined
+        })
+      : undefined
 
   /**
    * lazygit triggers an overdue background fetch when a repository becomes active again
    * (`pkg/gui/gui.go:332-339`); OpenTUI's terminal focus event is the equivalent signal when the
    * user returns to this TUI.
    */
-  const onTerminalFocus = (): void => { background?.triggerFetchIfDue() }
+  const onTerminalFocus = (): void => {
+    background?.triggerFetchIfDue()
+  }
   if (background !== undefined) renderer.on("focus", onTerminalFocus)
 
   return {
@@ -519,6 +540,6 @@ export function createApp(options: CreateAppOptions): App {
       // Geometry is a convenience: a failed final write must never mask a clean shutdown.
       await saveUiState().catch(() => undefined)
       view.destroy()
-    },
+    }
   }
 }

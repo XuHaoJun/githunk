@@ -39,10 +39,7 @@
             "oldCount": 1,
             "newStart": 1,
             "newCount": 1,
-            "lines": [
-              "-hello",
-              "+hello copy"
-            ]
+            "lines": ["-hello", "+hello copy"]
           }
         ]
       }

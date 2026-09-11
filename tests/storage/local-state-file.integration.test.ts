@@ -6,7 +6,9 @@ import { LocalStateFile } from "../../src/storage/local-state-file"
 
 describe("LocalStateFile", () => {
   let repository: TempRepository | undefined
-  afterEach(async () => { await repository?.cleanup() })
+  afterEach(async () => {
+    await repository?.cleanup()
+  })
 
   test("returns undefined for a file that does not exist", async () => {
     repository = await createTempRepository()

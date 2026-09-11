@@ -41,10 +41,10 @@ describe("review base selection", () => {
       await repository.git(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master"])
       await controller.open()
       expect(controller.state).toBeUndefined()
-      expect(controller.baseSelection?.candidates.some(candidate => candidate.ref === "refs/remotes/origin/master")).toBe(true)
+      expect(controller.baseSelection?.candidates.some((candidate) => candidate.ref === "refs/remotes/origin/master")).toBe(true)
       expect(await controller.chooseBase("refs/remotes/origin/master")).toBe(true)
       const identity = controller.state!.document.identity
-      expect(controller.state!.document.files.map(file => file.path)).toEqual(["file.txt"])
+      expect(controller.state!.document.files.map((file) => file.path)).toEqual(["file.txt"])
       await controller.destroy()
       await restarted.open()
       expect(restarted.baseSelection).toBeUndefined()
@@ -57,7 +57,9 @@ describe("review base selection", () => {
         await other.open()
         expect(other.state).toBeUndefined()
         expect(other.baseSelection?.loading).toBe(false)
-      } finally { await other.destroy() }
+      } finally {
+        await other.destroy()
+      }
     } finally {
       await controller.destroy()
       await restarted.destroy()
@@ -74,9 +76,9 @@ describe("review base selection", () => {
       await controller.open("master")
       controller.dispatch({ type: "filter/set-query", query: "file" })
       await controller.destroy()
-      await store.saveSemanticChange(db => ({
+      await store.saveSemanticChange((db) => ({
         ...db,
-        baseByHead: { "refs/heads/feature": { baseRef: "master" } },
+        baseByHead: { "refs/heads/feature": { baseRef: "master" } }
       }))
       const legacy = new ReviewWorkspaceController({ runner, stateStore: store })
       try {
@@ -85,15 +87,19 @@ describe("review base selection", () => {
         expect(legacy.baseSelection?.candidates[0]?.ref).toBe("refs/heads/master")
         expect(await legacy.chooseBase("refs/heads/master")).toBe(true)
         expect(legacy.state?.filter.query).toBe("file")
-      } finally { await legacy.destroy() }
+      } finally {
+        await legacy.destroy()
+      }
       await repository.git(["branch", "-D", "master"])
       const missing = new ReviewWorkspaceController({ runner, stateStore: store })
       try {
         await missing.open()
         expect(missing.state).toBeUndefined()
-        expect(missing.baseSelection?.candidates.some(candidate => candidate.ref === "refs/heads/master")).toBe(false)
-        expect(Object.values((await store.load()).reviews).some(review => review.filter.query === "file")).toBe(true)
-      } finally { await missing.destroy() }
+        expect(missing.baseSelection?.candidates.some((candidate) => candidate.ref === "refs/heads/master")).toBe(false)
+        expect(Object.values((await store.load()).reviews).some((review) => review.filter.query === "file")).toBe(true)
+      } finally {
+        await missing.destroy()
+      }
     } finally {
       await controller.destroy()
       await repository.cleanup()
@@ -111,8 +117,7 @@ describe("review base selection", () => {
       const file = first.document.files[0]!
       controller.dispatch({
         type: "feedback/start-draft",
-        draft: { kind: "note", severity: "comment", body: "keep this",
-          anchor: { kind: "file", fileKey: file.key, contentId: file.contentId } },
+        draft: { kind: "note", severity: "comment", body: "keep this", anchor: { kind: "file", fileKey: file.key, contentId: file.contentId } }
       })
       await controller.requestBaseSelection()
       expect(await controller.chooseBase("refs/heads/alternate")).toBe(true)

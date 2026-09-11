@@ -45,9 +45,7 @@ describe("submodule loader against real repositories", () => {
     await commitFile(top, "top")
     await addSubmodule(top, inner.path, "vendor/lib")
 
-    expect(await listSubmodules(new GitRunner(top.path))).toEqual([
-      { name: "vendor/lib", path: "vendor/lib", url: inner.path },
-    ])
+    expect(await listSubmodules(new GitRunner(top.path))).toEqual([{ name: "vendor/lib", path: "vendor/lib", url: inner.path }])
   })
 
   test("recurses into nested submodules", async () => {
@@ -65,7 +63,7 @@ describe("submodule loader against real repositories", () => {
     const submodules = await listSubmodules(new GitRunner(top.path))
     expect(submodules.map((submodule) => [submoduleFullName(submodule), submoduleDepth(submodule)])).toEqual([
       ["libs/mid", 0],
-      ["libs/mid/vendor/inner", 1],
+      ["libs/mid/vendor/inner", 1]
     ])
     expect(submodules[1]!.parentModule).toEqual(submodules[0]!)
     expect(submoduleFullPath(submodules[1]!)).toBe("libs/mid/vendor/inner")

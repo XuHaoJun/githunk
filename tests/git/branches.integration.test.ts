@@ -2,20 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { CommandLog } from "../../src/app/command-log"
 import { AppController } from "../../src/app/controller"
 import { GitRunner } from "../../src/git/runner"
-import {
-  checkoutRemoteTracking,
-  createBranch,
-  deleteBranch,
-  deleteLocalAndRemoteBranch,
-  deleteRemoteBranch,
-  fetchRemote,
-  isBranchMerged,
-  listBranches,
-  listRemoteBranches,
-  renameBranch,
-  switchLocal,
-  type CreateBranchOptions,
-} from "../../src/git/branches"
+import { checkoutRemoteTracking, createBranch, deleteBranch, deleteLocalAndRemoteBranch, deleteRemoteBranch, fetchRemote, isBranchMerged, listBranches, listRemoteBranches, renameBranch, switchLocal, type CreateBranchOptions } from "../../src/git/branches"
 import { trackingLocalName } from "../../src/domain/branch"
 import { createTempRepository } from "../helpers/temp-repository"
 
@@ -332,12 +319,13 @@ describe("branch and remote operations", () => {
       const log = new CommandLog()
       const controller = new AppController({
         repositoryRoot: repository.path,
-        runner: new GitRunner({ cwd: repository.path, log }),
+        runner: new GitRunner({ cwd: repository.path, log })
       })
       await controller.refresh()
       await controller.deleteLocalAndRemoteBranch("feature/foo", "origin", "feature/foo", { force: true, confirmed: true })
 
-      const actions = log.lines()
+      const actions = log
+        .lines()
         .filter((line) => line.spans.some((span) => span.style === "action"))
         .map((line) => line.spans.map((span) => span.text).join(""))
       expect(actions).toEqual(["Delete remote branch", "Delete local branch"])

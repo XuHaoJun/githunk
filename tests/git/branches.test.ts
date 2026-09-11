@@ -34,7 +34,7 @@ describe("branch and remote loaders", () => {
     expect(listing.remotes[0]).toMatchObject({
       name: "origin",
       fetchUrl: expect.any(String),
-      pushUrl: expect.any(String),
+      pushUrl: expect.any(String)
     })
     expect(current.upstreamTrack!).toContain("ahead")
   })

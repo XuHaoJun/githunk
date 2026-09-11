@@ -36,10 +36,7 @@ describe("inferReviewBase", () => {
       await git(repository, ["config", "branch.feature.merge", "refs/heads/feature"])
       const result = await inferReviewBase(new GitRunner(repository.path))
       expect(result.kind).toBe("choose")
-      expect(result.candidates.map(({ ref }) => ref)).toEqual([
-        "refs/remotes/upstream/main", "refs/remotes/origin/main",
-        "refs/remotes/backup/main", "refs/remotes/zeta/main", "refs/heads/master",
-      ])
+      expect(result.candidates.map(({ ref }) => ref)).toEqual(["refs/remotes/upstream/main", "refs/remotes/origin/main", "refs/remotes/backup/main", "refs/remotes/zeta/main", "refs/heads/master"])
     } finally {
       await repository.cleanup()
     }
@@ -58,9 +55,7 @@ describe("inferReviewBase", () => {
       const result = await inferReviewBase(runner)
       expect(result.candidates[0]?.ref).toBe("refs/heads/stack-parent")
       const preferred = await inferReviewBase(runner, "refs/remotes/origin/main")
-      expect(preferred.candidates.map(({ ref }) => ref)).toEqual([
-        "refs/remotes/origin/main", "refs/heads/stack-parent", "refs/heads/master",
-      ])
+      expect(preferred.candidates.map(({ ref }) => ref)).toEqual(["refs/remotes/origin/main", "refs/heads/stack-parent", "refs/heads/master"])
       const stale = await inferReviewBase(runner, "refs/heads/deleted")
       expect(stale.candidates.map(({ ref }) => ref)).toEqual(result.candidates.map(({ ref }) => ref))
     } finally {
@@ -79,9 +74,7 @@ describe("inferReviewBase", () => {
       await git(repository, ["branch", "same-head"])
       const before = await git(repository, ["show-ref"])
       const result = await inferReviewBase(new GitRunner(repository.path))
-      expect(result.candidates.map(({ ref }) => ref)).toEqual([
-        "refs/heads/master", "refs/heads/same-head", "refs/remotes/origin/feature",
-      ])
+      expect(result.candidates.map(({ ref }) => ref)).toEqual(["refs/heads/master", "refs/heads/same-head", "refs/remotes/origin/feature"])
       expect(await git(repository, ["symbolic-ref", "HEAD"])).toBe("refs/heads/feature")
       expect(await git(repository, ["show-ref"])).toBe(before)
       expect(await git(repository, ["status", "--porcelain"])).toBe("")

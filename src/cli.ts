@@ -37,14 +37,13 @@ function productionUpdateEnv(): UpdateEnvironment {
     },
     fetchReleaseTag: async () => {
       const payload: unknown = JSON.parse(await fetchText(RELEASES_API))
-      const tag =
-        typeof payload === "object" && payload !== null && "tag_name" in payload ? payload.tag_name : undefined
+      const tag = typeof payload === "object" && payload !== null && "tag_name" in payload ? payload.tag_name : undefined
       if (typeof tag !== "string" || tag === "") throw new Error("could not read the newest release")
       return tag
     },
     fetchAsset: async (tag: string, asset: string) => ({
       tarball: await fetchBytes(`${DOWNLOAD_BASE}/${tag}/${asset}`),
-      checksums: await fetchText(`${DOWNLOAD_BASE}/${tag}/SHA256SUMS`),
+      checksums: await fetchText(`${DOWNLOAD_BASE}/${tag}/SHA256SUMS`)
     }),
     withTempDir: async (run) => {
       const dir = mkdtempSync(join(tmpdir(), "githunk-update-"))
@@ -61,16 +60,10 @@ function productionUpdateEnv(): UpdateEnvironment {
     },
     stagedBinary: (dir) => join(dir, `githunk-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}`, process.platform === "win32" ? "githunk.exe" : "githunk"),
     stagedSkill: (dir) => {
-      const candidate = join(
-        dir,
-        `githunk-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}`,
-        "skills",
-        "githunk-handoff",
-        "SKILL.md",
-      )
+      const candidate = join(dir, `githunk-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}`, "skills", "githunk-handoff", "SKILL.md")
       return existsSync(candidate) ? candidate : undefined
     },
-    writePayload: (payload) => replaceStandalonePayload(payload),
+    writePayload: (payload) => replaceStandalonePayload(payload)
   }
 }
 
@@ -88,10 +81,7 @@ if (result.kind === "help" || result.kind === "version") {
   stream.write(outcome.text.endsWith("\n") ? outcome.text : `${outcome.text}\n`)
   process.exitCode = outcome.exitCode
 } else if (result.kind === "update") {
-  const outcome = await runUpdate(
-    { ...(result.version === undefined ? {} : { version: result.version }), check: result.check },
-    productionUpdateEnv(),
-  )
+  const outcome = await runUpdate({ ...(result.version === undefined ? {} : { version: result.version }), check: result.check }, productionUpdateEnv())
   const stream = outcome.exitCode === 0 ? process.stdout : process.stderr
   stream.write(outcome.message.endsWith("\n") ? outcome.message : `${outcome.message}\n`)
   process.exitCode = outcome.exitCode
@@ -106,7 +96,5 @@ if (result.kind === "help" || result.kind === "version") {
   stream.write(outcome.text.endsWith("\n") ? outcome.text : `${outcome.text}\n`)
   process.exitCode = outcome.exitCode
 } else {
-  process.exitCode = await startApp(
-    result.startDirectory === undefined ? {} : { startDirectory: result.startDirectory },
-  )
+  process.exitCode = await startApp(result.startDirectory === undefined ? {} : { startDirectory: result.startDirectory })
 }

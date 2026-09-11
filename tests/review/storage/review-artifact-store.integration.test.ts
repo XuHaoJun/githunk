@@ -28,7 +28,7 @@ function makeReviewState(): ReviewState {
     reveal: { fileTopToken: 0, fileTopRequestToken: 0, hunkToken: 0, scrollToFeedback: false },
     filter: { query: "", scope: "all" },
     viewed: {
-      k1: { fileKey: "k1", path: "a.ts", contentId: "cid1", generationId: doc.generation.id, viewedAt: new Date().toISOString() },
+      k1: { fileKey: "k1", path: "a.ts", contentId: "cid1", generationId: doc.generation.id, viewedAt: new Date().toISOString() }
     },
     feedback: [
       {
@@ -39,12 +39,12 @@ function makeReviewState(): ReviewState {
         anchor: { kind: "file", fileKey: "k1", contentId: "cid1" },
         resolution: "active",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
+        updatedAt: new Date().toISOString()
+      }
     ],
     draft: null,
     expandedGaps: [],
-    lastSubmission: null,
+    lastSubmission: null
   }
 }
 
@@ -60,7 +60,7 @@ function makeArtifact(state: ReviewState, overrides?: Partial<ReviewArtifactV1>)
     projection: { kind: "aggregate" },
     coverage: {
       viewed: Object.values(state.viewed).map((v) => ({ fileKey: v.fileKey, path: v.path, contentId: v.contentId })),
-      notViewed: [],
+      notViewed: []
     },
     feedback: state.feedback.map((f) => ({
       id: f.id,
@@ -70,9 +70,9 @@ function makeArtifact(state: ReviewState, overrides?: Partial<ReviewArtifactV1>)
       ...(f.replacement !== undefined ? { replacement: f.replacement } : {}),
       anchor: f.anchor,
       createdAt: f.createdAt,
-      updatedAt: f.updatedAt,
+      updatedAt: f.updatedAt
     })),
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -156,9 +156,9 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
           draft: state.draft,
           expandedGaps: [...state.expandedGaps],
           lastSubmission: state.lastSubmission,
-          submissionInProgress: null,
-        },
-      },
+          submissionInProgress: null
+        }
+      }
     }))
     const result = await finishReviewTransaction({ stateStore, artifactStore, reviewState: state, artifact })
     expect(result.feedback).toHaveLength(0)
@@ -193,9 +193,9 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
           draft: state.draft,
           expandedGaps: [],
           lastSubmission: null,
-          submissionInProgress: null,
-        },
-      },
+          submissionInProgress: null
+        }
+      }
     }))
     const originalCreate = artifactStore.createExclusive.bind(artifactStore)
     let callCount = 0
@@ -240,9 +240,9 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
           draft: null,
           expandedGaps: [],
           lastSubmission: null,
-          submissionInProgress: null,
-        },
-      },
+          submissionInProgress: null
+        }
+      }
     }))
     const originalFinalize = stateStore.saveSemanticChange.bind(stateStore)
     let callCount = 0
@@ -286,9 +286,9 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
           draft: null,
           expandedGaps: [],
           lastSubmission: null,
-          submissionInProgress: null,
-        },
-      },
+          submissionInProgress: null
+        }
+      }
     }))
     const original = stateStore.saveSemanticChange.bind(stateStore)
     let shouldFail = true
@@ -333,9 +333,9 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
           draft: null,
           expandedGaps: [],
           lastSubmission: null,
-          submissionInProgress: null,
-        },
-      },
+          submissionInProgress: null
+        }
+      }
     }))
     const digest = artifactDigest(artifact)
     await stateStore.saveSemanticChange((db) => ({
@@ -344,9 +344,9 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
         ...db.reviews,
         [state.document.identity.id]: {
           ...db.reviews[state.document.identity.id]!,
-          submissionInProgress: { artifactId: artifact.id, digest },
-        },
-      },
+          submissionInProgress: { artifactId: artifact.id, digest }
+        }
+      }
     }))
     await artifactStore.createExclusive(artifact)
     const newRunner = new GitRunner(repository.path)
@@ -383,9 +383,9 @@ describe("finishReviewTransaction – recoverable two-file transaction", () => {
           draft: null,
           expandedGaps: [],
           lastSubmission: null,
-          submissionInProgress: null,
-        },
-      },
+          submissionInProgress: null
+        }
+      }
     }))
     await finishReviewTransaction({ stateStore, artifactStore, reviewState: state, artifact })
     const secondResult = await finishReviewTransaction({ stateStore, artifactStore, reviewState: state, artifact })

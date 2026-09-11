@@ -28,9 +28,11 @@ Spec: `docs/superpowers/specs/2026-09-06-app-wiring-and-dispatch-refactor-design
 ### Task 1: Create `src/ui/root-view-ports.ts`
 
 **Files:**
+
 - Create: `src/ui/root-view-ports.ts`
 
 **Interfaces:**
+
 - Consumes: existing domain/git types only.
 - Produces: `RepositoryCommands`, `RepositoryQueries`, `ViewHost`, `RootViewPorts` (used by Task 2 and Task 3).
 
@@ -137,9 +139,11 @@ Expected: exit 0 (the file is not imported yet, but must compile).
 ### Task 2: `RootView` consumes `ports`
 
 **Files:**
+
 - Modify: `src/ui/root-view.ts` (options type `:203-265`, fields `:319-385`, constructor copies `:442-493`, ~100 call sites)
 
 **Interfaces:**
+
 - Consumes: `RootViewPorts` from Task 1.
 - Produces: `new RootView(renderer, model, { sidePanelRatio?, logHeight?, logVisible?, ports })`. Task 3 depends on this constructor shape.
 
@@ -175,7 +179,7 @@ Delete every field of the form `private readonly onX: (…) | undefined` and `pr
 In the constructor, delete the block `this.onStageFile = options.onStageFile` … `this.onMarkFocusedFileReviewed = options.onMarkFocusedFileReviewed` (`:442-493`) and write:
 
 ```ts
-    this.ports = options.ports
+this.ports = options.ports
 ```
 
 Keep the doc comment that sat on `onMutationSettled` in `RootViewOptions`; it now lives in `ViewHost` (Task 1).
@@ -184,14 +188,14 @@ Keep the doc comment that sat on `onMutationSettled` in `RootViewOptions`; it no
 
 Use these substitutions over the whole file (a scripted `sed` is fine; review the diff afterwards):
 
-| From | To |
-| --- | --- |
-| `this.<name>?.(` where `<name>` is in `RepositoryCommands` | `this.ports.commands.<name>(` |
-| `this.<name>!(` (commands) | `this.ports.commands.<name>(` |
-| `this.<name>(` (commands, already unguarded) | `this.ports.commands.<name>(` |
-| `this.<name>?.(` / `!(` / `(` for names in `RepositoryQueries` | `this.ports.queries.<name>(` |
-| `this.onQuit?.()`, `this.onGeometryChange?.(`, `this.onMutationSettled?.()`, `this.onPreviewError?.(`, `this.isBranchReviewActive?.()` | `this.ports.host.<name>(` |
-| `const checkMerged = this.onCheckBranchMerged` (`:2896`) | `const checkMerged = this.ports.queries.onCheckBranchMerged` |
+| From                                                                                                                                   | To                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `this.<name>?.(` where `<name>` is in `RepositoryCommands`                                                                             | `this.ports.commands.<name>(`                                |
+| `this.<name>!(` (commands)                                                                                                             | `this.ports.commands.<name>(`                                |
+| `this.<name>(` (commands, already unguarded)                                                                                           | `this.ports.commands.<name>(`                                |
+| `this.<name>?.(` / `!(` / `(` for names in `RepositoryQueries`                                                                         | `this.ports.queries.<name>(`                                 |
+| `this.onQuit?.()`, `this.onGeometryChange?.(`, `this.onMutationSettled?.()`, `this.onPreviewError?.(`, `this.isBranchReviewActive?.()` | `this.ports.host.<name>(`                                    |
+| `const checkMerged = this.onCheckBranchMerged` (`:2896`)                                                                               | `const checkMerged = this.ports.queries.onCheckBranchMerged` |
 
 Pass-through of a callback as a value (for example `this.onCheckBranchMerged` assigned to a local, or `this.loadCommitInspection` handed to `mainGate.request`) becomes the `this.ports.…` member; no `.bind` is needed because the wiring in create-app supplies arrow functions.
 
@@ -204,7 +208,7 @@ Every guard listed by `grep -nE 'this\.(on[A-Z]|load[A-Z]|isBranchReviewActive)[
 3. `if (a === undefined || this.onX === undefined) return` → `if (a === undefined) return`.
 4. `if (this.onX !== undefined) { body }` → `body` (unwrapped).
 5. `if (cond && this.onX !== undefined)` → `if (cond)`.
-6. Branches that only run when a callback is *absent* are deleted whole, including their body:
+6. Branches that only run when a callback is _absent_ are deleted whole, including their body:
    - `actionEditFile` `:2226-2231` ("Edit not available in this context").
    - `actionDiscardSelection` `:2398-2402` ("batch discard is unavailable").
    - `beginBranchDelete` `:2886-2890` (worktree bottom-title fallback; the following `this.openWorktreeDeleteMenu(branch, worktree, request); return` stays).
@@ -224,38 +228,48 @@ Expected: errors only in `src/app/create-app.ts` (it still passes the flat optio
 ### Task 3: `create-app` wrapper and ports wiring
 
 **Files:**
+
 - Modify: `src/app/create-app.ts:272-480` (RefsWatcher `isBusy`, `new RootView(...)`), `:499-532` (BackgroundRefresher `isBusy`)
 - Test: existing `tests/ui/dispatch.integration.test.ts`, `tests/app/create-app.test.ts`, `tests/app/create-app.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: `RootViewPorts` (Task 1), new `RootView` constructor (Task 2).
 - Produces: nothing new outside the file.
 
 - [ ] **Step 1: Add the helpers directly above `refsWatcher = new RefsWatcher({`** (`:272`)
 
 ```ts
-  const shouldRender = (): boolean => screenController?.shouldRenderRepository() ?? true
-  /** Repaints the repository screen from the controller's model, unless Branch Review owns the screen. */
-  const syncView = (): void => { if (shouldRender()) view.update(controller.state) }
-  /**
-   * Runs a controller call and repaints however it settles. Every UI-driven controller call goes
-   * through here so the `try { … } finally { view.update(controller.state) }` contract lives in
-   * one place.
-   */
-  const ui = <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
-    async (...args: A): Promise<R> => {
-      try { return await fn(...args) } finally { syncView() }
+const shouldRender = (): boolean => screenController?.shouldRenderRepository() ?? true
+/** Repaints the repository screen from the controller's model, unless Branch Review owns the screen. */
+const syncView = (): void => {
+  if (shouldRender()) view.update(controller.state)
+}
+/**
+ * Runs a controller call and repaints however it settles. Every UI-driven controller call goes
+ * through here so the `try { … } finally { view.update(controller.state) }` contract lives in
+ * one place.
+ */
+const ui =
+  <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+  async (...args: A): Promise<R> => {
+    try {
+      return await fn(...args)
+    } finally {
+      syncView()
     }
-  /** `ui`, but a no-op while Branch Review owns the screen: the repository view cannot act then. */
-  const repositoryUi = <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
-    async (...args: A): Promise<void> => {
-      if (!shouldRender()) return
-      await ui(fn)(...args)
-    }
-  const isBusy = (): boolean => {
-    if (!shouldRender()) return false
-    return refreshInFlight || view.isMutating
   }
+/** `ui`, but a no-op while Branch Review owns the screen: the repository view cannot act then. */
+const repositoryUi =
+  <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+  async (...args: A): Promise<void> => {
+    if (!shouldRender()) return
+    await ui(fn)(...args)
+  }
+const isBusy = (): boolean => {
+  if (!shouldRender()) return false
+  return refreshInFlight || view.isMutating
+}
 ```
 
 `view.isMutating` is a public getter (`src/ui/root-view.ts:790`); the previous `as unknown as { isMutating?: boolean }` cast is dropped.
@@ -265,146 +279,150 @@ Expected: errors only in `src/app/create-app.ts` (it still passes the flat optio
 Replace the `RefsWatcher` options (`:273-291`) with:
 
 ```ts
-  refsWatcher = new RefsWatcher({
-    snapshot: () => loadRefsSnapshot(options.runner),
-    onExternalChange: async () => {
-      if (!shouldRender()) {
-        // Hidden repository refresh without repainting the review screen
-        void controller.refresh().catch(() => undefined)
-        await scheduleCoalescedReviewRefresh()
-        return
-      }
-      await controller.refresh()
-      syncView()
-    },
-    isBusy,
-  })
+refsWatcher = new RefsWatcher({
+  snapshot: () => loadRefsSnapshot(options.runner),
+  onExternalChange: async () => {
+    if (!shouldRender()) {
+      // Hidden repository refresh without repainting the review screen
+      void controller.refresh().catch(() => undefined)
+      await scheduleCoalescedReviewRefresh()
+      return
+    }
+    await controller.refresh()
+    syncView()
+  },
+  isBusy
+})
 ```
 
 - [ ] **Step 3: Replace the `new RootView(...)` call (`:292-480`)**
 
 ```ts
-  view = new RootView(renderer, controller.state, {
-    ports: {
-      commands: {
-        onStageFile: repositoryUi((path) => controller.stageFile(path)),
-        onStageFiles: repositoryUi((paths, stage) => stage ? controller.stageFiles(paths) : controller.unstageFiles(paths)),
-        onUnstageFile: repositoryUi((path) => controller.unstageFile(path)),
-        onDiscardFile: repositoryUi((path, mode) => controller.discardFile(path, mode)),
-        onDiscardFiles: repositoryUi((paths, mode) => controller.discardFiles(paths, mode)),
-        onToggleAllFiles: repositoryUi(() => controller.toggleAllFiles()),
-        onScopeChange: repositoryUi((scope) => controller.setWorkingTreeScope(scope)),
-        onOpenBranchReview: async () => {
-          if (!shouldRender()) return
-          try { await screenController.openBranchReview() } catch (error) {
-            syncView()
-            throw error
-          }
-        },
-        onApplySelection: repositoryUi((document, indexes, reverse) => controller.applySelection(document, indexes, { reverse, wholeFile: false })),
-        onDiscardSelection: repositoryUi((document, indexes) => controller.discardSelection(document, indexes, { wholeFile: false })),
-        onSelectFile: (path) => {
-          if (!shouldRender()) return
-          controller.selectFile(path)
+view = new RootView(renderer, controller.state, {
+  ports: {
+    commands: {
+      onStageFile: repositoryUi((path) => controller.stageFile(path)),
+      onStageFiles: repositoryUi((paths, stage) => (stage ? controller.stageFiles(paths) : controller.unstageFiles(paths))),
+      onUnstageFile: repositoryUi((path) => controller.unstageFile(path)),
+      onDiscardFile: repositoryUi((path, mode) => controller.discardFile(path, mode)),
+      onDiscardFiles: repositoryUi((paths, mode) => controller.discardFiles(paths, mode)),
+      onToggleAllFiles: repositoryUi(() => controller.toggleAllFiles()),
+      onScopeChange: repositoryUi((scope) => controller.setWorkingTreeScope(scope)),
+      onOpenBranchReview: async () => {
+        if (!shouldRender()) return
+        try {
+          await screenController.openBranchReview()
+        } catch (error) {
           syncView()
-        },
-        onExpandCommits: async () => {
-          const expanded = await controller.expandCommits()
-          // Preserve an open filter/search prompt across the reload: the default
-          // update clears in-progress filtering (root-view `update`), which would
-          // drop the session the expansion was opened for.
-          if (expanded && shouldRender()) view.update(controller.state, { preserveFilterInput: true })
-          return expanded
-        },
-        onMarkFocusedFileReviewed: repositoryUi((path) => controller.markFocusedFileReviewed(path)),
-        onCommitMessage: repositoryUi((message) => controller.commit(message)),
-        onAmendMessage: repositoryUi((message) => controller.amend(message)),
-        onCreateBranch: repositoryUi(async (startPoint, branchName, createOptions) => {
-          if (branchName === undefined) return
-          await controller.createBranch(branchName, startPoint, createOptions)
-        }),
-        onCreateBranchWithAutostash: repositoryUi(async (startPoint, branchName, createOptions) => {
-          if (branchName === undefined) return
-          await controller.createBranchWithAutostash(branchName, startPoint, createOptions)
-        }),
-        onRefresh: ui(() => controller.refresh()),
-        onSwitchLocalBranch: repositoryUi((branch) => controller.switchLocalBranch(branch)),
-        onDeleteBranch: repositoryUi(async (request) => {
-          if (request.mode === "local") {
-            await controller.deleteBranch(request.branch, { force: request.force, confirmed: request.force })
-          } else if (request.mode === "remote") {
-            if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
-            await controller.deleteRemoteBranch(request.remote, request.remoteBranch)
-          } else {
-            if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("local and remote deletion requires an upstream")
-            await controller.deleteLocalAndRemoteBranch(request.branch, request.remote, request.remoteBranch, { force: request.force, confirmed: request.force })
-          }
-        }),
-        onDeleteBranches: repositoryUi((requests) => controller.deleteBranches(requests)),
-        onDeleteBranchFromWorktree: ui((path, action, request, forceWorktree) => controller.deleteBranchFromWorktree(path, action, request, forceWorktree)),
-        onFetchRemote: ui((remote) => controller.fetchRemote(remote)),
-        onRenameBranch: repositoryUi(async (branch, newName) => {
-          if (newName === undefined) return
-          await controller.renameBranch(branch, newName)
-        }),
-        onFetch: ui(() => controller.fetch()),
-        onPull: ui(() => controller.pull()),
-        onPush: ui(() => controller.push()),
-        onChooseUpstream: ui((remote, branch) => controller.chooseUpstream(remote, branch)),
-        onCancelUpstream: ui(() => controller.cancelUpstreamChoice()),
-        onPopStash: ui((ref) => controller.popStash(ref)),
-        onCreateStash: ui((message, includeUntracked) => controller.createStash(message, { includeUntracked })),
-        onApplyStash: ui((ref) => controller.applyStash(ref)),
-        onDropStash: ui((ref) => controller.dropStash(ref, { confirmed: true })),
-        onDropStashes: ui((refs) => controller.dropStashes(refs, { confirmed: true })),
-        onInspectStash: ui((ref) => controller.inspectStash(ref)),
-        onBrowseRemote: ui((remote) => controller.browseRemote(remote)),
-        onInspectBranch: ui((branchRef) => controller.inspectBranch(branchRef)),
-        onCheckoutRemoteTracking: async (selection, confirmedMismatch) => {
-          if (!shouldRender()) return undefined
-          try {
-            const result = await controller.checkoutRemoteTracking(selection, confirmedMismatch === true ? { confirmedMismatch: true } : undefined)
-            if (shouldRender()) view.update(controller.state, { preserveRemoteCheckout: result?.kind === "mismatch" })
-            return result
-          } catch (error) {
-            syncView()
-            throw error
-          }
-        },
-        onEditFile: async (path, line) => {
-          // `LogAction(Tr.Actions.OpenFile)` (pkg/gui/controllers/helpers/files_helper.go:78). Logged
-          // at the wiring, not inside the default `editFile` above, so it fires whether the default or
-          // an injected `options.onEditFile` runs.
-          options.runner.log.logAction(LOG_ACTIONS.openFile)
-          await editFile(path, line)
-        },
+          throw error
+        }
       },
-      queries: {
-        loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
-        loadBranchCommits: options.loadBranchCommits ?? ((branch) => controller.loadBranchCommits(branch)),
-        loadCommitFileInspection: (oid, path) => controller.loadCommitFileInspection(oid, path),
-        loadTagInspection: (tag) => controller.loadTagInspection(tag),
-        loadRefLogInspection: (target) => controller.loadRefLogInspection(target),
-        onCurrentCommitMessage: ui(() => controller.currentCommitMessage()),
-        onCheckBranchMerged: options.onCheckBranchMerged ?? ((branch, upstream) => controller.branchIsMerged(branch, upstream)),
+      onApplySelection: repositoryUi((document, indexes, reverse) => controller.applySelection(document, indexes, { reverse, wholeFile: false })),
+      onDiscardSelection: repositoryUi((document, indexes) => controller.discardSelection(document, indexes, { wholeFile: false })),
+      onSelectFile: (path) => {
+        if (!shouldRender()) return
+        controller.selectFile(path)
+        syncView()
       },
-      host: {
-        onQuit: () => options.onQuit?.(),
-        onGeometryChange: (state) => {
-          latestGeometry = state
-          options.onGeometryChange?.(state)
-        },
-        // Whatever githunk just did to the repository is now the baseline for ref polling. Index events
-        // remain queued because the watcher cannot attribute a concurrent index write safely.
-        onMutationSettled: () => { void refsWatcher.resync() },
-        onPreviewError: (error) => controller.recordInspectionError(error),
-        isBranchReviewActive: () => screenController?.active.kind === "branch-review",
+      onExpandCommits: async () => {
+        const expanded = await controller.expandCommits()
+        // Preserve an open filter/search prompt across the reload: the default
+        // update clears in-progress filtering (root-view `update`), which would
+        // drop the session the expansion was opened for.
+        if (expanded && shouldRender()) view.update(controller.state, { preserveFilterInput: true })
+        return expanded
       },
+      onMarkFocusedFileReviewed: repositoryUi((path) => controller.markFocusedFileReviewed(path)),
+      onCommitMessage: repositoryUi((message) => controller.commit(message)),
+      onAmendMessage: repositoryUi((message) => controller.amend(message)),
+      onCreateBranch: repositoryUi(async (startPoint, branchName, createOptions) => {
+        if (branchName === undefined) return
+        await controller.createBranch(branchName, startPoint, createOptions)
+      }),
+      onCreateBranchWithAutostash: repositoryUi(async (startPoint, branchName, createOptions) => {
+        if (branchName === undefined) return
+        await controller.createBranchWithAutostash(branchName, startPoint, createOptions)
+      }),
+      onRefresh: ui(() => controller.refresh()),
+      onSwitchLocalBranch: repositoryUi((branch) => controller.switchLocalBranch(branch)),
+      onDeleteBranch: repositoryUi(async (request) => {
+        if (request.mode === "local") {
+          await controller.deleteBranch(request.branch, { force: request.force, confirmed: request.force })
+        } else if (request.mode === "remote") {
+          if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("remote branch deletion requires an upstream")
+          await controller.deleteRemoteBranch(request.remote, request.remoteBranch)
+        } else {
+          if (request.remote === undefined || request.remoteBranch === undefined) throw new Error("local and remote deletion requires an upstream")
+          await controller.deleteLocalAndRemoteBranch(request.branch, request.remote, request.remoteBranch, { force: request.force, confirmed: request.force })
+        }
+      }),
+      onDeleteBranches: repositoryUi((requests) => controller.deleteBranches(requests)),
+      onDeleteBranchFromWorktree: ui((path, action, request, forceWorktree) => controller.deleteBranchFromWorktree(path, action, request, forceWorktree)),
+      onFetchRemote: ui((remote) => controller.fetchRemote(remote)),
+      onRenameBranch: repositoryUi(async (branch, newName) => {
+        if (newName === undefined) return
+        await controller.renameBranch(branch, newName)
+      }),
+      onFetch: ui(() => controller.fetch()),
+      onPull: ui(() => controller.pull()),
+      onPush: ui(() => controller.push()),
+      onChooseUpstream: ui((remote, branch) => controller.chooseUpstream(remote, branch)),
+      onCancelUpstream: ui(() => controller.cancelUpstreamChoice()),
+      onPopStash: ui((ref) => controller.popStash(ref)),
+      onCreateStash: ui((message, includeUntracked) => controller.createStash(message, { includeUntracked })),
+      onApplyStash: ui((ref) => controller.applyStash(ref)),
+      onDropStash: ui((ref) => controller.dropStash(ref, { confirmed: true })),
+      onDropStashes: ui((refs) => controller.dropStashes(refs, { confirmed: true })),
+      onInspectStash: ui((ref) => controller.inspectStash(ref)),
+      onBrowseRemote: ui((remote) => controller.browseRemote(remote)),
+      onInspectBranch: ui((branchRef) => controller.inspectBranch(branchRef)),
+      onCheckoutRemoteTracking: async (selection, confirmedMismatch) => {
+        if (!shouldRender()) return undefined
+        try {
+          const result = await controller.checkoutRemoteTracking(selection, confirmedMismatch === true ? { confirmedMismatch: true } : undefined)
+          if (shouldRender()) view.update(controller.state, { preserveRemoteCheckout: result?.kind === "mismatch" })
+          return result
+        } catch (error) {
+          syncView()
+          throw error
+        }
+      },
+      onEditFile: async (path, line) => {
+        // `LogAction(Tr.Actions.OpenFile)` (pkg/gui/controllers/helpers/files_helper.go:78). Logged
+        // at the wiring, not inside the default `editFile` above, so it fires whether the default or
+        // an injected `options.onEditFile` runs.
+        options.runner.log.logAction(LOG_ACTIONS.openFile)
+        await editFile(path, line)
+      }
     },
-  })
+    queries: {
+      loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
+      loadBranchCommits: options.loadBranchCommits ?? ((branch) => controller.loadBranchCommits(branch)),
+      loadCommitFileInspection: (oid, path) => controller.loadCommitFileInspection(oid, path),
+      loadTagInspection: (tag) => controller.loadTagInspection(tag),
+      loadRefLogInspection: (target) => controller.loadRefLogInspection(target),
+      onCurrentCommitMessage: ui(() => controller.currentCommitMessage()),
+      onCheckBranchMerged: options.onCheckBranchMerged ?? ((branch, upstream) => controller.branchIsMerged(branch, upstream))
+    },
+    host: {
+      onQuit: () => options.onQuit?.(),
+      onGeometryChange: (state) => {
+        latestGeometry = state
+        options.onGeometryChange?.(state)
+      },
+      // Whatever githunk just did to the repository is now the baseline for ref polling. Index events
+      // remain queued because the watcher cannot attribute a concurrent index write safely.
+      onMutationSettled: () => {
+        void refsWatcher.resync()
+      },
+      onPreviewError: (error) => controller.recordInspectionError(error),
+      isBranchReviewActive: () => screenController?.active.kind === "branch-review"
+    }
+  }
+})
 ```
 
-Behavioural notes to preserve exactly: which handlers used the leading `if (!(shouldRenderRepository)) return` guard (they use `repositoryUi`) and which did not (they use `ui`). The table above mirrors the original file line by line; do not "upgrade" a `ui` handler to `repositoryUi`. `onCreateBranch`'s original checked `branchName === undefined` *before* the screen guard; since both are early returns with no side effects, the order does not matter.
+Behavioural notes to preserve exactly: which handlers used the leading `if (!(shouldRenderRepository)) return` guard (they use `repositoryUi`) and which did not (they use `ui`). The table above mirrors the original file line by line; do not "upgrade" a `ui` handler to `repositoryUi`. `onCreateBranch`'s original checked `branchName === undefined` _before_ the screen guard; since both are early returns with no side effects, the order does not matter.
 
 - [ ] **Step 4: Replace the BackgroundRefresher `isBusy` and repaint calls (`:499-532`)**
 
@@ -462,11 +480,13 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 4: `describeGitError`
 
 **Files:**
+
 - Create: `src/git/error-message.ts`
 - Create: `tests/git/error-message.test.ts`
 - Modify: `src/app/controller.ts` (18 sites; find with `grep -n 'error instanceof GitCommandError' src/app/controller.ts`)
 
 **Interfaces:**
+
 - Produces: `describeGitError(error: unknown): string` (used by Task 6).
 
 - [ ] **Step 1: Write the failing test**
@@ -542,9 +562,7 @@ error instanceof GitCommandError ? error.record.stderr || error.message : error 
 and its parenthesised variant
 
 ```ts
-error instanceof GitCommandError
-  ? (error.record.stderr || error.message)
-  : error instanceof Error ? error.message : String(error)
+error instanceof GitCommandError ? error.record.stderr || error.message : error instanceof Error ? error.message : String(error)
 ```
 
 with `describeGitError(error)`. The variable is always named `error` at these sites except `refresh()`, where it is `branchesResult.reason` etc. assigned to `const error` first; those lines are rewritten wholesale in Task 6, so replace only their ternary now. After the edit, `grep -c 'instanceof GitCommandError' src/app/controller.ts` must be 0; if so, drop `GitCommandError` from the `../git/runner` import on line 1.
@@ -557,9 +575,11 @@ Expected: exit 0, all pass (the banner-text assertions in `log-actions` pin the 
 ### Task 5: `AppController.setState`
 
 **Files:**
+
 - Modify: `src/app/controller.ts` (`commandLogSnapshot` at `:252`, every `this.currentState = ` site)
 
 **Interfaces:**
+
 - Produces: `private setState(patch: Partial<AppModel>, omit?: readonly (keyof AppModel)[]): void` (used by Task 6).
 
 - [ ] **Step 1: Add the helper directly below `commandLogSnapshot()`** (`:256`)
@@ -593,17 +613,20 @@ Rules:
    - `cancelUpstreamChoice` (`:904-905`) → `this.setState({}, ["upstreamChoice"])`.
    - `refreshStashTarget` (`:1383-1397`): replace the destructuring and assignment with
      ```ts
-     this.setState({
-       reviewTarget: target,
-       files,
-       patches: [patch],
-       rawPatchSections: [patch],
-       reviewStatuses,
-       reviewSummary,
-       loading: false,
-       title: titleFor(target, this.currentState.branch),
-       ...(review.warning === undefined ? {} : { banner: review.warning }),
-     }, ["banner"])
+     this.setState(
+       {
+         reviewTarget: target,
+         files,
+         patches: [patch],
+         rawPatchSections: [patch],
+         reviewStatuses,
+         reviewSummary,
+         loading: false,
+         title: titleFor(target, this.currentState.branch),
+         ...(review.warning === undefined ? {} : { banner: review.warning })
+       },
+       ["banner"]
+     )
      ```
 6. Sites that stay as direct assignments, each with a one-line comment `// Not setState: …`:
    - The constructor's initial state (`:228`): there is no prior state.
@@ -619,10 +642,12 @@ Expected: exit 0, all pass.
 ### Task 6: Table-driven `refresh()`
 
 **Files:**
+
 - Modify: `src/app/controller.ts:306-471` (`refresh()`)
 - Test: `tests/app/controller.test.ts` (add one test after `"a failing worktree or submodule listing only raises a banner"`, `:285-303`)
 
 **Interfaces:**
+
 - Consumes: `describeGitError` (Task 4), `setState` (Task 5).
 - Produces: `private async loadAuxiliary<T>(load, apply)`; internal only.
 
@@ -631,21 +656,25 @@ Expected: exit 0, all pass.
 Add to `tests/app/controller.test.ts` inside the `describe("AppController")` block:
 
 ```ts
-  test("when several auxiliary listings fail the last one in load order sets the banner", async () => {
-    const controller = new AppController({
-      load: async (target) => snapshot(target.scope, ""),
-      loadBranches: async () => { throw new Error("branches failed") },
-      loadStashes: async () => [],
-      loadTags: async () => [],
-      loadReflog: async () => [],
-      loadWorktrees: async () => [],
-      loadSubmodules: async () => { throw new Error("submodules failed") },
-    })
-    await controller.refresh()
-    expect(controller.state.banner).toBe("submodules failed")
-    expect(controller.state.branches).toBeUndefined()
-    expect(controller.state.submodules).toBeUndefined()
+test("when several auxiliary listings fail the last one in load order sets the banner", async () => {
+  const controller = new AppController({
+    load: async (target) => snapshot(target.scope, ""),
+    loadBranches: async () => {
+      throw new Error("branches failed")
+    },
+    loadStashes: async () => [],
+    loadTags: async () => [],
+    loadReflog: async () => [],
+    loadWorktrees: async () => [],
+    loadSubmodules: async () => {
+      throw new Error("submodules failed")
+    }
   })
+  await controller.refresh()
+  expect(controller.state.banner).toBe("submodules failed")
+  expect(controller.state.branches).toBeUndefined()
+  expect(controller.state.submodules).toBeUndefined()
+})
 ```
 
 - [ ] **Step 2: Run it against the current code to confirm it already passes**
@@ -679,35 +708,35 @@ Expected: PASS. This test pins today's "last write wins" behaviour so the rewrit
 Replace the body from `const generation = ++this.generation` through the last warning re-application (`:311-468`) with:
 
 ```ts
-    const generation = ++this.generation
-    // Load order is also banner order: when more than one listing fails, the later one's message
-    // is what the user sees (the test "last one in load order sets the banner" pins this).
-    const outcomes = await Promise.all([
-      this.loadAuxiliary(this.loadBranchesListing, (branches) => ({ branches })),
-      this.loadAuxiliary(this.loadStashesListing, (stashes) => ({ stashes })),
-      this.loadAuxiliary(this.loadTagsListing, (tags) => ({ tags })),
-      this.loadAuxiliary(this.loadReflogListing, (reflog) => ({ reflog })),
-      this.loadAuxiliary(this.loadWorktreesListing, (worktrees) => ({ worktrees })),
-      this.loadAuxiliary(this.loadSubmodulesListing, (submodules) => ({ submodules })),
-    ])
-    if (generation !== this.generation) return
-    let lastWarning: string | undefined
-    for (const outcome of outcomes) {
-      if ("patch" in outcome) {
-        this.setState(outcome.patch)
-      } else {
-        lastWarning = outcome.warning
-        this.setState({ banner: outcome.warning })
-      }
-    }
-    const target = this.currentState.reviewTarget
-    if (target.kind === "working-tree") {
-      await this.refreshTarget(target)
-    } else if (target.kind === "stash") {
-      await this.refreshStashTarget(target.ref)
-    }
-    // The target refresh may have replaced the banner; an auxiliary failure still wins.
-    if (lastWarning !== undefined) this.setState({ banner: lastWarning })
+const generation = ++this.generation
+// Load order is also banner order: when more than one listing fails, the later one's message
+// is what the user sees (the test "last one in load order sets the banner" pins this).
+const outcomes = await Promise.all([
+  this.loadAuxiliary(this.loadBranchesListing, (branches) => ({ branches })),
+  this.loadAuxiliary(this.loadStashesListing, (stashes) => ({ stashes })),
+  this.loadAuxiliary(this.loadTagsListing, (tags) => ({ tags })),
+  this.loadAuxiliary(this.loadReflogListing, (reflog) => ({ reflog })),
+  this.loadAuxiliary(this.loadWorktreesListing, (worktrees) => ({ worktrees })),
+  this.loadAuxiliary(this.loadSubmodulesListing, (submodules) => ({ submodules }))
+])
+if (generation !== this.generation) return
+let lastWarning: string | undefined
+for (const outcome of outcomes) {
+  if ("patch" in outcome) {
+    this.setState(outcome.patch)
+  } else {
+    lastWarning = outcome.warning
+    this.setState({ banner: outcome.warning })
+  }
+}
+const target = this.currentState.reviewTarget
+if (target.kind === "working-tree") {
+  await this.refreshTarget(target)
+} else if (target.kind === "stash") {
+  await this.refreshStashTarget(target.ref)
+}
+// The target refresh may have replaced the banner; an auxiliary failure still wins.
+if (lastWarning !== undefined) this.setState({ banner: lastWarning })
 ```
 
 Keep the leading comment and `void this.refreshPullRequests()` above, and `this.rebuildPullRequests()` with its comment below, unchanged. The six `let xWarning` declarations are gone.
@@ -720,10 +749,12 @@ Expected: exit 0, all pass, including the new precedence test and `"a failing wo
 ### Task 7: Loader options and `defaultLoaders`
 
 **Files:**
+
 - Modify: `src/app/controller.ts:51-86` (`AppControllerOptions`), `:167-227` (constructor)
 - Test: `tests/app/controller.test.ts`, `tests/app/remote-checkout.test.ts`, `tests/acceptance/review-workflow.integration.test.ts` (existing; they exercise both constructor shapes)
 
 **Interfaces:**
+
 - Produces: `type AppLoaders`, `function defaultLoaders(runner: GitRunner | undefined): AppLoaders`; internal to the module.
 
 - [ ] **Step 1: Replace the loader keys in `AppControllerOptions`**
@@ -772,16 +803,22 @@ const LOADER_KEYS = ["load", "loadBranches", "loadCommits", "loadCommit", "loadC
 function defaultLoaders(runner: GitRunner | undefined): AppLoaders {
   if (runner === undefined) {
     return {
-      load: async () => { throw new Error("AppController requires a GitRunner or loader") },
+      load: async () => {
+        throw new Error("AppController requires a GitRunner or loader")
+      },
       loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
       loadCommits: async () => [],
-      loadCommit: async () => { throw new Error("Commit details require a GitRunner") },
-      loadCommitFilePatch: async () => { throw new Error("Commit file patches require a GitRunner") },
+      loadCommit: async () => {
+        throw new Error("Commit details require a GitRunner")
+      },
+      loadCommitFilePatch: async () => {
+        throw new Error("Commit file patches require a GitRunner")
+      },
       loadStashes: async () => [],
       loadTags: async () => [],
       loadReflog: async () => [],
       loadWorktrees: async () => [],
-      loadSubmodules: async () => [],
+      loadSubmodules: async () => []
     }
   }
   return {
@@ -794,7 +831,7 @@ function defaultLoaders(runner: GitRunner | undefined): AppLoaders {
     loadTags: () => listTags(runner),
     loadReflog: () => listReflog(runner),
     loadWorktrees: () => listWorktrees(runner),
-    loadSubmodules: () => listSubmodules(runner),
+    loadSubmodules: () => listSubmodules(runner)
   }
 }
 
@@ -882,9 +919,11 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 8: `dispatchIntent` unit test
 
 **Files:**
+
 - Create: `tests/ui/review-workspace/dispatch-intent.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ReviewWorkspaceController.dispatchIntent(intent: ReviewIntent): boolean` (`src/ui/review-workspace/controller.ts:451-461`, unchanged).
 
 - [ ] **Step 1: Write the test**
@@ -907,7 +946,7 @@ function fakeRunner(): GitRunner {
     logTip: () => {},
     lines: () => [] as unknown[],
     autoscrollArms: () => false,
-    commandLogSnapshot: () => ({ entries: [] }),
+    commandLogSnapshot: () => ({ entries: [] })
   } as unknown as GitRunner["log"]
   return { run: async () => ({ stdout: "", stderr: "", exitCode: 0 }), log, cwd: "/tmp/fake" } as unknown as GitRunner
 }
@@ -929,7 +968,7 @@ function makeFile(key: string, path: string): ReviewFile {
     patchDigest: `patch-${key}`,
     stats: { additions: 1, deletions: 1 },
     hunks: [makeHunk(0, [" a", "+b"])],
-    source: "available",
+    source: "available"
   } as unknown as ReviewFile
 }
 
@@ -978,10 +1017,12 @@ Expected: 3 pass. This characterises existing behaviour, so it passes before the
 ### Task 9: Component dispatch sites
 
 **Files:**
+
 - Modify: `src/ui/review-workspace/ReviewWorkspaceApp.tsx` (import `:13`; `fallbackSelectionIntent` return type `:214`; 35 dispatch sites)
 - Test: `tests/ui/review-workspace/*`, `tests/acceptance/branch-review-*.integration.test.ts` (existing)
 
 **Interfaces:**
+
 - Consumes: `controller.dispatchIntent(intent): boolean`; `ReviewIntent` from `src/review/core/intents.ts`.
 
 - [ ] **Step 1: Swap the import**
@@ -996,56 +1037,56 @@ General rule: `controller.dispatch(planReviewIntent(X, INTENT))` → `controller
 
 1. `saveDraft` (`:501-527`): the outer `try { … } catch {}` goes. Body becomes
    ```ts
-    if (editingFeedbackId) {
-      const existing = current.feedback.find((feedback) => feedback.id === editingFeedbackId)
-      if (!existing) {
-        setEditingFeedbackId(null)
-        return
-      }
-      const patch: { body?: string; severity?: "comment" | "blocking"; replacement?: string } = {}
-      if (draft.body !== existing.body) patch.body = draft.body
-      if (draft.severity !== existing.severity) patch.severity = draft.severity
-      if (draft.replacement !== undefined && draft.replacement !== existing.replacement) patch.replacement = draft.replacement
-      if (Object.keys(patch).length > 0) {
-        controller.dispatchIntent({ type: "feedback/edit", id: existing.id, ...patch, updatedAt: new Date().toISOString() })
-      }
-      if (controller.state?.draft) controller.dispatchIntent({ type: "feedback/cancel-draft" })
-      setEditingFeedbackId(null)
-    } else {
-      controller.dispatchIntent({ type: "feedback/create", id: draftId(), createdAt: new Date().toISOString() })
-    }
-    pendingDeleteFeedbackRef.current = null
-    setPendingDeleteFeedbackId(null)
-    setComposerFocus("body")
-    setFeedbackMessage(null)
-    session.invalidate()
+   if (editingFeedbackId) {
+     const existing = current.feedback.find((feedback) => feedback.id === editingFeedbackId)
+     if (!existing) {
+       setEditingFeedbackId(null)
+       return
+     }
+     const patch: { body?: string; severity?: "comment" | "blocking"; replacement?: string } = {}
+     if (draft.body !== existing.body) patch.body = draft.body
+     if (draft.severity !== existing.severity) patch.severity = draft.severity
+     if (draft.replacement !== undefined && draft.replacement !== existing.replacement) patch.replacement = draft.replacement
+     if (Object.keys(patch).length > 0) {
+       controller.dispatchIntent({ type: "feedback/edit", id: existing.id, ...patch, updatedAt: new Date().toISOString() })
+     }
+     if (controller.state?.draft) controller.dispatchIntent({ type: "feedback/cancel-draft" })
+     setEditingFeedbackId(null)
+   } else {
+     controller.dispatchIntent({ type: "feedback/create", id: draftId(), createdAt: new Date().toISOString() })
+   }
+   pendingDeleteFeedbackRef.current = null
+   setPendingDeleteFeedbackId(null)
+   setComposerFocus("body")
+   setFeedbackMessage(null)
+   session.invalidate()
    ```
    Note: previously a validation error in `feedback/edit` aborted the whole block (the setters after it did not run). With `dispatchIntent` the setters run regardless. `feedback/edit` can only fail if the feedback id is unknown, which the `existing` lookup above rules out, so the observable behaviour is the same.
 2. `deleteFeedback` (`:540-546`): drop `try`/`catch`; `controller.dispatchIntent({ type: "feedback/delete", id: feedbackId })` then the three lines after it.
 3. `reanchorFeedback` (`:603-615`): keep the recovery.
    ```ts
-    if (controller.dispatchIntent({ type: "feedback/reanchor", id: feedbackId, anchor, updatedAt: new Date().toISOString() })) {
-      setReanchorFeedbackId(null)
-      setFeedbackMessage(null)
-      setPendingRangeAnchor(null)
-      pendingDeleteFeedbackRef.current = null
-      setPendingDeleteFeedbackId(null)
-    } else {
-      setReanchorFeedbackId(feedbackId)
-      setFeedbackMessage("The selected source is not a valid anchor for this feedback.")
-    }
-    session.invalidate()
+   if (controller.dispatchIntent({ type: "feedback/reanchor", id: feedbackId, anchor, updatedAt: new Date().toISOString() })) {
+     setReanchorFeedbackId(null)
+     setFeedbackMessage(null)
+     setPendingRangeAnchor(null)
+     pendingDeleteFeedbackRef.current = null
+     setPendingDeleteFeedbackId(null)
+   } else {
+     setReanchorFeedbackId(feedbackId)
+     setFeedbackMessage("The selected source is not a valid anchor for this feedback.")
+   }
+   session.invalidate()
    ```
-   The `try { anchor = createRangeAnchor(…) } catch {}` blocks earlier in the function are *not* dispatch sites; leave them.
+   The `try { anchor = createRangeAnchor(…) } catch {}` blocks earlier in the function are _not_ dispatch sites; leave them.
 4. `editFeedback` (`:622-637`): drop `try`/`catch`; `controller.dispatchIntent({ type: "feedback/start-draft", … })` then the setters.
 5. `selectFeedback` (`:651-659`):
    ```ts
-    controller.dispatchIntent({ type: "selection/select-file", fileKey: file.key })
-    if (feedback.anchor.kind === "range") {
-      controller.dispatchIntent({ type: "selection/viewport-anchor", fileKey: file.key, hunkIndex: feedback.anchor.ownerHunkIndex, reveal: "hunk" })
-    }
-    setFocus("stream")
-    session.invalidate()
+   controller.dispatchIntent({ type: "selection/select-file", fileKey: file.key })
+   if (feedback.anchor.kind === "range") {
+     controller.dispatchIntent({ type: "selection/viewport-anchor", fileKey: file.key, hunkIndex: feedback.anchor.ownerHunkIndex, reveal: "hunk" })
+   }
+   setFocus("stream")
+   session.invalidate()
    ```
 6. `selectDiffAddress` (`:667-697`): the outer `try` also guarded `createLineSelection`, which throws for a bad address. Keep a `try` around only that call:
    ```ts
@@ -1063,18 +1104,18 @@ General rule: `controller.dispatch(planReviewIntent(X, INTENT))` → `controller
 7. `executeCommand`, `review.moveDown`/`moveUp` (`:778`, `:792-794`, `:798-800`): drop each `try { controller.dispatch(...) } catch {}` for a bare `controller.dispatchIntent(...)`. The `createLineSelection` call at `:791` can throw; keep `try { const lineSelection = createLineSelection(file, address); controller.dispatchIntent({ type: "selection/set-line", selection: lineSelection }); setRangeStart(null); setPendingRangeAnchor(null) } catch {}` as is except for the dispatch line.
 8. `movement` block (`:815-825`):
    ```ts
-    if (movement) {
-      const before = current.selection
-      controller.dispatchIntent({ type: "selection/move", unit: movement.unit, direction: movement.direction })
-      const after = controller.state
-      if (after?.selection.fileKey === before.fileKey && after.selection.hunkIndex === before.hunkIndex) {
-        const fallback = fallbackSelectionIntent(current, movement.unit, movement.direction)
-        if (fallback) controller.dispatchIntent(fallback)
-      }
-      setRangeStart(null)
-      setPendingRangeAnchor(null)
-      return true
-    }
+   if (movement) {
+     const before = current.selection
+     controller.dispatchIntent({ type: "selection/move", unit: movement.unit, direction: movement.direction })
+     const after = controller.state
+     if (after?.selection.fileKey === before.fileKey && after.selection.hunkIndex === before.hunkIndex) {
+       const fallback = fallbackSelectionIntent(current, movement.unit, movement.direction)
+       if (fallback) controller.dispatchIntent(fallback)
+     }
+     setRangeStart(null)
+     setPendingRangeAnchor(null)
+     return true
+   }
    ```
 9. `review.nextUnreviewed`/`prevUnreviewed` (`:832`), `nextFeedback`/`prevFeedback` (`:842`), `markViewed` (`:851`), `cycleFilterScope` (`:947`): bare `controller.dispatchIntent(...)`.
 10. `review.createFeedback` (`:902-920`): drop the outer `try`/`catch` around the `feedback/start-draft` dispatch and setters; the inner `try { anchor = createRangeAnchor(…) } catch {}` stays.

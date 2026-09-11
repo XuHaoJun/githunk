@@ -59,20 +59,12 @@ export type LedgerVerdict = "open" | "waiting" | "untouched" | "addressed" | "di
  * the chance to commit yet. A verdict only becomes meaningful once HEAD has
  * moved past the handoff.
  */
-export function ledgerVerdict(
-  feedback: ReviewFeedback,
-  atHeadOid?: string,
-  options?: Readonly<{ replied?: boolean }>,
-): LedgerVerdict {
+export function ledgerVerdict(feedback: ReviewFeedback, atHeadOid?: string, options?: Readonly<{ replied?: boolean }>): LedgerVerdict {
   if (feedback.status === "resolved") return "resolved"
   if (feedback.status !== "handed-off") return "open"
   if (atHeadOid !== undefined && feedback.handoff?.headOid === atHeadOid) return "waiting"
   if (feedback.resolution !== "active") return "addressed"
-  if (
-    feedback.anchor.kind === "file"
-    && feedback.handoff?.contentId !== undefined
-    && feedback.handoff.contentId !== feedback.anchor.contentId
-  ) return "addressed"
+  if (feedback.anchor.kind === "file" && feedback.handoff?.contentId !== undefined && feedback.handoff.contentId !== feedback.anchor.contentId) return "addressed"
   // Untouched lines plus an answer is an argument, not an oversight, and it is
   // the one outcome that needs the reviewer to read rather than just look.
   return options?.replied === true ? "disputed" : "untouched"
@@ -89,11 +81,7 @@ export type LedgerCounts = Readonly<{
   unsettled: number
 }>
 
-export function ledgerCounts(
-  feedback: readonly ReviewFeedback[],
-  atHeadOid?: string,
-  replies?: ReviewReplies,
-): LedgerCounts {
+export function ledgerCounts(feedback: readonly ReviewFeedback[], atHeadOid?: string, replies?: ReviewReplies): LedgerCounts {
   let open = 0
   let waiting = 0
   let untouched = 0
@@ -111,8 +99,13 @@ export function ledgerCounts(
     else resolved++
   }
   return {
-    open, waiting, untouched, disputed, addressed, resolved,
-    unsettled: open + waiting + untouched + disputed + addressed,
+    open,
+    waiting,
+    untouched,
+    disputed,
+    addressed,
+    resolved,
+    unsettled: open + waiting + untouched + disputed + addressed
   }
 }
 
@@ -126,11 +119,7 @@ export function ledgerBadge(verdict: LedgerVerdict): string {
 }
 
 /** The one-line ledger summary for the workspace header; empty when nothing is tracked. */
-export function ledgerHeaderText(
-  feedback: readonly ReviewFeedback[],
-  atHeadOid?: string,
-  replies?: ReviewReplies,
-): string {
+export function ledgerHeaderText(feedback: readonly ReviewFeedback[], atHeadOid?: string, replies?: ReviewReplies): string {
   const counts = ledgerCounts(feedback, atHeadOid, replies)
   const parts: string[] = []
   if (counts.open > 0) parts.push(`${counts.open} open`)
@@ -148,9 +137,7 @@ export function ledgerHeaderText(
  * A handoff is a sharper checkpoint than a finished review for "what changed
  * since": it is the exact moment the reviewer asked someone to change things.
  */
-export function latestHandoff(
-  feedback: readonly ReviewFeedback[],
-): Readonly<{ at: string; headOid: string }> | undefined {
+export function latestHandoff(feedback: readonly ReviewFeedback[]): Readonly<{ at: string; headOid: string }> | undefined {
   let latest: ReviewFeedbackHandoff | undefined
   for (const item of feedback) {
     const handoff = item.handoff
@@ -167,9 +154,7 @@ export function latestHandoff(
  */
 export type ReviewCheckpoint = Readonly<{ kind: "submission" | "handoff"; at: string; headOid: string }>
 
-export function reviewCheckpoint(
-  state: Pick<ReviewState, "feedback" | "lastSubmission">,
-): ReviewCheckpoint | undefined {
+export function reviewCheckpoint(state: Pick<ReviewState, "feedback" | "lastSubmission">): ReviewCheckpoint | undefined {
   const handoff = latestHandoff(state.feedback)
   const submission = state.lastSubmission
   if (!submission) return handoff && { kind: "handoff", at: handoff.at, headOid: handoff.headOid }
@@ -193,24 +178,18 @@ export type ObjectionListEntry = Readonly<{
   text: string
 }>
 
-export function objectionList(
-  state: Pick<ReviewState, "document" | "feedback">,
-  atHeadOid?: string,
-  replies?: ReviewReplies,
-): readonly ObjectionListEntry[] {
+export function objectionList(state: Pick<ReviewState, "document" | "feedback">, atHeadOid?: string, replies?: ReviewReplies): readonly ObjectionListEntry[] {
   return sortedReviewFeedback(state).map((feedback) => {
     const reply = replies?.get(feedback.id)
     const verdict = ledgerVerdict(feedback, atHeadOid, { replied: reply !== undefined && replyAppliesToHandoff(feedback, reply) })
     const path = pathForFeedback(state.document, feedback)
-    const where = feedback.anchor.kind === "range"
-      ? `${path}:${feedback.anchor.startLine}`
-      : path
+    const where = feedback.anchor.kind === "range" ? `${path}:${feedback.anchor.startLine}` : path
     const body = feedback.body.replace(/\s+/gu, " ").trim()
     const mark = feedback.severity === "blocking" ? "!" : "◆"
     return {
       id: feedback.id,
       verdict,
-      text: `${ledgerBadge(verdict).padEnd(10)} ${mark} ${where}  ${body.length > 0 ? body : "(empty)"}`,
+      text: `${ledgerBadge(verdict).padEnd(10)} ${mark} ${where}  ${body.length > 0 ? body : "(empty)"}`
     }
   })
 }
@@ -294,10 +273,7 @@ function pathForFeedback(document: ReviewDocument, feedback: ReviewFeedback): st
   return document.files.find((file) => file.key === feedback.anchor.fileKey)?.path ?? feedback.anchor.fileKey
 }
 
-export function buildHandoffMailbox(
-  state: Pick<ReviewState, "document" | "feedback">,
-  input: { generatedAt: string; headOid: string },
-): HandoffMailbox {
+export function buildHandoffMailbox(state: Pick<ReviewState, "document" | "feedback">, input: { generatedAt: string; headOid: string }): HandoffMailbox {
   const items = state.feedback
     .filter((feedback) => feedback.resolution === "active" && ledgerVerdict(feedback) !== "resolved")
     .map((feedback): HandoffItem => {
@@ -311,7 +287,7 @@ export function buildHandoffMailbox(
         severity: feedback.severity,
         kind: feedback.kind,
         body: feedback.body,
-        ...(feedback.replacement === undefined ? {} : { replacement: feedback.replacement }),
+        ...(feedback.replacement === undefined ? {} : { replacement: feedback.replacement })
       }
     })
   return {
@@ -320,7 +296,7 @@ export function buildHandoffMailbox(
     reviewId: state.document.identity.id,
     headOid: input.headOid,
     baseRef: state.document.identity.baseRef ?? null,
-    items,
+    items
   }
 }
 
@@ -349,12 +325,12 @@ export function renderHandoffMarkdown(mailbox: HandoffMailbox): string {
     "",
     "If you disagree with one, say so instead of quietly skipping it:",
     "",
-    "    githunk handoff reply --id <id> --body \"why you did not make this change\"",
+    '    githunk handoff reply --id <id> --body "why you did not make this change"',
     "",
     "The reviewer sees your answer next to their objection. It does not settle the",
     "objection — an answered item whose lines are unchanged comes back DISPUTED, which",
     "is a question for them, not a verdict for you.",
-    "",
+    ""
   )
   for (const item of mailbox.items) {
     const mark = item.severity === "blocking" ? "!" : "-"

@@ -59,7 +59,7 @@ export function parseRawDiffZ(raw: string): readonly RawDiffEntry[] {
         status,
         score,
         path,
-        previousPath,
+        previousPath
       })
       i += 3
     } else {
@@ -74,7 +74,7 @@ export function parseRawDiffZ(raw: string): readonly RawDiffEntry[] {
         newBlobOid: newBlobOid!,
         status,
         score,
-        path,
+        path
       })
       i += 2
     }

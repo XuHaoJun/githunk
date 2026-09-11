@@ -8,7 +8,9 @@ describe("MutationQueue", () => {
     let release!: () => void
     const first = queue.run(async () => {
       events.push("first:start")
-      await new Promise<void>((resolve) => { release = resolve })
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
       events.push("first:end")
       return 1
     })
@@ -26,7 +28,11 @@ describe("MutationQueue", () => {
 
   test("continues after a rejected operation", async () => {
     const queue = new MutationQueue()
-    await expect(queue.run(async () => { throw new Error("failed") })).rejects.toThrow("failed")
+    await expect(
+      queue.run(async () => {
+        throw new Error("failed")
+      })
+    ).rejects.toThrow("failed")
     await expect(queue.run(async () => "next")).resolves.toBe("next")
   })
 })

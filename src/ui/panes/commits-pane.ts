@@ -8,12 +8,7 @@ import { AUTHOR_COLUMN_WIDTH, authorColor, authorInitials } from "../author-styl
 import { createListState, renderListRows, selectListRow, type ListState, type ListRow } from "../list-view"
 import { installListText, releaseListText } from "./list-text"
 import { COMMITS_JUMP_KEY, COMMITS_TABS } from "./reflog-pane"
-import {
-  COMMIT_HASH_DEFAULT_FG,
-  COMMIT_HASH_MERGED_FG,
-  COMMIT_HASH_PUSHED_FG,
-  COMMIT_HASH_UNPUSHED_FG,
-} from "../theme"
+import { COMMIT_HASH_DEFAULT_FG, COMMIT_HASH_MERGED_FG, COMMIT_HASH_PUSHED_FG, COMMIT_HASH_UNPUSHED_FG } from "../theme"
 
 const paneStates = new WeakMap<PaneHandle, ListState>()
 
@@ -48,10 +43,14 @@ export function formatRelativeTime(authoredAt: string, now: Date): string {
  */
 function commitHashColor(status: CommitStatus | undefined) {
   switch (status) {
-    case "unpushed": return COMMIT_HASH_UNPUSHED_FG
-    case "pushed": return COMMIT_HASH_PUSHED_FG
-    case "merged": return COMMIT_HASH_MERGED_FG
-    default: return COMMIT_HASH_DEFAULT_FG
+    case "unpushed":
+      return COMMIT_HASH_UNPUSHED_FG
+    case "pushed":
+      return COMMIT_HASH_PUSHED_FG
+    case "merged":
+      return COMMIT_HASH_MERGED_FG
+    default:
+      return COMMIT_HASH_DEFAULT_FG
   }
 }
 
@@ -85,18 +84,15 @@ export function buildCommitRows(commits: readonly CommitSummary[], now: Date, fi
         { text: shortHash, priority: 1, color: commitHashColor(commit.status) },
         { text: initials, priority: 2, color: authorColor(commit.authorName) },
         { text: `${graphText}${commit.subject}`, priority: 2, flex: true, segments: [...graphSegments, ...subjectSegments] },
-        { text: relative, priority: 0, style: "dim" as const },
-      ],
+        { text: relative, priority: 0, style: "dim" as const }
+      ]
     }
   })
   if (filter.length === 0) return rows
   return [...filterItems(filter, rows, (row) => `${row.columns[0]?.text ?? ""} ${row.columns[2]?.text ?? row.id}`)]
 }
 
-export function renderCommitRows(
-  commits: readonly CommitSummary[],
-  options: { readonly selectedId?: string; readonly focused: boolean; readonly width: number; readonly now?: Date | number },
-): { readonly content: StyledText; readonly plainText: string; readonly state: ListState } {
+export function renderCommitRows(commits: readonly CommitSummary[], options: { readonly selectedId?: string; readonly focused: boolean; readonly width: number; readonly now?: Date | number }): { readonly content: StyledText; readonly plainText: string; readonly state: ListState } {
   const nowDate = options.now === undefined ? new Date() : options.now instanceof Date ? options.now : new Date(options.now)
   const rows = buildCommitRows(commits, nowDate)
   let state = createListState(rows)
@@ -111,7 +107,7 @@ export function renderCommitRows(
 
 export function createCommitsPane(renderer: CliRenderer, model: AppModel): PaneHandle {
   const pane = createPane(renderer, "commits", "", "No commit selected", false, {
-    tabs: { jumpKey: COMMITS_JUMP_KEY, tabs: COMMITS_TABS },
+    tabs: { jumpKey: COMMITS_JUMP_KEY, tabs: COMMITS_TABS }
   })
   updateCommitsPane(pane, model)
   return pane
@@ -143,7 +139,6 @@ export function moveCommitsCursor(pane: PaneHandle, model: AppModel, direction: 
   installListText(pane.text, { state: nextState, width, focused: true })
   return commits[nextIndex]
 }
-
 
 export function updateCommitsPane(pane: PaneHandle, model: AppModel): void {
   const commits = model.commits ?? []

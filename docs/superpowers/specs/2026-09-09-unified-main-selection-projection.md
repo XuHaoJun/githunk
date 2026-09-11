@@ -101,10 +101,7 @@ The accepted display range resolves as follows:
 - decoration only, invalid boundaries, stale generation or text mismatch: return an invalid selection.
 
 ```ts
-export type MainSelection =
-  | { readonly valid: true; readonly kind: "document"; readonly selection: DocumentSelection }
-  | { readonly valid: true; readonly kind: "text"; readonly text: string }
-  | { readonly valid: false; readonly reason: "native/display selection mismatch" }
+export type MainSelection = { readonly valid: true; readonly kind: "document"; readonly selection: DocumentSelection } | { readonly valid: true; readonly kind: "text"; readonly text: string } | { readonly valid: false; readonly reason: "native/display selection mismatch" }
 ```
 
 ### Single semantic state

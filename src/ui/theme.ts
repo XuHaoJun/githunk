@@ -11,24 +11,7 @@ export type TerminalPaletteSnapshot = {
  * built-in defaults in the development environment; terminals that answer the query replace them
  * before the first application render. The RGBA values still retain indexed/default intent.
  */
-const FALLBACK_ANSI_PALETTE: readonly string[] = [
-  "#1d1f21",
-  "#cc6666",
-  "#b5bd68",
-  "#f0c674",
-  "#81a2be",
-  "#b294bb",
-  "#8abeb7",
-  "#c5c8c6",
-  "#666666",
-  "#d54e53",
-  "#b9ca4a",
-  "#e7c547",
-  "#7aa6da",
-  "#c397d8",
-  "#70c0b1",
-  "#eaeaea",
-]
+const FALLBACK_ANSI_PALETTE: readonly string[] = ["#1d1f21", "#cc6666", "#b5bd68", "#f0c674", "#81a2be", "#b294bb", "#8abeb7", "#c5c8c6", "#666666", "#d54e53", "#b9ca4a", "#e7c547", "#7aa6da", "#c397d8", "#70c0b1", "#eaeaea"]
 const FALLBACK_DEFAULT_FOREGROUND = "#ffffff"
 const FALLBACK_DEFAULT_BACKGROUND = "#282c34"
 
@@ -90,7 +73,6 @@ function updateHoverLineBackground(): void {
 }
 
 updateHoverLineBackground()
-
 
 /** lazygit's active border color: `ActiveBorderColor: []string{"green", "bold"}`. */
 export const TAB_ACTIVE_FG = ANSI_GREEN
@@ -164,24 +146,7 @@ export function configureTerminalPalette(snapshot: TerminalPaletteSnapshot): voi
   defaultForegroundFallback = snapshot.defaultForeground ?? FALLBACK_DEFAULT_FOREGROUND
   defaultBackgroundFallback = snapshot.defaultBackground ?? FALLBACK_DEFAULT_BACKGROUND
 
-  const ansiTokens = [
-    ANSI_BLACK,
-    ANSI_RED,
-    ANSI_GREEN,
-    ANSI_YELLOW,
-    ANSI_BLUE,
-    ANSI_MAGENTA,
-    ANSI_CYAN,
-    ANSI_WHITE,
-    ANSI_BRIGHT_BLACK,
-    ANSI_BRIGHT_RED,
-    ANSI_BRIGHT_GREEN,
-    ANSI_BRIGHT_YELLOW,
-    ANSI_BRIGHT_BLUE,
-    ANSI_BRIGHT_MAGENTA,
-    ANSI_BRIGHT_CYAN,
-    ANSI_BRIGHT_WHITE,
-  ]
+  const ansiTokens = [ANSI_BLACK, ANSI_RED, ANSI_GREEN, ANSI_YELLOW, ANSI_BLUE, ANSI_MAGENTA, ANSI_CYAN, ANSI_WHITE, ANSI_BRIGHT_BLACK, ANSI_BRIGHT_RED, ANSI_BRIGHT_GREEN, ANSI_BRIGHT_YELLOW, ANSI_BRIGHT_BLUE, ANSI_BRIGHT_MAGENTA, ANSI_BRIGHT_CYAN, ANSI_BRIGHT_WHITE]
   for (let index = 0; index < ansiTokens.length; index++) {
     const fallback = fallbackForIndexedSlot(index)
     if (fallback !== undefined) copyRgbFallback(ansiTokens[index]!, fallback)
@@ -197,14 +162,5 @@ export function configureTerminalPalette(snapshot: TerminalPaletteSnapshot): voi
  */
 export function brightenAnsiForeground(color: RGBA): RGBA {
   if (color.intent !== "indexed" || color.slot < 0 || color.slot > 7) return color
-  return [
-    ANSI_BRIGHT_BLACK,
-    ANSI_BRIGHT_RED,
-    ANSI_BRIGHT_GREEN,
-    ANSI_BRIGHT_YELLOW,
-    ANSI_BRIGHT_BLUE,
-    ANSI_BRIGHT_MAGENTA,
-    ANSI_BRIGHT_CYAN,
-    ANSI_BRIGHT_WHITE,
-  ][color.slot]!
+  return [ANSI_BRIGHT_BLACK, ANSI_BRIGHT_RED, ANSI_BRIGHT_GREEN, ANSI_BRIGHT_YELLOW, ANSI_BRIGHT_BLUE, ANSI_BRIGHT_MAGENTA, ANSI_BRIGHT_CYAN, ANSI_BRIGHT_WHITE][color.slot]!
 }

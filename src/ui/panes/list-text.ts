@@ -1,24 +1,7 @@
 import { parseColor, type RGBA, type TextRenderable } from "@opentui/core"
 import { cellWidth } from "../../domain/diff/cell-width"
-import {
-  computeColumnLayout,
-  getListSelectionRange,
-  isListRangeActive,
-  layoutListRowSegments,
-  renderListRows,
-  type ListDisplayRow,
-  type ListRow,
-  type ListState,
-} from "../list-view"
-import {
-  ANSI_CYAN,
-  ANSI_GREEN,
-  ANSI_MAGENTA,
-  ANSI_YELLOW,
-  HOVER_LINE_BG,
-  SELECTED_LINE_BG,
-  brightenAnsiForeground,
-} from "../theme"
+import { computeColumnLayout, getListSelectionRange, isListRangeActive, layoutListRowSegments, renderListRows, type ListDisplayRow, type ListRow, type ListState } from "../list-view"
+import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, HOVER_LINE_BG, SELECTED_LINE_BG, brightenAnsiForeground } from "../theme"
 import { paneTextBuffer, type PaneTextBuffer } from "./pane-text"
 import { createViewportHighlights, LINE_END_COLS, type ViewportHighlights } from "./viewport-highlights"
 
@@ -83,11 +66,7 @@ type SnapshotRef = { snap: Snapshot | undefined }
 
 const painters = new WeakMap<TextRenderable, PainterRecord>()
 
-function resolveSegment(
-  text: string,
-  style: "default" | "dim" | "cyan" | "green" | "yellow" | "magenta" | undefined,
-  color: unknown,
-): ResolvedSegment {
+function resolveSegment(text: string, style: "default" | "dim" | "cyan" | "green" | "yellow" | "magenta" | undefined, color: unknown): ResolvedSegment {
   let fg: RGBA | undefined
   let dim: boolean | undefined
   if (color !== undefined) {
@@ -118,7 +97,7 @@ function resolveSegment(
   return {
     text,
     ...(fg === undefined ? {} : { fg }),
-    ...(dim === undefined ? {} : { dim }),
+    ...(dim === undefined ? {} : { dim })
   }
 }
 
@@ -128,13 +107,7 @@ function styleKey(fg: RGBA | undefined, bold: boolean, dim: boolean, bg: RGBA | 
   return `${fgKey}|${bold ? 1 : 0}|${dim ? 1 : 0}|${bgKey}`
 }
 
-function styleIdFor(
-  record: PainterRecord,
-  fg: RGBA | undefined,
-  bold: boolean,
-  dim: boolean,
-  bg: RGBA | undefined,
-): number {
+function styleIdFor(record: PainterRecord, fg: RGBA | undefined, bold: boolean, dim: boolean, bg: RGBA | undefined): number {
   const key = styleKey(fg, bold, dim, bg)
   const cached = record.styleIds.get(key)
   if (cached !== undefined) return cached
@@ -142,20 +115,13 @@ function styleIdFor(
     ...(fg === undefined ? {} : { fg }),
     ...(bg === undefined ? {} : { bg }),
     ...(bold ? { bold } : {}),
-    ...(dim ? { dim } : {}),
+    ...(dim ? { dim } : {})
   })
   record.styleIds.set(key, id)
   return id
 }
 
-function rowVisual(
-  state: ListState,
-  focused: boolean,
-  hoveredId: string | undefined,
-  rowIndexById: ReadonlyMap<string, number>,
-  range: { readonly startIndex: number; readonly endIndex: number } | undefined,
-  displayRow: ListDisplayRow,
-): RowVisual {
+function rowVisual(state: ListState, focused: boolean, hoveredId: string | undefined, rowIndexById: ReadonlyMap<string, number>, range: { readonly startIndex: number; readonly endIndex: number } | undefined, displayRow: ListDisplayRow): RowVisual {
   if (displayRow.kind !== "item") return 0
   if (focused && displayRow.id === state.selectedId) return 1
   if (range !== undefined) {
@@ -187,9 +153,7 @@ function layoutFor(state: ListState, safeWidth: number): LayoutCache {
       continue
     }
     const row = rowMap.get(dr.id)
-    const laidOut = row === undefined
-      ? []
-      : layoutListRowSegments(row, layout).map((segment) => resolveSegment(segment.text, segment.style, segment.color))
+    const laidOut = row === undefined ? [] : layoutListRowSegments(row, layout).map((segment) => resolveSegment(segment.text, segment.style, segment.color))
     const joined = laidOut.map((segment) => segment.text).join("")
     // Pad to full width so a full-row selection background reaches the right edge.
     const pad = Math.max(0, safeWidth - cellWidth(joined))
@@ -225,26 +189,20 @@ function paintRow(record: PainterRecord, line: number): void {
         buffer.addHighlight(line, {
           start: column,
           end: column + cells,
-          styleId: styleIdFor(
-            record,
-            segment.fg === undefined ? undefined : brightenAnsiForeground(segment.fg),
-            true,
-            segment.dim === true,
-            bg,
-          ),
+          styleId: styleIdFor(record, segment.fg === undefined ? undefined : brightenAnsiForeground(segment.fg), true, segment.dim === true, bg)
         })
       } else if (bg !== undefined) {
         // Range and hover keep the base foreground, adding only the background.
         buffer.addHighlight(line, {
           start: column,
           end: column + cells,
-          styleId: styleIdFor(record, segment.fg, false, segment.dim === true, bg),
+          styleId: styleIdFor(record, segment.fg, false, segment.dim === true, bg)
         })
       } else if (segment.fg !== undefined || segment.dim === true) {
         buffer.addHighlight(line, {
           start: column,
           end: column + cells,
-          styleId: styleIdFor(record, segment.fg, false, segment.dim === true, undefined),
+          styleId: styleIdFor(record, segment.fg, false, segment.dim === true, undefined)
         })
       }
     }
@@ -266,11 +224,11 @@ function ensurePainter(text: TextRenderable, buffer: PaneTextBuffer): PainterRec
     styleIds: new Map(),
     cache: undefined,
     joined: "",
-    visuals: [],
+    visuals: []
   }
   record.viewport = createViewportHighlights<SnapshotRef>(text, {
     buffer,
-    paintLine: (line) => paintRow(record, line),
+    paintLine: (line) => paintRow(record, line)
   })
   painters.set(text, record)
   return record
@@ -299,9 +257,7 @@ export function installListText(text: TextRenderable, content: ListTextContent):
   // Layout (column widths, row text, segments) is O(rows): recompute only when
   // the row objects or the width changed. Selection moves keep both, so they
   // pay only the visuals scan below.
-  const cache = previousCache !== undefined && previousCache.rows === content.state.rows && previousCache.width === safeWidth
-    ? previousCache
-    : layoutFor(content.state, safeWidth)
+  const cache = previousCache !== undefined && previousCache.rows === content.state.rows && previousCache.width === safeWidth ? previousCache : layoutFor(content.state, safeWidth)
   record.cache = cache
   const visuals = visualsFor(content.state, content.focused, content.hoveredId)
   record.ref.snap = { rowSegments: cache.rowSegments, visuals }

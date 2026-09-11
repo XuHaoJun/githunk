@@ -7,18 +7,11 @@ import type { ReviewState } from "../../../src/review/core/state"
 import type { ReviewReplies } from "../../../src/review/core/ledger"
 import { cellWidth } from "../../../src/ui/cell-width"
 
-function makeState(opts?: {
-  headRef?: string | null
-  baseRef?: string
-  files?: number
-  stats?: Array<{ additions: number | null; deletions: number | null }>
-  viewed?: Record<string, { contentId: string; path: string }>
-  projection?: ReviewState["projection"]
-}): ReviewState {
+function makeState(opts?: { headRef?: string | null; baseRef?: string; files?: number; stats?: Array<{ additions: number | null; deletions: number | null }>; viewed?: Record<string, { contentId: string; path: string }>; projection?: ReviewState["projection"] }): ReviewState {
   const identity = createReviewIdentity({
     headRef: opts?.headRef ?? "refs/heads/feature/payment",
     headOid: "a".repeat(40),
-    baseRef: opts?.baseRef ?? "refs/heads/main",
+    baseRef: opts?.baseRef ?? "refs/heads/main"
   })
   const generation = createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "c".repeat(40), headOid: "a".repeat(40) })
   const files = Array.from({ length: opts?.files ?? 3 }, (_, i) => {
@@ -35,7 +28,7 @@ function makeState(opts?: {
       patchDigest: `p${i}`,
       stats,
       hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+new"] })],
-      source: "available" as const,
+      source: "available" as const
     }
   })
   const doc = createReviewDocument({ identity, generation, commits: [{ oid: "a".repeat(40), parents: [], author: "A", timestamp: 0, subject: "s", body: "" }], files })
@@ -52,13 +45,19 @@ function makeState(opts?: {
     feedback: [],
     draft: null,
     expandedGaps: [],
-    lastSubmission: null,
+    lastSubmission: null
   }
 }
 
 describe("reviewHeaderLines", () => {
   test("shows head→base, commits, files, and additions/deletions", () => {
-    const state = makeState({ files: 2, stats: [{ additions: 842, deletions: 193 }, { additions: 5, deletions: 1 }] })
+    const state = makeState({
+      files: 2,
+      stats: [
+        { additions: 842, deletions: 193 },
+        { additions: 5, deletions: 1 }
+      ]
+    })
     const lines = reviewHeaderLines(state, 120)
     const text = lines.flatMap((l) => l.map((s) => s.text)).join(" ")
     expect(text).toContain("feature/payment")
@@ -82,8 +81,8 @@ describe("reviewHeaderLines", () => {
     const state = makeState({
       files: 3,
       viewed: {
-        "file-0.ts": { fileKey: "file-0.ts", path: "src/file-0.ts", contentId: "c0", generationId: "g", viewedAt: "now" } as unknown as ReviewState["viewed"] extends Record<string, infer V> ? V : never,
-      },
+        "file-0.ts": { fileKey: "file-0.ts", path: "src/file-0.ts", contentId: "c0", generationId: "g", viewedAt: "now" } as unknown as ReviewState["viewed"] extends Record<string, infer V> ? V : never
+      }
     })
     const feedbackState = { ...state, feedback: [{ id: "1", anchor: { kind: "file" as const, fileKey: "file-1.ts", contentId: "x" }, kind: "note" as const, severity: "comment" as const, body: "x", resolution: "active" as const, createdAt: "now", updatedAt: "now" }] } as unknown as ReviewState
     const lines = reviewHeaderLines(feedbackState, 120)
@@ -103,11 +102,9 @@ describe("reviewHeaderLines", () => {
       status: "handed-off" as const,
       handoff: { at: "2026-09-01T00:00:00.000Z", headOid: "b".repeat(40) },
       createdAt: "2026-09-01T00:00:00.000Z",
-      updatedAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z"
     }
-    const replies: ReviewReplies = new Map([
-      ["answered", { id: "answered", body: "because", at: "2026-09-01T01:00:00.000Z" }],
-    ])
+    const replies: ReviewReplies = new Map([["answered", { id: "answered", body: "because", at: "2026-09-01T01:00:00.000Z" }]])
 
     const lines = reviewHeaderLines({ ...state, feedback: [feedback] }, 120, replies)
     const text = lines.flatMap((line) => line.map((span) => span.text)).join(" ")
@@ -116,7 +113,9 @@ describe("reviewHeaderLines", () => {
   })
   test("names the active projection so narrowed counts are never read as the whole review", () => {
     const label = (projection: ReviewState["projection"]) =>
-      reviewHeaderLines(makeState({ projection }), 120).flatMap((line) => line.map((span) => span.text)).join(" ")
+      reviewHeaderLines(makeState({ projection }), 120)
+        .flatMap((line) => line.map((span) => span.text))
+        .join(" ")
 
     expect(label({ kind: "aggregate" })).toContain("Aggregate")
 

@@ -38,10 +38,6 @@ export type CheckoutRemoteTrackingResult =
       readonly message: string
     }
 
-function withoutRecordTerminator(value: string): string {
-  return value.replace(/\r?\n$/, "")
-}
-
 async function validateBranchName(runner: CommandRunner, name: string): Promise<void> {
   // `dontLog: false` overrides the `readOnly`-implies-quiet default (runner.ts's `dontLog` doc
   // comment) deliberately: `createBranch`/`renameBranch`/`deleteBranch` already log their action
@@ -53,7 +49,10 @@ async function validateBranchName(runner: CommandRunner, name: string): Promise<
 
 async function listRemoteNames(runner: CommandRunner): Promise<readonly string[]> {
   const result = await runner.run(["remote"], { readOnly: true })
-  return result.stdout.split(/\r?\n/).map((name) => name.trim()).filter(Boolean)
+  return result.stdout
+    .split(/\r?\n/)
+    .map((name) => name.trim())
+    .filter(Boolean)
 }
 
 /**
@@ -61,7 +60,10 @@ async function listRemoteNames(runner: CommandRunner): Promise<readonly string[]
  * `%(upstream:short)` means the remote-tracking ref is not in this repo, so the counts are unknown
  * rather than zero — the distinction the magenta `?` row is drawn from.
  */
-function parseUpstreamTrack(upstreamShort: string, track: string): {
+function parseUpstreamTrack(
+  upstreamShort: string,
+  track: string
+): {
   readonly aheadForPull: string
   readonly behindForPull: string
   readonly upstreamGone: boolean
@@ -78,12 +80,8 @@ function parseUpstreamTrack(upstreamShort: string, track: string): {
  * `listBranches` already read so this does not spawn a second `git config`.
  */
 export async function listLocalBranches(runner: CommandRunner, config?: RepoConfig): Promise<readonly LocalBranch[]> {
-  const resolvedConfig = config ?? await loadRepoConfig(runner)
-  const result = await runner.run([
-    "for-each-ref",
-    "--format=%(refname:short)%00%(upstream:short)%00%(objectname)%00%(HEAD)%00%(committerdate:unix)%00%(subject)%00%(upstream:track)%00",
-    "refs/heads",
-  ], { readOnly: true })
+  const resolvedConfig = config ?? (await loadRepoConfig(runner))
+  const result = await runner.run(["for-each-ref", "--format=%(refname:short)%00%(upstream:short)%00%(objectname)%00%(HEAD)%00%(committerdate:unix)%00%(subject)%00%(upstream:track)%00", "refs/heads"], { readOnly: true })
   return parseNulFields(result.stdout, 7).map(([name, upstream, oid, head, committedAt, subject, upstreamTrack]) => {
     const branchName = name ?? ""
     const track = parseUpstreamTrack(upstream ?? "", upstreamTrack ?? "")
@@ -100,7 +98,7 @@ export async function listLocalBranches(runner: CommandRunner, config?: RepoConf
       ...(upstreamConfig?.remote === undefined ? {} : { upstreamRemote: upstreamConfig.remote }),
       // `refs/heads/` stripped, so this is the *branch* name a pull request's head ref matches —
       // lazygit's `BranchConfig.Merge` (pkg/commands/git_commands/config.go:110).
-      ...(upstreamConfig?.merge === undefined ? {} : { upstreamBranch: upstreamConfig.merge.replace(/^refs\/heads\//, "") }),
+      ...(upstreamConfig?.merge === undefined ? {} : { upstreamBranch: upstreamConfig.merge.replace(/^refs\/heads\//, "") })
     }
   })
 }
@@ -108,21 +106,19 @@ export async function listLocalBranches(runner: CommandRunner, config?: RepoConf
 export async function listRemoteBranches(runner: CommandRunner, remote: string): Promise<readonly RemoteBranch[]> {
   const remotes = await listRemoteNames(runner)
   if (!remotes.includes(remote)) throw new Error(`remote does not exist: ${remote}`)
-  const result = await runner.run([
-    "for-each-ref",
-    "--format=%(refname)%00%(objectname)%00",
-    `refs/remotes/${remote}`,
-  ], { readOnly: true })
+  const result = await runner.run(["for-each-ref", "--format=%(refname)%00%(objectname)%00", `refs/remotes/${remote}`], { readOnly: true })
   return parseNulFields(result.stdout, 2).flatMap(([refName, oid]) => {
     const prefix = `refs/remotes/${remote}/`
     if (refName === undefined || refName === `${prefix}HEAD` || !refName.startsWith(prefix)) return []
     const name = refName.slice(prefix.length)
     const ref = `${remote}/${name}`
-    return [{
-      name,
-      ref,
-      ...(oid === undefined || oid.length === 0 ? {} : { oid }),
-    }]
+    return [
+      {
+        name,
+        ref,
+        ...(oid === undefined || oid.length === 0 ? {} : { oid })
+      }
+    ]
   })
 }
 
@@ -144,7 +140,7 @@ function compareRemoteNames(left: string, right: string): number {
  * and this loads its own.
  */
 export async function listRemotes(runner: CommandRunner, includeBranches = false, config?: RepoConfig): Promise<readonly Remote[]> {
-  const resolvedConfig = config ?? await loadRepoConfig(runner)
+  const resolvedConfig = config ?? (await loadRepoConfig(runner))
   const names = [...resolvedConfig.remotes.keys()].sort(compareRemoteNames)
   return Promise.all(
     names.map(async (name) => {
@@ -157,25 +153,22 @@ export async function listRemotes(runner: CommandRunner, includeBranches = false
         name,
         ...(fetchUrl === undefined ? {} : { fetchUrl }),
         ...(pushUrl === undefined ? {} : { pushUrl }),
-        ...(branches === undefined ? {} : { branches }),
+        ...(branches === undefined ? {} : { branches })
       }
-    }),
+    })
   )
 }
 
 export async function listBranches(runner: CommandRunner): Promise<BranchListing> {
   // One config read feeds both loaders: the branch upstreams and every remote's URLs live in it.
   const config = await loadRepoConfig(runner)
-  const [localBranches, remotes] = await Promise.all([
-    listLocalBranches(runner, config),
-    listRemotes(runner, false, config),
-  ])
+  const [localBranches, remotes] = await Promise.all([listLocalBranches(runner, config), listRemotes(runner, false, config)])
   const current = localBranches.find((branch) => branch.isCurrent)?.name
   return {
     ...(current === undefined ? {} : { current }),
     detached: current === undefined,
     localBranches,
-    remotes,
+    remotes
   }
 }
 
@@ -194,7 +187,6 @@ export async function createBranch(runner: CommandRunner, branch: string, startP
   await runner.run(["switch", "-c", branch, ...(options.track === false ? ["--no-track"] : []), startPoint])
 }
 
-
 export async function deleteBranch(runner: CommandRunner, branch: string, options: DeleteBranchOptions = {}): Promise<void> {
   await validateBranchName(runner, branch)
   if (options.force === true && options.confirmed !== true) {
@@ -211,13 +203,7 @@ export async function deleteRemoteBranch(runner: CommandRunner, remote: string, 
 }
 
 /** Validates an unconfirmed force delete before touching the remote, then deletes remote first. */
-export async function deleteLocalAndRemoteBranch(
-  runner: CommandRunner,
-  branch: string,
-  remote: string,
-  remoteBranch: string,
-  options: DeleteBranchOptions = {},
-): Promise<void> {
+export async function deleteLocalAndRemoteBranch(runner: CommandRunner, branch: string, remote: string, remoteBranch: string, options: DeleteBranchOptions = {}): Promise<void> {
   const merged = await isBranchMerged(runner, branch)
   if (!merged && (options.force !== true || options.confirmed !== true)) {
     throw new Error(`force deletion requires separate confirmation for ${branch}`)
@@ -241,8 +227,7 @@ export async function isBranchMerged(runner: CommandRunner, branch: string, upst
 export function branchCheckoutRequiresStash(error: unknown): boolean {
   if (!(error instanceof GitCommandError)) return false
   const stderr = error.record.stderr
-  return stderr.includes("Please commit your changes or stash them before you switch branch") ||
-    stderr.includes("Please move or remove them before you switch branch")
+  return stderr.includes("Please commit your changes or stash them before you switch branch") || stderr.includes("Please move or remove them before you switch branch")
 }
 
 export async function renameBranch(runner: CommandRunner, oldName: string, newName: string): Promise<void> {
@@ -276,38 +261,21 @@ function selectedRemoteRef(selection: RemoteBranchSelection): { readonly remote:
   return { remote: selection.remote, branch, remoteRef }
 }
 
-export async function checkoutRemoteTracking(
-  runner: CommandRunner,
-  selection: RemoteBranchSelection,
-  options?: CheckoutRemoteTrackingOptions,
-): Promise<CheckoutRemoteTrackingResult>
-export async function checkoutRemoteTracking(
-  runner: CommandRunner,
-  remoteRef: string,
-  options?: CheckoutRemoteTrackingOptions,
-): Promise<CheckoutRemoteTrackingResult>
-export async function checkoutRemoteTracking(
-  runner: CommandRunner,
-  remote: string,
-  branch: string,
-  options?: CheckoutRemoteTrackingOptions,
-): Promise<CheckoutRemoteTrackingResult>
-export async function checkoutRemoteTracking(
-  runner: CommandRunner,
-  remoteOrSelection: string | RemoteBranchSelection,
-  branchOrOptions?: string | CheckoutRemoteTrackingOptions,
-  maybeOptions: CheckoutRemoteTrackingOptions = {},
-): Promise<CheckoutRemoteTrackingResult> {
+export async function checkoutRemoteTracking(runner: CommandRunner, selection: RemoteBranchSelection, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult>
+export async function checkoutRemoteTracking(runner: CommandRunner, remoteRef: string, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult>
+export async function checkoutRemoteTracking(runner: CommandRunner, remote: string, branch: string, options?: CheckoutRemoteTrackingOptions): Promise<CheckoutRemoteTrackingResult>
+export async function checkoutRemoteTracking(runner: CommandRunner, remoteOrSelection: string | RemoteBranchSelection, branchOrOptions?: string | CheckoutRemoteTrackingOptions, maybeOptions: CheckoutRemoteTrackingOptions = {}): Promise<CheckoutRemoteTrackingResult> {
   const remotes = await listRemoteNames(runner)
-  const selection = typeof remoteOrSelection === "string"
-    ? typeof branchOrOptions === "string"
-      ? selectedRemoteRef({ remote: remoteOrSelection, branch: branchOrOptions })
-      : (() => {
-          const remoteRef = remoteOrSelection
-          const split = splitRemoteRef(remoteRef, remotes)
-          return { ...split, remoteRef }
-        })()
-    : selectedRemoteRef(remoteOrSelection)
+  const selection =
+    typeof remoteOrSelection === "string"
+      ? typeof branchOrOptions === "string"
+        ? selectedRemoteRef({ remote: remoteOrSelection, branch: branchOrOptions })
+        : (() => {
+            const remoteRef = remoteOrSelection
+            const split = splitRemoteRef(remoteRef, remotes)
+            return { ...split, remoteRef }
+          })()
+      : selectedRemoteRef(remoteOrSelection)
   if (!remotes.includes(selection.remote)) throw new Error(`remote does not exist: ${selection.remote}`)
   const options = typeof branchOrOptions === "object" ? branchOrOptions : maybeOptions
   const localBranch = trackingLocalName(selection.remote, selection.branch)
@@ -323,9 +291,7 @@ export async function checkoutRemoteTracking(
     return { kind: "switched", localBranch, remoteRef: selection.remoteRef }
   }
   const upstream = existing.upstream
-  const message = upstream === undefined
-    ? `local branch ${localBranch} has no upstream; expected ${selection.remoteRef}`
-    : `local branch ${localBranch} tracks ${upstream}; expected ${selection.remoteRef}`
+  const message = upstream === undefined ? `local branch ${localBranch} has no upstream; expected ${selection.remoteRef}` : `local branch ${localBranch} tracks ${upstream}; expected ${selection.remoteRef}`
   return { kind: "mismatch", localBranch, remoteRef: selection.remoteRef, ...(upstream === undefined ? {} : { upstream }), message }
 }
 export const listLocal = listLocalBranches

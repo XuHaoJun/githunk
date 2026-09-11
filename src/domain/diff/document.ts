@@ -1,11 +1,4 @@
-export type DiffLineKind =
-  | "file-header"
-  | "hunk-header"
-  | "context"
-  | "addition"
-  | "deletion"
-  | "metadata"
-  | "no-newline"
+export type DiffLineKind = "file-header" | "hunk-header" | "context" | "addition" | "deletion" | "metadata" | "no-newline"
 
 export type DiffLine = {
   readonly kind: DiffLineKind

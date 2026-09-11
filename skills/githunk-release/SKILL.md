@@ -58,6 +58,7 @@ Run the preflight before editing or staging anything:
    ```
 
    Any output is a blocker. Preserve those changes; do not stash, reset, clean, or overwrite them automatically.
+
 4. Confirm the local branch tip matches its upstream tip. If the remote advanced or the checkout contains unpublished commits, stop and report it.
 5. Read the current version from the root `package.json`; do not copy a version from documentation. `bun.lock` does not need a root-version change.
 6. Confirm `v<version>` is absent both locally and on `origin`. Any existing local or remote tag is a blocker, regardless of whether npm contains the version.

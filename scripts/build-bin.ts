@@ -12,11 +12,7 @@ import path from "node:path"
  * The baseline runtime only asks for x86-64-v2 (SSE4.2/POPCNT). arm64 has no such split and
  * keeps whatever runtime the host Bun already carries.
  */
-export function compileTargetForHost(
-  platform: NodeJS.Platform,
-  arch: string,
-  isMuslHost = (): boolean => existsSync("/lib/ld-musl-x86_64.so.1"),
-): string | null {
+export function compileTargetForHost(platform: NodeJS.Platform, arch: string, isMuslHost = (): boolean => existsSync("/lib/ld-musl-x86_64.so.1")): string | null {
   if (arch !== "x64") {
     return null
   }
@@ -47,37 +43,22 @@ if (import.meta.main) {
 
   const target = compileTargetForHost(process.platform, process.arch)
 
-  const proc = Bun.spawnSync(
-    [
-      "bun",
-      "build",
-      "--compile",
-      "--no-compile-autoload-bunfig",
-      ...(target === null ? [] : [`--target=${target}`]),
-      path.join(repoRoot, "src", "cli.ts"),
-      "--outfile",
-      outfile,
-    ],
-    {
-      cwd: repoRoot,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-      env: {
-        ...process.env,
-        BUN_TMPDIR: path.join(repoRoot, ".bun-tmp"),
-        BUN_INSTALL: path.join(repoRoot, ".bun-install"),
-      },
-    },
-  )
+  const proc = Bun.spawnSync(["bun", "build", "--compile", "--no-compile-autoload-bunfig", ...(target === null ? [] : [`--target=${target}`]), path.join(repoRoot, "src", "cli.ts"), "--outfile", outfile], {
+    cwd: repoRoot,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+    env: {
+      ...process.env,
+      BUN_TMPDIR: path.join(repoRoot, ".bun-tmp"),
+      BUN_INSTALL: path.join(repoRoot, ".bun-install")
+    }
+  })
 
   if (proc.exitCode !== 0) {
     // Bun fetches a non-host target runtime instead of reusing the installed one, so the first
     // build on a machine needs network access; after that it comes from the repo-local cache.
-    const offlineHint =
-      target === null
-        ? ""
-        : ` Building for ${target} downloads that runtime once into .bun-install; rerun with network access if the download failed.`
+    const offlineHint = target === null ? "" : ` Building for ${target} downloads that runtime once into .bun-install; rerun with network access if the download failed.`
     throw new Error(`bun build --compile failed with exit ${proc.exitCode}.${offlineHint}`)
   }
 

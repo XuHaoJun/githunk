@@ -36,11 +36,7 @@
             "oldCount": 2,
             "newStart": 1,
             "newCount": 2,
-            "lines": [
-              "-é combined",
-              "+é updated",
-              " plain"
-            ]
+            "lines": ["-é combined", "+é updated", " plain"]
           }
         ]
       }

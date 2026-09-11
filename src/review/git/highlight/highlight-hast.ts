@@ -1,5 +1,3 @@
-import { cleanLastNewline } from "@pierre/diffs"
-
 export type HastNode = HastTextNode | HastElementNode
 
 interface HastTextNode {
@@ -50,7 +48,7 @@ function appendRun(target: HastHighlightRun[], next: HastHighlightRun) {
   target.push(next)
 }
 
-export function collectHastHighlightRuns(node: HastNode | undefined, appearance: "dark" | "light"): HastHighlightRun[] {
+export function collectHastHighlightRuns(node: HastNode | undefined): HastHighlightRun[] {
   if (!node) return []
   const runs: HastHighlightRun[] = []
   const stack: Array<{ node: HastNode; fg?: string; wordDiff: boolean }> = [{ node, wordDiff: false }]
@@ -86,10 +84,10 @@ export function collectHastHighlightRuns(node: HastNode | undefined, appearance:
   return runs
 }
 
-export function hastLinesToTokens(lines: Array<HastNode | undefined>, appearance: "dark" | "light"): Array<readonly { text: string; fg?: string }[] | null> {
+export function hastLinesToTokens(lines: Array<HastNode | undefined>): Array<readonly { text: string; fg?: string }[] | null> {
   return lines.map((node) => {
     if (!node) return null
-    const runs = collectHastHighlightRuns(node, appearance)
+    const runs = collectHastHighlightRuns(node)
     if (runs.length === 0) return []
     return runs.map((r) => (r.fg ? { text: r.text, fg: r.fg } : { text: r.text }))
   })

@@ -10,7 +10,7 @@ describe("parseRawDiffZ", () => {
       "new.txt",
       ":100644 000000 dddddddddddddddddddddddddddddddddddddddd 0000000000000000000000000000000000000000 D",
       "old.txt",
-      "",
+      ""
     ].join("\0")
     const entries = parseRawDiffZ(raw)
     expect(entries.length).toBe(3)

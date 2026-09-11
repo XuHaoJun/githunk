@@ -2,13 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import {
-  submoduleDepth,
-  submoduleFullName,
-  submoduleFullPath,
-  submoduleGitDirPath,
-  type SubmoduleConfig,
-} from "../../src/domain/submodule"
+import { submoduleDepth, submoduleFullName, submoduleFullPath, submoduleGitDirPath, type SubmoduleConfig } from "../../src/domain/submodule"
 import type { GitResult, GitRunOptions } from "../../src/git/runner"
 import { listSubmodules, parseGitModules, readSubmoduleConfigs } from "../../src/git/submodules"
 
@@ -31,32 +25,24 @@ class FakeRunner {
         durationMs: 0,
         exitCode: 0,
         stdout: this.stdout,
-        stderr: "",
-      },
+        stderr: ""
+      }
     }
   }
 }
 
 describe("gitmodules parsing", () => {
   test("reads name, path and url out of each section", () => {
-    const raw = [
-      "[submodule \"mysubmodule\"]",
-      "\tpath = blah/mysubmodule",
-      "\turl = git@github.com:subbo.git",
-      "[submodule \"other module\"]",
-      "  path=other",
-      "  url=https://example.invalid/other.git",
-      "",
-    ].join("\n")
+    const raw = ['[submodule "mysubmodule"]', "\tpath = blah/mysubmodule", "\turl = git@github.com:subbo.git", '[submodule "other module"]', "  path=other", "  url=https://example.invalid/other.git", ""].join("\n")
 
     expect(parseGitModules(raw)).toEqual([
       { name: "mysubmodule", path: "blah/mysubmodule", url: "git@github.com:subbo.git" },
-      { name: "other module", path: "other", url: "https://example.invalid/other.git" },
+      { name: "other module", path: "other", url: "https://example.invalid/other.git" }
     ])
   })
 
   test("ignores stray lines, keeps sections without a path, and tolerates crlf", () => {
-    const raw = ["# a comment", "path = orphan", "[submodule \"nameonly\"]", "\tbranch = main", ""].join("\r\n")
+    const raw = ["# a comment", "path = orphan", '[submodule "nameonly"]', "\tbranch = main", ""].join("\r\n")
     expect(parseGitModules(raw)).toEqual([{ name: "nameonly", path: "" }])
   })
 
@@ -102,18 +88,16 @@ describe("submodule loader", () => {
 
   test("reads one submodule", async () => {
     const base = await createTree({
-      ".gitmodules": "[submodule \"vendor/lib\"]\n\tpath = vendor/lib\n\turl = ../lib.git\n",
+      ".gitmodules": '[submodule "vendor/lib"]\n\tpath = vendor/lib\n\turl = ../lib.git\n'
     })
-    expect(await readSubmoduleConfigs(base)).toEqual([
-      { name: "vendor/lib", path: "vendor/lib", url: "../lib.git" },
-    ])
+    expect(await readSubmoduleConfigs(base)).toEqual([{ name: "vendor/lib", path: "vendor/lib", url: "../lib.git" }])
   })
 
   test("recurses into nested submodules and records the parent chain", async () => {
     const base = await createTree({
-      ".gitmodules": "[submodule \"libs/mid\"]\n\tpath = libs/mid\n\turl = ../mid.git\n[submodule \"tools\"]\n\tpath = tools\n\turl = ../tools.git\n",
-      "libs/mid/.gitmodules": "[submodule \"vendor/inner\"]\n\tpath = vendor/inner\n\turl = ../inner.git\n",
-      "libs/mid/vendor/inner/.gitmodules": "[submodule \"deepest\"]\n\tpath = deepest\n\turl = ../deepest.git\n",
+      ".gitmodules": '[submodule "libs/mid"]\n\tpath = libs/mid\n\turl = ../mid.git\n[submodule "tools"]\n\tpath = tools\n\turl = ../tools.git\n',
+      "libs/mid/.gitmodules": '[submodule "vendor/inner"]\n\tpath = vendor/inner\n\turl = ../inner.git\n',
+      "libs/mid/vendor/inner/.gitmodules": '[submodule "deepest"]\n\tpath = deepest\n\turl = ../deepest.git\n'
     })
 
     const submodules = await readSubmoduleConfigs(base)
@@ -121,7 +105,7 @@ describe("submodule loader", () => {
       ["libs/mid", 0],
       ["libs/mid/vendor/inner", 1],
       ["libs/mid/vendor/inner/deepest", 2],
-      ["tools", 0],
+      ["tools", 0]
     ])
 
     const inner = submodules[1]!
@@ -131,13 +115,13 @@ describe("submodule loader", () => {
   })
 
   test("does not follow a submodule that points at its own directory", async () => {
-    const base = await createTree({ ".gitmodules": "[submodule \"self\"]\n\tpath = .\n\turl = ../self.git\n" })
+    const base = await createTree({ ".gitmodules": '[submodule "self"]\n\tpath = .\n\turl = ../self.git\n' })
     expect(await readSubmoduleConfigs(base)).toEqual([{ name: "self", path: ".", url: "../self.git" }])
   })
 
   test("resolves the worktree of the runner before reading .gitmodules", async () => {
     const base = await createTree({
-      ".gitmodules": "[submodule \"vendor/lib\"]\n\tpath = vendor/lib\n\turl = ../lib.git\n",
+      ".gitmodules": '[submodule "vendor/lib"]\n\tpath = vendor/lib\n\turl = ../lib.git\n'
     })
     const runner = new FakeRunner(`${base}\n`)
     expect(await listSubmodules(runner)).toEqual([{ name: "vendor/lib", path: "vendor/lib", url: "../lib.git" }])

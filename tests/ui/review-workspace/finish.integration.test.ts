@@ -29,7 +29,7 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+new"] })],
     source: "available",
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -94,7 +94,9 @@ describe("finish integration — active React workspace", () => {
       expect((await artifactStore.load(controller.state!.document.identity.id, "art-ws"))?.id).toBe("art-ws")
       expect((await stateStore.load()).reviews[controller.state!.document.identity.id]?.feedback).toHaveLength(0)
     } finally {
-      try { await stateStore?.flush() } catch {}
+      try {
+        await stateStore?.flush()
+      } catch {}
       await repo?.cleanup()
     }
   })
@@ -122,16 +124,20 @@ describe("finish integration — active React workspace", () => {
           return currentDocument
         },
         now: () => "2026-08-31T00:00:00.000Z",
-        randomId: () => "race-artifact",
+        randomId: () => "race-artifact"
       })
       await controller.open("refs/heads/main")
       controller.dispatch(planReviewIntent(controller.state!, { type: "feedback/start-draft", anchor: createFileAnchor(fileA), kind: "note", severity: "comment", body: "pending" }))
       controller.dispatch(planReviewIntent(controller.state!, { type: "feedback/create", id: "race-feedback", createdAt: "2026-08-31T00:00:00.000Z" }))
 
       let releaseArtifact!: () => void
-      const artifactGate = new Promise<void>((resolve) => { releaseArtifact = resolve })
+      const artifactGate = new Promise<void>((resolve) => {
+        releaseArtifact = resolve
+      })
       let artifactStarted!: () => void
-      const artifactStartedSignal = new Promise<void>((resolve) => { artifactStarted = resolve })
+      const artifactStartedSignal = new Promise<void>((resolve) => {
+        artifactStarted = resolve
+      })
       const originalCreateExclusive = artifactStore.createExclusive.bind(artifactStore)
       artifactStore.createExclusive = async (artifact) => {
         artifactStarted()
@@ -153,7 +159,9 @@ describe("finish integration — active React workspace", () => {
       expect(controller.state?.document.files[0]?.contentId).toBe("content-b")
     } finally {
       await controller?.destroy()
-      try { await stateStore?.flush() } catch {}
+      try {
+        await stateStore?.flush()
+      } catch {}
       await repo?.cleanup()
     }
   })

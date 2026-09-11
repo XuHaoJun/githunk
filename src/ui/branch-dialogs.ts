@@ -7,7 +7,7 @@ export function branchForceDeleteConfirmation(branch: string): ConfirmationReque
     confirmLabel: "Force delete",
     cancelLabel: "Cancel",
     confirmKey: "d",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 
@@ -18,7 +18,7 @@ export function branchAutostashConfirmation(): ConfirmationRequest {
     confirmLabel: "Autostash",
     cancelLabel: "Cancel",
     confirmKey: "enter",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 
@@ -29,7 +29,7 @@ export function worktreeForceRemoveConfirmation(worktree: string): ConfirmationR
     confirmLabel: "Remove",
     cancelLabel: "Cancel",
     confirmKey: "enter",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 
@@ -40,7 +40,7 @@ export function branchRemoteDeleteConfirmation(branch: string, remote: string): 
     confirmLabel: "Delete",
     cancelLabel: "Cancel",
     confirmKey: "d",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 
@@ -51,7 +51,7 @@ export function branchLocalAndRemoteDeleteConfirmation(branch: string, remote: s
     confirmLabel: "Delete",
     cancelLabel: "Cancel",
     confirmKey: "d",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 function quoteBranch(value: string): string {
@@ -66,7 +66,7 @@ export function branchLocalDeleteRangeConfirmation(branches: readonly string[]):
     confirmLabel: "Delete",
     cancelLabel: "Cancel",
     confirmKey: "d",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 
@@ -78,23 +78,17 @@ export function branchForceDeleteRangeConfirmation(branches: readonly string[]):
     confirmLabel: "Force delete",
     cancelLabel: "Cancel",
     confirmKey: "d",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
-
 
 type RemoteBranchDeleteTarget = {
   readonly branch: string
   readonly remote: string
 }
 
-export function branchRemoteDeleteRangeConfirmation(
-  branches: readonly string[] | readonly RemoteBranchDeleteTarget[],
-  remote?: string,
-): ConfirmationRequest {
-  const names = remote === undefined
-    ? branches.map((entry) => typeof entry === "string" ? quoteBranch(entry) : `${quoteBranch(entry.branch)} from ${quoteBranch(entry.remote)}`).join(", ")
-    : branches.map((entry) => quoteBranch(typeof entry === "string" ? entry : entry.branch)).join(", ")
+export function branchRemoteDeleteRangeConfirmation(branches: readonly string[] | readonly RemoteBranchDeleteTarget[], remote?: string): ConfirmationRequest {
+  const names = remote === undefined ? branches.map((entry) => (typeof entry === "string" ? quoteBranch(entry) : `${quoteBranch(entry.branch)} from ${quoteBranch(entry.remote)}`)).join(", ") : branches.map((entry) => quoteBranch(typeof entry === "string" ? entry : entry.branch)).join(", ")
   const source = remote === undefined ? "" : ` from ${quoteBranch(remote)}`
   return {
     title: "Delete remote branches",
@@ -102,14 +96,11 @@ export function branchRemoteDeleteRangeConfirmation(
     confirmLabel: "Delete",
     cancelLabel: "Cancel",
     confirmKey: "d",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 
-export function branchLocalAndRemoteDeleteRangeConfirmation(
-  branches: readonly { readonly branch: string; readonly remote: string; readonly remoteBranch: string }[],
-  forceRequired: boolean,
-): ConfirmationRequest {
+export function branchLocalAndRemoteDeleteRangeConfirmation(branches: readonly { readonly branch: string; readonly remote: string; readonly remoteBranch: string }[], forceRequired: boolean): ConfirmationRequest {
   const names = branches.map(({ branch, remote, remoteBranch }) => `${quoteBranch(branch)} and ${quoteBranch(remoteBranch)} from ${quoteBranch(remote)}`).join(", ")
   return {
     title: "Delete local and remote branches",
@@ -117,7 +108,7 @@ export function branchLocalAndRemoteDeleteRangeConfirmation(
     confirmLabel: "Delete",
     cancelLabel: "Cancel",
     confirmKey: "d",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 
@@ -128,7 +119,7 @@ export function branchRenameConfirmation(): ConfirmationRequest {
     confirmLabel: "Continue",
     cancelLabel: "Cancel",
     confirmKey: "enter",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }
 
@@ -139,6 +130,6 @@ export function remoteTrackingMismatchConfirmation(message: string): Confirmatio
     confirmLabel: "Switch",
     cancelLabel: "Cancel",
     confirmKey: "enter",
-    cancelKey: "escape",
+    cancelKey: "escape"
   }
 }

@@ -96,11 +96,11 @@ The active renderer must derive its files from the aggregate document. It must n
 
 The active runtime uses the following panel semantics:
 
-| Key | Behavior |
-| --- | --- |
-| `0` | Focus Diff panel |
-| `1` | Focus Files panel |
-| `Tab` | Cycle Diff → Files → Filter/Composer → Diff |
+| Key      | Behavior                                                        |
+| -------- | --------------------------------------------------------------- |
+| `0`      | Focus Diff panel                                                |
+| `1`      | Focus Files panel                                               |
+| `Tab`    | Cycle Diff → Files → Filter/Composer → Diff                     |
 | `Escape` | Close the active composer/dialog; otherwise leave Branch Review |
 
 The command catalog, help text, footer hints, and active keyboard handler must describe the same behavior. There must be one active command resolution path.

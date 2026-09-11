@@ -46,6 +46,7 @@ Integration tests and `tests/acceptance/*` use real Git/temp repositories and/or
 renderer harness; inspect the test's helpers rather than assuming every `.test.ts` is pure.
 `tests/helpers/temp-repository.ts` supplies repositories; `tests/helpers/shell-harness.ts`
 drives `createTestRenderer`, mock keys/mouse and captured frames. Branch Review acceptance:
+
 - `tests/acceptance/branch-review-workspace.integration.test.ts`: coverage/reconciliation.
 - `tests/acceptance/branch-review-artifact.integration.test.ts`: feedback/artifacts/recovery.
 
@@ -55,16 +56,16 @@ Repository data flows one way: `GitRunner` → Git loaders → `AppController` �
 `AppModel` → `RootView.update(model)` → panes → OpenTUI. Domain/Git layers do not know the UI;
 the UI does not spawn Git.
 
-| Area | Ownership / starting point |
-| --- | --- |
-| `src/domain/` | Pure types/functions. `AppModel` lives in `repository.ts`, re-exported by `src/app/model.ts`. `ReviewTarget`: `working-tree \| branch \| commit \| stash`. |
-| `src/git/` | Git operations through `GitRunner.run()`: `git --no-pager`, `LC_ALL=C`, command logging. `readOnly` sets `GIT_OPTIONAL_LOCKS=0`; `optionalLocks` allows foreground status to persist its stat-cache. |
-| `src/app/controller.ts` | Repository state; injectable loaders for tests; writes serialized through `MutationQueue`. |
-| `src/ui/root-view.ts` | Repository view state, focus, gestures and dispatch. Start at `handleAction`. |
-| `src/app/create-app.ts` | Wiring seam; preserve `try { … } finally { view.update(controller.state) }` around repository controller calls. Without a renderer, `createApp` is headless (no timers or `gh`). |
-| `src/app/screen-controller.ts` | `AppScreenController` switches repository/Branch Review screens and restores repository focus/selection. |
-| `src/ui/review-workspace/` | Branch Review controller and React UI (`ReactReviewHost`, `ReviewWorkspaceApp.tsx`). |
-| `src/review/` | Review core, Git document/projection loaders, highlighting and persistence. |
+| Area                           | Ownership / starting point                                                                                                                                                                           |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/domain/`                  | Pure types/functions. `AppModel` lives in `repository.ts`, re-exported by `src/app/model.ts`. `ReviewTarget`: `working-tree \| branch \| commit \| stash`.                                           |
+| `src/git/`                     | Git operations through `GitRunner.run()`: `git --no-pager`, `LC_ALL=C`, command logging. `readOnly` sets `GIT_OPTIONAL_LOCKS=0`; `optionalLocks` allows foreground status to persist its stat-cache. |
+| `src/app/controller.ts`        | Repository state; injectable loaders for tests; writes serialized through `MutationQueue`.                                                                                                           |
+| `src/ui/root-view.ts`          | Repository view state, focus, gestures and dispatch. Start at `handleAction`.                                                                                                                        |
+| `src/app/create-app.ts`        | Wiring seam; preserve `try { … } finally { view.update(controller.state) }` around repository controller calls. Without a renderer, `createApp` is headless (no timers or `gh`).                     |
+| `src/app/screen-controller.ts` | `AppScreenController` switches repository/Branch Review screens and restores repository focus/selection.                                                                                             |
+| `src/ui/review-workspace/`     | Branch Review controller and React UI (`ReactReviewHost`, `ReviewWorkspaceApp.tsx`).                                                                                                                 |
+| `src/review/`                  | Review core, Git document/projection loaders, highlighting and persistence.                                                                                                                          |
 
 ### Load-bearing UI contracts
 
@@ -104,6 +105,7 @@ external-ref detection (2s; `RefsWatcher` + `src/git/refs-snapshot.ts`). Disable
 State belongs under Git metadata, never in the worktree. `src/storage/local-state-file.ts`
 resolves the Git path, refuses symlinked paths and writes atomically with mode `0600`.
 Normal `.git/` layout:
+
 - `githunk/ui-state-v1.json`: pane geometry.
 - `githunk/review-state-v2.json`: Branch Review (`version: 2`).
 - `githunk/reviews/<review-id>/<artifact-id>.json`: immutable review artifacts.
@@ -145,6 +147,7 @@ bun run publish:prebuilt:npm -- --dry-run --tag latest  # use beta for prereleas
 ```
 
 Release traps to preserve:
+
 - Tags must match `package.json` (`scripts/check-release-version.ts`). Beta prereleases publish
   to `beta`, never `latest`. Never move a published tag; npm versions are immutable. Bump, or
   retry failed jobs / `workflow_dispatch(publish=true)` as appropriate.

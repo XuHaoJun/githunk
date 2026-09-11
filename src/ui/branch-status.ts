@@ -3,13 +3,7 @@ import type { ColorInput } from "@opentui/core"
 import type { LocalBranch } from "../domain/branch"
 import { itemOperationLabel, type ItemOperation } from "../domain/item-operation"
 import { loaderFrame } from "./loader"
-import {
-  BRANCH_DIVERGED_FG,
-  BRANCH_ITEM_OPERATION_FG,
-  BRANCH_MATCHES_UPSTREAM_FG,
-  BRANCH_UPSTREAM_GONE_FG,
-  BRANCH_UPSTREAM_NOT_LOCAL_FG,
-} from "./theme"
+import { BRANCH_DIVERGED_FG, BRANCH_ITEM_OPERATION_FG, BRANCH_MATCHES_UPSTREAM_FG, BRANCH_UPSTREAM_GONE_FG, BRANCH_UPSTREAM_NOT_LOCAL_FG } from "./theme"
 
 /**
  * The cell lazygit draws right of a branch's name, and the recency cell left of it.
@@ -40,7 +34,7 @@ const PERIODS: readonly (readonly [string, number])[] = [
   ["d", 86400],
   ["w", 604800],
   ["M", 31536000 / 12],
-  ["y", 31536000],
+  ["y", 31536000]
 ]
 
 export function formatRecency(committedAtUnix: string | undefined, nowUnix: number): string {

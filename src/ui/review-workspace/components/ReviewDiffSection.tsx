@@ -31,46 +31,23 @@ export type ReviewDiffSectionProps = Readonly<{
 function lineDigits(file: HunkReviewFile): number {
   let highest = 1
   for (const hunk of file.metadata.hunks) {
-    highest = Math.max(
-      highest,
-      hunk.deletionStart + hunk.deletionCount,
-      hunk.additionStart + hunk.additionCount,
-    )
+    highest = Math.max(highest, hunk.deletionStart + hunk.deletionCount, hunk.additionStart + hunk.additionCount)
   }
   return String(highest).length
 }
 
-function rowsFor(
-  file: HunkReviewFile,
-  state: ReviewState,
-  layout: "split" | "stack",
-  width: number,
-  showLineNumbers: boolean,
-  wrapLines: boolean,
-  highlight: HighlightPayload | undefined,
-  expandedSourceByGap: ReadonlyMap<string, readonly string[]> | undefined,
-  replies?: ReviewReplies,
-): readonly HunkDiffRow[] {
+function rowsFor(file: HunkReviewFile, state: ReviewState, layout: "split" | "stack", width: number, showLineNumbers: boolean, wrapLines: boolean, highlight: HighlightPayload | undefined, expandedSourceByGap: ReadonlyMap<string, readonly string[]> | undefined, replies?: ReviewReplies): readonly HunkDiffRow[] {
   const options = {
     width,
     showLineNumbers,
     wrapLines,
     ...(replies ? { replies } : {}),
-    ...(expandedSourceByGap ? { expandedSourceByGap } : {}),
+    ...(expandedSourceByGap ? { expandedSourceByGap } : {})
   }
-  return layout === "split"
-    ? buildHunkSplitRows(file, state, highlight, options)
-    : buildHunkStackRows(file, state, highlight, options)
+  return layout === "split" ? buildHunkSplitRows(file, state, highlight, options) : buildHunkStackRows(file, state, highlight, options)
 }
 
-export function hunkSectionRowCount(
-  file: HunkReviewFile,
-  layout: "split" | "stack",
-  state?: ReviewState,
-  expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
-  showDivider = false,
-  replies?: ReviewReplies,
-): number {
+export function hunkSectionRowCount(file: HunkReviewFile, layout: "split" | "stack", state?: ReviewState, expandedSourceByGap?: ReadonlyMap<string, readonly string[]>, showDivider = false, replies?: ReviewReplies): number {
   const dividerRows = showDivider ? 1 : 0
   const feedbackCount = state === undefined ? 0 : feedbackRowCountForFile(file, state, layout, replies)
   if (file.kind === "binary" || file.reviewFile.source === "binary" || file.reviewFile.source === "too-large") return dividerRows + 2 + feedbackCount
@@ -84,11 +61,7 @@ export function hunkSectionRowCount(
     }
     count += 1
     for (const content of hunk.hunkContent) {
-      count += content.type === "context"
-        ? content.lines
-        : layout === "split"
-          ? Math.max(content.deletions, content.additions)
-          : content.deletions + content.additions
+      count += content.type === "context" ? content.lines : layout === "split" ? Math.max(content.deletions, content.additions) : content.deletions + content.additions
     }
   }
   return count + (file.metadata.hunks.length === 0 ? 1 : 0) + feedbackCount
@@ -97,21 +70,11 @@ export function hunkSectionRowCount(
 function hunkBodyRowCount(hunk: HunkReviewFile["metadata"]["hunks"][number], layout: "split" | "stack"): number {
   let count = 0
   for (const content of hunk.hunkContent) {
-    count += content.type === "context"
-      ? content.lines
-      : layout === "split"
-        ? Math.max(content.deletions, content.additions)
-        : content.deletions + content.additions
+    count += content.type === "context" ? content.lines : layout === "split" ? Math.max(content.deletions, content.additions) : content.deletions + content.additions
   }
   return count
 }
-function feedbackRowsBeforeHunk(
-  file: HunkReviewFile,
-  state: ReviewState,
-  layout: "split" | "stack",
-  hunkIndex: number,
-  replies?: ReviewReplies,
-): number {
+function feedbackRowsBeforeHunk(file: HunkReviewFile, state: ReviewState, layout: "split" | "stack", hunkIndex: number, replies?: ReviewReplies): number {
   let count = 0
   for (const group of feedbackRowGroups(file, state, layout, replies)) {
     const anchor = group.anchor
@@ -119,9 +82,7 @@ function feedbackRowsBeforeHunk(
     const ownerIndex = file.metadata.hunks.findIndex((hunk) => {
       const start = anchor.side === "old" ? hunk.deletionStart : hunk.additionStart
       const lineCount = anchor.side === "old" ? hunk.deletionCount : hunk.additionCount
-      return lineCount > 0
-        && anchor.startLine >= start
-        && anchor.endLine < start + lineCount
+      return lineCount > 0 && anchor.startLine >= start && anchor.endLine < start + lineCount
     })
     if (ownerIndex >= 0 && ownerIndex < hunkIndex) count += group.rows.length
   }
@@ -134,15 +95,7 @@ function feedbackRowsBeforeHunk(
  * replies and addressed excerpts.
  */
 
-export function hunkSectionRowOffset(
-  file: HunkReviewFile,
-  layout: "split" | "stack",
-  hunkIndex: number,
-  state?: ReviewState,
-  expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
-  showDivider = false,
-  replies?: ReviewReplies,
-): number {
+export function hunkSectionRowOffset(file: HunkReviewFile, layout: "split" | "stack", hunkIndex: number, state?: ReviewState, expandedSourceByGap?: ReadonlyMap<string, readonly string[]>, showDivider = false, replies?: ReviewReplies): number {
   const dividerRows = showDivider ? 1 : 0
   if (hunkIndex <= 0) return dividerRows + 1
   let offset = dividerRows + 1
@@ -177,56 +130,22 @@ export function hunkSectionRowOffset(
  * Rows come from the same builder the section renders, so the answer cannot
  * disagree with what is drawn. Returns -1 when the file holds no such row.
  */
-export function feedbackSectionRowOffset(
-  file: HunkReviewFile,
-  layout: "split" | "stack",
-  feedbackId: string,
-  state: ReviewState,
-  expandedSourceByGap?: ReadonlyMap<string, readonly string[]>,
-  showDivider = false,
-  replies?: ReviewReplies,
-): number {
+export function feedbackSectionRowOffset(file: HunkReviewFile, layout: "split" | "stack", feedbackId: string, state: ReviewState, expandedSourceByGap?: ReadonlyMap<string, readonly string[]>, showDivider = false, replies?: ReviewReplies): number {
   const rows = rowsFor(file, state, layout, 120, true, false, undefined, expandedSourceByGap, replies)
   const index = rows.findIndex((row) => row.type === "feedback" && row.feedbackId === feedbackId)
   if (index < 0) return -1
-  const hasExplanation = file.metadata.hunks.length === 0
-    || file.kind === "binary"
-    || file.reviewFile.source === "binary"
-    || file.reviewFile.source === "too-large"
+  const hasExplanation = file.metadata.hunks.length === 0 || file.kind === "binary" || file.reviewFile.source === "binary" || file.reviewFile.source === "too-large"
   return (showDivider ? 1 : 0) + (hasExplanation ? 2 : 1) + index
 }
 
-export function ReviewDiffSection({
-  file,
-  state,
-  layout,
-  width,
-  selectedHunkIndex,
-  showLineNumbers,
-  wrapLines,
-  highlight,
-  expandedSourceByGap,
-  rowStart = 0,
-  rowEnd,
-  onSelect,
-  onSelectFeedback,
-  onSelectDiffAddress,
-  onToggleGap,
-  selectedFeedbackId,
-  showDivider,
-  replies,
-}: ReviewDiffSectionProps) {
-  const rows = useMemo(
-    () => rowsFor(file, state, layout, width, showLineNumbers, wrapLines, highlight, expandedSourceByGap, replies),
-    [expandedSourceByGap, file, layout, highlight, replies, showLineNumbers, state.expandedGaps, state.feedback, width, wrapLines],
-  )
+export function ReviewDiffSection({ file, state, layout, width, selectedHunkIndex, showLineNumbers, wrapLines, highlight, expandedSourceByGap, rowStart = 0, rowEnd, onSelect, onSelectFeedback, onSelectDiffAddress, onToggleGap, selectedFeedbackId, showDivider, replies }: ReviewDiffSectionProps) {
+  const rows = useMemo(() => rowsFor(file, state, layout, width, showLineNumbers, wrapLines, highlight, expandedSourceByGap, replies), [expandedSourceByGap, file, layout, highlight, replies, showLineNumbers, state.expandedGaps, state.feedback, width, wrapLines])
   const digits = lineDigits(file)
   const selectProps = onSelect ? { onMouseUp: () => onSelect() } : {}
   const totalRows = hunkSectionRowCount(file, layout, state, expandedSourceByGap, showDivider, replies)
   const visibleStart = Math.max(0, Math.min(totalRows, Math.floor(rowStart)))
   const visibleEnd = Math.max(visibleStart, Math.min(totalRows, Math.ceil(rowEnd ?? totalRows)))
-  const hasDiffRows = rows.some((row) =>
-    row.type === "hunk-header" || row.type === "collapsed" || row.type === "split-line" || row.type === "stack-line")
+  const hasDiffRows = rows.some((row) => row.type === "hunk-header" || row.type === "collapsed" || row.type === "split-line" || row.type === "stack-line")
   const sectionChromeRows = showDivider ? 1 : 0
   const contentRows = rows
   const visibleContentRows = contentRows.filter((_, index) => {
@@ -236,44 +155,29 @@ export function ReviewDiffSection({
   const showHeader = visibleStart <= sectionChromeRows && visibleEnd > sectionChromeRows
   const showExplanation = !hasDiffRows && visibleStart <= sectionChromeRows + 1 && visibleEnd > sectionChromeRows + 1
   const renderRow = (row: HunkDiffRow) => {
-    const rowClick = row.type === "collapsed" && onToggleGap
-      ? () => onToggleGap(row.gapId)
-      : row.type === "feedback" && onSelectFeedback
-        ? () => onSelectFeedback(row.feedbackId)
-        : (row.type === "split-line" || row.type === "stack-line") && onSelectDiffAddress
-          ? (side?: "old" | "new") => {
-              const addresses = hunkDiffAddresses(row)
-              const address = row.type === "split-line"
-                ? addresses.find((candidate) => candidate.side === side)
-                : addresses.find((candidate) => candidate.side === "new") ?? addresses[0]
-              if (address) onSelectDiffAddress(address)
-            }
-          : row.type === "hunk-header" && row.hunkIndex === selectedHunkIndex
-            ? onSelect
-            : undefined
-    const selected = row.type === "feedback"
-      ? row.feedbackId === selectedFeedbackId
-      : row.type === "hunk-header"
-        ? row.hunkIndex === selectedHunkIndex
-        : (row.type === "split-line" || row.type === "stack-line") && state.lineSelection !== null
-          ? hunkDiffAddresses(row).some((address) =>
-              address.fileKey === state.lineSelection?.fileKey
-              && address.hunkIndex === state.lineSelection?.hunkIndex
-              && address.side === state.lineSelection?.side
-              && address.line === state.lineSelection?.line,
-            )
-          : false
-    return (
-      <ReviewDiffRow
-        key={row.key}
-        row={row}
-        width={width}
-        digits={digits}
-        showLineNumbers={showLineNumbers}
-        selected={selected}
-        {...(rowClick ? { onClick: rowClick } : {})}
-      />
-    )
+    const rowClick =
+      row.type === "collapsed" && onToggleGap
+        ? () => onToggleGap(row.gapId)
+        : row.type === "feedback" && onSelectFeedback
+          ? () => onSelectFeedback(row.feedbackId)
+          : (row.type === "split-line" || row.type === "stack-line") && onSelectDiffAddress
+            ? (side?: "old" | "new") => {
+                const addresses = hunkDiffAddresses(row)
+                const address = row.type === "split-line" ? addresses.find((candidate) => candidate.side === side) : (addresses.find((candidate) => candidate.side === "new") ?? addresses[0])
+                if (address) onSelectDiffAddress(address)
+              }
+            : row.type === "hunk-header" && row.hunkIndex === selectedHunkIndex
+              ? onSelect
+              : undefined
+    const selected =
+      row.type === "feedback"
+        ? row.feedbackId === selectedFeedbackId
+        : row.type === "hunk-header"
+          ? row.hunkIndex === selectedHunkIndex
+          : (row.type === "split-line" || row.type === "stack-line") && state.lineSelection !== null
+            ? hunkDiffAddresses(row).some((address) => address.fileKey === state.lineSelection?.fileKey && address.hunkIndex === state.lineSelection?.hunkIndex && address.side === state.lineSelection?.side && address.line === state.lineSelection?.line)
+            : false
+    return <ReviewDiffRow key={row.key} row={row} width={width} digits={digits} showLineNumbers={showLineNumbers} selected={selected} {...(rowClick ? { onClick: rowClick } : {})} />
   }
 
   return (
@@ -290,7 +194,17 @@ export function ReviewDiffSection({
         </box>
       ) : null}
       {showExplanation ? (
-        <text content={file.kind === "binary" || file.reviewFile.source === "binary" ? "Binary file — line rendering unavailable; file-level review remains available." : file.reviewFile.source === "too-large" ? "File too large — line rendering unavailable; file-level review remains available." : "No hunks — file mode change or empty diff."} wrapMode="none" truncate={true} />
+        <text
+          content={
+            file.kind === "binary" || file.reviewFile.source === "binary"
+              ? "Binary file — line rendering unavailable; file-level review remains available."
+              : file.reviewFile.source === "too-large"
+                ? "File too large — line rendering unavailable; file-level review remains available."
+                : "No hunks — file mode change or empty diff."
+          }
+          wrapMode="none"
+          truncate={true}
+        />
       ) : null}
       {visibleContentRows.map(renderRow)}
       {totalRows > visibleEnd ? <box key="review-section-trailing-spacer" style={{ width: "100%", height: totalRows - visibleEnd }} /> : null}

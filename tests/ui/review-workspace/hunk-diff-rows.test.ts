@@ -27,16 +27,10 @@ function makeFile(): ReviewFile {
         oldCount: 4,
         newStart: 10,
         newCount: 3,
-        lines: [
-          " context before",
-          "-const oldA = 1",
-          "-const oldB = 2",
-          "+const next = 3",
-          " context after",
-        ],
-      }),
+        lines: [" context before", "-const oldA = 1", "-const oldB = 2", "+const next = 3", " context after"]
+      })
     ],
-    source: "available",
+    source: "available"
   }
 }
 
@@ -56,11 +50,11 @@ describe("Hunk-derived diff rows", () => {
     expect(splitRows).toHaveLength(4)
     expect(splitRows[1]).toMatchObject({
       left: { kind: "deletion", lineNumber: 11 },
-      right: { kind: "addition", lineNumber: 11 },
+      right: { kind: "addition", lineNumber: 11 }
     })
     expect(splitRows[2]).toMatchObject({
       left: { kind: "deletion", lineNumber: 12 },
-      right: { kind: "empty" },
+      right: { kind: "empty" }
     })
   })
 
@@ -70,13 +64,7 @@ describe("Hunk-derived diff rows", () => {
     const rows = buildHunkStackRows(adapted, makeState(file), undefined, { width: 120, showLineNumbers: true, wrapLines: false })
     const codeRows = rows.filter((row) => row.type === "stack-line")
 
-    expect(codeRows.map((row) => row.type === "stack-line" ? row.cell.kind : "other")).toEqual([
-      "context",
-      "deletion",
-      "deletion",
-      "addition",
-      "context",
-    ])
+    expect(codeRows.map((row) => (row.type === "stack-line" ? row.cell.kind : "other"))).toEqual(["context", "deletion", "deletion", "addition", "context"])
     expect(codeRows[1]?.cell.oldLineNumber).toBe(11)
     expect(codeRows[1]?.cell.newLineNumber).toBeUndefined()
     expect(codeRows[3]?.cell.oldLineNumber).toBeUndefined()
@@ -86,10 +74,7 @@ describe("Hunk-derived diff rows", () => {
     const file: ReviewFile = {
       ...makeFile(),
       contentId: "content-two-hunks",
-      hunks: [
-        createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+new"] }),
-        createReviewHunk({ index: 1, oldStart: 5, oldCount: 1, newStart: 5, newCount: 1, lines: ["-old2", "+new2"] }),
-      ],
+      hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+new"] }), createReviewHunk({ index: 1, oldStart: 5, oldCount: 1, newStart: 5, newCount: 1, lines: ["-old2", "+new2"] })]
     }
     const rows = buildHunkStackRows(toHunkReviewFile(file), makeState(file), undefined, { width: 120, showLineNumbers: true, wrapLines: false })
     const gap = rows.find((row) => row.type === "collapsed")
@@ -100,10 +85,7 @@ describe("Hunk-derived diff rows", () => {
     const file: ReviewFile = {
       ...makeFile(),
       contentId: "content-expanded-gap",
-      hunks: [
-        createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+new"] }),
-        createReviewHunk({ index: 1, oldStart: 5, oldCount: 1, newStart: 5, newCount: 1, lines: ["-old2", "+new2"] }),
-      ],
+      hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+new"] }), createReviewHunk({ index: 1, oldStart: 5, oldCount: 1, newStart: 5, newCount: 1, lines: ["-old2", "+new2"] })]
     }
     const state = makeState(file)
     const expandedState = { ...state, expandedGaps: [{ fileKey: file.key, gapId: "before:1", expanded: true }] }
@@ -111,7 +93,7 @@ describe("Hunk-derived diff rows", () => {
       width: 120,
       showLineNumbers: true,
       wrapLines: false,
-      expandedSourceByGap: new Map([[`${file.key}:before:1`, ["line2", "line3", "line4"]]]),
+      expandedSourceByGap: new Map([[`${file.key}:before:1`, ["line2", "line3", "line4"]]])
     })
     const expansion = rows.filter((row) => row.type === "split-line" && row.isExpansionRow)
 
@@ -124,16 +106,18 @@ describe("Hunk-derived diff rows", () => {
     const state = makeState(file)
     const feedbackState = {
       ...state,
-      feedback: [{
-        id: "feedback-1",
-        kind: "note" as const,
-        severity: "blocking" as const,
-        body: "address the edge case",
-        anchor: createFileAnchor(file),
-        resolution: "active" as const,
-        createdAt: "2026-08-28T00:00:00.000Z",
-        updatedAt: "2026-08-28T00:00:00.000Z",
-      }],
+      feedback: [
+        {
+          id: "feedback-1",
+          kind: "note" as const,
+          severity: "blocking" as const,
+          body: "address the edge case",
+          anchor: createFileAnchor(file),
+          resolution: "active" as const,
+          createdAt: "2026-08-28T00:00:00.000Z",
+          updatedAt: "2026-08-28T00:00:00.000Z"
+        }
+      ]
     }
     const rows = buildHunkStackRows(toHunkReviewFile(file), feedbackState, undefined, { width: 120, showLineNumbers: true, wrapLines: false })
     const feedback = rows.find((row) => row.type === "feedback")
@@ -154,28 +138,23 @@ describe("Hunk-derived diff rows", () => {
         anchor,
         resolution: "active" as const,
         createdAt: "2026-09-01T00:00:00.000Z",
-        updatedAt: "2026-09-01T00:00:00.000Z",
-      })),
+        updatedAt: "2026-09-01T00:00:00.000Z"
+      }))
     }
     const replies: ReviewReplies = new Map([
       ["feedback-1", { id: "feedback-1", body: "reply one", at: "2026-09-01T01:00:00.000Z" }],
-      ["feedback-2", { id: "feedback-2", body: "reply two", at: "2026-09-01T02:00:00.000Z" }],
+      ["feedback-2", { id: "feedback-2", body: "reply two", at: "2026-09-01T02:00:00.000Z" }]
     ])
 
     const rows = buildHunkStackRows(toHunkReviewFile(file), state, undefined, {
       width: 120,
       showLineNumbers: true,
       wrapLines: false,
-      replies,
+      replies
     })
     const feedbackRows = rows.filter((row) => row.type === "feedback" || row.type === "feedback-reply")
 
-    expect(feedbackRows.map((row) => `${row.type}:${row.feedbackId}`)).toEqual([
-      "feedback:feedback-1",
-      "feedback-reply:feedback-1",
-      "feedback:feedback-2",
-      "feedback-reply:feedback-2",
-    ])
+    expect(feedbackRows.map((row) => `${row.type}:${row.feedbackId}`)).toEqual(["feedback:feedback-1", "feedback-reply:feedback-1", "feedback:feedback-2", "feedback-reply:feedback-2"])
   })
   test("does not label a new handoff disputed by an earlier reply", () => {
     const file = makeFile()
@@ -183,28 +162,28 @@ describe("Hunk-derived diff rows", () => {
     const base = makeState(file)
     const state = {
       ...base,
-      feedback: [{
-        id: "feedback-1",
-        kind: "note" as const,
-        severity: "comment" as const,
-        body: "new round",
-        anchor,
-        resolution: "active" as const,
-        status: "handed-off" as const,
-        handoff: { at: "2026-09-01T03:00:00.000Z", headOid: "b".repeat(40) },
-        createdAt: "2026-09-01T00:00:00.000Z",
-        updatedAt: "2026-09-01T03:00:00.000Z",
-      }],
+      feedback: [
+        {
+          id: "feedback-1",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "new round",
+          anchor,
+          resolution: "active" as const,
+          status: "handed-off" as const,
+          handoff: { at: "2026-09-01T03:00:00.000Z", headOid: "b".repeat(40) },
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T03:00:00.000Z"
+        }
+      ]
     }
-    const replies: ReviewReplies = new Map([
-      ["feedback-1", { id: "feedback-1", body: "old reply", at: "2026-09-01T02:00:00.000Z" }],
-    ])
+    const replies: ReviewReplies = new Map([["feedback-1", { id: "feedback-1", body: "old reply", at: "2026-09-01T02:00:00.000Z" }]])
 
     const row = buildHunkStackRows(toHunkReviewFile(file), state, undefined, {
       width: 120,
       showLineNumbers: true,
       wrapLines: false,
-      replies,
+      replies
     }).find((entry) => entry.type === "feedback")
     expect(row?.text).toContain("UNTOUCHED")
     expect(row?.text).not.toContain("DISPUTED")

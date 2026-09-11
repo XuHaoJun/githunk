@@ -27,7 +27,7 @@ function makeDocForFixture(fixture: (typeof REVIEW_CONFORMANCE_FIXTURES)[number]
       patchDigest,
       stats: ef.stats,
       hunks,
-      source: ef.source,
+      source: ef.source
     }
     return file
   })
@@ -35,7 +35,7 @@ function makeDocForFixture(fixture: (typeof REVIEW_CONFORMANCE_FIXTURES)[number]
     identity,
     generation,
     commits: [{ oid: "c".repeat(40), parents: [], author: "A", timestamp: 0, subject: "s", body: "" }],
-    files,
+    files
   })
   return doc
 }
@@ -97,7 +97,7 @@ describe("conformance: core document and anchors", () => {
         if (file.hunks.length > 0) {
           const h = file.hunks[0]!
           const useNew = h.newCount > 0
-          const side = useNew ? "new" as const : "old" as const
+          const side = useNew ? ("new" as const) : ("old" as const)
           const line = useNew ? h.newStart : h.oldStart
           if (line < 1) continue
           const anchor = createRangeAnchor(file, { side, startLine: line, endLine: line })

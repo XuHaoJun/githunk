@@ -21,10 +21,7 @@ type CommandRunner = Pick<GitRunner, "run">
  * here happens once every couple of seconds; the git command is backend-agnostic for free.
  */
 export async function loadRefsSnapshot(runner: CommandRunner): Promise<string> {
-  const [refs, head] = await Promise.all([
-    runner.run(["for-each-ref", "--format=%(objectname) %(refname)", "refs/heads"], { readOnly: true }),
-    runner.run(["rev-parse", "HEAD", "--symbolic-full-name", "HEAD"], { readOnly: true, acceptedExitCodes: [0, 128] }),
-  ])
+  const [refs, head] = await Promise.all([runner.run(["for-each-ref", "--format=%(objectname) %(refname)", "refs/heads"], { readOnly: true }), runner.run(["rev-parse", "HEAD", "--symbolic-full-name", "HEAD"], { readOnly: true, acceptedExitCodes: [0, 128] })])
   // A repo with no commits fails `rev-parse HEAD`; its stderr is stable for the same state, but
   // only the refs half is meaningful there, so the head half contributes nothing rather than noise.
   return `${refs.stdout}${head.exitCode === 0 ? head.stdout : ""}`

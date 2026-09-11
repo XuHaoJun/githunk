@@ -15,23 +15,14 @@ export function normalizeSearchText(value: string): string {
  * returns the original readonly collection, which keeps empty/zero-result
  * views deterministic and avoids an allocation on the common path.
  */
-export function filterItems<T>(
-  query: string,
-  items: readonly T[],
-  searchableText: SearchableText<T>,
-): readonly T[] {
+export function filterItems<T>(query: string, items: readonly T[], searchableText: SearchableText<T>): readonly T[] {
   const normalizedQuery = normalizeSearchText(query.trim())
   if (normalizedQuery.length === 0) return items
   return items.filter((item) => normalizeSearchText(searchableText(item)).includes(normalizedQuery))
 }
 
 /** Find the selected item by its stable identifier after a filter changes. */
-export function indexForStableId<T>(
-  items: readonly T[],
-  stableId: string | undefined,
-  getStableId: (item: T) => string,
-  fallback = 0,
-): number {
+export function indexForStableId<T>(items: readonly T[], stableId: string | undefined, getStableId: (item: T) => string, fallback = 0): number {
   if (items.length === 0) return 0
   if (stableId !== undefined) {
     const match = items.findIndex((item) => getStableId(item) === stableId)

@@ -36,12 +36,15 @@ function parseSummary(record: string): CommitSummary | undefined {
     authorName,
     authoredAt,
     subject,
-    body: fields.slice(6).join("\n"),
+    body: fields.slice(6).join("\n")
   }
 }
 
 export function parseCommitLog(raw: string): readonly CommitSummary[] {
-  return raw.split("\0").map(parseSummary).filter((summary): summary is CommitSummary => summary !== undefined)
+  return raw
+    .split("\0")
+    .map(parseSummary)
+    .filter((summary): summary is CommitSummary => summary !== undefined)
 }
 
 export async function listCommits(runner: CommandRunner, range: string, filter?: string, options?: CommitListOptions): Promise<readonly CommitSummary[]> {
@@ -54,10 +57,7 @@ export async function listCommits(runner: CommandRunner, range: string, filter?:
   // The log and the pushed/merged reachability queries run concurrently, as they do in lazygit's
   // `GetCommits` (pkg/commands/git_commands/commit_loader.go:85-124); the statuses are what colour
   // each hash, so a sequential second round trip would delay the whole panel.
-  const [result, statusSets] = await Promise.all([
-    runner.run(args, { readOnly: true }),
-    loadCommitStatusSets(runner),
-  ])
+  const [result, statusSets] = await Promise.all([runner.run(args, { readOnly: true }), loadCommitStatusSets(runner)])
   return withCommitStatuses(parseCommitLog(result.stdout), statusSets)
 }
 
@@ -79,7 +79,7 @@ function detailsFromShow(raw: string, oid: string, parentOids: readonly string[]
   const preambleEnd = patchOffset < 0 ? raw.length : patchOffset
   const preamble = raw.slice(0, preambleEnd)
   const messageLines = raw.slice(messageStart, preambleEnd).replace(/\n+$/, "").split(/\r?\n/)
-  const lines = messageLines.map((line) => line.startsWith("    ") ? line.slice(4) : line)
+  const lines = messageLines.map((line) => (line.startsWith("    ") ? line.slice(4) : line))
   const subject = lines.shift() ?? ""
   const body = lines.join("\n").replace(/^\n+/, "").replace(/\n+$/, "")
   const authorName = (metadataValue(raw, "Author") ?? "").trim()
@@ -97,7 +97,7 @@ function detailsFromShow(raw: string, oid: string, parentOids: readonly string[]
     document,
     patch: document,
     raw,
-    preamble,
+    preamble
   }
 }
 

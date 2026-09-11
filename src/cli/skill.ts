@@ -36,10 +36,7 @@ function findRelativePathFromAncestors(startPath: string, relativePath: string):
 }
 
 /** Resolve the bundled handoff skill from source, npm, or standalone package layouts. */
-export function defaultSkillSearchRoots(
-  executablePath: string = process.execPath,
-  moduleUrl: string = import.meta.url,
-): readonly string[] {
+export function defaultSkillSearchRoots(executablePath: string = process.execPath, moduleUrl: string = import.meta.url): readonly string[] {
   return [dirname(fileURLToPath(moduleUrl)), executablePath]
 }
 
@@ -53,10 +50,7 @@ export function resolveBundledSkillPath(searchRoots: readonly string[] = default
   throw new Error("Could not locate the bundled githunk-handoff skill.")
 }
 
-export async function runSkillCommand(input: {
-  readonly operation: SkillOperation
-  readonly searchRoots?: readonly string[]
-}): Promise<SkillOutcome> {
+export async function runSkillCommand(input: { readonly operation: SkillOperation; readonly searchRoots?: readonly string[] }): Promise<SkillOutcome> {
   try {
     const skillPath = resolveBundledSkillPath(input.searchRoots)
     if (input.operation === "path") return { text: `${skillPath}\n`, exitCode: 0 }

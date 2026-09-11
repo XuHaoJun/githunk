@@ -6,13 +6,7 @@
  * `ItemOperationToString` maps them to (pkg/gui/presentation/item_operations.go:8-27, strings from
  * pkg/i18n/english.go).
  */
-export type ItemOperation =
-  | "pushing"
-  | "pulling"
-  | "fast-forwarding"
-  | "deleting"
-  | "fetching"
-  | "checking-out"
+export type ItemOperation = "pushing" | "pulling" | "fast-forwarding" | "deleting" | "fetching" | "checking-out"
 
 const LABELS: Readonly<Record<ItemOperation, string>> = {
   pushing: "Pushing",
@@ -20,7 +14,7 @@ const LABELS: Readonly<Record<ItemOperation, string>> = {
   "fast-forwarding": "Fast-forwarding",
   deleting: "Deleting",
   fetching: "Fetching",
-  "checking-out": "Checking out",
+  "checking-out": "Checking out"
 }
 
 export function itemOperationLabel(operation: ItemOperation): string {

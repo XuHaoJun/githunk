@@ -26,7 +26,7 @@ export class ReviewArtifactStore {
     return new LocalStateFile({
       runner: this.runner,
       relativePath: artifactRelativePath(reviewId, artifactId),
-      pathKind: "review-artifact",
+      pathKind: "review-artifact"
     })
   }
 
@@ -68,13 +68,7 @@ export class ReviewArtifactStore {
     return actual === expectedDigest
   }
 }
-export async function finishReviewTransaction(input: {
-  stateStore: ReviewStateStore
-  artifactStore: ReviewArtifactStore
-  reviewState: ReviewState
-  artifact: ReviewArtifactV1
-  readonly isCurrent?: () => boolean
-}): Promise<ReviewState> {
+export async function finishReviewTransaction(input: { stateStore: ReviewStateStore; artifactStore: ReviewArtifactStore; reviewState: ReviewState; artifact: ReviewArtifactV1; readonly isCurrent?: () => boolean }): Promise<ReviewState> {
   const { stateStore, artifactStore, reviewState, artifact, isCurrent } = input
   const reviewId = reviewState.document.identity.id
   if (reviewId !== artifact.review.id) {
@@ -86,7 +80,7 @@ export async function finishReviewTransaction(input: {
   // never write a marker for an invalid submission when called directly.
   const validation = validateFinishReview(reviewState, {
     decision: artifact.decision,
-    summary: artifact.summary,
+    summary: artifact.summary
   })
   if (!validation.ok) throw new Error(`cannot finish review: ${validation.reason}`)
 
@@ -119,7 +113,7 @@ export async function finishReviewTransaction(input: {
       const pending: PersistedReviewState = {
         ...(existing ?? persisted),
         ...persisted,
-        submissionInProgress: { artifactId: artifact.id, digest },
+        submissionInProgress: { artifactId: artifact.id, digest }
       }
       return { ...db, reviews: { ...db.reviews, [reviewId]: pending } }
     })
@@ -151,11 +145,11 @@ export async function finishReviewTransaction(input: {
           artifactId: artifact.id,
           generationId: artifact.generation.id,
           headOid: artifact.generation.headOid,
-          submittedAt: artifact.submittedAt,
+          submittedAt: artifact.submittedAt
         },
         submissionInProgress: null,
         feedback: [],
-        draft: null,
+        draft: null
       }
       return { ...db, reviews: { ...db.reviews, [reviewId]: finalized } }
     })
@@ -172,16 +166,13 @@ export async function finishReviewTransaction(input: {
       artifactId: artifact.id,
       generationId: artifact.generation.id,
       headOid: artifact.generation.headOid,
-      submittedAt: artifact.submittedAt,
+      submittedAt: artifact.submittedAt
     },
-    revision: reviewState.revision + 1,
+    revision: reviewState.revision + 1
   }
 }
 
-export async function recoverSubmission(input: {
-  stateStore: ReviewStateStore
-  artifactStore: ReviewArtifactStore
-}): Promise<void> {
+export async function recoverSubmission(input: { stateStore: ReviewStateStore; artifactStore: ReviewArtifactStore }): Promise<void> {
   const { stateStore, artifactStore } = input
   const db = await stateStore.load()
   const pendingReviews = Object.entries(db.reviews).filter(([, r]) => r.submissionInProgress !== null && r.submissionInProgress !== undefined)
@@ -216,15 +207,15 @@ export async function recoverSubmission(input: {
           artifactId: artifact.id,
           generationId: artifact.generation.id,
           headOid: artifact.generation.headOid,
-          submittedAt: artifact.submittedAt,
+          submittedAt: artifact.submittedAt
         },
         submissionInProgress: null,
         feedback: [],
-        draft: null,
+        draft: null
       }
       return {
         ...current,
-        reviews: { ...current.reviews, [reviewId]: finalized },
+        reviews: { ...current.reviews, [reviewId]: finalized }
       }
     })
   }

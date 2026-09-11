@@ -1,11 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  emptyReviewDatabaseV2,
-  parseReviewArtifactV1,
-  parseReviewDatabaseV2,
-  serializeReviewArtifactV1,
-  serializeReviewDatabaseV2,
-} from "../../../src/review/storage/schemas"
+import { emptyReviewDatabaseV2, parseReviewArtifactV1, parseReviewDatabaseV2, serializeReviewArtifactV1, serializeReviewDatabaseV2 } from "../../../src/review/storage/schemas"
 import type { ReviewArtifactV1 } from "../../../src/review/core/artifact"
 
 function makeValidDatabase(): ReturnType<typeof emptyReviewDatabaseV2> & { baseByHead: Record<string, { baseRef: string }>; reviews: Record<string, any> } {
@@ -14,7 +8,7 @@ function makeValidDatabase(): ReturnType<typeof emptyReviewDatabaseV2> & { baseB
     version: 2,
     baseByHead: {
       "refs/heads/feature": { baseRef: "refs/heads/main" },
-      "detached:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": { baseRef: "refs/heads/main" },
+      "detached:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": { baseRef: "refs/heads/main" }
     },
     reviews: {
       [reviewId]: {
@@ -23,7 +17,7 @@ function makeValidDatabase(): ReturnType<typeof emptyReviewDatabaseV2> & { baseB
         filter: { query: "", scope: "all" },
         projection: { kind: "aggregate" },
         viewed: {
-          "file-a": { fileKey: "file-a", path: "src/a.ts", contentId: "cid1", generationId: "gen1", viewedAt: new Date().toISOString() },
+          "file-a": { fileKey: "file-a", path: "src/a.ts", contentId: "cid1", generationId: "gen1", viewedAt: new Date().toISOString() }
         },
         feedback: [
           {
@@ -34,15 +28,15 @@ function makeValidDatabase(): ReturnType<typeof emptyReviewDatabaseV2> & { baseB
             anchor: { kind: "file", fileKey: "file-a", contentId: "cid1" },
             resolution: "active",
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
+            updatedAt: new Date().toISOString()
+          }
         ],
         draft: null,
         expandedGaps: [{ fileKey: "file-a", gapId: "gap1", expanded: true }],
         lastSubmission: null,
-        submissionInProgress: null,
-      },
-    },
+        submissionInProgress: null
+      }
+    }
   }
 }
 
@@ -59,7 +53,7 @@ function makeValidArtifact(): ReviewArtifactV1 {
     projection: { kind: "aggregate" },
     coverage: {
       viewed: [{ fileKey: "k1", path: "a.ts", contentId: "cid1" }],
-      notViewed: [{ fileKey: "k2", path: "b.ts" }],
+      notViewed: [{ fileKey: "k2", path: "b.ts" }]
     },
     feedback: [
       {
@@ -69,9 +63,9 @@ function makeValidArtifact(): ReviewArtifactV1 {
         body: "nice",
         anchor: { kind: "file", fileKey: "k1", contentId: "cid1" },
         createdAt: now,
-        updatedAt: now,
-      },
-    ],
+        updatedAt: now
+      }
+    ]
   }
 }
 
@@ -94,13 +88,13 @@ describe("schemas – round trips", () => {
     expect(parsed.ok).toBe(true)
   })
 })
-  test("retains deferred projection metadata for the active boundary to normalize", () => {
-    const db = makeValidDatabase()
-    db.reviews["abc123"].projection = { kind: "commit", oid: "c".repeat(40) }
-    const parsed = parseReviewDatabaseV2(db)
-    expect(parsed.ok).toBe(true)
-    if (parsed.ok) expect(parsed.value.reviews["abc123"]?.projection).toEqual({ kind: "commit", oid: "c".repeat(40) })
-  })
+test("retains deferred projection metadata for the active boundary to normalize", () => {
+  const db = makeValidDatabase()
+  db.reviews["abc123"].projection = { kind: "commit", oid: "c".repeat(40) }
+  const parsed = parseReviewDatabaseV2(db)
+  expect(parsed.ok).toBe(true)
+  if (parsed.ok) expect(parsed.value.reviews["abc123"]?.projection).toEqual({ kind: "commit", oid: "c".repeat(40) })
+})
 
 describe("schemas – rejected unknown versions", () => {
   test("rejects version 3 database", () => {
@@ -137,8 +131,8 @@ describe("schemas – rejected invalid ranges/decisions/timestamps", () => {
         anchor: { kind: "range", fileKey: "file-a", contentId: "cid1", side: "new", startLine: 10, endLine: 5, ownerHunkIndex: 0, contextDigest: "d" },
         resolution: "active",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
+        updatedAt: new Date().toISOString()
+      }
     ]
     expect(parseReviewDatabaseV2(db).ok).toBe(false)
   })
@@ -172,8 +166,8 @@ describe("schemas – rejected invalid ranges/decisions/timestamps", () => {
         anchor: { kind: "range", fileKey: "file-a", contentId: "cid1", side: "new", startLine: 1, endLine: 2, ownerHunkIndex: 0, contextDigest: "d" },
         resolution: "active",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
+        updatedAt: new Date().toISOString()
+      }
     ]
     expect(parseReviewDatabaseV2(db).ok).toBe(false)
   })
@@ -190,8 +184,8 @@ describe("schemas – rejected invalid ranges/decisions/timestamps", () => {
         anchor: { kind: "range", fileKey: "file-a", contentId: "cid1", side: "old", startLine: 1, endLine: 1, ownerHunkIndex: 0, contextDigest: "d" },
         resolution: "active",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
+        updatedAt: new Date().toISOString()
+      }
     ]
     expect(parseReviewDatabaseV2(db).ok).toBe(false)
   })
@@ -211,8 +205,8 @@ describe("schemas – status and handoff consistency", () => {
       status: "open" as const,
       handoff: {
         at: new Date().toISOString(),
-        headOid: "a".repeat(40),
-      },
+        headOid: "a".repeat(40)
+      }
     }
     const invalidArtifact: ReviewArtifactV1 = { ...artifact, feedback: [invalidFeedback] }
     expect(parseReviewArtifactV1(invalidArtifact).ok).toBe(false)

@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  BackgroundRefresher,
-  DEFAULT_FETCH_INTERVAL_MS,
-  DEFAULT_REFRESH_INTERVAL_MS,
-  type Timers,
-} from "../../src/app/background"
+import { BackgroundRefresher, DEFAULT_FETCH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS, type Timers } from "../../src/app/background"
 
 /** A hand-cranked clock, so the intervals under test are asserted rather than waited out. */
 function fakeTimers(): Timers & { advance(ms: number): void; pending(): number } {
@@ -34,7 +29,7 @@ function fakeTimers(): Timers & { advance(ms: number): void; pending(): number }
     },
     pending(): number {
       return entries.filter((entry) => !entry.cancelled).length
-    },
+    }
   }
 }
 
@@ -48,11 +43,13 @@ describe("BackgroundRefresher", () => {
     const timers = fakeTimers()
     let fetches = 0
     const refresher = new BackgroundRefresher({
-      fetch: async () => { fetches++ },
+      fetch: async () => {
+        fetches++
+      },
       refresh: async () => undefined,
       autoRefresh: false,
       fetchIntervalMs: 60_000,
-      timers,
+      timers
     })
     refresher.start()
     await Promise.resolve()
@@ -65,12 +62,14 @@ describe("BackgroundRefresher", () => {
     let now = 0
     let fetches = 0
     const refresher = new BackgroundRefresher({
-      fetch: async () => { fetches++ },
+      fetch: async () => {
+        fetches++
+      },
       refresh: async () => undefined,
       autoRefresh: false,
       fetchIntervalMs: 60_000,
       now: () => now,
-      timers,
+      timers
     })
     refresher.start()
     await Promise.resolve()
@@ -93,11 +92,15 @@ describe("BackgroundRefresher", () => {
     let fetches = 0
     let refreshes = 0
     const refresher = new BackgroundRefresher({
-      fetch: async () => { fetches++ },
-      refresh: async () => { refreshes++ },
+      fetch: async () => {
+        fetches++
+      },
+      refresh: async () => {
+        refreshes++
+      },
       fetchIntervalMs: 60_000,
       refreshIntervalMs: 10_000,
-      timers,
+      timers
     })
     refresher.start()
 
@@ -124,9 +127,11 @@ describe("BackgroundRefresher", () => {
     let refreshes = 0
     const refresher = new BackgroundRefresher({
       fetch: async () => undefined,
-      refresh: async () => { refreshes++ },
+      refresh: async () => {
+        refreshes++
+      },
       refreshIntervalMs: 1_000,
-      timers,
+      timers
     })
     refresher.start()
     refresher.setPaused(true)
@@ -157,7 +162,11 @@ describe("BackgroundRefresher", () => {
 
   test("whilePaused releases the pause even when the operation throws", async () => {
     const refresher = new BackgroundRefresher({ fetch: async () => undefined, refresh: async () => undefined, timers: fakeTimers() })
-    await expect(refresher.whilePaused(async () => { throw new Error("boom") })).rejects.toThrow("boom")
+    await expect(
+      refresher.whilePaused(async () => {
+        throw new Error("boom")
+      })
+    ).rejects.toThrow("boom")
     expect(refresher.paused).toBe(false)
   })
 
@@ -169,10 +178,12 @@ describe("BackgroundRefresher", () => {
       fetch: async () => undefined,
       refresh: async () => {
         started++
-        await new Promise<void>((resolve) => { release = resolve })
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
       },
       refreshIntervalMs: 1_000,
-      timers,
+      timers
     })
     refresher.start()
     timers.advance(1_000)
@@ -199,11 +210,14 @@ describe("BackgroundRefresher", () => {
     const errors: Array<{ routine: string; message: string }> = []
     let attempts = 0
     const refresher = new BackgroundRefresher({
-      fetch: async () => { attempts++; throw new Error(`no network ${attempts}`) },
+      fetch: async () => {
+        attempts++
+        throw new Error(`no network ${attempts}`)
+      },
       refresh: async () => undefined,
       fetchIntervalMs: 1_000,
       timers,
-      onError: (error, routine) => errors.push({ routine, message: error instanceof Error ? error.message : String(error) }),
+      onError: (error, routine) => errors.push({ routine, message: error instanceof Error ? error.message : String(error) })
     })
     refresher.start()
     timers.advance(1_000)
@@ -222,12 +236,16 @@ describe("BackgroundRefresher", () => {
     let fetches = 0
     let refreshes = 0
     const refresher = new BackgroundRefresher({
-      fetch: async () => { fetches++ },
-      refresh: async () => { refreshes++ },
+      fetch: async () => {
+        fetches++
+      },
+      refresh: async () => {
+        refreshes++
+      },
       autoFetch: false,
       fetchIntervalMs: 1_000,
       refreshIntervalMs: 1_000,
-      timers,
+      timers
     })
     refresher.start()
     timers.advance(5_000)
@@ -258,10 +276,12 @@ describe("BackgroundRefresher isBusy", () => {
     let busy = true
     const refresher = new BackgroundRefresher({
       fetch: async () => undefined,
-      refresh: async () => { refreshes++ },
+      refresh: async () => {
+        refreshes++
+      },
       refreshIntervalMs: 1_000,
       isBusy: () => busy,
-      timers,
+      timers
     })
     refresher.start()
     timers.advance(3_000)

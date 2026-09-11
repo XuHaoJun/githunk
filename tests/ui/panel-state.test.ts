@@ -5,7 +5,7 @@ import { createListState, selectListRow } from "../../src/ui/list-view"
 
 const panelRows = [
   { id: "a", columns: [{ text: "alpha", priority: 0 }] },
-  { id: "b", columns: [{ text: "beta", priority: 0 }] },
+  { id: "b", columns: [{ text: "beta", priority: 0 }] }
 ] as const
 
 describe("panel state", () => {
@@ -21,11 +21,7 @@ describe("panel state", () => {
   })
 
   test("bracket navigation leaves a transient child before changing parent tab", () => {
-    let panel: PanelState<"branches" | "remotes" | "tags", { kind: string; remote: string }> = createPanelState(
-      ["branches", "remotes", "tags"] as const,
-      "remotes",
-      { branches: createListState([]), remotes: createListState([]), tags: createListState([]) },
-    )
+    let panel: PanelState<"branches" | "remotes" | "tags", { kind: string; remote: string }> = createPanelState(["branches", "remotes", "tags"] as const, "remotes", { branches: createListState([]), remotes: createListState([]), tags: createListState([]) })
     panel = enterPanelChild(panel, { kind: "remote-branches", remote: "origin" }, createListState([]))
     panel = cyclePanelTab(panel, "next")
     expect(panel.activeTab).toBe("tags")
@@ -33,11 +29,7 @@ describe("panel state", () => {
   })
 
   test("escape restores the parent tab without changing it", () => {
-    let panel: PanelState<"branches" | "remotes" | "tags", { kind: string; remote: string }> = createPanelState(
-      ["branches", "remotes", "tags"] as const,
-      "remotes",
-      { branches: createListState([]), remotes: createListState([]), tags: createListState([]) },
-    )
+    let panel: PanelState<"branches" | "remotes" | "tags", { kind: string; remote: string }> = createPanelState(["branches", "remotes", "tags"] as const, "remotes", { branches: createListState([]), remotes: createListState([]), tags: createListState([]) })
     panel = leavePanelChild(enterPanelChild(panel, { kind: "remote-branches", remote: "origin" }, createListState([])))
     expect(panel.activeTab).toBe("remotes")
   })

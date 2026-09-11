@@ -91,7 +91,7 @@ describe("commit status queries", () => {
       run: async (args: readonly string[]) => {
         calls.push([...args])
         return { exitCode: 0, stdout: "refs/remotes/origin/main\n", stderr: "", record: {} as never }
-      },
+      }
     }
     const first = await resolveMainBranches(runner as never)
     const second = await resolveMainBranches(runner as never)

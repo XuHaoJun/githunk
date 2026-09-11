@@ -120,7 +120,7 @@ export class GitRunner {
         cwd: this.cwd,
         env,
         ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.signal === undefined ? {} : { signal: options.signal })
       })
       stdout = processResult.stdout
       stderr = processResult.stderr
@@ -137,7 +137,7 @@ export class GitRunner {
       durationMs: Date.now() - startedAtMs,
       exitCode,
       stdout,
-      stderr,
+      stderr
     }
     const acceptedExitCodes = options.acceptedExitCodes ?? [0]
     const accepted = acceptedExitCodes.includes(exitCode)

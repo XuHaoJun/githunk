@@ -13,7 +13,7 @@ function fakeRunner(results: GitResult[], calls: Call[]) {
       const result = results.shift()
       if (result === undefined) throw new Error("unexpected git call")
       return result
-    },
+    }
   } as never
 }
 
@@ -30,8 +30,8 @@ function result(stdout: string): GitResult {
       durationMs: 1,
       exitCode: 0,
       stdout,
-      stderr: "",
-    },
+      stderr: ""
+    }
   }
 }
 
@@ -42,37 +42,20 @@ describe("working tree diff loading", () => {
       fakeRunner(
         // Call order: the five reads that need nothing from each other go out together — status,
         // both numstats, both patches — and only then the per-untracked-file numstat and patch.
-        [
-          result("# branch.head main\0? notes.txt\0"),
-          result(""),
-          result("1\t2\tnotes.txt\0"),
-          result("UNSTAGED RAW\n"),
-          result("STAGED RAW\n"),
-          result("1\t0\tnotes.txt\0"),
-          { ...result("UNTRACKED CONTENT\n"), exitCode: 1 },
-        ],
-        calls,
+        [result("# branch.head main\0? notes.txt\0"), result(""), result("1\t2\tnotes.txt\0"), result("UNSTAGED RAW\n"), result("STAGED RAW\n"), result("1\t0\tnotes.txt\0"), { ...result("UNTRACKED CONTENT\n"), exitCode: 1 }],
+        calls
       ),
-      "all",
+      "all"
     )
 
     expect(snapshot.patches).toEqual([
       { label: "STAGED", text: "STAGED RAW\n" },
-      { label: "UNSTAGED", text: "UNSTAGED RAW\nUNTRACKED CONTENT\n" },
+      { label: "UNSTAGED", text: "UNSTAGED RAW\nUNTRACKED CONTENT\n" }
     ])
     expect(snapshot.files[0]?.additions).toBe(2)
     expect(snapshot.files[0]?.deletions).toBe(2)
     expect(calls.at(-1)?.options?.acceptedExitCodes).toEqual([0, 1])
-    expect(calls.at(-1)?.args).toEqual([
-      "diff",
-      "--no-index",
-      "--no-ext-diff",
-      "--no-color",
-      "--binary",
-      "--",
-      "/dev/null",
-      "notes.txt",
-    ])
+    expect(calls.at(-1)?.args).toEqual(["diff", "--no-index", "--no-ext-diff", "--no-color", "--binary", "--", "/dev/null", "notes.txt"])
   })
   test("renders real untracked file content in the unstaged patch", async () => {
     const repository = await createTempRepository()
@@ -87,15 +70,12 @@ describe("working tree diff loading", () => {
       expect(snapshot.files[0]?.additions).toBe(1)
       expect(snapshot.files[0]?.deletions).toBe(0)
       expect(snapshot.files.map((file) => file.path)).toEqual(["notes/子 🧪.txt"])
-      expect(snapshot.patches).toEqual([
-        { label: "UNSTAGED", text: expect.stringContaining("+untracked content") },
-      ])
+      expect(snapshot.patches).toEqual([{ label: "UNSTAGED", text: expect.stringContaining("+untracked content") }])
     } finally {
       await repository.cleanup()
     }
   })
 
- 
   test("includes every file from an untracked directory", async () => {
     const repository = await createTempRepository()
     try {
@@ -128,15 +108,17 @@ describe("working tree diff loading", () => {
 
       const snapshot = await loadWorkingTree(new GitRunner(repository.path), "unstaged")
 
-      expect(snapshot.files).toEqual([{
-        path: "image.bin",
-        indexStatus: ".",
-        worktreeStatus: "M",
-        untracked: false,
-        conflicted: false,
-        additions: 0,
-        deletions: 0,
-      }])
+      expect(snapshot.files).toEqual([
+        {
+          path: "image.bin",
+          indexStatus: ".",
+          worktreeStatus: "M",
+          untracked: false,
+          conflicted: false,
+          additions: 0,
+          deletions: 0
+        }
+      ])
       expect(snapshot.patches[0]?.text).toContain("GIT binary patch")
     } finally {
       await repository.cleanup()
@@ -144,9 +126,7 @@ describe("working tree diff loading", () => {
   })
 
   test("parses NUL-separated rename numstat paths", () => {
-    expect(parseNumstat("1\t0\t\0old name.txt\0new name.txt\0")).toEqual([
-      { path: "new name.txt", previousPath: "old name.txt", additions: 1, deletions: 0 },
-    ])
+    expect(parseNumstat("1\t0\t\0old name.txt\0new name.txt\0")).toEqual([{ path: "new name.txt", previousPath: "old name.txt", additions: 1, deletions: 0 }])
   })
 })
 

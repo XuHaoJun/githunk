@@ -21,15 +21,14 @@ This is a deliberate breaking change. `CommandLog.records()` is removed, `AppMod
 
 lazygit's log is a different thing. `pkg/gui/command_log_panel.go:25-68` defines two write kinds — `LogAction`, a yellow un-indented label, and `LogCommand(cmdStr, commandLine)`, indented two spaces in the default text colour when the string is something you could paste into a shell and magenta when it is not. Command output only ever reaches the panel for streamed commands, behind a magenta `Git output:` prefix (`pkg/gui/extras_panel.go:96-119`). There is no timestamp, exit code or duration anywhere.
 
-The larger gap is *what* gets logged. lazygit calls `DontLog()` on 80 command objects — every loader and query (`pkg/commands/git_commands/status.go:98,135,140`; `commit_loader.go:294,571,605`; `branch.go:69,82,111,127,169,180,235,241,294,311,348`; `stash_loader.go:36,71`; `file_loader.go:133,213,228`; `commit_file_loader.go:38`; `config.go:83`; `blame.go:32`) plus the background fetch (`sync.go:81`). githunk uses `dontLog` exactly once (`src/git/commit-status.ts:27`), so its 10-second working-tree refresh buries the user's own commands under `status`, `log`, `for-each-ref`, `diff` and `stash list`. This, more than colour or format, is why the pane does not read like lazygit's.
+The larger gap is _what_ gets logged. lazygit calls `DontLog()` on 80 command objects — every loader and query (`pkg/commands/git_commands/status.go:98,135,140`; `commit_loader.go:294,571,605`; `branch.go:69,82,111,127,169,180,235,241,294,311,348`; `stash_loader.go:36,71`; `file_loader.go:133,213,228`; `commit_file_loader.go:38`; `config.go:83`; `blame.go:32`) plus the background fetch (`sync.go:81`). githunk uses `dontLog` exactly once (`src/git/commit-status.ts:27`), so its 10-second working-tree refresh buries the user's own commands under `status`, `log`, `for-each-ref`, `diff` and `stash list`. This, more than colour or format, is why the pane does not read like lazygit's.
 
 ## 3. Data Model
 
 `src/domain/command.ts` gains the display types:
 
 ```ts
-export type CommandLogStyle =
-  | "action" | "command" | "internal" | "output-heading" | "output" | "intro" | "tip-label" | "tip"
+export type CommandLogStyle = "action" | "command" | "internal" | "output-heading" | "output" | "intro" | "tip-label" | "tip"
 
 export type CommandLogSpan = { readonly style: CommandLogStyle; readonly text: string }
 
@@ -41,14 +40,14 @@ export type CommandLogLine = { readonly id: number; readonly spans: readonly Com
 
 `src/app/command-log.ts` becomes an append-only line list whose write API mirrors lazygit's:
 
-| githunk | lazygit |
-| --- | --- |
-| `logAction(action)` | `LogAction` (`command_log_panel.go:25-44`) |
-| `logCommand(cmdStr, commandLine)` | `LogCommand` (`command_log_panel.go:46-68`) |
-| `logOutput(text)` | `getCmdWriter` / `prefixWriter` (`extras_panel.go:96-119`) |
-| `logIntro(text)` / `logTip(label, tip)` | `printCommandLogHeader` (`command_log_panel.go:70-85`) |
-| `lines()` | the gocui view's line buffer |
-| `nextId()` | — (id counter, moved off `GitRunner`) |
+| githunk                                 | lazygit                                                    |
+| --------------------------------------- | ---------------------------------------------------------- |
+| `logAction(action)`                     | `LogAction` (`command_log_panel.go:25-44`)                 |
+| `logCommand(cmdStr, commandLine)`       | `LogCommand` (`command_log_panel.go:46-68`)                |
+| `logOutput(text)`                       | `getCmdWriter` / `prefixWriter` (`extras_panel.go:96-119`) |
+| `logIntro(text)` / `logTip(label, tip)` | `printCommandLogHeader` (`command_log_panel.go:70-85`)     |
+| `lines()`                               | the gocui view's line buffer                               |
+| `nextId()`                              | — (id counter, moved off `GitRunner`)                      |
 
 `records()` is removed. lazygit retains only strings (`gui.GuiLog = append(gui.GuiLog, cmdStr)`), and keeping whole `stdout` for every command was costing memory proportional to the largest patch the app had ever produced for content the pane no longer renders.
 
@@ -110,28 +109,28 @@ lazygit calls `LogAction` from its UI controllers, because that is the layer whe
 
 `AppController` gains a private `logAction(label)` that forwards to `this.runner?.log.logAction(label)`, called as the first statement of each mutation. Labels live in a new `src/app/log-actions.ts`, copied verbatim from `pkg/i18n/english.go:2128-2254`:
 
-| `AppController` method | Label | lazygit call site |
-| --- | --- | --- |
-| `stageFile` | `Stage file` | `files_controller.go:625` -> `:544` |
-| `unstageFile` | `Unstage file` | `files_controller.go:625` -> `:559` |
-| `toggleAllFiles` | `Stage all files` / `Unstage all files` | `files_controller.go:960` -> `:544,559`, chosen by the same `shouldStage` test |
-| `discardFile` | `Discard all changes in selected file(s)` | `files_controller.go:1744`; `english.go:2173` |
-| `applySelection`, `discardSelection` | `Apply patch` | `staging_controller.go:239-265`; `DiscardSelection` (`:213`) reaches the same `applySelection`, so lazygit labels both identically; `english.go:2215` |
-| `commit` | `Commit` | `english.go:2192` |
-| `amend` | `Amend commit` | `amend_helper.go:22` |
-| `push` | `Push` | `sync_controller.go:197` |
-| `pull` | `Pull` | `sync_controller.go:119` |
-| `fetch`, `fetchRemote` | `Fetch` | `files_controller.go:1541` (a hardcoded string in lazygit, not an `Actions` entry) |
-| `switchLocalBranch`, `switchLocal`, `checkoutRemoteTracking` | `Checkout branch` | `branches_controller.go:417,516` |
-| `createBranch` | `Create branch` | `english.go:2142` |
-| `deleteBranch` | `Delete local branch` | `english.go:2137` |
-| `renameBranch` | `Rename branch` | `english.go:2141` |
-| `chooseUpstream` | `Set branch upstream` | `english.go:2210` |
-| `createStash` | `Stash all changes` / `Stash staged changes` | `files_controller.go:1516`; `english.go:2196,2198`, chosen by `StashCreateOptions` |
-| `applyStash` | `Apply stash` | `stash_controller.go:127` |
-| `popStash` | `Pop stash` | `stash_controller.go:141` |
-| `dropStash` | `Drop stash` | `stash_controller.go:169` |
-| edit-file (`src/git/editor.ts` path) | `Open file` | `files_helper.go:78` |
+| `AppController` method                                       | Label                                        | lazygit call site                                                                                                                                     |
+| ------------------------------------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stageFile`                                                  | `Stage file`                                 | `files_controller.go:625` -> `:544`                                                                                                                   |
+| `unstageFile`                                                | `Unstage file`                               | `files_controller.go:625` -> `:559`                                                                                                                   |
+| `toggleAllFiles`                                             | `Stage all files` / `Unstage all files`      | `files_controller.go:960` -> `:544,559`, chosen by the same `shouldStage` test                                                                        |
+| `discardFile`                                                | `Discard all changes in selected file(s)`    | `files_controller.go:1744`; `english.go:2173`                                                                                                         |
+| `applySelection`, `discardSelection`                         | `Apply patch`                                | `staging_controller.go:239-265`; `DiscardSelection` (`:213`) reaches the same `applySelection`, so lazygit labels both identically; `english.go:2215` |
+| `commit`                                                     | `Commit`                                     | `english.go:2192`                                                                                                                                     |
+| `amend`                                                      | `Amend commit`                               | `amend_helper.go:22`                                                                                                                                  |
+| `push`                                                       | `Push`                                       | `sync_controller.go:197`                                                                                                                              |
+| `pull`                                                       | `Pull`                                       | `sync_controller.go:119`                                                                                                                              |
+| `fetch`, `fetchRemote`                                       | `Fetch`                                      | `files_controller.go:1541` (a hardcoded string in lazygit, not an `Actions` entry)                                                                    |
+| `switchLocalBranch`, `switchLocal`, `checkoutRemoteTracking` | `Checkout branch`                            | `branches_controller.go:417,516`                                                                                                                      |
+| `createBranch`                                               | `Create branch`                              | `english.go:2142`                                                                                                                                     |
+| `deleteBranch`                                               | `Delete local branch`                        | `english.go:2137`                                                                                                                                     |
+| `renameBranch`                                               | `Rename branch`                              | `english.go:2141`                                                                                                                                     |
+| `chooseUpstream`                                             | `Set branch upstream`                        | `english.go:2210`                                                                                                                                     |
+| `createStash`                                                | `Stash all changes` / `Stash staged changes` | `files_controller.go:1516`; `english.go:2196,2198`, chosen by `StashCreateOptions`                                                                    |
+| `applyStash`                                                 | `Apply stash`                                | `stash_controller.go:127`                                                                                                                             |
+| `popStash`                                                   | `Pop stash`                                  | `stash_controller.go:141`                                                                                                                             |
+| `dropStash`                                                  | `Drop stash`                                 | `stash_controller.go:169`                                                                                                                             |
+| edit-file (`src/git/editor.ts` path)                         | `Open file`                                  | `files_helper.go:78`                                                                                                                                  |
 
 `switchLocal` delegates to `switchLocalBranch`; only the outermost method logs, so one keypress never produces two labels.
 
@@ -149,15 +148,15 @@ Streamed output is copied for the commands lazygit streams. lazygit's `Git outpu
 
 Styles, copied from `command_log_panel.go` and `theme/theme.go:11`:
 
-| Style | Colour | lazygit |
-| --- | --- | --- |
-| `action` | `ANSI_YELLOW` | `style.FgYellow` (`command_log_panel.go:41`) |
-| `command` | `DEFAULT_FOREGROUND` | `theme.DefaultTextColor` = `style.FgDefault` (`theme.go:11`) |
-| `internal` | `ANSI_MAGENTA` | `style.FgMagenta` (`command_log_panel.go:55`) |
-| `output` | `DEFAULT_FOREGROUND`; its `Git output:` heading `ANSI_MAGENTA` | `style.FgMagenta` (`extras_panel.go:97`) |
-| `intro` | `ANSI_CYAN` | `style.FgCyan` (`command_log_panel.go:75`) |
-| `tip-label` | `ANSI_YELLOW` | `style.FgYellow` (`command_log_panel.go:81`) |
-| `tip` | `ANSI_GREEN` | `style.FgGreen` (`command_log_panel.go:82`) |
+| Style       | Colour                                                         | lazygit                                                      |
+| ----------- | -------------------------------------------------------------- | ------------------------------------------------------------ |
+| `action`    | `ANSI_YELLOW`                                                  | `style.FgYellow` (`command_log_panel.go:41`)                 |
+| `command`   | `DEFAULT_FOREGROUND`                                           | `theme.DefaultTextColor` = `style.FgDefault` (`theme.go:11`) |
+| `internal`  | `ANSI_MAGENTA`                                                 | `style.FgMagenta` (`command_log_panel.go:55`)                |
+| `output`    | `DEFAULT_FOREGROUND`; its `Git output:` heading `ANSI_MAGENTA` | `style.FgMagenta` (`extras_panel.go:97`)                     |
+| `intro`     | `ANSI_CYAN`                                                    | `style.FgCyan` (`command_log_panel.go:75`)                   |
+| `tip-label` | `ANSI_YELLOW`                                                  | `style.FgYellow` (`command_log_panel.go:81`)                 |
+| `tip`       | `ANSI_GREEN`                                                   | `style.FgGreen` (`command_log_panel.go:82`)                  |
 
 lazygit sets `Wrap = true` on the view (`views.go:150`), and gocui wraps at character boundaries. githunk sets `wrapMode: "char"` on the `TextRenderable` and lets OpenTUI do the wrapping, rather than wrapping in its own pure function. Wrapping is the widget's job because it already knows where every row breaks; reimplementing that against a cached row map would duplicate state the widget owns.
 
@@ -180,7 +179,7 @@ lazygit's state machine, copied from `extras_panel.go:48-94` and `command_log_co
 
 - `logAction` and `logCommand` set autoscroll on (`command_log_panel.go:38,62`), so a command that runs while the user is reading scrollback does yank the viewport back to the bottom. That is lazygit's behaviour and is copied, not softened;
 - `logOutput` does **not** touch the flag. lazygit's `prefixWriter` writes straight to the view (`extras_panel.go:109-119`) and never assigns `Autoscroll`; it scrolls only because the `logCommand` that preceded it already turned the flag on. The header and random-tip writes likewise leave it alone (`command_log_panel.go:70-85`);
-- **every** explicit scroll turns it off, downward ones included — `scrollUpExtra` *and* `scrollDownExtra` both assign `Autoscroll = false`, as do `pageUpExtrasPanel`, `pageDownExtrasPanel` and `goToExtrasPanelTop` (`extras_panel.go:49,57,65,73,81`). So holding `j` to the bottom leaves autoscroll off; only the two cases below turn it back on;
+- **every** explicit scroll turns it off, downward ones included — `scrollUpExtra` _and_ `scrollDownExtra` both assign `Autoscroll = false`, as do `pageUpExtrasPanel`, `pageDownExtrasPanel` and `goToExtrasPanelTop` (`extras_panel.go:49,57,65,73,81`). So holding `j` to the bottom leaves autoscroll off; only the two cases below turn it back on;
 - `>` goto bottom turns it on — `goToExtrasPanelBottom` is the one scroll handler that assigns `true` (`extras_panel.go:88-89`);
 - losing focus turns it on (`command_log_controller.go:29-33`);
 - while the flag is off, the viewport holds still — until the next `logAction`/`logCommand`, per the first bullet.
@@ -191,13 +190,13 @@ Two current behaviours are removed: `update()` unconditionally assigning `text.s
 
 New `command-log` context bindings, copied from `keybindings.go:249-295`:
 
-| Keys | Action | lazygit |
-| --- | --- | --- |
-| wheel up / wheel down | scroll, autoscroll off / off | `keybindings.go:249-258` |
-| `k` `↑` / `j` `↓` | scroll, autoscroll off / off | `keybindings.go:259-269` |
-| `,` / `.` | page up / page down, autoscroll off | `keybindings.go:270-279` |
-| `<` / `>` | goto top (off) / goto bottom (on) | `keybindings.go:280-289` |
-| left click | focus the command log | `keybindings.go:290-295` |
+| Keys                  | Action                              | lazygit                  |
+| --------------------- | ----------------------------------- | ------------------------ |
+| wheel up / wheel down | scroll, autoscroll off / off        | `keybindings.go:249-258` |
+| `k` `↑` / `j` `↓`     | scroll, autoscroll off / off        | `keybindings.go:259-269` |
+| `,` / `.`             | page up / page down, autoscroll off | `keybindings.go:270-279` |
+| `<` / `>`             | goto top (off) / goto bottom (on)   | `keybindings.go:280-289` |
+| left click            | focus the command log               | `keybindings.go:290-295` |
 
 `,` `.` `<` `>` already exist as global bindings (`src/ui/bindings.ts:300-303`); they gain `command-log` context entries so the pane handles them with the correct autoscroll side effect. Scrolling down with `j`/`↓`/wheel does **not** re-enable autoscroll, matching `scrollDownExtra` (`extras_panel.go:56-61`) — only `>` and losing focus do.
 
@@ -207,7 +206,7 @@ New `command-log` context bindings, copied from `keybindings.go:249-295`:
 
 `@` opens the `Command log` menu (`extras_panel.go:12-38`) with two items, labels verbatim from `english.go:1949-1950`:
 
-- `t` — `Toggle show/hide command log`. Copies `extras_panel.go:19-29`: if the log is shown *and* focused, pop focus back to the parent side context first, then flip visibility and persist it.
+- `t` — `Toggle show/hide command log`. Copies `extras_panel.go:19-29`: if the log is shown _and_ focused, pop focus back to the parent side context first, then flip visibility and persist it.
 - `f` — `Focus command log`. Copies `handleFocusCommandLog` (`extras_panel.go:40-46`): force the log visible, then focus it.
 
 `FocusManager.handleKey`'s `@` branch (`src/ui/focus.ts:46-59`) is deleted. `COMMAND_LOG_FOCUS_ID` stays in the `h`/`l`/tab cycle only while the log is visible, as today.
@@ -254,7 +253,7 @@ the source of record. Reproduced here for section 13:
 - `You can page through the items of a panel using ',' and '.'` (`:149-153`; `bindings.ts:300-301`)
 - `You can jump to the top/bottom of a panel using '<' and '>'` (`:154-157`; `bindings.ts:302-303`)
 - `To collapse/expand a directory, press '<enter>'` (`:158-161`; githunk's `enter` calls `toggleFileTreeCollapsedPath` on a directory row, `root-view.ts:1376-1379`, copying `files_controller.go:715`)
-- `You can amend the last commit with your new file changes by pressing 'A' in the files panel` (`:166-169`; **not** excluded, unlike the adjacent `:162-165` amend-to-commit tip below — githunk's `A` is *not* global in effect: `commitAttemptAvailable` (`root-view.ts:2184-2195`) permits it only when focus is Files or Main, so "press `A` in the files panel" is exactly true, reaching `git commit --amend -F -` via `actionAmend`. Same default key as lazygit's, `user_config.go:1090`)
+- `You can amend the last commit with your new file changes by pressing 'A' in the files panel` (`:166-169`; **not** excluded, unlike the adjacent `:162-165` amend-to-commit tip below — githunk's `A` is _not_ global in effect: `commitAttemptAvailable` (`root-view.ts:2184-2195`) permits it only when focus is Files or Main, so "press `A` in the files panel" is exactly true, reaching `git commit --amend -F -` via `actionAmend`. Same default key as lazygit's, `user_config.go:1090`)
 - `You can now navigate the side panels with 'l' and 'h'` (`:170-174`; `bindings.ts:293`)
 
 General-advice tips (6), verbatim and key-free (`command_log_panel.go:178-184`):

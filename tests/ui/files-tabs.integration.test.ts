@@ -55,7 +55,6 @@ const singleTopLevelTree = async (repository: TempRepository): Promise<void> => 
   await repository.write("src/ui/panes/two.txt", "two\n")
 }
 
-
 /**
  * Panel 2's side-panel group is lazygit's `{"files", "worktrees", "submodules"}`
  * (pkg/config/user_config.go:872), and its Files tab renders `pkg/gui/filetree` through
@@ -88,7 +87,11 @@ describe("panel 2 tabs", () => {
   afterEach(async () => {
     await harness?.cleanup()
     harness = undefined
-    while (extras.length > 0) await extras.pop()?.cleanup().catch(() => {})
+    while (extras.length > 0)
+      await extras
+        .pop()
+        ?.cleanup()
+        .catch(() => {})
   })
 
   test("the border row shows [2]─Files - Worktrees - Submodules with the active tab styled only while focused", async () => {
@@ -189,15 +192,8 @@ describe("panel 2 tabs", () => {
     await harness.flush()
     const lines = view.renderedListText("files").split("\n")
     // ShowRootItemInFileTree is true by default in lazygit; src/ui/panes remains compressed.
-    expect(lines).toEqual([
-      `  ${EXPANDED_ARROW} /`,
-      `    ${EXPANDED_ARROW} src/ui/panes`,
-      "○      M one.txt",
-      "○     ?? two.txt",
-      "○   ?? top.txt",
-    ])
+    expect(lines).toEqual([`  ${EXPANDED_ARROW} /`, `    ${EXPANDED_ARROW} src/ui/panes`, "○      M one.txt", "○     ?? two.txt", "○   ?? top.txt"])
   })
-
 
   test("single-clicking a Files directory arrow collapses its subtree", async () => {
     harness = await createShellHarness({ setup: singleTopLevelTree })
@@ -206,11 +202,7 @@ describe("panel 2 tabs", () => {
     await harness.flush()
     const geometry = harness.paneTextGeometry("files")
     expect(geometry).toBeDefined()
-    expect(view.renderedListText("files").split("\n")).toEqual([
-      `  ${EXPANDED_ARROW} src/ui/panes`,
-      "○    M one.txt",
-      "○   ?? two.txt",
-    ])
+    expect(view.renderedListText("files").split("\n")).toEqual([`  ${EXPANDED_ARROW} src/ui/panes`, "○    M one.txt", "○   ?? two.txt"])
 
     await harness.mockMouse.click(geometry!.screenX + 2, geometry!.screenY)
     await harness.flush()
@@ -264,15 +256,10 @@ describe("panel 2 tabs", () => {
     await shell.pressKey("2")
     await shell.pressKey("j")
     await shell.flush()
-    expect(view.renderedListText("files").split("\n")).toEqual([
-      `  ${EXPANDED_ARROW} /`,
-      "◐   M  tracked.txt",
-      "○   ?? untracked.txt",
-    ])
+    expect(view.renderedListText("files").split("\n")).toEqual([`  ${EXPANDED_ARROW} /`, "◐   M  tracked.txt", "○   ?? untracked.txt"])
 
     const geometry = shell.paneTextGeometry("files")!
-    const rowSpans = (offset: number) =>
-      spansAt(shell, geometry.screenY + offset, geometry.screenX, geometry.screenX + geometry.width - 1)
+    const rowSpans = (offset: number) => spansAt(shell, geometry.screenY + offset, geometry.screenX, geometry.screenX + geometry.width - 1)
 
     // Row 1 is selected: staged status is ANSI green promoted to bright ANSI green.
     const staged = rowSpans(1).find((s) => s.text.includes("M"))
@@ -463,7 +450,7 @@ describe("panel 2 tabs", () => {
         expect((await repository.git(["worktree", "add", "--detach", "wt-detached"])).exitCode).toBe(0)
         expect((await repository.git(["worktree", "add", "wt-gone", "-b", "gone"])).exitCode).toBe(0)
         await rm(join(repository.path, "wt-gone"), { recursive: true, force: true })
-      },
+      }
     })
     await harness.app.refresh()
     await harness.flush()
@@ -534,7 +521,7 @@ describe("panel 2 tabs", () => {
         expect((await repository.git(["-c", "protocol.file.allow=always", "submodule", "add", "-q", mid.path, "libs/mid"])).exitCode).toBe(0)
         await repository.git(["commit", "-m", "add libs/mid"])
         await repository.git(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--recursive"])
-      },
+      }
     })
     await harness.app.refresh()
     await harness.flush()
@@ -586,7 +573,7 @@ describe("panel 2 tabs", () => {
         await repository.write("vendor/child/child.txt", "local child change\n")
         await repository.write("vendor/child/untracked.txt", "local untracked child change\n")
         await repository.git(["add", "--", "vendor/child"])
-      },
+      }
     })
 
     await harness.pressKey("2")
@@ -625,7 +612,7 @@ describe("panel 2 tabs", () => {
       mainScope: "all",
       selectedBranchKind: undefined,
       hasSelectedStash: false,
-      filesTab,
+      filesTab
     })
     for (const key of ["space", "d", "a", "r", "enter", "`", "-", "="] as const) {
       expect(registry.dispatch({ name: key }, { context: "files", model, ui: ui("files") })).toBeDefined()

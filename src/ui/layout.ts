@@ -95,11 +95,7 @@ export function previousScreenMode(current: ScreenMode): ScreenMode {
  * Lazygit-matched side sizing: Status 3 pinned in normal layout, Stash folds to 3
  * unless it is currentSideWindow, and compact layout weights only currentSideWindow.
  */
-function sideChildren(
-  currentSideWindow: SideWindow,
-  focusedSide: SideWindow | undefined,
-  enlarged: boolean,
-): (width: number, height: number) => readonly Box[] {
+function sideChildren(currentSideWindow: SideWindow, focusedSide: SideWindow | undefined, enlarged: boolean): (width: number, height: number) => readonly Box[] {
   return (_width, height) => {
     if (enlarged) {
       return [{ window: focusedSide ?? currentSideWindow, weight: 1 }]
@@ -112,9 +108,7 @@ function sideChildren(
       })
     }
     const squashed = height >= MIN_HEIGHT_FOR_TALL_SQUASHED ? FOLDED_PANE_HEIGHT : 1
-    return SIDE_WINDOWS.map((window): Box =>
-      window === currentSideWindow ? { window, weight: 1 } : { window, size: squashed },
-    )
+    return SIDE_WINDOWS.map((window): Box => (window === currentSideWindow ? { window, weight: 1 } : { window, size: squashed }))
   }
 }
 
@@ -125,20 +119,14 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
   const screenMode = requested.screenMode ?? "normal"
   const hintsVisible = requested.hintsVisible !== false
   const logVisible = requested.logVisible === true
-  const requestedRatio = Number.isFinite(requested.sidePanelRatio ?? Number.NaN)
-    ? clamp(requested.sidePanelRatio as number, 0, 1)
-    : DEFAULT_SIDE_PANEL_RATIO
-  const requestedLog = Number.isFinite(requested.logHeight ?? Number.NaN)
-    ? Math.floor(requested.logHeight as number)
-    : DEFAULT_LOG_HEIGHT
+  const requestedRatio = Number.isFinite(requested.sidePanelRatio ?? Number.NaN) ? clamp(requested.sidePanelRatio as number, 0, 1) : DEFAULT_SIDE_PANEL_RATIO
+  const requestedLog = Number.isFinite(requested.logHeight ?? Number.NaN) ? Math.floor(requested.logHeight as number) : DEFAULT_LOG_HEIGHT
 
   const infoHeight = hintsVisible && terminalHeight >= 2 ? 1 : 0
   const bodyHeight = terminalHeight - infoHeight
 
   const widthTooSmall = terminalWidth < MIN_LEFT_WIDTH + SPLITTER_SIZE + MIN_MAIN_WIDTH
-  const heightTooSmall = logVisible
-    ? bodyHeight < MIN_MAIN_HEIGHT + SPLITTER_SIZE + MIN_LOG_HEIGHT
-    : bodyHeight < MIN_MAIN_HEIGHT
+  const heightTooSmall = logVisible ? bodyHeight < MIN_MAIN_HEIGHT + SPLITTER_SIZE + MIN_LOG_HEIGHT : bodyHeight < MIN_MAIN_HEIGHT
   const tooSmall = widthTooSmall || heightTooSmall
 
   const focusedSide = isSideWindow(focus) ? (focus as SideWindow) : undefined
@@ -171,13 +159,7 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
   // Compared as a literal rather than through focus.ts's COMMAND_LOG_FOCUS_ID: focus.ts imports
   // from this file, and a value import back would make that a runtime cycle rather than a
   // type-only one. `FocusId` still makes a typo a compile error.
-  const logHeight = !logVisible || mainWidth === 0 || logCapacity < MIN_LOG_HEIGHT
-    ? 0
-    : focus === "command-log"
-      ? logCapacity
-      : terminalHeight < MIN_HEIGHT_FOR_FULL_LOG
-        ? MIN_LOG_HEIGHT
-        : clamp(requestedLog, MIN_LOG_HEIGHT, logCapacity)
+  const logHeight = !logVisible || mainWidth === 0 || logCapacity < MIN_LOG_HEIGHT ? 0 : focus === "command-log" ? logCapacity : terminalHeight < MIN_HEIGHT_FOR_FULL_LOG ? MIN_LOG_HEIGHT : clamp(requestedLog, MIN_LOG_HEIGHT, logCapacity)
   const logSplitterHeight = logHeight > 0 ? SPLITTER_SIZE : 0
 
   const mainSectionChildren: Box[] = [{ window: "main", weight: 1 }]
@@ -191,28 +173,20 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
     bodyChildren.push({
       direction: "row",
       ...(mainWidth === 0 ? { weight: 1 } : { size: sideWidth }),
-      conditionalChildren: sideChildren(currentSideWindow, focusedSide, enlargedSide),
+      conditionalChildren: sideChildren(currentSideWindow, focusedSide, enlargedSide)
     })
   }
   if (splitterWidth > 0) bodyChildren.push({ window: "vsplit", size: splitterWidth })
   if (mainWidth > 0) bodyChildren.push({ direction: "row", weight: 1, children: mainSectionChildren })
 
-  const statusWidth = Number.isFinite(requested.statusWidth ?? Number.NaN)
-    ? clamp(Math.floor(requested.statusWidth as number), 0, terminalWidth)
-    : 0
+  const statusWidth = Number.isFinite(requested.statusWidth ?? Number.NaN) ? clamp(Math.floor(requested.statusWidth as number), 0, terminalWidth) : 0
   const infoChildren: Box[] = [{ window: "hints", weight: 1 }]
   if (statusWidth > 0) infoChildren.push({ window: "info", size: statusWidth })
 
   const rootChildren: Box[] = [{ direction: "column", weight: 1, children: bodyChildren }]
   if (infoHeight > 0) rootChildren.push({ direction: "column", size: infoHeight, children: infoChildren })
 
-  const rawWindows = arrangeWindows(
-    { direction: "row", children: rootChildren },
-    0,
-    0,
-    terminalWidth,
-    terminalHeight,
-  ) as Readonly<Partial<Record<WindowName, Dimensions>>>
+  const rawWindows = arrangeWindows({ direction: "row", children: rootChildren }, 0, 0, terminalWidth, terminalHeight) as Readonly<Partial<Record<WindowName, Dimensions>>>
 
   // A window absent from this map is hidden, per the documented contract, so a
   // pane squeezed to zero width or height by the engine must not linger here.
@@ -231,7 +205,7 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
     logVisible,
     screenMode,
     hintsVisible: infoHeight > 0,
-    tooSmall,
+    tooSmall
   }
 }
 
@@ -245,4 +219,3 @@ export function logHeightForMouseY(geometry: LayoutGeometry, mouseY: number): nu
   const bodyHeight = geometry.terminalHeight - (geometry.hintsVisible ? 1 : 0)
   return Math.max(0, bodyHeight - Math.floor(mouseY) - SPLITTER_SIZE)
 }
-

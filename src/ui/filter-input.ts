@@ -24,9 +24,7 @@ export function filterInputKey(state: FilterInputState, key: KeyLike): FilterInp
   if (key.name === "backspace" || key.name === "delete") {
     return { state: { active: true, query: removeLastSearchCharacter(state.query) }, consumed: true }
   }
-  const payload = key.name === "space"
-    ? key.sequence === " " ? key.sequence : " "
-    : key.sequence ?? (key.name.length === 1 ? (key.shift ? key.name.toLocaleUpperCase() : key.name) : "")
+  const payload = key.name === "space" ? (key.sequence === " " ? key.sequence : " ") : (key.sequence ?? (key.name.length === 1 ? (key.shift ? key.name.toLocaleUpperCase() : key.name) : ""))
   if (payload.length > 0 && (key.name === "space" || !namedKeys.has(key.name))) {
     return { state: { active: true, query: `${state.query}${payload}` }, consumed: true }
   }

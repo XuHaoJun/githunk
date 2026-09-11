@@ -21,31 +21,19 @@ import { sha256Tuple } from "../../review/core/identity"
 import { MutationQueue } from "../../app/mutation-queue"
 import { linesForAnchor } from "../../review/core/anchors"
 import { LocalStateFile } from "../../storage/local-state-file"
-import {
-  HANDOFF_JSON_PATH,
-  HANDOFF_MARKDOWN_PATH,
-  HANDOFF_REPLIES_PATH,
-  parseReviewReplies,
-  type ReviewReplies,
-  buildHandoffMailbox,
-  ledgerVerdict,
-  renderHandoffMarkdown,
-  reviewCheckpoint,
-} from "../../review/core/ledger"
+import { HANDOFF_JSON_PATH, HANDOFF_MARKDOWN_PATH, HANDOFF_REPLIES_PATH, parseReviewReplies, type ReviewReplies, buildHandoffMailbox, ledgerVerdict, renderHandoffMarkdown, reviewCheckpoint } from "../../review/core/ledger"
 import type { ReviewDecision } from "../../review/core/artifact"
 import { buildReviewArtifact, validateFinishReview } from "../../review/core/artifact"
 import type { ReviewArtifactV1 } from "../../review/core/artifact"
-import {
-  type ReviewWorkspaceError,
-  classifyLoadError,
-  createCorruptStateError,
-  createStorageError,
-} from "./error-state"
+import { type ReviewWorkspaceError, classifyLoadError, createCorruptStateError, createStorageError } from "./error-state"
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
   if (value !== null && typeof value === "object") {
     const record = value as Record<string, unknown>
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+      .join(",")}}`
   }
   return JSON.stringify(value)
 }
@@ -54,9 +42,7 @@ async function restoreLocalStateFile(file: LocalStateFile, previous: string | un
   else await file.writeText(previous)
 }
 
-function normalizeActiveProjection(
-  projection: ReviewProjection,
-): Extract<ReviewProjection, { kind: "aggregate" }> {
+function normalizeActiveProjection(): Extract<ReviewProjection, { kind: "aggregate" }> {
   return { kind: "aggregate" }
 }
 
@@ -120,17 +106,18 @@ export class ReviewWorkspaceController {
     this.stateStore = options.stateStore
     this.artifactStore = options.artifactStore
     this.loadDocumentImpl = options.loadDocument ?? ((baseRef: string) => loadReviewDocument(options.runner, baseRef))
-    this.loadSinceLastReviewImpl = options.loadSinceLastReview
-      ?? ((aggregate: ReviewDocument, fromHeadOid: string) => loadSinceLastReviewProjection(options.runner, aggregate, fromHeadOid))
+    this.loadSinceLastReviewImpl = options.loadSinceLastReview ?? ((aggregate: ReviewDocument, fromHeadOid: string) => loadSinceLastReviewProjection(options.runner, aggregate, fromHeadOid))
     this.loadSourceContextImpl = options.loadSourceContextImpl
     this.nowImpl = options.now ?? (() => new Date().toISOString())
-    this.randomIdImpl = options.randomId ?? (() => {
-      try {
-        return crypto.randomUUID()
-      } catch {
-        return Math.random().toString(36).slice(2)
-      }
-    })
+    this.randomIdImpl =
+      options.randomId ??
+      (() => {
+        try {
+          return crypto.randomUUID()
+        } catch {
+          return Math.random().toString(36).slice(2)
+        }
+      })
   }
 
   get state(): ReviewState | undefined {
@@ -155,8 +142,9 @@ export class ReviewWorkspaceController {
     } catch {
       next = new Map()
     }
-    const changed = previous.size !== next.size
-      || [...previous].some(([id, reply]) => {
+    const changed =
+      previous.size !== next.size ||
+      [...previous].some(([id, reply]) => {
         const current = next.get(id)
         return current === undefined || current.body !== reply.body || current.at !== reply.at
       })
@@ -198,8 +186,10 @@ export class ReviewWorkspaceController {
     } catch (err) {
       if (this.destroyed || token !== this.baseSelectionRequestId) return
       this._baseSelection = {
-        candidates: [], loading: false, selecting: false,
-        error: err instanceof Error ? err.message : String(err),
+        candidates: [],
+        loading: false,
+        selecting: false,
+        error: err instanceof Error ? err.message : String(err)
       }
     }
     this.publish()
@@ -214,8 +204,7 @@ export class ReviewWorkspaceController {
 
   async chooseBase(ref: string): Promise<boolean> {
     const picker = this._baseSelection
-    if (this.destroyed || !picker || picker.loading || picker.selecting ||
-      !picker.candidates.some(candidate => candidate.ref === ref)) return false
+    if (this.destroyed || !picker || picker.loading || picker.selecting || !picker.candidates.some((candidate) => candidate.ref === ref)) return false
     const token = ++this.baseSelectionRequestId
     this.requestId++
     this._baseSelection = { candidates: picker.candidates, loading: false, selecting: true }
@@ -235,15 +224,16 @@ export class ReviewWorkspaceController {
       } catch (err) {
         if (this.destroyed || token !== this.baseSelectionRequestId) return false
         this._baseSelection = {
-          candidates: picker.candidates, loading: false, selecting: false,
-          error: err instanceof Error ? err.message : String(err),
+          candidates: picker.candidates,
+          loading: false,
+          selecting: false,
+          error: err instanceof Error ? err.message : String(err)
         }
         this.publish()
         return false
       }
     })
   }
-
 
   clearError(): void {
     if (this._error === undefined) return
@@ -260,21 +250,18 @@ export class ReviewWorkspaceController {
       const capturedBase = this.baseRef
       // Serialize accepted refreshes with Finish so a newer generation cannot
       // interleave between Finish's validation and its durable state writes.
-      return this.reviewOperationQueue.run(() => this.refreshGenerationForToken({
-        token,
-        reviewId: capturedReviewId,
-        generationId: capturedGeneration,
-        baseRef: capturedBase,
-      }))
+      return this.reviewOperationQueue.run(() =>
+        this.refreshGenerationForToken({
+          token,
+          reviewId: capturedReviewId,
+          generationId: capturedGeneration,
+          baseRef: capturedBase
+        })
+      )
     }
   }
 
-  private async refreshGenerationForToken(qualified: {
-    readonly token: number
-    readonly reviewId: string | undefined
-    readonly generationId: string | undefined
-    readonly baseRef: string
-  }): Promise<void> {
+  private async refreshGenerationForToken(qualified: { readonly token: number; readonly reviewId: string | undefined; readonly generationId: string | undefined; readonly baseRef: string }): Promise<void> {
     const { token, reviewId: capturedReviewId, generationId: capturedGeneration, baseRef: capturedBase } = qualified
     const ownsRequest = (): boolean => !this.destroyed && token === this.requestId
     try {
@@ -313,12 +300,8 @@ export class ReviewWorkspaceController {
       // A projection lens is computed against one generation. When the
       // generation moves the lens is stale, so reconcile from an
       // aggregate-shaped state and let the refresh drop it.
-      const reconcileFrom = currentState !== undefined && currentState.projection.kind !== "aggregate"
-        ? { ...currentState, projection: { kind: "aggregate" as const } }
-        : currentState
-      const nextState = reconcileFrom === undefined
-        ? createInitialReviewState(doc)
-        : reconcileReviewState(reconcileFrom, doc)
+      const reconcileFrom = currentState !== undefined && currentState.projection.kind !== "aggregate" ? { ...currentState, projection: { kind: "aggregate" as const } } : currentState
+      const nextState = reconcileFrom === undefined ? createInitialReviewState(doc) : reconcileReviewState(reconcileFrom, doc)
       if (!ownsRequest()) return
       // Atomic swap: publish once.
       this._state = nextState
@@ -353,13 +336,11 @@ export class ReviewWorkspaceController {
       this._baseSelection = undefined
       this.publish()
     }
-    let corruptError: ReviewWorkspaceError | undefined =
-      this._error?.kind === "corrupt-state" || this._error?.kind === "storage" ? this._error : undefined
+    let corruptError: ReviewWorkspaceError | undefined = this._error?.kind === "corrupt-state" || this._error?.kind === "storage" ? this._error : undefined
     if (resolvedBase === undefined) {
       try {
         const remembered = await this.rememberedBase()
-        if (remembered?.confirmed === true &&
-          (await resolveRefOid(this.runner, remembered.baseRef)) !== undefined) {
+        if (remembered?.confirmed === true && (await resolveRefOid(this.runner, remembered.baseRef)) !== undefined) {
           resolvedBase = remembered.baseRef
         } else {
           await this.requestBaseSelection()
@@ -418,10 +399,7 @@ export class ReviewWorkspaceController {
           const previousId = sha256Tuple(["branch-review-v2", headKey, previousBase])
           const previous = db.reviews[previousId]
           if (previous !== undefined) {
-            const canonical = await this.runner.run(
-              ["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", previousBase],
-              { readOnly: true, acceptedExitCodes: [0, 1, 128] },
-            )
+            const canonical = await this.runner.run(["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", previousBase], { readOnly: true, acceptedExitCodes: [0, 1, 128] })
             if (canonical.stdout.trim() === resolvedBase) persisted = previous
           }
         }
@@ -438,8 +416,8 @@ export class ReviewWorkspaceController {
           draft: persisted.draft,
           expandedGaps: persisted.expandedGaps as readonly ExpandedGap[],
           lastSubmission: persisted.lastSubmission,
-          projection: normalizeActiveProjection(persisted.projection as ReviewProjection),
-          revision: 0,
+          projection: normalizeActiveProjection(),
+          revision: 0
         }
         persistedState = reconcileReviewState(reconstructed, doc, { forceSemantic: true })
       }
@@ -486,13 +464,7 @@ export class ReviewWorkspaceController {
     this._state = next
     this.publish()
     void this.persistState().catch(() => undefined)
-    if (
-      action.type === "feedback/start-draft" ||
-      action.type === "feedback/update-draft" ||
-      action.type === "feedback/cancel-draft" ||
-      action.type === "feedback/create" ||
-      action.type === "feedback/edit"
-    ) {
+    if (action.type === "feedback/start-draft" || action.type === "feedback/update-draft" || action.type === "feedback/cancel-draft" || action.type === "feedback/create" || action.type === "feedback/edit") {
       if (this.activeReviewId && this.stateStore) {
         this.stateStore.saveDraftDebounced(this.activeReviewId, this._state.draft)
       }
@@ -578,8 +550,8 @@ export class ReviewWorkspaceController {
         identity: aggregate.identity,
         generation: aggregate.generation,
         commits: aggregate.commits,
-        files: result.document.files,
-      }),
+        files: result.document.files
+      })
     })
     return { ok: true, fileCount: result.document.files.length }
   }
@@ -603,17 +575,11 @@ export class ReviewWorkspaceController {
    * write, 0600 mode and symlink refusal, and lands under the git directory
    * where it cannot dirty `git status`.
    */
-  async handoffFeedback(): Promise<
-    | { ok: true; handedOff: number; total: number; path: string }
-    | { ok: false; reason: string }
-  > {
+  async handoffFeedback(): Promise<{ ok: true; handedOff: number; total: number; path: string } | { ok: false; reason: string }> {
     return this.reviewOperationQueue.run(() => this.handoffFeedbackSerialized())
   }
 
-  private async handoffFeedbackSerialized(): Promise<
-    | { ok: true; handedOff: number; total: number; path: string }
-    | { ok: false; reason: string }
-  > {
+  private async handoffFeedbackSerialized(): Promise<{ ok: true; handedOff: number; total: number; path: string } | { ok: false; reason: string }> {
     const current = this._state
     if (current === undefined || this._baseSelection !== undefined) return { ok: false, reason: "unavailable" }
     const pending = current.feedback.filter((feedback) => feedback.resolution === "active" && ledgerVerdict(feedback) !== "resolved")
@@ -624,15 +590,10 @@ export class ReviewWorkspaceController {
     const revision = current.revision
     const isCurrent = (): boolean => {
       const latest = this._state
-      return latest === current
-        && latest.revision === revision
-        && latest.document.identity.id === reviewId
-        && latest.document.generation.id === generationId
+      return latest === current && latest.revision === revision && latest.document.identity.id === reviewId && latest.document.generation.id === generationId
     }
     const handoffDocument = current.projection.kind === "aggregate" ? current.document : this.aggregateDocument
-    if (handoffDocument === undefined
-      || handoffDocument.identity.id !== reviewId
-      || handoffDocument.generation.id !== generationId) {
+    if (handoffDocument === undefined || handoffDocument.identity.id !== reviewId || handoffDocument.generation.id !== generationId) {
       return { ok: false, reason: "stale" }
     }
     const at = this.nowImpl()
@@ -663,11 +624,7 @@ export class ReviewWorkspaceController {
       if (latest === undefined || handedOffIds.size === 0) return
       let changed = false
       const feedback = latest.feedback.map((entry) => {
-        if (!handedOffIds.has(entry.id)
-          || entry.status !== "handed-off"
-          || entry.resolution !== "active"
-          || entry.handoff?.at !== at
-          || entry.handoff.headOid !== headOid) return entry
+        if (!handedOffIds.has(entry.id) || entry.status !== "handed-off" || entry.resolution !== "active" || entry.handoff?.at !== at || entry.handoff.headOid !== headOid) return entry
         const { status: _status, handoff: _handoff, ...reopened } = entry
         changed = true
         return reopened
@@ -724,10 +681,7 @@ export class ReviewWorkspaceController {
     const revision = reviewState.revision
     const isCurrent = (): boolean => {
       const current = this._state
-      return current === reviewState
-        && current.revision === revision
-        && current.document.identity.id === reviewId
-        && current.document.generation.id === generationId
+      return current === reviewState && current.revision === revision && current.document.identity.id === reviewId && current.document.generation.id === generationId
     }
     let reuseArtifact: ReviewArtifactV1 | undefined
     let artifactIdFromMarker: string | undefined
@@ -748,7 +702,7 @@ export class ReviewWorkspaceController {
                 id: artifact.id,
                 submittedAt: artifact.submittedAt,
                 decision: input.decision,
-                summary: input.summary,
+                summary: input.summary
               })
               // Reuse only when the marker's immutable artifact represents
               // the complete current semantic state, not merely the same IDs.
@@ -766,17 +720,17 @@ export class ReviewWorkspaceController {
     const artifact = reuseArtifact
       ? reuseArtifact
       : buildReviewArtifact(reviewState, {
-        id: artifactIdFromMarker ?? this.randomIdImpl(),
-        submittedAt: this.nowImpl(),
-        decision: input.decision,
-        summary: input.summary,
-      })
+          id: artifactIdFromMarker ?? this.randomIdImpl(),
+          submittedAt: this.nowImpl(),
+          decision: input.decision,
+          summary: input.summary
+        })
     const next = await finishReviewTransaction({
       stateStore: this.stateStore,
       artifactStore: this.artifactStore,
       reviewState,
       artifact,
-      isCurrent,
+      isCurrent
     })
     if (!isCurrent()) throw new Error("review changed while finishing")
     this._state = next
@@ -828,7 +782,7 @@ export class ReviewWorkspaceController {
       fileKey,
       side,
       startLine: range[0],
-      endLine: range[1],
+      endLine: range[1]
     }
     const requestToken = ++this.gapRequestCounter
     this.pendingGapRequests.set(cacheKey, requestToken)
@@ -841,9 +795,7 @@ export class ReviewWorkspaceController {
     }
     let outcome: SourceContextOutcome
     try {
-      outcome = this.loadSourceContextImpl
-        ? await this.loadSourceContextImpl(request)
-        : await loadSourceContext(this.runner, current.document, request)
+      outcome = this.loadSourceContextImpl ? await this.loadSourceContextImpl(request) : await loadSourceContext(this.runner, current.document, request)
     } catch {
       if (this.pendingGapRequests.get(cacheKey) === requestToken) {
         this.pendingGapRequests.delete(cacheKey)
@@ -874,7 +826,7 @@ export class ReviewWorkspaceController {
   getExpandedGapLines(fileKey: string, gapId: string): readonly string[] | undefined {
     const current = this._state
     if (!current) return undefined
-    const file = current.document.files.find(f => f.key === fileKey)
+    const file = current.document.files.find((f) => f.key === fileKey)
     if (!file) return undefined
     const parsed = gapId.match(/^(before|trailing):(\d+)$/)
     if (!parsed) return undefined
@@ -907,20 +859,20 @@ export class ReviewWorkspaceController {
 
   private resolveGapAddress(file: ReviewFile, position: "before" | "trailing", hunkIndex: number): { oldRange: [number, number]; newRange: [number, number]; lineCount: number } | null {
     if (position === "before") {
-      if (hunkIndex <=0 || hunkIndex >= file.hunks.length) return null
-      const prev = file.hunks[hunkIndex-1]!
+      if (hunkIndex <= 0 || hunkIndex >= file.hunks.length) return null
+      const prev = file.hunks[hunkIndex - 1]!
       const cur = file.hunks[hunkIndex]!
       const gapOld = cur.oldStart - (prev.oldStart + prev.oldCount)
       const gapNew = cur.newStart - (prev.newStart + prev.newCount)
       let lineCount = gapOld
-      if (gapOld !== gapNew && gapOld>0 && gapNew>0) lineCount = Math.min(gapOld,gapNew)
-      else if (gapOld<=0 && gapNew>0) lineCount = gapNew
-      if (lineCount<=0) return null
+      if (gapOld !== gapNew && gapOld > 0 && gapNew > 0) lineCount = Math.min(gapOld, gapNew)
+      else if (gapOld <= 0 && gapNew > 0) lineCount = gapNew
+      if (lineCount <= 0) return null
       const oldStart = prev.oldStart + prev.oldCount
-      const oldEnd = cur.oldStart -1
+      const oldEnd = cur.oldStart - 1
       const newStart = prev.newStart + prev.newCount
-      const newEnd = cur.newStart -1
-      return { oldRange: [oldStart, oldEnd] as [number,number], newRange: [newStart,newEnd] as [number,number], lineCount }
+      const newEnd = cur.newStart - 1
+      return { oldRange: [oldStart, oldEnd] as [number, number], newRange: [newStart, newEnd] as [number, number], lineCount }
     } else {
       // trailing not computable without source totals; return null to indicate unavailable
       return null
@@ -928,7 +880,9 @@ export class ReviewWorkspaceController {
   }
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener)
-    return () => { this.listeners.delete(listener) }
+    return () => {
+      this.listeners.delete(listener)
+    }
   }
 
   loadSourceContext(): Promise<unknown> {
@@ -951,7 +905,9 @@ export class ReviewWorkspaceController {
 
   private publish(): void {
     for (const l of this.listeners) {
-      try { l(this._state) } catch {}
+      try {
+        l(this._state)
+      } catch {}
     }
   }
   private async persistState(isOwned?: () => boolean): Promise<void> {
@@ -959,7 +915,7 @@ export class ReviewWorkspaceController {
     if (!this.stateStore || !snapshot) return
     const persisted = persistedFromReviewState({
       ...snapshot,
-      projection: normalizeActiveProjection(snapshot.projection),
+      projection: normalizeActiveProjection()
     })
     const reviewId = snapshot.document.identity.id
     const headKey = snapshot.document.identity.headRef ?? `detached:${snapshot.document.identity.detachedHeadOid ?? snapshot.document.generation.headOid}`
@@ -973,7 +929,7 @@ export class ReviewWorkspaceController {
         return {
           ...db,
           baseByHead: { ...db.baseByHead, [headKey]: { baseRef: snapshot.document.identity.baseRef, confirmed: true } },
-          reviews: { ...db.reviews, [reviewId]: { ...persisted, submissionInProgress } },
+          reviews: { ...db.reviews, [reviewId]: { ...persisted, submissionInProgress } }
         }
       })
     } catch (err) {

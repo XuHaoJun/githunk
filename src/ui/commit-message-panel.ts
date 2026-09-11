@@ -13,10 +13,7 @@ export type CommitMessagePanelState = {
   readonly error?: string
 }
 
-export type CommitMessagePanelResult =
-  | { readonly kind: "confirmed"; readonly message: string }
-  | { readonly kind: "cancelled" }
-  | { readonly kind: "changed" }
+export type CommitMessagePanelResult = { readonly kind: "confirmed"; readonly message: string } | { readonly kind: "cancelled" } | { readonly kind: "changed" }
 
 export type CommitMessagePanelLayout = {
   readonly left: number
@@ -58,9 +55,7 @@ function hasCtrlOnly(key: CommitMessageKey): boolean {
 }
 
 function controlsFor(field: CommitMessageField): string {
-  return field === "summary"
-    ? "Enter submit · Tab description · Esc cancel"
-    : "Ctrl+Enter submit · Tab summary · Esc cancel"
+  return field === "summary" ? "Enter submit · Tab description · Esc cancel" : "Ctrl+Enter submit · Tab summary · Esc cancel"
 }
 
 function footerFor(field: CommitMessageField, error: string | undefined): string {
@@ -74,15 +69,11 @@ export function createCommitMessagePanelState(mode: CommitMessagePanelMode, init
     mode,
     field: "summary",
     summary: parts.summary,
-    description: parts.description,
+    description: parts.description
   }
 }
 
-export function commitMessagePanelLayout(
-  terminalWidth: number,
-  terminalHeight: number,
-  descriptionLines: number,
-): CommitMessagePanelLayout {
+export function commitMessagePanelLayout(terminalWidth: number, terminalHeight: number, descriptionLines: number): CommitMessagePanelLayout {
   const width = Math.max(1, Math.floor(terminalWidth))
   const height = Math.max(1, Math.floor(terminalHeight))
   const availableWidth = Math.max(1, width - 2)
@@ -105,14 +96,14 @@ export function commitMessagePanelLayout(
       left: 0,
       top: 0,
       width: popupWidth,
-      height: summaryHeight,
+      height: summaryHeight
     },
     description: {
       left: 0,
       top: descriptionTop,
       width: popupWidth,
-      height: descriptionHeight,
-    },
+      height: descriptionHeight
+    }
   }
 }
 
@@ -148,7 +139,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
     shouldFill: true,
     overflow: "hidden",
     zIndex: POPUP_Z_INDEX,
-    visible: false,
+    visible: false
   })
   const summaryBox = new BoxRenderable(renderer, {
     id: "commit-summary-box",
@@ -158,7 +149,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
     borderColor: FIELD_BORDER,
     backgroundColor: POPUP_BACKGROUND,
     title: "Commit summary",
-    overflow: "hidden",
+    overflow: "hidden"
   })
   const descriptionBox = new BoxRenderable(renderer, {
     id: "commit-description-box",
@@ -168,7 +159,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
     borderColor: FIELD_BORDER,
     backgroundColor: POPUP_BACKGROUND,
     title: "Commit description",
-    overflow: "hidden",
+    overflow: "hidden"
   })
   const summary = new TextareaRenderable(renderer, {
     id: "commit-summary-editor",
@@ -187,7 +178,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
     selectionBg: "#444444",
     selectionFg: POPUP_FOREGROUND,
     cursorColor: POPUP_FOREGROUND,
-    cursorStyle: POPUP_CURSOR_STYLE,
+    cursorStyle: POPUP_CURSOR_STYLE
   })
   const description = new TextareaRenderable(renderer, {
     id: "commit-description-editor",
@@ -206,7 +197,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
     selectionBg: "#444444",
     selectionFg: POPUP_FOREGROUND,
     cursorColor: POPUP_FOREGROUND,
-    cursorStyle: POPUP_CURSOR_STYLE,
+    cursorStyle: POPUP_CURSOR_STYLE
   })
   const descriptionHint = new TextRenderable(renderer, {
     id: "commit-description-hint",
@@ -220,7 +211,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
     bg: POPUP_BACKGROUND,
     selectable: false,
     wrapMode: "none",
-    zIndex: 2,
+    zIndex: 2
   })
   summary.focusable = true
   description.focusable = true
@@ -261,7 +252,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
     const { error: _error, ...withoutError } = current
     current = {
       ...withoutError,
-      field: current.field === "summary" ? "description" : "summary",
+      field: current.field === "summary" ? "description" : "summary"
     }
     updateFieldFocus()
     updateFooter()
@@ -276,7 +267,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
         ...current,
         summary: summaryText,
         description: descriptionText,
-        error: "Commit message cannot be empty",
+        error: "Commit message cannot be empty"
       }
       updateFooter()
       return undefined
@@ -285,7 +276,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
     current = {
       ...withoutError,
       summary: summaryText,
-      description: descriptionText,
+      description: descriptionText
     }
     updateFooter()
     return { kind: "confirmed", message: joinCommitMessage(summaryText, descriptionText) }
@@ -306,7 +297,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
       return {
         ...current,
         summary: summary.plainText,
-        description: description.plainText,
+        description: description.plainText
       }
     },
     open(mode, initialMessage = "") {
@@ -332,9 +323,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
     },
     setError(error) {
       if (current === undefined) return
-      current = error === undefined
-        ? { mode: current.mode, field: current.field, summary: summary.plainText, description: description.plainText }
-        : { mode: current.mode, field: current.field, summary: summary.plainText, description: description.plainText, error }
+      current = error === undefined ? { mode: current.mode, field: current.field, summary: summary.plainText, description: description.plainText } : { mode: current.mode, field: current.field, summary: summary.plainText, description: description.plainText, error }
       updateFooter()
     },
     handleKey(key) {
@@ -356,7 +345,7 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
         current = {
           ...withoutError,
           summary: summary.plainText,
-          description: description.plainText,
+          description: description.plainText
         }
         updateFooter()
       }
@@ -391,6 +380,6 @@ export function createCommitMessagePanel(renderer: CliRenderer): CommitMessagePa
       descriptionHint.left = Math.max(0, geometry.description.width - hint.length - 1)
       descriptionHint.width = Math.max(1, Math.min(geometry.description.width, hint.length))
       descriptionHint.height = 1
-    },
+    }
   }
 }

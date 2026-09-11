@@ -21,11 +21,7 @@ function hunkCountForFile(state: ReviewState, fileKey: string): number {
   return file?.hunks.length ?? 0
 }
 
-export function moveReviewSelection(
-  state: ReviewState,
-  unit: "file" | "hunk",
-  direction: "next" | "previous",
-): ReviewNavigationTarget | null {
+export function moveReviewSelection(state: ReviewState, unit: "file" | "hunk", direction: "next" | "previous"): ReviewNavigationTarget | null {
   const visible = visibleReviewFiles(state) as readonly { key: string }[]
   if (visible.length === 0) return null
 
@@ -35,9 +31,7 @@ export function moveReviewSelection(
   // For hunk navigation we may need to flatten hunks
   if (unit === "file") {
     const delta = direction === "next" ? 1 : -1
-    const nextIndex = currentVisibleIndex < 0
-      ? direction === "next" ? 0 : visible.length - 1
-      : clamp(currentVisibleIndex + delta, 0, visible.length - 1)
+    const nextIndex = currentVisibleIndex < 0 ? (direction === "next" ? 0 : visible.length - 1) : clamp(currentVisibleIndex + delta, 0, visible.length - 1)
     if (currentVisibleIndex >= 0 && nextIndex === currentVisibleIndex) return null
     const nextFile = visible[nextIndex]!
     return {
@@ -46,8 +40,8 @@ export function moveReviewSelection(
         fileTopToken: state.reveal.fileTopToken + 1,
         fileTopRequestToken: state.reveal.fileTopRequestToken + 1,
         hunkToken: state.reveal.hunkToken,
-        scrollToFeedback: false,
-      },
+        scrollToFeedback: false
+      }
     }
   }
 
@@ -85,14 +79,14 @@ export function moveReviewSelection(
           fileTopToken: state.reveal.fileTopToken + 1,
           fileTopRequestToken: crossesFileForward ? state.reveal.fileTopRequestToken + 1 : state.reveal.fileTopRequestToken,
           hunkToken: crossesFileForward ? state.reveal.hunkToken : state.reveal.hunkToken + 1,
-          scrollToFeedback: false,
+          scrollToFeedback: false
         }
       : {
           fileTopToken: state.reveal.fileTopToken,
           fileTopRequestToken: state.reveal.fileTopRequestToken,
           hunkToken: state.reveal.hunkToken + 1,
-          scrollToFeedback: false,
-        },
+          scrollToFeedback: false
+        }
   }
 }
 

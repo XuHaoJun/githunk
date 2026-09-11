@@ -28,10 +28,12 @@
 ### Task 1: Build Pure Virtual Diff Layout
 
 **Files:**
+
 - Create: `src/domain/diff/virtual.ts`
 - Test: `tests/domain/diff/virtual.test.ts`
 
 **Interfaces:**
+
 - Consumes: `DiffDocument`, `DiffLine`, and `DiffDisplayLineStyle` from `src/domain/diff/document.ts`.
 - Produces: `VIRTUAL_DIFF_LINE_THRESHOLD`, `VirtualDiffRow`, `VirtualDiffRowWindow`, `VirtualDiffLayout`, and `createVirtualDiffLayout(document, preamble)` for the UI task.
 
@@ -97,11 +99,13 @@ git commit -m "feat: add virtual diff row layout"
 ### Task 2: Add Bounded Main-Pane Virtual Viewport
 
 **Files:**
+
 - Create: `src/ui/panes/virtual-main-pane.ts`
 - Modify: `src/ui/panes/main-pane.ts:1-482`
 - Test: `tests/ui/main-pane-virtual.test.ts`
 
 **Interfaces:**
+
 - Consumes: `VirtualDiffLayout` from Task 1, `PaneHandle` / `paneTextBuffer`, `DiffDocument`, `MainPaneContent`, and `installDiffText`.
 - Produces: `createVirtualMainPane(pane)`, `virtualMainPaneFor(pane)`, `isVirtualDiffDocument(document)`, and the virtual selection/window behavior consumed by RootView.
 
@@ -176,11 +180,13 @@ git commit -m "feat: virtualize large main diff rows"
 ### Task 3: Preserve RootView Interaction Contracts
 
 **Files:**
+
 - Modify: `src/ui/root-view.ts:64,776-785,1810-1930,3388-3518,3521-3592,4295-4335,4788-4802,4918-4929,4615-4648`
 - Modify: `tests/ui/main-diff.integration.test.ts:1-403`
 - Modify: `tests/ui/main-scroll.integration.test.ts:1-210`
 
 **Interfaces:**
+
 - Consumes: `getMainPointerSelection`, `virtualMainPaneFor`, and the virtual scroll accessors from Task 2.
 - Produces: unchanged user-facing key, wheel, scrollbar, search, pointer selection, copy, stage, discard, and hunk-cursor behavior for both eager and virtual documents.
 
@@ -239,11 +245,13 @@ git commit -m "fix: preserve large diff main pane interactions"
 ### Task 4: Update Performance Coverage and Compatibility Notes
 
 **Files:**
+
 - Modify: `tests/ui/main-diff.integration.test.ts:127-153`
 - Modify: `docs/lazygit-compatibility-v0.1.md:1-30`
 - Modify: `docs/superpowers/specs/2026-08-25-lazygit-core-ui-parity-design.md:260-280`
 
 **Interfaces:**
+
 - Consumes: the finished virtual main pane and RootView behavior from Tasks 2–3.
 - Produces: evidence-bound regression coverage and accurate compatibility wording; no user-visible API changes.
 
@@ -271,7 +279,6 @@ bun test tests/ui/main-diff.integration.test.ts
 
 Expected: PASS with the large native-window bound and existing colour/selection assertions.
 
-
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -284,6 +291,7 @@ git commit -m "docs: record virtual large-diff behavior"
 ### Task 5: Run Repository Verification
 
 **Files:**
+
 - No source changes expected.
 
 - [ ] **Step 1: Run targeted changed-contract tests**

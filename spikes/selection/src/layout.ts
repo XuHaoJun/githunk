@@ -9,17 +9,14 @@ export type PaneLayout = {
   rightWidth: number
 }
 
-export function computePaneLayout(
-  terminalWidth: number,
-  requestedLeftWidth: number,
-): PaneLayout {
+export function computePaneLayout(terminalWidth: number, requestedLeftWidth: number): PaneLayout {
   const maxLeft = Math.max(MIN_LEFT, terminalWidth - MIN_RIGHT - SPLITTER_WIDTH)
   const leftWidth = Math.min(Math.max(requestedLeftWidth, MIN_LEFT), maxLeft)
   return {
     terminalWidth,
     leftWidth,
     splitterX: leftWidth,
-    rightWidth: Math.max(0, terminalWidth - leftWidth - SPLITTER_WIDTH),
+    rightWidth: Math.max(0, terminalWidth - leftWidth - SPLITTER_WIDTH)
   }
 }
 

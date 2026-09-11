@@ -1,4 +1,3 @@
-import { join } from "node:path"
 import { GitRunner } from "../git/runner"
 import type { ReviewDatabase } from "../domain/review-progress"
 import { LocalStateFile } from "../storage/local-state-file"
@@ -38,9 +37,7 @@ export class WorkingTreeReviewStore {
   warning: string | undefined
 
   constructor(repositoryRootOrOptions: string | WorkingTreeReviewStoreOptions) {
-    const options = typeof repositoryRootOrOptions === "string"
-      ? { repositoryRoot: repositoryRootOrOptions }
-      : repositoryRootOrOptions
+    const options = typeof repositoryRootOrOptions === "string" ? { repositoryRoot: repositoryRootOrOptions } : repositoryRootOrOptions
     this.runner = options.runner ?? new GitRunner(options.repositoryRoot)
     this.onWarning = options.onWarning
     this.file = new LocalStateFile({ runner: this.runner, relativePath: fileName, pathKind: "working-tree-review-state" })

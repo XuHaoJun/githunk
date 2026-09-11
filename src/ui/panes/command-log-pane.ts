@@ -34,7 +34,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     position: "absolute",
     width: "100%",
     height: "100%",
-    overflow: "hidden",
+    overflow: "hidden"
   })
   const text = new TextRenderable(renderer, {
     id: "command-log-text",
@@ -45,7 +45,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     // character boundaries, which is `"char"` here. Letting OpenTUI wrap is also what lets
     // command-log-text.ts colour whole logical lines instead of laying out visual rows itself.
     wrapMode: "char",
-    width: "100%",
+    width: "100%"
   })
   box.add(text)
   // The same local-default suppression every other pane gets from `createPane`
@@ -164,7 +164,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
         syncVerticalScrollbar(bar, text)
         box.requestRender()
       }
-    },
+    }
   }
   pane.update(lines)
   return pane

@@ -92,7 +92,7 @@ export class CommandLog {
         // Trailing blank lines only: git's output almost always ends in a newline, and an empty
         // final row under the heading reads as a rendering bug. Interior blanks are the command's.
         for (const line of text.replace(/\n+$/, "").split("\n")) this.push([{ style: "output", text: line }])
-      },
+      }
     }
   }
 
@@ -115,7 +115,7 @@ export class CommandLog {
     const [first, ...rest] = tip.split("\n")
     this.push([
       { style: "tip-label", text: `${label}: ` },
-      { style: "tip", text: first ?? "" },
+      { style: "tip", text: first ?? "" }
     ])
     for (const text of rest) this.push([{ style: "tip", text }])
   }

@@ -4,10 +4,7 @@ import type { ReviewFeedback } from "./types"
 
 export type ReviewCoverage = "viewed" | "changed-after-review" | "not-viewed" | "reviewing"
 
-function resolveViewedRecord(
-  file: Pick<ReviewFile, "key" | "path" | "contentId">,
-  viewed: Readonly<Record<string, ViewedRecord>> | ViewedRecord | null | undefined,
-): ViewedRecord | undefined {
+function resolveViewedRecord(file: Pick<ReviewFile, "key" | "path" | "contentId">, viewed: Readonly<Record<string, ViewedRecord>> | ViewedRecord | null | undefined): ViewedRecord | undefined {
   if (!viewed) return undefined
   if (typeof viewed === "object" && "fileKey" in viewed && "path" in viewed && "contentId" in viewed) {
     return viewed as ViewedRecord
@@ -15,11 +12,7 @@ function resolveViewedRecord(
   return (viewed as Readonly<Record<string, ViewedRecord>>)[file.key]
 }
 
-export function coverageForFile(
-  file: Pick<ReviewFile, "key" | "path" | "contentId">,
-  viewed: Readonly<Record<string, ViewedRecord>> | ViewedRecord | null | undefined,
-  selectedFileKey?: string | null,
-): ReviewCoverage {
+export function coverageForFile(file: Pick<ReviewFile, "key" | "path" | "contentId">, viewed: Readonly<Record<string, ViewedRecord>> | ViewedRecord | null | undefined, selectedFileKey?: string | null): ReviewCoverage {
   const record = resolveViewedRecord(file, viewed)
   if (!record) {
     if (selectedFileKey !== undefined && selectedFileKey !== null && selectedFileKey === file.key) {
@@ -60,7 +53,7 @@ export function reviewProgress(state: Pick<ReviewState, "document" | "viewed" | 
     reviewing,
     changed,
     unreviewed,
-    pending: state.feedback.filter((feedback) => feedback.status !== "resolved").length,
+    pending: state.feedback.filter((feedback) => feedback.status !== "resolved").length
   }
 }
 

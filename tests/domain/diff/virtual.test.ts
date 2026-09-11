@@ -45,9 +45,7 @@ describe("virtual diff layout", () => {
     expect(offsets.rawStartUtf16).toBe(document.lines[0]!.startUtf16)
     expect(offsets.rawEndUtf16).toBe(addition.endUtf16)
     expect(offsets.displayStartUtf16).toBe("message\n".length)
-    expect(offsets.displayEndUtf16 - offsets.displayStartUtf16).toBe(
-      document.lines.reduce((total, line, index) => total + (layout.rowAt(index + 1)?.text.length ?? 0) + 1, 0),
-    )
+    expect(offsets.displayEndUtf16 - offsets.displayStartUtf16).toBe(document.lines.reduce((total, line, index) => total + (layout.rowAt(index + 1)?.text.length ?? 0) + 1, 0))
     expect(layout.contentWidth).toBeGreaterThan(0)
   })
 

@@ -32,7 +32,13 @@ describe("IndexWatcher", () => {
   test("debounces index and lock events into one external refresh", async () => {
     const indexPath = await createIndex()
     let refreshes = 0
-    watcher = new IndexWatcher({ indexPath, onExternalChange: async () => { refreshes++ }, debounceMs: 25 })
+    watcher = new IndexWatcher({
+      indexPath,
+      onExternalChange: async () => {
+        refreshes++
+      },
+      debounceMs: 25
+    })
     watcher.start()
 
     await writeFile(join(directory!, "index.lock"), "after")
@@ -42,12 +48,18 @@ describe("IndexWatcher", () => {
     expect(refreshes).toBe(1)
   })
 
-
   test("retries an index event after a busy mutation settles", async () => {
     const indexPath = await createIndex()
     let busy = true
     let refreshes = 0
-    watcher = new IndexWatcher({ indexPath, onExternalChange: async () => { refreshes++ }, isBusy: () => busy, debounceMs: 25 })
+    watcher = new IndexWatcher({
+      indexPath,
+      onExternalChange: async () => {
+        refreshes++
+      },
+      isBusy: () => busy,
+      debounceMs: 25
+    })
     watcher.start()
 
     await writeFile(indexPath, "external")
@@ -61,7 +73,13 @@ describe("IndexWatcher", () => {
   test("stop prevents later index events from refreshing", async () => {
     const indexPath = await createIndex()
     let refreshes = 0
-    watcher = new IndexWatcher({ indexPath, onExternalChange: async () => { refreshes++ }, debounceMs: 25 })
+    watcher = new IndexWatcher({
+      indexPath,
+      onExternalChange: async () => {
+        refreshes++
+      },
+      debounceMs: 25
+    })
     watcher.start()
     watcher.stop()
 

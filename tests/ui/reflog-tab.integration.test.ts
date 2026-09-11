@@ -59,7 +59,6 @@ describe("panel 4 Reflog tab", () => {
     const reflogSpans = spansAt(harness, win.y0, reflogStart, reflogStart + "Reflog".length - 1)
     expect(reflogSpans.every((s) => !isIndexed(s.fg, 2))).toBe(true)
 
-
     // gocui's drawTitle highlights the active tab only while the view is focused.
     await harness.pressKey("1")
     await harness.flush()
@@ -196,7 +195,7 @@ describe("panel 4 Reflog tab", () => {
       mainScope: "all",
       selectedBranchKind: undefined,
       hasSelectedStash: false,
-      commitsTab: "reflog",
+      commitsTab: "reflog"
     }
     const model = harness.app.controller.state
     expect(registry.dispatch({ name: "return" }, { context: "commits", model, ui })).not.toBe("commit-drilldown")
@@ -257,7 +256,7 @@ describe("panel 4 Reflog tab", () => {
         await repository.git(["commit", "-m", "only commit"])
         await repository.write("b.txt", "unstaged\n")
         await repository.git(["reflog", "expire", "--expire=now", "--all"])
-      },
+      }
     })
     await harness.app.refresh()
     await harness.flush()

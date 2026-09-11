@@ -30,10 +30,7 @@ export type MainSelectionProjection = {
   readonly document?: DiffDocument
 }
 
-export type MainSelection =
-  | { readonly valid: true; readonly kind: "document"; readonly selection: DocumentSelection }
-  | { readonly valid: true; readonly kind: "text"; readonly text: string }
-  | { readonly valid: false; readonly reason: "native/display selection mismatch" }
+export type MainSelection = { readonly valid: true; readonly kind: "document"; readonly selection: DocumentSelection } | { readonly valid: true; readonly kind: "text"; readonly text: string } | { readonly valid: false; readonly reason: "native/display selection mismatch" }
 
 const mismatch: MainSelection = { valid: false, reason: "native/display selection mismatch" }
 
@@ -49,7 +46,7 @@ function utf8BoundaryToUtf16(value: string, byteOffset: number): number | undefi
   if (!Number.isSafeInteger(byteOffset) || byteOffset < 0) return undefined
   if (byteOffset === 0) return 0
   let bytes = 0
-  for (let offset = 0; offset < value.length;) {
+  for (let offset = 0; offset < value.length; ) {
     const codePoint = value.codePointAt(offset)
     if (codePoint === undefined) return undefined
     const character = String.fromCodePoint(codePoint)
@@ -63,21 +60,10 @@ function utf8BoundaryToUtf16(value: string, byteOffset: number): number | undefi
 
 function validUtf16Range(value: string, range: Utf16Range, selectedText: string): boolean {
   const [start, end] = range
-  return (
-    Number.isSafeInteger(start) &&
-    Number.isSafeInteger(end) &&
-    start >= 0 &&
-    end >= start &&
-    end <= value.length &&
-    value.slice(start, end) === selectedText
-  )
+  return Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end >= start && end <= value.length && value.slice(start, end) === selectedText
 }
 
-function normalizeRange(
-  projectionText: string,
-  nativeRange: NativeSelectionRange,
-  selectedText: string,
-): Utf16Range | undefined {
+function normalizeRange(projectionText: string, nativeRange: NativeSelectionRange, selectedText: string): Utf16Range | undefined {
   const [start, end] = nativeBounds(nativeRange)
   const candidates: Utf16Range[] = []
   if (nativeRange.unit !== "utf8") candidates.push([start, end])
@@ -89,27 +75,18 @@ function normalizeRange(
   return candidates.find((candidate) => validUtf16Range(projectionText, candidate, selectedText))
 }
 
-function documentSelection(
-  document: DiffDocument,
-  startUtf16: number,
-  endUtf16: number,
-  lineIndex: number,
-): DocumentSelection {
+function documentSelection(document: DiffDocument, startUtf16: number, endUtf16: number, lineIndex: number): DocumentSelection {
   const line = document.lines[lineIndex]
   const selection: DocumentSelection = { valid: true, startUtf16, endUtf16 }
   if (!line) return selection
   return {
     ...selection,
     fileIndex: line.fileIndex,
-    ...(line.hunkIndex === undefined ? {} : { hunkIndex: line.hunkIndex }),
+    ...(line.hunkIndex === undefined ? {} : { hunkIndex: line.hunkIndex })
   }
 }
 
-export function resolveMainSelection(
-  projection: MainSelectionProjection,
-  nativeRange: NativeSelectionRange,
-  selectedText: string,
-): MainSelection {
+export function resolveMainSelection(projection: MainSelectionProjection, nativeRange: NativeSelectionRange, selectedText: string): MainSelection {
   const range = normalizeRange(projection.text, nativeRange, selectedText)
   if (range === undefined) return mismatch
 
@@ -125,12 +102,8 @@ export function resolveMainSelection(
     if (segment.kind === "text") return { valid: true, kind: "text", text: selectedText }
     if (segment.kind !== "document") continue
 
-    const segmentRawStart = overlapStart === segment.displayStartUtf16
-      ? segment.rawStartUtf16
-      : segment.rawStartUtf16 + overlapStart - segment.displayStartUtf16
-    const segmentRawEnd = overlapEnd === segment.displayEndUtf16
-      ? segment.rawEndUtf16
-      : segment.rawStartUtf16 + overlapEnd - segment.displayStartUtf16
+    const segmentRawStart = overlapStart === segment.displayStartUtf16 ? segment.rawStartUtf16 : segment.rawStartUtf16 + overlapStart - segment.displayStartUtf16
+    const segmentRawEnd = overlapEnd === segment.displayEndUtf16 ? segment.rawEndUtf16 : segment.rawStartUtf16 + overlapEnd - segment.displayStartUtf16
     rawStart = rawStart === undefined ? segmentRawStart : Math.min(rawStart, segmentRawStart)
     rawEnd = rawEnd === undefined ? segmentRawEnd : Math.max(rawEnd, segmentRawEnd)
     lineIndex ??= segment.lineIndex
@@ -140,7 +113,7 @@ export function resolveMainSelection(
   return {
     valid: true,
     kind: "document",
-    selection: documentSelection(projection.document, rawStart, rawEnd, lineIndex),
+    selection: documentSelection(projection.document, rawStart, rawEnd, lineIndex)
   }
 }
 
@@ -148,7 +121,7 @@ export function textSelectionProjection(generation: number, text: string): MainS
   return {
     generation,
     text,
-    segments: text.length === 0 ? [] : [{ kind: "text", displayStartUtf16: 0, displayEndUtf16: text.length }],
+    segments: text.length === 0 ? [] : [{ kind: "text", displayStartUtf16: 0, displayEndUtf16: text.length }]
   }
 }
 
@@ -158,14 +131,7 @@ function assertRange(label: string, start: number, end: number, limit: number): 
   }
 }
 
-
-export function eagerDiffSelectionProjection(input: {
-  readonly generation: number
-  readonly document: DiffDocument
-  readonly text: string
-  readonly preambleLength: number
-  readonly bodySegments: readonly DisplaySourceSegment[]
-}): MainSelectionProjection {
+export function eagerDiffSelectionProjection(input: { readonly generation: number; readonly document: DiffDocument; readonly text: string; readonly preambleLength: number; readonly bodySegments: readonly DisplaySourceSegment[] }): MainSelectionProjection {
   const { generation, document, text, preambleLength, bodySegments } = input
   assertRange("preamble", 0, preambleLength, text.length)
   const bodyLength = text.length - preambleLength
@@ -181,7 +147,7 @@ export function eagerDiffSelectionProjection(input: {
       segments.push({
         kind: "decoration",
         displayStartUtf16: preambleLength + bodyCursor,
-        displayEndUtf16: preambleLength + source.displayStartUtf16,
+        displayEndUtf16: preambleLength + source.displayStartUtf16
       })
     }
     if (source.displayEndUtf16 > source.displayStartUtf16) {
@@ -191,7 +157,7 @@ export function eagerDiffSelectionProjection(input: {
         displayEndUtf16: preambleLength + source.displayEndUtf16,
         rawStartUtf16: source.rawStartUtf16,
         rawEndUtf16: source.rawEndUtf16,
-        lineIndex: source.lineIndex,
+        lineIndex: source.lineIndex
       })
     }
     bodyCursor = source.displayEndUtf16
@@ -200,7 +166,7 @@ export function eagerDiffSelectionProjection(input: {
     segments.push({
       kind: "decoration",
       displayStartUtf16: preambleLength + bodyCursor,
-      displayEndUtf16: text.length,
+      displayEndUtf16: text.length
     })
   }
 

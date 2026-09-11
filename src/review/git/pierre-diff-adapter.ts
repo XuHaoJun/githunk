@@ -87,7 +87,7 @@ function fallbackMetadata(file: ReviewFile): ReviewDiffMetadata {
     splitLineCount: 0,
     unifiedLineCount: 0,
     isPartial: true,
-    cacheKey: cacheKey(file),
+    cacheKey: cacheKey(file)
   }
 }
 
@@ -101,9 +101,7 @@ function normalizeHunk(hunk: FileDiffMetadata["hunks"][number]): ReviewDiffHunk 
     deletionLineIndex: hunk.deletionLineIndex,
     additionLineIndex: hunk.additionLineIndex,
     collapsedBefore: hunk.collapsedBefore,
-    hunkContent: hunk.hunkContent.map((content) => content.type === "context"
-      ? { type: "context", lines: content.lines, deletions: 0, additions: 0 }
-      : { type: "change", lines: Math.max(content.deletions, content.additions), deletions: content.deletions, additions: content.additions }),
+    hunkContent: hunk.hunkContent.map((content) => (content.type === "context" ? { type: "context", lines: content.lines, deletions: 0, additions: 0 } : { type: "change", lines: Math.max(content.deletions, content.additions), deletions: content.deletions, additions: content.additions }))
   }
 }
 
@@ -118,7 +116,7 @@ function normalizeMetadata(file: ReviewFile, metadata: FileDiffMetadata): Review
     splitLineCount: metadata.splitLineCount,
     unifiedLineCount: metadata.unifiedLineCount,
     isPartial: metadata.isPartial,
-    cacheKey: metadata.cacheKey ?? cacheKey(file),
+    cacheKey: metadata.cacheKey ?? cacheKey(file)
   }
 }
 
@@ -137,9 +135,7 @@ export function normalizeReviewDiffMetadata(file: ReviewFile): ReviewDiffMetadat
   let normalized: ReviewDiffMetadata | undefined
   try {
     const parsed = parsePatchFiles(patch, `${file.key}:${file.patchDigest}`, true)
-    const metadata = parsed
-      .flatMap((entry) => entry.files)
-      .find((candidate) => normalizePath(candidate.name) === file.path || normalizePath(candidate.prevName) === file.path)
+    const metadata = parsed.flatMap((entry) => entry.files).find((candidate) => normalizePath(candidate.name) === file.path || normalizePath(candidate.prevName) === file.path)
     const first = metadata ?? parsed[0]?.files[0]
     if (first) normalized = normalizeMetadata(file, first)
   } catch {

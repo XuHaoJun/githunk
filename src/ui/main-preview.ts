@@ -9,7 +9,7 @@ export class MainPreviewGate {
       readonly install: (content: MainPaneContent) => void
       readonly setLoading: (loading: boolean) => void
       readonly reportError: (error: unknown) => void
-    },
+    }
   ) {}
 
   installSynchronous(content: MainPaneContent): void {
@@ -19,12 +19,7 @@ export class MainPreviewGate {
     this.sink.install(content)
   }
 
-  async request<T>(
-    source: MainPaneContent["source"],
-    stableId: string,
-    load: () => Promise<T>,
-    present: (value: T) => MainPaneContent,
-  ): Promise<void> {
+  async request<T>(source: MainPaneContent["source"], stableId: string, load: () => Promise<T>, present: (value: T) => MainPaneContent): Promise<void> {
     const identity = `${source}:${stableId}`
     const generation = ++this.generation
     this.requestedIdentity = identity

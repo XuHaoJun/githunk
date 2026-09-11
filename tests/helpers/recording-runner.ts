@@ -21,6 +21,6 @@ export function recordingRunner(runner: Pick<GitRunner, "run">): RecordingRunner
     run: (args, options) => {
       calls.push([...args])
       return runner.run(args, options)
-    },
+    }
   }
 }

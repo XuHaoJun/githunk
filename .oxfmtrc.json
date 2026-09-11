@@ -1,0 +1,6 @@
+{
+  "ignorePatterns": ["learn-projects/**"],
+  "semi": false,
+  "printWidth": 320,
+  "trailingComma": "none"
+}

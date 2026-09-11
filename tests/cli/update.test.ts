@@ -35,10 +35,10 @@ function stubEnv(overrides: Partial<UpdateEnvironment> = {}): UpdateEnvironment 
       calls.replace.push({
         binary: payload.stagedBinary,
         skill: payload.stagedSkill,
-        executable: payload.executablePath,
+        executable: payload.executablePath
       })
     },
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -69,27 +69,31 @@ describe("runUpdate", () => {
     const env = stubEnv()
     const result = await runUpdate({ check: false }, env)
     expect(result).toEqual({ exitCode: 0, message: "updated githunk 0.2.0 -> 0.3.0" })
-    expect(env.calls.replace).toEqual([{
-      binary: "/tmp/githunk-update-test/githunk-linux-x64/githunk",
-      skill: "/tmp/githunk-update-test/githunk-linux-x64/skills/githunk-handoff/SKILL.md",
-      executable: "/home/user/.local/bin/githunk",
-    }])
+    expect(env.calls.replace).toEqual([
+      {
+        binary: "/tmp/githunk-update-test/githunk-linux-x64/githunk",
+        skill: "/tmp/githunk-update-test/githunk-linux-x64/skills/githunk-handoff/SKILL.md",
+        executable: "/home/user/.local/bin/githunk"
+      }
+    ])
   })
 
   test("honors a downgrade to an archive that predates the bundled skill", async () => {
     const env = stubEnv({ stagedSkill: () => undefined })
     const result = await runUpdate({ version: "0.1.0", check: false }, env)
     expect(result.exitCode).toBe(0)
-    expect(env.calls.replace).toEqual([{
-      binary: "/tmp/githunk-update-test/githunk-linux-x64/githunk",
-      skill: undefined,
-      executable: "/home/user/.local/bin/githunk",
-    }])
+    expect(env.calls.replace).toEqual([
+      {
+        binary: "/tmp/githunk-update-test/githunk-linux-x64/githunk",
+        skill: undefined,
+        executable: "/home/user/.local/bin/githunk"
+      }
+    ])
   })
 
   test("refuses a checksum mismatch without replacing the binary", async () => {
     const env = stubEnv({
-      fetchAsset: () => Promise.resolve({ tarball: new TextEncoder().encode("tampered"), checksums: "0".repeat(64) + "  githunk-linux-x64.tar.gz\n" }),
+      fetchAsset: () => Promise.resolve({ tarball: new TextEncoder().encode("tampered"), checksums: "0".repeat(64) + "  githunk-linux-x64.tar.gz\n" })
     })
     const result = await runUpdate({ check: false }, env)
     expect(result.exitCode).toBe(1)

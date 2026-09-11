@@ -18,13 +18,9 @@ async function run(command: string, args: readonly string[], cwd: string): Promi
     cwd,
     stdin: "ignore",
     stdout: "pipe",
-    stderr: "pipe",
+    stderr: "pipe"
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    Bun.readableStreamToText(process.stdout),
-    Bun.readableStreamToText(process.stderr),
-    process.exited,
-  ])
+  const [stdout, stderr, exitCode] = await Promise.all([Bun.readableStreamToText(process.stdout), Bun.readableStreamToText(process.stderr), process.exited])
   return { exitCode, stdout, stderr }
 }
 
@@ -82,16 +78,12 @@ describe("published CLI package", () => {
       cwd: repository,
       stdin: "ignore",
       stdout: "pipe",
-      stderr: "pipe",
+      stderr: "pipe"
     })
     // The wrapper launches a real renderer; a fake clock cannot tell us when signal forwarding is installed.
     await Bun.sleep(300)
     child.kill("SIGTERM")
-    const [stdout, stderr, exitCode] = await Promise.all([
-      Bun.readableStreamToText(child.stdout),
-      Bun.readableStreamToText(child.stderr),
-      child.exited,
-    ])
+    const [stdout, stderr, exitCode] = await Promise.all([Bun.readableStreamToText(child.stdout), Bun.readableStreamToText(child.stderr), child.exited])
     expect(exitCode).toBe(143)
     expect(`${stdout}${stderr}`).not.toContain("Bun is not defined")
   })

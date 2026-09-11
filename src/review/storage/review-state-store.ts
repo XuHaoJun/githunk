@@ -1,14 +1,7 @@
 import { createHash } from "node:crypto"
 import type { GitRunner } from "../../git/runner"
 import { LocalStateFile } from "../../storage/local-state-file"
-import {
-  emptyReviewDatabaseV2,
-  parseReviewDatabaseV2,
-  serializeReviewArtifactV1,
-  serializeReviewDatabaseV2,
-  type PersistedReviewState,
-  type ReviewDatabaseV2,
-} from "./schemas"
+import { emptyReviewDatabaseV2, parseReviewDatabaseV2, serializeReviewArtifactV1, serializeReviewDatabaseV2, type PersistedReviewState, type ReviewDatabaseV2 } from "./schemas"
 import type { ReviewFeedbackDraft } from "../core/types"
 import type { ReviewArtifactV1 } from "../core/artifact"
 import type { ReviewState } from "../core/state"
@@ -43,12 +36,7 @@ export class ReviewStateStore {
 
   private async readDatabase(): Promise<ReviewDatabaseV2> {
     this.warning = undefined
-    let text: string | undefined
-    try {
-      text = await this.file.readText()
-    } catch (error) {
-      throw error
-    }
+    const text = await this.file.readText()
     if (text === undefined) return emptyReviewDatabaseV2()
     let parsed: unknown
     try {
@@ -75,7 +63,7 @@ export class ReviewStateStore {
     const result = this.queue.then(operation, operation)
     this.queue = result.then(
       () => undefined,
-      () => undefined,
+      () => undefined
     )
     return result
   }
@@ -113,7 +101,7 @@ export class ReviewStateStore {
             draft: pending ?? null,
             expandedGaps: [],
             lastSubmission: null,
-            submissionInProgress: null,
+            submissionInProgress: null
           }
           nextReviews = { ...current.reviews, [reviewId]: emptyPersisted }
         } else {
@@ -155,11 +143,11 @@ export class ReviewStateStore {
             draft: null,
             expandedGaps: [],
             lastSubmission: null,
-            submissionInProgress: null,
+            submissionInProgress: null
           }
           const nextReviews = {
             ...current.reviews,
-            [reviewId]: { ...persisted, projection: { kind: "aggregate" as const }, draft: draft ?? null },
+            [reviewId]: { ...persisted, projection: { kind: "aggregate" as const }, draft: draft ?? null }
           }
           await this.file.writeText(serializeReviewDatabaseV2({ ...current, reviews: nextReviews }) + "\n")
           if (this.draftPending.get(reviewId) === draft) this.draftPending.delete(reviewId)
@@ -179,7 +167,7 @@ export function persistedFromReviewState(state: ReviewState): PersistedReviewSta
   const expandedGaps = state.expandedGaps.map((gap) => ({
     fileKey: gap.fileKey,
     gapId: gap.gapId,
-    expanded: gap.expanded,
+    expanded: gap.expanded
   }))
   return {
     selection: { fileKey: state.selection.fileKey, hunkIndex: state.selection.hunkIndex },
@@ -190,7 +178,7 @@ export function persistedFromReviewState(state: ReviewState): PersistedReviewSta
           side: state.lineSelection.side,
           line: state.lineSelection.line,
           contentId: state.lineSelection.contentId,
-          contextDigest: state.lineSelection.contextDigest,
+          contextDigest: state.lineSelection.contextDigest
         }
       : null,
     filter: { query: state.filter.query, scope: state.filter.scope },
@@ -200,7 +188,7 @@ export function persistedFromReviewState(state: ReviewState): PersistedReviewSta
     draft: state.draft,
     expandedGaps,
     lastSubmission: state.lastSubmission,
-    submissionInProgress: null,
+    submissionInProgress: null
   }
 }
 

@@ -8,9 +8,7 @@ type WorkerRequest = {
   appearance: "dark" | "light"
 }
 
-type WorkerResponse =
-  | { version: 1; id: number; ok: true; payload: HighlightPayload | null }
-  | { version: 1; id: number; ok: false; message: string }
+type WorkerResponse = { version: 1; id: number; ok: true; payload: HighlightPayload | null } | { version: 1; id: number; ok: false; message: string }
 
 type Pending = {
   id: number
@@ -115,12 +113,7 @@ export function registerHighlightWorker(nextWorker: Worker): Worker {
   return nextWorker
 }
 
-export function highlightInWorker(
-  patch: string,
-  fileKey: string,
-  appearance: "dark" | "light",
-  timeoutMs = HIGHLIGHT_WORKER_TIMEOUT_MS,
-): Promise<HighlightPayload | null> {
+export function highlightInWorker(patch: string, fileKey: string, appearance: "dark" | "light", timeoutMs = HIGHLIGHT_WORKER_TIMEOUT_MS): Promise<HighlightPayload | null> {
   if (typeof Worker === "undefined" && worker === null && workerFactory === undefined) {
     return Promise.reject(new Error("worker unavailable"))
   }

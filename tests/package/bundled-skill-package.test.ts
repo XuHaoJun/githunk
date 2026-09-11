@@ -9,13 +9,9 @@ test("the published npm package contains the agent-readable handoff skill", asyn
     cwd: root,
     stdin: "ignore",
     stdout: "pipe",
-    stderr: "pipe",
+    stderr: "pipe"
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    Bun.readableStreamToText(child.stdout),
-    Bun.readableStreamToText(child.stderr),
-    child.exited,
-  ])
+  const [stdout, stderr, exitCode] = await Promise.all([Bun.readableStreamToText(child.stdout), Bun.readableStreamToText(child.stderr), child.exited])
   expect(exitCode, stderr).toBe(0)
   const payload = JSON.parse(stdout) as readonly { files: readonly { path: string }[] }[]
   const files = payload[0]?.files.map((entry) => entry.path) ?? []

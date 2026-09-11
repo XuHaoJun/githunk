@@ -4,7 +4,7 @@ import { ReviewWorkspaceController } from "../../../src/ui/review-workspace/cont
 import { FinishDialog } from "../../../src/ui/review-workspace/finish-dialog"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewIdentity, createReviewGeneration } from "../../../src/review/core/identity"
-import { createRangeAnchor, createFileAnchor } from "../../../src/review/core/anchors"
+import { createRangeAnchor } from "../../../src/review/core/anchors"
 import { planReviewIntent } from "../../../src/review/core/intents"
 import type { GitRunner } from "../../../src/git/runner"
 import type { ReviewFile } from "../../../src/review/core/types"
@@ -34,7 +34,7 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [],
     source: "available",
-    ...overrides,
+    ...overrides
   } as unknown as ReviewFile
 }
 
@@ -48,8 +48,11 @@ function fakeClipboard() {
   let lastText: string | undefined
   return {
     isOsc52Supported: () => true,
-    copyToClipboardOSC52: (text: string) => { lastText = text; return true },
-    getLast: () => lastText,
+    copyToClipboardOSC52: (text: string) => {
+      lastText = text
+      return true
+    },
+    getLast: () => lastText
   }
 }
 
@@ -209,7 +212,9 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       dialog.setDecision("comment")
       dialog.setSummary("summary")
       const origCreate = artifactStore.createExclusive.bind(artifactStore)
-      artifactStore.createExclusive = async () => { throw new Error("injected artifact failure") }
+      artifactStore.createExclusive = async () => {
+        throw new Error("injected artifact failure")
+      }
       const result = await dialog.submit()
       expect(result.ok).toBe(false)
       expect(result.reason).toBe("transaction-failed")
@@ -220,8 +225,12 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       expect(db.reviews[reviewId]?.submissionInProgress).toBeNull()
       artifactStore.createExclusive = origCreate
     } finally {
-      try { await controller?.flushDrafts?.().catch(() => {}) } catch {}
-      try { await stateStore?.flush().catch(() => {}) } catch {}
+      try {
+        await controller?.flushDrafts?.().catch(() => {})
+      } catch {}
+      try {
+        await stateStore?.flush().catch(() => {})
+      } catch {}
       await repo?.cleanup()
     }
   })
@@ -245,7 +254,10 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
         artifactStore,
         loadDocument: async () => doc,
         now: () => "2026-08-28T00:00:00.000Z",
-        randomId: () => { call++; return `art-${call}` },
+        randomId: () => {
+          call++
+          return `art-${call}`
+        }
       })
       await controller.open("refs/heads/main")
       const anchor = createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 })
@@ -261,7 +273,10 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       const origCreate = artifactStore.createExclusive.bind(artifactStore)
       let first = true
       artifactStore.createExclusive = async (a) => {
-        if (first) { first = false; throw new Error("first failure") }
+        if (first) {
+          first = false
+          throw new Error("first failure")
+        }
         return origCreate(a)
       }
       const res1 = await dialog.submit()
@@ -285,8 +300,12 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       expect((await artifactStore.load(reviewId, "art-1"))?.id).toBe("art-1")
       artifactStore.createExclusive = origCreate
     } finally {
-      try { await controller?.flushDrafts?.().catch(() => {}) } catch {}
-      try { await stateStore?.flush().catch(() => {}) } catch {}
+      try {
+        await controller?.flushDrafts?.().catch(() => {})
+      } catch {}
+      try {
+        await stateStore?.flush().catch(() => {})
+      } catch {}
       await repo?.cleanup()
     }
   })
@@ -303,16 +322,34 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       const file = makeFile({ key: "a", path: "src/a.ts", hunks: [makeHunk(0, [" a"])] as unknown as ReviewFile["hunks"] })
       const doc = makeDoc([file])
       let call = 0
-      controller = new ReviewWorkspaceController({ runner, stateStore, artifactStore, loadDocument: async () => doc, now: () => "2026-08-28T00:00:00.000Z", randomId: () => { call++; return `art-${call}` } })
+      controller = new ReviewWorkspaceController({
+        runner,
+        stateStore,
+        artifactStore,
+        loadDocument: async () => doc,
+        now: () => "2026-08-28T00:00:00.000Z",
+        randomId: () => {
+          call++
+          return `art-${call}`
+        }
+      })
       await controller.open("refs/heads/main")
       const anchor = createRangeAnchor(file, { side: "new", startLine: 1, endLine: 1 })
       controller.dispatch(planReviewIntent(controller.state!, { type: "feedback/start-draft", anchor, kind: "note", severity: "comment", body: "note" }))
       controller.dispatch(planReviewIntent(controller.state!, { type: "feedback/create", id: "f1", createdAt: "2026-08-28T00:00:00.000Z" }))
       const dialog = new FinishDialog({ controller, clipboard: fakeClipboard(), stateStore, artifactStore })
-      dialog.open(); dialog.setDecision("comment"); dialog.setSummary("summary")
+      dialog.open()
+      dialog.setDecision("comment")
+      dialog.setSummary("summary")
       const original = artifactStore.createExclusive.bind(artifactStore)
       let first = true
-      artifactStore.createExclusive = async (artifact) => { if (first) { first = false; throw new Error("first failure") }; return original(artifact) }
+      artifactStore.createExclusive = async (artifact) => {
+        if (first) {
+          first = false
+          throw new Error("first failure")
+        }
+        return original(artifact)
+      }
       expect((await dialog.submit()).ok).toBe(false)
       expect((await stateStore.load()).reviews[doc.identity.id]?.submissionInProgress).toBeNull()
       artifactStore.createExclusive = original
@@ -323,8 +360,12 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       expect(await artifactStore.load(doc.identity.id, "art-100")).toBeDefined()
       expect(await artifactStore.load(doc.identity.id, "art-1")).toBeUndefined()
     } finally {
-      try { await controller?.flushDrafts?.().catch(() => {}) } catch {}
-      try { await stateStore?.flush().catch(() => {}) } catch {}
+      try {
+        await controller?.flushDrafts?.().catch(() => {})
+      } catch {}
+      try {
+        await stateStore?.flush().catch(() => {})
+      } catch {}
       await repo?.cleanup()
     }
   })
@@ -380,8 +421,12 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       expect(md1).toContain("```suggestion")
       expect(md1).toContain("replaced")
     } finally {
-      try { await controller?.flushDrafts?.().catch(() => {}) } catch {}
-      try { await stateStore?.flush().catch(() => {}) } catch {}
+      try {
+        await controller?.flushDrafts?.().catch(() => {})
+      } catch {}
+      try {
+        await stateStore?.flush().catch(() => {})
+      } catch {}
       await repo?.cleanup()
     }
   })
@@ -418,8 +463,12 @@ describe("finish-dialog — decision invariants, commit projection, transaction,
       const loaded = await artifactStore.load(doc.identity.id, "art-clear")
       expect(loaded?.id).toBe("art-clear")
     } finally {
-      try { await controller?.flushDrafts?.().catch(() => {}) } catch {}
-      try { await stateStore?.flush().catch(() => {}) } catch {}
+      try {
+        await controller?.flushDrafts?.().catch(() => {})
+      } catch {}
+      try {
+        await stateStore?.flush().catch(() => {})
+      } catch {}
       await repo?.cleanup()
     }
   })

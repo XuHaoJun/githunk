@@ -19,13 +19,11 @@ export function splitterGlyphs(axis: SplitterAxis, width: number, height: number
   if (axis === "vertical") {
     if (height <= 0 || width <= 0) return ""
     const midpoint = Math.floor(height / 2)
-    return Array.from({ length: height }, (_value, row) =>
-      hovered && row === midpoint ? VERTICAL_GRAB : VERTICAL_RULE).join("\n")
+    return Array.from({ length: height }, (_value, row) => (hovered && row === midpoint ? VERTICAL_GRAB : VERTICAL_RULE)).join("\n")
   }
   if (width <= 0 || height <= 0) return ""
   const midpoint = Math.floor(width / 2)
-  return Array.from({ length: width }, (_value, column) =>
-    hovered && column === midpoint ? HORIZONTAL_GRAB : HORIZONTAL_RULE).join("")
+  return Array.from({ length: width }, (_value, column) => (hovered && column === midpoint ? HORIZONTAL_GRAB : HORIZONTAL_RULE)).join("")
 }
 
 export type SplitterHandle = {
@@ -39,7 +37,7 @@ export function createSplitter(renderer: CliRenderer, axis: SplitterAxis, id: st
     id,
     position: "absolute",
     width: axis === "vertical" ? 1 : "100%",
-    height: axis === "vertical" ? "100%" : 1,
+    height: axis === "vertical" ? "100%" : 1
   })
   const text = new TextRenderable(renderer, {
     id: `${id}-glyphs`,
@@ -48,7 +46,7 @@ export function createSplitter(renderer: CliRenderer, axis: SplitterAxis, id: st
     wrapMode: "none",
     width: "100%",
     height: "100%",
-    fg: IDLE_COLOR,
+    fg: IDLE_COLOR
   })
   box.add(text)
   // A drag must never begin a text selection, and a selection must never drag.
@@ -72,6 +70,6 @@ export function createSplitter(renderer: CliRenderer, axis: SplitterAxis, id: st
       lastWidth = width
       lastHeight = height
       text.content = splitterGlyphs(axis, width, height, hovered)
-    },
+    }
   }
 }

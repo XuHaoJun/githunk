@@ -1,15 +1,7 @@
 import type { ColorInput } from "@opentui/core"
 
 import type { PullRequest, PullRequestChecksState, PullRequestState } from "../domain/pull-request"
-import {
-  PR_CHECKS_FAILING_FG,
-  PR_CHECKS_PASSING_FG,
-  PR_CHECKS_PENDING_FG,
-  PR_CLOSED_FG,
-  PR_DRAFT_FG,
-  PR_MERGED_FG,
-  PR_OPEN_FG,
-} from "./theme"
+import { PR_CHECKS_FAILING_FG, PR_CHECKS_PASSING_FG, PR_CHECKS_PENDING_FG, PR_CLOSED_FG, PR_DRAFT_FG, PR_MERGED_FG, PR_OPEN_FG } from "./theme"
 
 /**
  * The dot lazygit draws between a branch's recency and its name —
@@ -33,7 +25,7 @@ const STATE_COLOR: Readonly<Record<PullRequestState, ColorInput>> = {
   OPEN: PR_OPEN_FG,
   CLOSED: PR_CLOSED_FG,
   MERGED: PR_MERGED_FG,
-  DRAFT: PR_DRAFT_FG,
+  DRAFT: PR_DRAFT_FG
 }
 
 /** `checksStatePresentation` — pkg/gui/presentation/branches.go:344-359. */
@@ -42,7 +34,7 @@ const CHECKS_ICON: Readonly<Partial<Record<PullRequestChecksState, PullRequestIc
   PENDING: { text: "●", color: PR_CHECKS_PENDING_FG },
   FAILURE: { text: "✗", color: PR_CHECKS_FAILING_FG },
   ERROR: { text: "!", color: PR_CHECKS_FAILING_FG },
-  EXPECTED: { text: "○" },
+  EXPECTED: { text: "○" }
 }
 
 export function pullRequestIcon(pullRequest: PullRequest): PullRequestIcon {

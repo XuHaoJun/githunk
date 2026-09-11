@@ -34,18 +34,18 @@ bun run spike:selection
 
 Run each case twice: once at 120+ columns and once with PATCH narrowed until the intentionally long line wraps.
 
-| ID | Case | Expected |
-|---|---|---|
-| U1 | Select `中文審查` | Exact CJK text |
-| U2 | Select `🚀` plus neighbors | No adjacent character corruption |
-| U3 | Select `é` | Grapheme is not split/corrupted |
-| U4 | Select a tab-indented line | Clipboard preserves logical indentation |
-| W1 | Select the wrapped long source line | Clipboard contains one logical source line, not visual-row artifacts |
-| W2 | Select from mid wrapped line into next logical line | Boundary text is correct |
-| R1 | Resize terminal narrower, then wider | Selection remains mapped to visible patch content |
-| R2 | Drag splitter repeatedly, then select | No left-pane contamination |
-| S1 | Start drag on splitter | Resize only; no text selection |
-| S2 | Start drag one cell inside patch | Selection only; no resize |
+| ID  | Case                                                | Expected                                                             |
+| --- | --------------------------------------------------- | -------------------------------------------------------------------- |
+| U1  | Select `中文審查`                                   | Exact CJK text                                                       |
+| U2  | Select `🚀` plus neighbors                          | No adjacent character corruption                                     |
+| U3  | Select `é`                                          | Grapheme is not split/corrupted                                      |
+| U4  | Select a tab-indented line                          | Clipboard preserves logical indentation                              |
+| W1  | Select the wrapped long source line                 | Clipboard contains one logical source line, not visual-row artifacts |
+| W2  | Select from mid wrapped line into next logical line | Boundary text is correct                                             |
+| R1  | Resize terminal narrower, then wider                | Selection remains mapped to visible patch content                    |
+| R2  | Drag splitter repeatedly, then select               | No left-pane contamination                                           |
+| S1  | Start drag on splitter                              | Resize only; no text selection                                       |
+| S2  | Start drag one cell inside patch                    | Selection only; no resize                                            |
 
 ### Manual evidence
 

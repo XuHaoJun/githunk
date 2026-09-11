@@ -25,16 +25,16 @@ function lineEnding(raw: string): string {
 }
 
 function quotedToken(token: string): string {
-  if (![...token].some((character) => character < " " || character > "~" || character === "\"" || character === "\\")) return token
+  if (![...token].some((character) => character < " " || character > "~" || character === '"' || character === "\\")) return token
   const bytes = new TextEncoder().encode(token)
-  let escaped = "\""
+  let escaped = '"'
   for (const byte of bytes) {
     if (byte === 0x5c) escaped += "\\\\"
-    else if (byte === 0x22) escaped += "\\\""
+    else if (byte === 0x22) escaped += '\\"'
     else if (byte >= 0x20 && byte <= 0x7e) escaped += String.fromCharCode(byte)
     else escaped += `\\${byte.toString(8).padStart(3, "0")}`
   }
-  return `${escaped}\"`
+  return `${escaped}"`
 }
 
 function pathForHeader(path: string): string {
@@ -46,19 +46,14 @@ function pathForNewHeader(path: string): string {
 }
 
 function rewriteHeader(lines: readonly DiffLine[], file: DiffFile, options: PartialPatchOptions, partial: boolean): string {
-  const path = options.pathOverride
-    ?? (file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath)
-  const stripRename = partial
-    && file.oldPath !== undefined && file.newPath !== undefined
-    && file.oldPath !== "/dev/null" && file.newPath !== "/dev/null"
-    && file.oldPath !== file.newPath
+  const path = options.pathOverride ?? (file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath)
+  const stripRename = partial && file.oldPath !== undefined && file.newPath !== undefined && file.oldPath !== "/dev/null" && file.newPath !== "/dev/null" && file.oldPath !== file.newPath
   const deletedFilePartial = partial && file.oldPath !== undefined && file.newPath === "/dev/null"
   if (!options.pathOverride && !stripRename && !deletedFilePartial) return lines.map((line) => line.raw).join("")
   const result: string[] = []
   for (const line of lines) {
     const value = lineValue(line.raw)
-    if ((stripRename && (/^(?:similarity|dissimilarity) index /.test(value) || value.startsWith("rename from ") || value.startsWith("rename to ")))
-      || (deletedFilePartial && value.startsWith("deleted file mode "))) continue
+    if ((stripRename && (/^(?:similarity|dissimilarity) index /.test(value) || value.startsWith("rename from ") || value.startsWith("rename to "))) || (deletedFilePartial && value.startsWith("deleted file mode "))) continue
     if (path !== undefined && value.startsWith("diff --git ")) {
       result.push(`diff --git ${pathForHeader(path)} ${pathForNewHeader(path)}${lineEnding(line.raw)}`)
       continue
@@ -97,13 +92,7 @@ function globalLineIndex(document: DiffDocument, line: DiffLine): number {
   return document.lines.indexOf(line)
 }
 
-function transformHunk(
-  document: DiffDocument,
-  hunk: DiffHunk,
-  included: ReadonlySet<number>,
-  options: PartialPatchOptions,
-  startOffset: number,
-): TransformedHunk & { readonly nextOffset: number; readonly newStart: number } {
+function transformHunk(document: DiffDocument, hunk: DiffHunk, included: ReadonlySet<number>, options: PartialPatchOptions, startOffset: number): TransformedHunk & { readonly nextOffset: number; readonly newStart: number } {
   const pendingContext: string[] = []
   const output: string[] = []
   let didSeeUnselectedNewFileLine = false
@@ -161,18 +150,12 @@ function fileText(document: DiffDocument, file: DiffFile): string {
   return document.text.slice(file.startUtf16, file.endUtf16)
 }
 
-export function buildPartialPatch(
-  document: DiffDocument,
-  includedLineIndexes: readonly number[],
-  options: PartialPatchOptions,
-): string {
+export function buildPartialPatch(document: DiffDocument, includedLineIndexes: readonly number[], options: PartialPatchOptions): string {
   const included = new Set(includedLineIndexes)
   const output: string[] = []
   for (const file of document.files) {
     const hunkHeaderLine = file.lines.find((line) => line.kind === "hunk-header")
-    const hasSelectedChange = options.wholeFile || file.hunks.some((hunk) => hunk.lines.some((line) =>
-      (line.kind === "addition" || line.kind === "deletion") && included.has(globalLineIndex(document, line)),
-    ))
+    const hasSelectedChange = options.wholeFile || file.hunks.some((hunk) => hunk.lines.some((line) => (line.kind === "addition" || line.kind === "deletion") && included.has(globalLineIndex(document, line))))
     if (!hasSelectedChange) continue
     if (options.wholeFile && options.pathOverride === undefined) {
       output.push(fileText(document, file))

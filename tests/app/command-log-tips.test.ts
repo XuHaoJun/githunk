@@ -1,13 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { CommandLog } from "../../src/app/command-log"
-import {
-  COMMAND_LOG_HEADER,
-  COMMAND_LOG_TIPS,
-  COMMAND_LOG_TIP_KEYS,
-  RANDOM_TIP_LABEL,
-  randomTip,
-  seedCommandLog,
-} from "../../src/app/command-log-tips"
+import { COMMAND_LOG_HEADER, COMMAND_LOG_TIPS, COMMAND_LOG_TIP_KEYS, RANDOM_TIP_LABEL, randomTip, seedCommandLog } from "../../src/app/command-log-tips"
 import { BindingRegistry, GITHUNK_BINDINGS } from "../../src/ui/bindings"
 
 function texts(log: CommandLog): readonly string[] {

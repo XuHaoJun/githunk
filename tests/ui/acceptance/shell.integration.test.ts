@@ -4,7 +4,9 @@ import { MIN_LEFT_WIDTH } from "../../../src/ui/layout"
 
 describe("review shell acceptance", () => {
   let harness: ShellHarness | undefined
-  afterEach(async () => { await harness?.cleanup() })
+  afterEach(async () => {
+    await harness?.cleanup()
+  })
 
   test("the commits pane lists the branch's commits", async () => {
     harness = await createShellHarness({ commits: ["oldest work", "middle work", "newest work"] })
@@ -19,7 +21,11 @@ describe("review shell acceptance", () => {
     // The stash needs an entry for its apply binding to be available (and therefore hinted),
     // so this harness creates one — the files and branches hints need no such setup.
     harness = await createShellHarness({ stash: true })
-    for (const [key, expected] of [["2", "stage: space"], ["3", "checkout: space"], ["5", "apply: space"]] as const) {
+    for (const [key, expected] of [
+      ["2", "stage: space"],
+      ["3", "checkout: space"],
+      ["5", "apply: space"]
+    ] as const) {
       await harness.pressKey(key)
       expect(harness.frame()).toContain(expected)
     }
@@ -75,7 +81,12 @@ describe("review shell acceptance", () => {
 
   test("a resize never corrupts the layout", async () => {
     harness = await createShellHarness({ width: 200, height: 50 })
-    for (const [width, height] of [[100, 30], [70, 20], [200, 50], [60, 14]] as const) {
+    for (const [width, height] of [
+      [100, 30],
+      [70, 20],
+      [200, 50],
+      [60, 14]
+    ] as const) {
       await harness.resize(width, height)
       const geometry = harness.app.view!.geometry
       expect(geometry.terminalWidth).toBe(width)

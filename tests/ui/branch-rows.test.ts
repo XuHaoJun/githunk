@@ -5,21 +5,12 @@ import { pullRequestIcon } from "../../src/ui/pull-request-icon"
 import { parsePullRequests } from "../../src/git/github"
 import type { AppModel } from "../../src/domain/repository"
 import type { PullRequest } from "../../src/domain/pull-request"
-import {
-  BRANCH_DIVERGED_FG,
-  BRANCH_MATCHES_UPSTREAM_FG,
-  BRANCH_RECENCY_CURRENT_FG,
-  BRANCH_RECENCY_FG,
-  PR_CLOSED_FG,
-  PR_DRAFT_FG,
-  PR_MERGED_FG,
-  PR_OPEN_FG,
-} from "../../src/ui/theme"
+import { BRANCH_DIVERGED_FG, BRANCH_MATCHES_UPSTREAM_FG, BRANCH_RECENCY_CURRENT_FG, BRANCH_RECENCY_FG, PR_CLOSED_FG, PR_DRAFT_FG, PR_MERGED_FG, PR_OPEN_FG } from "../../src/ui/theme"
 
 const NOW_UNIX = 1_700_000_000
 const now = new Date(NOW_UNIX * 1000)
 
-function modelWith(localBranches: AppModel["branches"] extends infer B ? B extends { localBranches: infer L } ? L : never : never, extra: Partial<AppModel> = {}): AppModel {
+function modelWith(localBranches: AppModel["branches"] extends infer B ? (B extends { localBranches: infer L } ? L : never) : never, extra: Partial<AppModel> = {}): AppModel {
   return {
     repositoryRoot: "/tmp/repo",
     branch: "main",
@@ -31,21 +22,26 @@ function modelWith(localBranches: AppModel["branches"] extends infer B ? B exten
     commandLog: [],
     title: "Working Tree",
     branches: { current: "main", detached: false, localBranches, remotes: [] },
-    ...extra,
+    ...extra
   } as unknown as AppModel
 }
 
-const pr = (overrides: Record<string, unknown>): PullRequest => parsePullRequests(JSON.stringify([{
-  number: 1,
-  title: "t",
-  state: "OPEN",
-  isDraft: false,
-  url: "https://github.com/acme/repo/pull/1",
-  headRefName: "feature",
-  headRepositoryOwner: { login: "acme" },
-  statusCheckRollup: [],
-  ...overrides,
-}]))[0]!
+const pr = (overrides: Record<string, unknown>): PullRequest =>
+  parsePullRequests(
+    JSON.stringify([
+      {
+        number: 1,
+        title: "t",
+        state: "OPEN",
+        isDraft: false,
+        url: "https://github.com/acme/repo/pull/1",
+        headRefName: "feature",
+        headRepositoryOwner: { login: "acme" },
+        statusCheckRollup: [],
+        ...overrides
+      }
+    ])
+  )[0]!
 
 describe("pullRequestIcon", () => {
   test("state picks the colour, and MERGED is lazygit's purple", () => {
@@ -60,8 +56,7 @@ describe("pullRequestIcon", () => {
     expect(pullRequestIcon(pr({ statusCheckRollup: [{ status: "IN_PROGRESS" }] })).text).toBe("●")
     expect(pullRequestIcon(pr({ statusCheckRollup: [{ conclusion: "FAILURE", status: "COMPLETED" }] })).text).toBe("✗")
     // A merged pull request keeps its own dot whatever its checks said.
-    expect(pullRequestIcon(pr({ state: "MERGED", statusCheckRollup: [{ conclusion: "FAILURE", status: "COMPLETED" }] })))
-      .toEqual({ text: "●", color: PR_MERGED_FG })
+    expect(pullRequestIcon(pr({ state: "MERGED", statusCheckRollup: [{ conclusion: "FAILURE", status: "COMPLETED" }] }))).toEqual({ text: "●", color: PR_MERGED_FG })
   })
 })
 
@@ -69,7 +64,7 @@ describe("localBranchRows", () => {
   const branches = [
     { name: "main", isCurrent: true, committedAt: String(NOW_UNIX - 3600), subject: "trunk work", upstreamRemote: "origin", upstreamBranch: "main", aheadForPull: "0", behindForPull: "0", upstreamGone: false },
     { name: "feature", isCurrent: false, committedAt: String(NOW_UNIX - 2 * 86400), subject: "feature work", upstreamRemote: "origin", upstreamBranch: "feature", aheadForPull: "3", behindForPull: "7", upstreamGone: false },
-    { name: "local-only", isCurrent: false, committedAt: String(NOW_UNIX - 3 * 604800), subject: "no upstream" },
+    { name: "local-only", isCurrent: false, committedAt: String(NOW_UNIX - 3 * 604800), subject: "no upstream" }
   ]
 
   test("the first cell is lazygit's recency, with the checked-out branch as a green star", () => {
@@ -96,7 +91,7 @@ describe("localBranchRows", () => {
     const rows = localBranchRows(modelWith(branches), "", {
       now,
       itemOperations: new Map([["local:main", "pulling" as const]]),
-      spinnerNowMs: 0,
+      spinnerNowMs: 0
     })
     const main = rows.find((row) => row.id === "local:main")!
     expect(main.columns.some((column) => column.text === "Pulling ●∙∙")).toBe(true)
@@ -106,7 +101,7 @@ describe("localBranchRows", () => {
   test("a pull request adds one dot cell right of the recency cell", () => {
     const rows = localBranchRows(modelWith(branches), "", {
       now,
-      pullRequests: { feature: pr({ state: "MERGED", headRefName: "feature" }) },
+      pullRequests: { feature: pr({ state: "MERGED", headRefName: "feature" }) }
     })
     const feature = rows.find((row) => row.id === "local:feature")!
     expect(feature.columns[1]).toEqual({ text: "●", priority: 0, color: PR_MERGED_FG })
@@ -119,7 +114,7 @@ describe("localBranchRows", () => {
   test("a merged pull request on a main branch is hidden, as lazygit hides it", () => {
     const rows = localBranchRows(modelWith(branches), "", {
       now,
-      pullRequests: { main: pr({ state: "MERGED", headRefName: "main" }) },
+      pullRequests: { main: pr({ state: "MERGED", headRefName: "main" }) }
     })
     expect(rows.find((row) => row.id === "local:main")!.columns[1]!.text).toBe("")
   })

@@ -44,12 +44,14 @@ Tests mirror ownership: `tests/review/git/highlight-adapter.test.ts`, `tests/rev
 ### Task 1: Highlight adapter boundary (Pierre -> HighlightPayload isolation)
 
 **Files:**
+
 - Create: `src/review/git/highlight/highlight-payload.ts`
 - Create: `src/review/git/highlight/highlight-hast.ts`
 - Create: `src/review/git/highlight/highlight-adapter.ts`
 - Create: `tests/review/git/highlight-adapter.test.ts`
 
 **Interfaces:**
+
 - Consumes: raw patch string or FileDiffMetadata from Pierre, theme "dark"|"light"
 - Produces: `HighlightPayload` { readonly fileKey: string; readonly language?: string; readonly deletionLines: readonly (readonly HighlightToken[] | null)[]; readonly additionLines: readonly (...)[] } where HighlightToken = { text: string; fg?: string }
 - `loadHighlightForPatch(patch: string, fileKey: string, theme?: string): Promise<HighlightPayload | null>` — returns null for binary/empty/shouldSkip
@@ -75,7 +77,10 @@ index 111..222 100644
     expect(payload).not.toBeNull()
     expect(payload!.additionLines.length).toBeGreaterThan(0)
     // at least one token has fg
-    const hasFg = payload!.additionLines.flat().flat().some(t => t?.fg)
+    const hasFg = payload!.additionLines
+      .flat()
+      .flat()
+      .some((t) => t?.fg)
     expect(hasFg).toBe(true)
     // no Pierre type leakage - payload is plain object
     expect(JSON.stringify(payload)).not.toContain("HastNode")
@@ -98,12 +103,13 @@ Expected: FAIL — module not found
 Implement `highlight-payload.ts` with HighlightPayload/HighlightToken types (plain).
 Copy-adapt `collectHastHighlightRuns` from learn-projects/hunk/src/ui/diff/worker/highlightHast.ts (no React) into `highlight-hast.ts`.
 Implement `highlight-adapter.ts`:
-  - sanitize patch like patch-adapter (strip terminal control) but reuse sanitizePatch
-  - parse via `parsePatchFiles(sanitized, "patch", true)` to get metadata, or via `parseDiffFromFile` for single file (use parsePatchFiles result's FileDiffMetadata)
-  - determine language via `getFiletypeFromFileName`
-  - call `getSharedHighlighter(getHighlighterOptions(language, {theme:"pierre-dark"}))` then `renderDiffWithHighlighter`
-  - flatten Hast lines via highlight-hast into token arrays
-  - return HighlightPayload; catch errors -> null
+
+- sanitize patch like patch-adapter (strip terminal control) but reuse sanitizePatch
+- parse via `parsePatchFiles(sanitized, "patch", true)` to get metadata, or via `parseDiffFromFile` for single file (use parsePatchFiles result's FileDiffMetadata)
+- determine language via `getFiletypeFromFileName`
+- call `getSharedHighlighter(getHighlighterOptions(language, {theme:"pierre-dark"}))` then `renderDiffWithHighlighter`
+- flatten Hast lines via highlight-hast into token arrays
+- return HighlightPayload; catch errors -> null
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -122,10 +128,12 @@ git commit -m "feat(review): add Pierre highlight adapter boundary"
 ### Task 2: Highlight cache + generation/request token invalidation
 
 **Files:**
+
 - Create: `src/review/git/highlight/highlight-cache.ts`
 - Create: `tests/review/git/highlight-cache.test.ts`
 
 **Interfaces:**
+
 - Consumes: HighlightPayload from Task 1, ReviewGeneration.id, theme
 - Produces: `HighlightCache` class with `get(key: string): HighlightPayload | undefined`, `set(key, payload)`, `invalidate(generationId: string)`, `cacheKey(fileKey, contentId, generationId, theme)` — LRU with max 50 entries
 
@@ -162,10 +170,12 @@ Expected: PASS
 ### Task 3: Row-planner integration — windowed spans with highlight
 
 **Files:**
+
 - Modify: `src/ui/review-workspace/row-planner.ts`
 - Create: `tests/ui/review-workspace/row-planner-highlight.test.ts`
 
 **Interfaces:**
+
 - Consumes: ReviewState, PlanReviewRowsOptions extended with `highlightByFileKey?: ReadonlyMap<string, HighlightPayload>`
 - Produces: ReviewRow[].text now contains per-token spans with fg derived from highlight payload; fallback to plain addition/deletion when no highlight
 
@@ -210,12 +220,14 @@ Expected: PASS
 ### Task 4: ViewportHighlights paint integration
 
 **Files:**
+
 - Create: `src/ui/review-workspace/review-highlight-text.ts` (like diff-text.ts)
 - Modify: `src/ui/review-workspace/review-workspace.ts`
 - Modify: `src/ui/review-workspace/stream-pane.ts` (if needed for viewportStart plumbing)
 - Create: `tests/ui/review-workspace/highlight.integration.test.ts`
 
 **Interfaces:**
+
 - Creates `installReviewHighlightText(text: TextRenderable, content: { text: string; highlightsByRow: Map<number, Highlight> })` that uses `paneTextBuffer` + `createViewportHighlights`
 - review-workspace.ts: replace `streamText.content = streamContent` with `installReviewHighlightText` when highlight payload present, falling back to plain for empty
 
@@ -255,11 +267,13 @@ Expected: PASS
 ### Task 5: Worker/Async orchestration + cancellation + controller effects
 
 **Files:**
+
 - Modify: `src/ui/review-workspace/controller.ts` (ReviewWorkspaceController)
 - Modify: `tests/ui/review-workspace/lifecycle.integration.test.ts` (existing)
 - Create: `tests/ui/review-workspace/highlight-controller.test.ts`
 
 **Interfaces:**
+
 - Controller loads document, then for each file (up to MAX_HIGHLIGHTED_DIFF_LINES 10k) triggers `loadHighlightForPatch` qualified by generation.id and requestToken; stale results discarded.
 - Cache shared, highlights published via state addition `highlightByFileKey?: ReadonlyMap<string, HighlightPayload>`
 
@@ -300,12 +314,14 @@ Expected: PASS
 ### Task 6: Theme + shiki bridging and performance guard
 
 **Files:**
+
 - Create: `src/ui/review-workspace/syntax-theme.ts` (adapt from hunk's syntaxHighlightTheme.ts but simplified to pierre-dark/light via terminal background)
 - Modify: `src/review/git/highlight/highlight-adapter.ts` to accept theme param via syntax-theme
 - Modify: `benchmarks/review-row-plan.ts` (extend with highlight cost) or create `benchmarks/highlight-payload.ts`
 - Create: `tests/ui/review-workspace/syntax-theme.test.ts`
 
 **Interfaces:**
+
 - `syntaxThemeForAppearance(appearance: "dark"|"light"): string` -> "pierre-dark"/"pierre-light"
 - `getEffectiveHighlightTheme(renderer): "dark"|"light"` — currently default dark, future reads terminal palette
 
@@ -356,4 +372,3 @@ bun run src/main.ts  # open branch with `b`, verify right pane shows syntax colo
 ```bash
 bun run benchmarks/review-row-plan.ts  # ensure with highlight, row plan still <16ms for 1k rows
 ```
-

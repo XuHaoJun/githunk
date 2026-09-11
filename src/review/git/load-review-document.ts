@@ -36,24 +36,21 @@ export async function loadReviewDocument(runner: Pick<GitRunner, "run">, baseRef
 
   const headRefResult = await runner.run(["symbolic-ref", "--quiet", "HEAD"], {
     readOnly: true,
-    acceptedExitCodes: [0, 1],
+    acceptedExitCodes: [0, 1]
   })
   const headRefRaw = headRefResult.stdout.trim()
   const headRef = headRefResult.exitCode === 0 && headRefRaw.length > 0 ? headRefRaw : null
-  const identity =
-    headRef === null
-      ? createReviewIdentity({ headOid, baseRef })
-      : createReviewIdentity({ headRef, headOid, baseRef })
+  const identity = headRef === null ? createReviewIdentity({ headOid, baseRef }) : createReviewIdentity({ headRef, headOid, baseRef })
   const range = `${baseRef}...HEAD`
 
   const [mergeBaseResult, patchResult, rawResult, numstatResult, commits] = await Promise.all([
     runner.run(["merge-base", baseRef, "HEAD"], { readOnly: true }),
     runner.run(["diff", "--no-ext-diff", "--no-color", "--find-renames", "--binary", "--src-prefix=a/", "--dst-prefix=b/", range, "--"], {
-      readOnly: true,
+      readOnly: true
     }),
     runner.run(["diff", "--no-ext-diff", "--no-color", "--find-renames", "--raw", "-z", range, "--"], { readOnly: true }),
     runner.run(["diff", "--no-ext-diff", "--no-color", "--find-renames", "--numstat", "-z", range, "--"], { readOnly: true }),
-    listCommits(runner, `${baseRef}..HEAD`),
+    listCommits(runner, `${baseRef}..HEAD`)
   ])
 
   const mergeBaseOid = mergeBaseResult.stdout.trim()
@@ -71,7 +68,7 @@ export async function loadReviewDocument(runner: Pick<GitRunner, "run">, baseRef
   const numstatEntries = parseNumstatZ(numstatText)
 
   // Build maps for joining, detecting ambiguous duplicates
-  const rawByKey = new Map<string, typeof rawEntries[number][]>()
+  const rawByKey = new Map<string, (typeof rawEntries)[number][]>()
   for (const entry of rawEntries) {
     const key = `${normalizePathForJoin(entry.path)}|${entry.previousPath ? normalizePathForJoin(entry.previousPath) : ""}`
     const list = rawByKey.get(key)
@@ -79,7 +76,7 @@ export async function loadReviewDocument(runner: Pick<GitRunner, "run">, baseRef
     else rawByKey.set(key, [entry])
   }
 
-  const numstatByKey = new Map<string, typeof numstatEntries[number][]>()
+  const numstatByKey = new Map<string, (typeof numstatEntries)[number][]>()
   for (const entry of numstatEntries) {
     const key = `${normalizePathForJoin(entry.path)}|${entry.previousPath ? normalizePathForJoin(entry.previousPath) : ""}`
     const list = numstatByKey.get(key)
@@ -105,7 +102,7 @@ export async function loadReviewDocument(runner: Pick<GitRunner, "run">, baseRef
       author: c.authorName,
       timestamp: c.authoredAt ? Date.parse(c.authoredAt) / 1000 : 0,
       subject: c.subject,
-      body: c.body,
+      body: c.body
     })) as unknown as ReviewDocument["commits"]
 
     return createReviewDocument({ identity, generation, commits: commitsForDoc as ReviewDocument["commits"], files: [] })
@@ -181,7 +178,7 @@ export async function loadReviewDocument(runner: Pick<GitRunner, "run">, baseRef
           patchDigest,
           stats,
           hunks,
-          source,
+          source
         }
       : {
           key: pf.path,
@@ -195,7 +192,7 @@ export async function loadReviewDocument(runner: Pick<GitRunner, "run">, baseRef
           patchDigest,
           stats,
           hunks,
-          source,
+          source
         }
 
     files.push(file)
@@ -218,7 +215,7 @@ export async function loadReviewDocument(runner: Pick<GitRunner, "run">, baseRef
     author: c.authorName,
     timestamp: c.authoredAt ? Date.parse(c.authoredAt) / 1000 : 0,
     subject: c.subject,
-    body: c.body,
+    body: c.body
   })) as unknown as ReviewDocument["commits"]
 
   return createReviewDocument({ identity, generation, commits: commitsForDoc as ReviewDocument["commits"], files })

@@ -3,7 +3,6 @@ import type { ReviewDocument, SourceContextRequest, SourceContextResult } from "
 
 export type { SourceContextRequest, SourceContextResult } from "../core/types"
 
-
 export type SourceContextError =
   | Readonly<{ kind: "binary"; fileKey: string; side: "old" | "new" }>
   | Readonly<{ kind: "too-large"; fileKey: string; side: "old" | "new"; maxBytes: number; blobOid: string }>
@@ -13,9 +12,7 @@ export type SourceContextError =
   | Readonly<{ kind: "file-not-found"; fileKey: string }>
   | Readonly<{ kind: "invalid-range"; startLine: number; endLine: number; reason: string }>
 
-export type SourceContextOutcome =
-  | Readonly<{ ok: true; result: SourceContextResult }>
-  | Readonly<{ ok: false; error: SourceContextError }>
+export type SourceContextOutcome = Readonly<{ ok: true; result: SourceContextResult }> | Readonly<{ ok: false; error: SourceContextError }>
 
 const DEFAULT_MAX_BYTES = 1_000_000
 
@@ -30,12 +27,7 @@ function normalizedReviewSourceLines(sourceText: string): readonly string[] {
   return trimmed.length === 0 ? [] : trimmed.split("\n")
 }
 
-export async function loadSourceContext(
-  runner: Pick<GitRunner, "run">,
-  document: ReviewDocument,
-  request: SourceContextRequest,
-  options?: Readonly<{ maxBytes?: number }>,
-): Promise<SourceContextOutcome> {
+export async function loadSourceContext(runner: Pick<GitRunner, "run">, document: ReviewDocument, request: SourceContextRequest, options?: Readonly<{ maxBytes?: number }>): Promise<SourceContextOutcome> {
   const maxBytes = options?.maxBytes ?? DEFAULT_MAX_BYTES
 
   if (request.reviewId !== document.identity.id) {
@@ -44,8 +36,8 @@ export async function loadSourceContext(
       error: {
         kind: "stale-review",
         requestReviewId: request.reviewId,
-        currentReviewId: document.identity.id,
-      },
+        currentReviewId: document.identity.id
+      }
     }
   }
 
@@ -55,26 +47,20 @@ export async function loadSourceContext(
       error: {
         kind: "stale-generation",
         requestGenerationId: request.generationId,
-        currentGenerationId: document.generation.id,
-      },
+        currentGenerationId: document.generation.id
+      }
     }
   }
 
-  if (
-    !Number.isInteger(request.startLine) ||
-    !Number.isInteger(request.endLine) ||
-    request.startLine < 1 ||
-    request.endLine < 1 ||
-    request.endLine < request.startLine
-  ) {
+  if (!Number.isInteger(request.startLine) || !Number.isInteger(request.endLine) || request.startLine < 1 || request.endLine < 1 || request.endLine < request.startLine) {
     return {
       ok: false,
       error: {
         kind: "invalid-range",
         startLine: request.startLine,
         endLine: request.endLine,
-        reason: "startLine and endLine must be integers >=1 and endLine >= startLine",
-      },
+        reason: "startLine and endLine must be integers >=1 and endLine >= startLine"
+      }
     }
   }
 
@@ -82,14 +68,14 @@ export async function loadSourceContext(
   if (!file) {
     return {
       ok: false,
-      error: { kind: "file-not-found", fileKey: request.fileKey },
+      error: { kind: "file-not-found", fileKey: request.fileKey }
     }
   }
 
   if (request.side !== "old" && request.side !== "new") {
     return {
       ok: false,
-      error: { kind: "invalid-range", startLine: request.startLine, endLine: request.endLine, reason: "side must be old or new" },
+      error: { kind: "invalid-range", startLine: request.startLine, endLine: request.endLine, reason: "side must be old or new" }
     }
   }
 
@@ -106,8 +92,8 @@ export async function loadSourceContext(
         fileKey: file.key,
         side: request.side,
         maxBytes,
-        blobOid: blobOid ?? "",
-      },
+        blobOid: blobOid ?? ""
+      }
     }
   }
 
@@ -120,8 +106,8 @@ export async function loadSourceContext(
         kind: "unavailable",
         fileKey: file.key,
         side: request.side,
-        reason: `no blob on ${request.side} side for file ${file.key}`,
-      },
+        reason: `no blob on ${request.side} side for file ${file.key}`
+      }
     }
   }
 
@@ -135,7 +121,7 @@ export async function loadSourceContext(
     if (sizeResult.exitCode !== 0) {
       return {
         ok: false,
-        error: { kind: "unavailable", fileKey: file.key, side: request.side, reason: `blob not found: ${oid}` },
+        error: { kind: "unavailable", fileKey: file.key, side: request.side, reason: `blob not found: ${oid}` }
       }
     }
     const size = Number.parseInt(sizeResult.stdout.trim(), 10)
@@ -145,7 +131,7 @@ export async function loadSourceContext(
   } catch {
     return {
       ok: false,
-      error: { kind: "unavailable", fileKey: file.key, side: request.side, reason: `failed to stat blob ${oid}` },
+      error: { kind: "unavailable", fileKey: file.key, side: request.side, reason: `failed to stat blob ${oid}` }
     }
   }
 
@@ -156,7 +142,7 @@ export async function loadSourceContext(
     if (result.exitCode !== 0) {
       return {
         ok: false,
-        error: { kind: "unavailable", fileKey: file.key, side: request.side, reason: result.stderr || `git show failed for ${oid}` },
+        error: { kind: "unavailable", fileKey: file.key, side: request.side, reason: result.stderr || `git show failed for ${oid}` }
       }
     }
     content = result.stdout
@@ -164,7 +150,7 @@ export async function loadSourceContext(
     const message = error instanceof Error ? error.message : String(error)
     return {
       ok: false,
-      error: { kind: "unavailable", fileKey: file.key, side: request.side, reason: message },
+      error: { kind: "unavailable", fileKey: file.key, side: request.side, reason: message }
     }
   }
 
@@ -189,8 +175,8 @@ export async function loadSourceContext(
         kind: "invalid-range",
         startLine: request.startLine,
         endLine: request.endLine,
-        reason: `requested endLine ${request.endLine} exceeds file line count ${lines.length}`,
-      },
+        reason: `requested endLine ${request.endLine} exceeds file line count ${lines.length}`
+      }
     }
   }
 
@@ -202,8 +188,8 @@ export async function loadSourceContext(
         kind: "invalid-range",
         startLine: request.startLine,
         endLine: request.endLine,
-        reason: `requested startLine ${request.startLine} exceeds file line count ${lines.length}`,
-      },
+        reason: `requested startLine ${request.startLine} exceeds file line count ${lines.length}`
+      }
     }
   }
 
@@ -215,7 +201,7 @@ export async function loadSourceContext(
     fileKey: request.fileKey,
     side: request.side,
     startLine: request.startLine,
-    lines: slice,
+    lines: slice
   }
 
   return { ok: true, result }

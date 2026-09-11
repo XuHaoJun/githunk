@@ -84,5 +84,5 @@ export const LOG_ACTIONS = {
   /** stash_controller.go:169; english.go:2219 */
   dropStash: "Drop stash",
   /** files_helper.go:78; english.go:2195 */
-  openFile: "Open file",
+  openFile: "Open file"
 } as const

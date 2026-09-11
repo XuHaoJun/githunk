@@ -24,10 +24,7 @@ describe("bundled githunk handoff skill", () => {
   }
 
   test("derives the module search root from a standard file URL", () => {
-    expect(defaultSkillSearchRoots("/usr/bin/node", "file:///opt/githunk/dist/githunk.js")).toEqual([
-      "/opt/githunk/dist",
-      "/usr/bin/node",
-    ])
+    expect(defaultSkillSearchRoots("/usr/bin/node", "file:///opt/githunk/dist/githunk.js")).toEqual(["/opt/githunk/dist", "/usr/bin/node"])
   })
 
   test("finds the bundled skill from a nested source or package path", async () => {
@@ -65,7 +62,7 @@ describe("bundled githunk handoff skill", () => {
 
     expect(await runSkillCommand({ operation: "path", searchRoots: [fixture.nested] })).toEqual({
       text: `${fixture.skillPath}\n`,
-      exitCode: 0,
+      exitCode: 0
     })
   })
 
@@ -74,7 +71,7 @@ describe("bundled githunk handoff skill", () => {
 
     expect(await runSkillCommand({ operation: "show", searchRoots: [fixture.nested] })).toEqual({
       text: fixture.content,
-      exitCode: 0,
+      exitCode: 0
     })
   })
 

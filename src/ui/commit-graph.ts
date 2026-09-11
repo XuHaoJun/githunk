@@ -1,7 +1,6 @@
 import type { CommitSummary } from "../domain/commit"
 import type { ColorInput } from "@opentui/core"
 
-
 /**
  * Port of lazygit `pkg/gui/presentation/graph/{graph,cell}.go`.
  *
@@ -194,7 +193,10 @@ function renderCell(cell: Cell): readonly GraphSegment[] {
   const rightColor = cell.rightColor ?? cell.color
   // A space carries no styling, matching lazygit so tests can assert on plain spaces.
   if (filler === " ") return [{ text: glyph, color: cell.color }, { text: " " }]
-  return [{ text: glyph, color: cell.color }, { text: filler, color: rightColor }]
+  return [
+    { text: glyph, color: cell.color },
+    { text: filler, color: rightColor }
+  ]
 }
 
 function renderPipeSet(pipes: readonly Pipe[]): CommitGraphRow {
@@ -250,14 +252,9 @@ function renderPipeSet(pipes: readonly Pipe[]): CommitGraphRow {
  * Builds one graph row per commit, in the order the commits were given
  * (newest first, as `git log` emits them).
  */
-export function commitGraphRows(
-  commits: readonly GraphCommit[],
-  getColor?: (commit: GraphCommit, index: number) => string | undefined,
-): readonly CommitGraphRow[] {
+export function commitGraphRows(commits: readonly GraphCommit[], getColor?: (commit: GraphCommit, index: number) => string | undefined): readonly CommitGraphRow[] {
   if (commits.length === 0) return []
-  let pipes: readonly Pipe[] = [
-    { fromPos: 0, toPos: 0, fromHash: START_HASH, toHash: commits[0]!.oid, kind: STARTS, color: undefined },
-  ]
+  let pipes: readonly Pipe[] = [{ fromPos: 0, toPos: 0, fromHash: START_HASH, toHash: commits[0]!.oid, kind: STARTS, color: undefined }]
   return commits.map((commit, index) => {
     pipes = getNextPipes(pipes, commit, getColor?.(commit, index))
     return renderPipeSet(pipes)

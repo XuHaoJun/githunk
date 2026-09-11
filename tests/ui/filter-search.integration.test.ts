@@ -19,7 +19,7 @@ describe("filter slash parity with lazygit", () => {
         await repo.write("a.txt", "a change\n")
         await repo.write("b.txt", "b change\n")
         await repo.write("ci-report.txt", "ci change\n")
-      },
+      }
     })
     await harness.pressKey("2")
     let text = harness.app.view!.renderedListText("files")
@@ -51,7 +51,7 @@ describe("filter slash parity with lazygit", () => {
         await repo.git(["branch", "feature-alpha"])
         await repo.git(["branch", "hotfix-beta"])
         await repo.write("a.txt", "unstaged\n")
-      },
+      }
     })
     await harness.pressKey("3")
     let text = harness.app.view!.renderedListText("branches")
@@ -84,7 +84,7 @@ describe("filter slash parity with lazygit", () => {
         await repo.write("a.txt", "change2\n")
         await repo.git(["stash", "push", "-m", "drop-this"])
         await repo.write("a.txt", "unstaged2\n")
-      },
+      }
     })
     await harness.pressKey("5")
     let text = harness.app.view!.renderedListText("stash")
@@ -107,7 +107,7 @@ describe("filter slash parity with lazygit", () => {
 
   test("slash filters the Reflog tab", async () => {
     harness = await createShellHarness({
-      commits: ["alpha", "beta", "gamma"],
+      commits: ["alpha", "beta", "gamma"]
     })
     await harness.pressKey("4")
     await harness.pressKey("]") // next tab -> reflog
@@ -133,7 +133,7 @@ describe("filter slash parity with lazygit", () => {
         await repo.git(["add", "a.txt"])
         await repo.git(["commit", "-m", "init"])
         await repo.write("a.txt", "unstaged\n")
-      },
+      }
     })
     await harness.pressKey("2")
     await harness.pressKey("]") // worktrees tab
@@ -152,7 +152,7 @@ describe("filter slash parity with lazygit", () => {
 
   test("slash on Commits tab does not crash and search filters or highlights", async () => {
     harness = await createShellHarness({
-      commits: ["alpha commit", "beta commit", "gamma commit"],
+      commits: ["alpha commit", "beta commit", "gamma commit"]
     })
     await harness.pressKey("4")
     let text = harness.app.view!.renderedListText("commits")
@@ -180,7 +180,7 @@ describe("filter slash parity with lazygit", () => {
         await repo.git(["tag", "v1.0.0"])
         await repo.git(["tag", "v2.0.0-beta"])
         await repo.write("a.txt", "unstaged\n")
-      },
+      }
     })
     await harness.pressKey("3") // branches pane
     await harness.pressKey("]") // remotes
@@ -208,7 +208,7 @@ describe("filter slash parity with lazygit", () => {
         await repo.git(["remote", "add", "origin", "https://example.com/repo.git"])
         await repo.git(["remote", "add", "upstream", "https://example.com/upstream.git"])
         await repo.write("a.txt", "unstaged\n")
-      },
+      }
     })
     await harness.pressKey("3")
     await harness.pressKey("]") // remotes
@@ -234,7 +234,7 @@ describe("filter slash parity with lazygit", () => {
         await repo.git(["add", "a.txt"])
         await repo.git(["commit", "-m", "init"])
         await repo.write("a.txt", "unstaged\n")
-      },
+      }
     })
     await harness.pressKey("2")
     await harness.pressKey("]") // worktrees
@@ -264,7 +264,7 @@ describe("filter slash parity with lazygit", () => {
         await repo.git(["add", "a.txt", "b.txt"])
         await repo.git(["commit", "-m", "second"])
         await repo.write("a.txt", "unstaged\n")
-      },
+      }
     })
     await harness.pressKey("4") // commits
     // Ensure commits are loaded and second is selected (newest)
@@ -304,7 +304,7 @@ describe("filter slash parity with lazygit", () => {
         await repo.git(["add", "a.txt"])
         await repo.git(["commit", "-m", "init"])
         await repo.write("a.txt", "hello world changed\nfoo bar\nhello again\n")
-      },
+      }
     })
     await harness.pressKey("0") // main
     let frame = harness.frame()
@@ -338,14 +338,13 @@ describe("filter slash parity with lazygit", () => {
         await repo.git(["commit", "-m", "init"])
         await repo.write("a.txt", "a change\n")
         await repo.write("b.txt", "b change\n")
-      },
+      }
     })
     await harness.pressKey("2")
     await harness.pressKey("/")
     await harness.pressKey("a")
     const frame = harness.frame()
     const lines = frame.split("\n")
-    const bottomLine = lines[lines.length - 2] ?? "" // last line may be empty due to trailing newline, check second last
     // The global bottom bar (hints) should contain Filter, not the pane's border
     expect(frame).toContain("Filter: a")
     // Ensure bottom line contains filter (global position)
@@ -362,7 +361,7 @@ describe("filter slash parity with lazygit", () => {
 
   test("search prompt for commits appears as Search at bottom", async () => {
     harness = await createShellHarness({
-      commits: ["alpha commit", "beta commit"],
+      commits: ["alpha commit", "beta commit"]
     })
     await harness.pressKey("4")
     await harness.pressKey("/")
@@ -384,7 +383,7 @@ describe("filter slash parity with lazygit", () => {
           await repo.git(["stash", "push", "-m", message])
         }
         await repo.write("a.txt", "working\n")
-      },
+      }
     })
     await harness.pressKey("5")
     await harness.pressKey("v")
@@ -411,7 +410,7 @@ describe("filter slash parity with lazygit", () => {
           await repo.git(["stash", "push", "-m", message])
         }
         await repo.write("a.txt", "working\n")
-      },
+      }
     })
     await harness.pressKey("5")
     await harness.pressKey("/")
@@ -439,7 +438,7 @@ describe("filter slash parity with lazygit", () => {
           await repo.git(["stash", "push", "-m", message])
         }
         await repo.write("a.txt", "working\n")
-      },
+      }
     })
     await harness.pressKey("5")
     await harness.pressKey("v")

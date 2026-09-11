@@ -16,21 +16,20 @@ enough on its own. The prototype adds a second axis, `status` ("has anyone been
 asked to act"), and derives the verdict from the pair in
 `src/review/core/ledger.ts`:
 
-| status | resolution | verdict |
-| --- | --- | --- |
-| absent / `open` | any | `open` |
-| `handed-off`, HEAD still at handoff | any | `waiting` |
-| `handed-off` | `active` | **`untouched`** — those exact lines were not changed |
-| `handed-off` | `stale` / `orphaned` | `addressed` — the code moved (NOT "is correct") |
-| `handed-off`, answered | `active` | **`disputed`** — it argued instead of changing the lines |
-| `resolved` | any | `resolved` |
+| status                              | resolution           | verdict                                                  |
+| ----------------------------------- | -------------------- | -------------------------------------------------------- |
+| absent / `open`                     | any                  | `open`                                                   |
+| `handed-off`, HEAD still at handoff | any                  | `waiting`                                                |
+| `handed-off`                        | `active`             | **`untouched`** — those exact lines were not changed     |
+| `handed-off`                        | `stale` / `orphaned` | `addressed` — the code moved (NOT "is correct")          |
+| `handed-off`, answered              | `active`             | **`disputed`** — it argued instead of changing the lines |
+| `resolved`                          | any                  | `resolved`                                               |
 
 `addressed` is a progress observation, not an approval: it means a handed-off
 objection's original anchor no longer resolves on the current generation. The
 agent may have changed the requested code, but the verdict does not say that
 change is correct. It remains live until the reviewer re-anchors the request or
 resolves it after inspection.
-
 
 ### Range attribution
 
@@ -44,13 +43,13 @@ verdict costs no extra Git.
 
 ## Keys
 
-| Key | Does |
-| --- | --- |
-| `c` | object to the selected line (existing) |
-| `A` | hand off every open objection and write the mailbox |
-| `-` | resolve one you have looked at |
-| `a` | re-anchor one whose code moved (existing) |
-| `L` | list objections, `j`/`k` to move, Enter to jump |
+| Key | Does                                                             |
+| --- | ---------------------------------------------------------------- |
+| `c` | object to the selected line (existing)                           |
+| `A` | hand off every open objection and write the mailbox              |
+| `-` | resolve one you have looked at                                   |
+| `a` | re-anchor one whose code moved (existing)                        |
+| `L` | list objections, `j`/`k` to move, Enter to jump                  |
 | `s` | narrow to what changed since the last handoff or finished review |
 
 `H` and `x` are reserved for lazygit parity (main-scroll-left, extension panes)
@@ -58,13 +57,13 @@ and `l` cycles the layout, which is why the two new keys are `A` and `-`.
 
 ## Tests
 
-| File | Pins |
-| --- | --- |
-| `tests/review/core/ledger.test.ts` | the verdict truth table, checkpoint selection, mailbox contract, reply parsing |
-| `tests/review/core/reducer.test.ts` | handoff stamping, re-handoff keeping the original checkpoint, resolve being terminal |
-| `tests/review/storage/schemas.test.ts` | round-tripping status/handoff/excerpt, the legacy status name, the excerpt cap |
-| `tests/cli/args.test.ts` | that no CLI verb writes a verdict |
-| `tests/acceptance/branch-review-ledger.integration.test.ts` | the loop against a real repository, across a restart |
+| File                                                                    | Pins                                                                                         |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `tests/review/core/ledger.test.ts`                                      | the verdict truth table, checkpoint selection, mailbox contract, reply parsing               |
+| `tests/review/core/reducer.test.ts`                                     | handoff stamping, re-handoff keeping the original checkpoint, resolve being terminal         |
+| `tests/review/storage/schemas.test.ts`                                  | round-tripping status/handoff/excerpt, the legacy status name, the excerpt cap               |
+| `tests/cli/args.test.ts`                                                | that no CLI verb writes a verdict                                                            |
+| `tests/acceptance/branch-review-ledger.integration.test.ts`             | the loop against a real repository, across a restart                                         |
 | `tests/ui/review-workspace/react-review-workspace.integration.test.tsx` | the `L` list, the jump landing on the objection, the finish dialog reporting a failed submit |
 
 In the TUI: `b` (Branch Review) → `c` on a line to leave feedback → `A` to hand
@@ -85,6 +84,7 @@ a second file the agent owns:
 .git/githunk/handoff/pending.json   githunk writes · agent reads
 .git/githunk/handoff/replies.json   agent writes   · githunk reads
 ```
+
 `pending.json` is the canonical mailbox. `pending.md` is a convenience mirror;
 the CLI renders the canonical JSON for its default text output, so a crash
 between the two atomic file replacements cannot make `githunk handoff` show
@@ -131,12 +131,12 @@ which is the wrong verb when the objection is settled; `-` is the missing one.
 
 The gates that follow from this, all observed:
 
-| situation | Finish |
-| --- | --- |
-| an `addressed` item still live | refused, `feedback-needs-reanchor` |
-| that item resolved with `-` | allowed |
+| situation                                          | Finish                                   |
+| -------------------------------------------------- | ---------------------------------------- |
+| an `addressed` item still live                     | refused, `feedback-needs-reanchor`       |
+| that item resolved with `-`                        | allowed                                  |
 | Approve with an `UNTOUCHED` **blocking** item live | refused, `approve-has-blocking-feedback` |
-| that item resolved with `-` | allowed |
+| that item resolved with `-`                        | allowed                                  |
 
 The third row is the one worth keeping: you cannot approve a branch while a
 blocking objection sits on lines nobody touched.

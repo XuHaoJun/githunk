@@ -166,6 +166,6 @@ export function createViewportHighlights<Content>(text: TextRenderable, spec: Vi
       appliedScrollY = -1
       appliedHeight = -1
       painted = undefined
-    },
+    }
   }
 }

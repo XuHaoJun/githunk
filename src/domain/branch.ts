@@ -66,9 +66,7 @@ export type BranchListing = {
 /** Convert a remote name and branch name into the matching local branch name. */
 export function trackingLocalName(remote: string, remoteBranch: string): string {
   const normalizedRemote = remote.trim()
-  const normalizedBranch = remoteBranch.startsWith(`${normalizedRemote}/`)
-    ? remoteBranch.slice(normalizedRemote.length + 1)
-    : remoteBranch
+  const normalizedBranch = remoteBranch.startsWith(`${normalizedRemote}/`) ? remoteBranch.slice(normalizedRemote.length + 1) : remoteBranch
   if (normalizedRemote.length === 0) throw new Error("remote name must not be empty")
   if (normalizedBranch.length === 0 || normalizedBranch === "HEAD") {
     throw new Error(`remote branch is not checkoutable: ${remoteBranch}`)

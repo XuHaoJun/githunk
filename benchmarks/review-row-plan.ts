@@ -28,7 +28,7 @@ function makeDocForFixture(fixture: (typeof REVIEW_CONFORMANCE_FIXTURES)[number]
       patchDigest,
       stats: ef.stats,
       hunks,
-      source: ef.source,
+      source: ef.source
     }
   })
   return createReviewDocument({ identity, generation, commits: [{ oid: "c".repeat(40), parents: [], author: "A", timestamp: 0, subject: "s", body: "" }], files })
@@ -68,7 +68,7 @@ async function main() {
     patchDigest: sha256Tuple([`file-${i}`]),
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 3, newStart: 1, newCount: 3, lines: [" a", "-old", "+new", " b"] })],
-    source: "available" as const,
+    source: "available" as const
   }))
   const largeState = createInitialReviewState(createReviewDocument({ identity, generation, commits: [{ oid: "c".repeat(40), parents: [], author: "A", timestamp: 0, subject: "s", body: "" }], files: manyFiles }))
   let largeTotalRows = 0
@@ -81,7 +81,6 @@ async function main() {
     process.exit(1)
   }
 
-
   const elapsedMs = performance.now() - start
   const heapDelta = process.memoryUsage().heapUsed - beforeHeap
   const output = {
@@ -92,7 +91,7 @@ async function main() {
     heapDeltaBytes: heapDelta,
     heapDeltaMiB: Math.round((heapDelta / 1024 / 1024) * 100) / 100,
     outputCount: { totalRowsBuilt, maxRowsInViewport, largeTotalRows, largeViewportRows },
-    assertion: `active Hunk stack rows expose a viewport sample (${viewportHeight}) + overscan (${overscan}) and retain ${largeTotalRows} rows for the 500-file document`,
+    assertion: `active Hunk stack rows expose a viewport sample (${viewportHeight}) + overscan (${overscan}) and retain ${largeTotalRows} rows for the 500-file document`
   }
   console.log(JSON.stringify(output, null, 2))
 }

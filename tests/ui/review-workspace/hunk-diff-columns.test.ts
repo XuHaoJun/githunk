@@ -1,11 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  expandHunkDiffTabs,
-  measureHunkRenderedWidth,
-  resolveHunkSplitPaneWidths,
-  resolveHunkSplitCellGeometry,
-  resolveHunkStackCellGeometry,
-} from "../../../src/ui/review-workspace/hunk-code-columns"
+import { expandHunkDiffTabs, measureHunkRenderedWidth, resolveHunkSplitPaneWidths, resolveHunkSplitCellGeometry, resolveHunkStackCellGeometry } from "../../../src/ui/review-workspace/hunk-code-columns"
 
 describe("Hunk diff column geometry", () => {
   test("reserves a separator and splits the available terminal width", () => {

@@ -43,15 +43,10 @@ export type PopupGeometry = {
  * case — no nested popups). The extra `- panelHeight%2` matches lazygit's
  * vertical centering bias for odd heights.
  */
-export function popupPanelGeometry(
-  terminalWidth: number,
-  terminalHeight: number,
-  contentWidth: number,
-  contentHeight: number,
-): PopupGeometry {
+export function popupPanelGeometry(terminalWidth: number, terminalHeight: number, contentWidth: number, contentHeight: number): PopupGeometry {
   const panelWidth = Math.max(1, contentWidth + 2)
   let panelHeight = Math.max(1, contentHeight + 2)
-  const maxPanelHeight = Math.floor(Math.max(1, terminalHeight) * 3 / 4)
+  const maxPanelHeight = Math.floor((Math.max(1, terminalHeight) * 3) / 4)
   if (panelHeight > maxPanelHeight) panelHeight = Math.max(1, maxPanelHeight)
 
   const tw = Math.max(1, Math.floor(terminalWidth))
@@ -67,7 +62,7 @@ export function popupPanelGeometry(
     width: panelWidth,
     height: panelHeight,
     contentWidth,
-    contentHeight,
+    contentHeight
   }
 }
 
@@ -169,11 +164,7 @@ export function wrappedMessageHeight(message: string, contentWidth: number): num
  * Returns both the outer geometry and the derived content metrics so callers
  * can render the wrapped prompt without recomputing.
  */
-export function confirmationPopupGeometry(
-  terminalWidth: number,
-  terminalHeight: number,
-  message: string,
-): PopupGeometry & { readonly wrappedPrompt: readonly string[] } {
+export function confirmationPopupGeometry(terminalWidth: number, terminalHeight: number, message: string): PopupGeometry & { readonly wrappedPrompt: readonly string[] } {
   const panelWidth = popupPanelWidth(terminalWidth, 80)
   const contentWidth = Math.max(1, panelWidth - 2)
   const wrappedPrompt = wrapMessage(message, contentWidth)
@@ -189,12 +180,7 @@ export function confirmationPopupGeometry(
  * counted after it when present, matching `layoutMenuPrompt`'s `append(
  * promptLines, "")` in confirmation_helper.go:356.
  */
-export function menuPopupGeometry(
-  terminalWidth: number,
-  terminalHeight: number,
-  itemCount: number,
-  prompt = "",
-): PopupGeometry & { readonly wrappedPrompt: readonly string[]; readonly promptLinesCount: number } {
+export function menuPopupGeometry(terminalWidth: number, terminalHeight: number, itemCount: number, prompt = ""): PopupGeometry & { readonly wrappedPrompt: readonly string[]; readonly promptLinesCount: number } {
   const panelWidth = popupPanelWidth(terminalWidth, 90)
   const contentWidth = Math.max(1, panelWidth - 2)
   const wrappedPrompt = prompt.length === 0 ? [] : wrapMessage(prompt, contentWidth)

@@ -11,7 +11,7 @@ const fixture = [
   "--- a/space name.ts\n",
   "+++ b/space name.ts\n",
   "@@ -1,3 +1,4 @@ function hello()\n",
-  " const greeting = \"世界🙂\";\r\n",
+  ' const greeting = "世界🙂";\r\n',
   "-\told value\r\n",
   "+\tnew value\r\n",
   "+decomposed e\u0301 and wide 界\r\n",
@@ -28,7 +28,7 @@ const fixture = [
   "+emoji 🚀\n",
   "diff --git a/deleted.bin b/deleted.bin\n",
   "deleted file mode 100644\n",
-  "Binary files a/deleted.bin and /dev/null differ\n",
+  "Binary files a/deleted.bin and /dev/null differ\n"
 ].join("")
 
 describe("parseDiff hostile unified diff", () => {
@@ -58,7 +58,7 @@ describe("parseDiff hostile unified diff", () => {
     expect(document.files[0]?.newPath).toBe("markers")
   })
   test("parses quoted ambiguous old paths and unquoted new paths containing b/", () => {
-    const quoted = parseDiff("diff --git \"a/dir b/old.bin\" \"b/dir b/old.bin\"\nBinary files a/dir b/old.bin and b/dir b/old.bin differ\n")
+    const quoted = parseDiff('diff --git "a/dir b/old.bin" "b/dir b/old.bin"\nBinary files a/dir b/old.bin and b/dir b/old.bin differ\n')
     expect(quoted.files[0]?.oldPath).toBe("dir b/old.bin")
     expect(quoted.files[0]?.newPath).toBe("dir b/old.bin")
     const unquoted = parseDiff("diff --git a/old.bin b/dir b/new.bin\nBinary files a/old.bin and b/dir b/new.bin differ\n")
@@ -71,7 +71,7 @@ describe("parseDiff hostile unified diff", () => {
     expect(document.files[0]?.oldPath).toBe("dir b/old.bin")
     expect(document.files[0]?.newPath).toBe("dir b/new.bin")
     expect(document.files[0]?.hunks).toHaveLength(0)
-    const quoted = parseDiff("diff --git \"a/dir b/old.bin\" \"b/dir b/new.bin\"\nBinary files \"a/dir b/old.bin\" and \"b/dir b/new.bin\" differ\n")
+    const quoted = parseDiff('diff --git "a/dir b/old.bin" "b/dir b/new.bin"\nBinary files "a/dir b/old.bin" and "b/dir b/new.bin" differ\n')
     expect(quoted.files[0]?.oldPath).toBe("dir b/old.bin")
     expect(quoted.files[0]?.newPath).toBe("dir b/new.bin")
   })

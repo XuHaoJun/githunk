@@ -16,7 +16,7 @@ export function defaultUiState(): UiState {
     commandLogHeight: DEFAULT_LOG_HEIGHT,
     // `Gui.ShowCommandLog: true` (pkg/config/user_config.go:901). A persisted `false` still wins,
     // which is lazygit's `HideCommandLog` app-state flag (pkg/gui/gui.go:523).
-    commandLogVisible: true,
+    commandLogVisible: true
   }
 }
 
@@ -44,15 +44,11 @@ function isValidCommandLogHeight(value: unknown): value is number {
 
 /** Version 2: the current shape, `commandLogHidden` persisted per app_config.go:858. */
 function parseCurrent(candidate: RawRecord): UiState | undefined {
-  if (
-    !isValidSidePanelRatio(candidate.sidePanelRatio) ||
-    !isValidCommandLogHeight(candidate.commandLogHeight) ||
-    typeof candidate.commandLogHidden !== "boolean"
-  ) return undefined
+  if (!isValidSidePanelRatio(candidate.sidePanelRatio) || !isValidCommandLogHeight(candidate.commandLogHeight) || typeof candidate.commandLogHidden !== "boolean") return undefined
   return {
     sidePanelRatio: candidate.sidePanelRatio,
     commandLogHeight: candidate.commandLogHeight,
-    commandLogVisible: !candidate.commandLogHidden,
+    commandLogVisible: !candidate.commandLogHidden
   }
 }
 
@@ -117,7 +113,7 @@ export class UiStateStore {
         version: CURRENT_VERSION,
         sidePanelRatio: state.sidePanelRatio,
         commandLogHeight: state.commandLogHeight,
-        commandLogHidden: !state.commandLogVisible,
+        commandLogHidden: !state.commandLogVisible
       }
       await this.file.writeText(`${JSON.stringify(record)}\n`)
     } catch {

@@ -8,7 +8,7 @@ function makePayload(fileKey: string): HighlightPayload {
     language: "ts",
     deletionLines: [[{ text: "const x", fg: "#ff0000" }]],
     additionLines: [[{ text: "const y", fg: "#00ff00" }]],
-    theme: "dark",
+    theme: "dark"
   }
 }
 

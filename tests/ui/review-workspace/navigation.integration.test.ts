@@ -10,15 +10,23 @@ import { createInitialReviewState } from "../../../src/review/core/state"
 import { reduceReviewState } from "../../../src/review/core/reducer"
 import { planReviewIntent } from "../../../src/review/core/intents"
 import type { ReviewFile } from "../../../src/review/core/types"
-import type { GitRunner } from "../../../src/git/runner"
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function makeFile(key: string, line = "new"): ReviewFile {
   return {
-    key, path: key, kind: "modified", oldBlobOid: "o", newBlobOid: "n", oldMode: "100644", newMode: "100644",
-    contentId: `content-${key}`, patchDigest: `patch-${key}`, stats: { additions: 1, deletions: 1 },
-    hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", `+${line}`] })], source: "available",
+    key,
+    path: key,
+    kind: "modified",
+    oldBlobOid: "o",
+    newBlobOid: "n",
+    oldMode: "100644",
+    newMode: "100644",
+    contentId: `content-${key}`,
+    patchDigest: `patch-${key}`,
+    stats: { additions: 1, deletions: 1 },
+    hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", `+${line}`] })],
+    source: "available"
   }
 }
 
@@ -28,9 +36,18 @@ function makeSession(files: readonly ReviewFile[]) {
   let state = createInitialReviewState(createReviewDocument({ identity, generation, commits: [], files }))
   const listeners = new Set<() => void>()
   const controller = {
-    get state() { return state }, error: undefined,
-    subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener) },
-    dispatch(action: Parameters<typeof reduceReviewState>[1]) { state = reduceReviewState(state, action); for (const listener of listeners) listener() },
+    get state() {
+      return state
+    },
+    error: undefined,
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    dispatch(action: Parameters<typeof reduceReviewState>[1]) {
+      state = reduceReviewState(state, action)
+      for (const listener of listeners) listener()
+    },
     dispatchIntent(intent: Parameters<ReviewWorkspaceController["dispatchIntent"]>[0]): boolean {
       try {
         const action = planReviewIntent(state, intent)
@@ -41,13 +58,17 @@ function makeSession(files: readonly ReviewFile[]) {
         return false
       }
     },
-    getExpandedSourceByGap: () => new Map(), expandGap: async () => undefined,
+    getExpandedSourceByGap: () => new Map(),
+    expandGap: async () => undefined
   } as unknown as ReviewWorkspaceController
   return { session: new ReactReviewSession(controller, () => undefined), controller }
 }
 
 async function flush(setup: Awaited<ReturnType<typeof testRender>>): Promise<void> {
-  await act(async () => { await setup.renderOnce(); await Bun.sleep(0) })
+  await act(async () => {
+    await setup.renderOnce()
+    await Bun.sleep(0)
+  })
 }
 
 describe("React review navigation", () => {
@@ -60,7 +81,9 @@ describe("React review navigation", () => {
       await act(async () => setup.mockMouse.click(row.screenX + 1, row.screenY))
       await flush(setup)
       expect(active.controller.state?.selection.fileKey).toBe("src/b.ts")
-    } finally { await act(async () => setup.renderer.destroy()) }
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
 
   test("R opens finish and slash focuses the actual filter input", async () => {
@@ -76,7 +99,9 @@ describe("React review navigation", () => {
       await act(async () => setup.mockInput.pressKey("R"))
       await flush(setup)
       expect(setup.renderer.root.findDescendantById("review-finish-dialog")).toBeDefined()
-    } finally { await act(async () => setup.renderer.destroy()) }
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
 
   test("semantic file and hunk commands update controller state via input", async () => {
@@ -87,25 +112,29 @@ describe("React review navigation", () => {
       await act(async () => setup.mockInput.pressKeys(["."]))
       await flush(setup)
       expect(active.controller.state?.selection.fileKey).toBe("src/b.ts")
-    } finally { await act(async () => setup.renderer.destroy()) }
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
   test("semantic j/k keeps the range start for an exact multiline feedback range", async () => {
     const file = {
       ...makeFile("src/range.ts"),
-      hunks: [createReviewHunk({
-        index: 0,
-        oldStart: 1,
-        oldCount: 2,
-        newStart: 1,
-        newCount: 2,
-        lines: ["-old one", "-old two", "+new one", "+new two"],
-      })],
+      hunks: [
+        createReviewHunk({
+          index: 0,
+          oldStart: 1,
+          oldCount: 2,
+          newStart: 1,
+          newCount: 2,
+          lines: ["-old one", "-old two", "+new one", "+new two"]
+        })
+      ]
     }
     const active = makeSession([file])
     const setup = await testRender(createElement(ReviewWorkspaceApp, { session: active.session }), {
       width: 120,
       height: 30,
-      useMouse: true,
+      useMouse: true
     })
     try {
       await flush(setup)
@@ -126,7 +155,7 @@ describe("React review navigation", () => {
         fileKey: file.key,
         side: "new",
         startLine: 1,
-        endLine: 2,
+        endLine: 2
       })
     } finally {
       await act(async () => setup.renderer.destroy())
@@ -135,20 +164,22 @@ describe("React review navigation", () => {
   test("starting a new v range clears a completed pending range", async () => {
     const file = {
       ...makeFile("src/stale-range.ts"),
-      hunks: [createReviewHunk({
-        index: 0,
-        oldStart: 1,
-        oldCount: 2,
-        newStart: 1,
-        newCount: 2,
-        lines: ["-old one", "-old two", "+new one", "+new two"],
-      })],
+      hunks: [
+        createReviewHunk({
+          index: 0,
+          oldStart: 1,
+          oldCount: 2,
+          newStart: 1,
+          newCount: 2,
+          lines: ["-old one", "-old two", "+new one", "+new two"]
+        })
+      ]
     }
     const active = makeSession([file])
     const setup = await testRender(createElement(ReviewWorkspaceApp, { session: active.session }), {
       width: 120,
       height: 30,
-      useMouse: true,
+      useMouse: true
     })
     try {
       await flush(setup)
@@ -170,7 +201,7 @@ describe("React review navigation", () => {
         fileKey: file.key,
         side: "new",
         startLine: 2,
-        endLine: 2,
+        endLine: 2
       })
     } finally {
       await act(async () => setup.renderer.destroy())

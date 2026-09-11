@@ -18,7 +18,7 @@ function fakeRunner(): GitRunner {
     logTip: () => {},
     lines: () => [] as unknown[],
     autoscrollArms: () => false,
-    commandLogSnapshot: () => ({ entries: [] }),
+    commandLogSnapshot: () => ({ entries: [] })
   } as unknown as GitRunner["log"]
   return { run: async () => ({ stdout: "", stderr: "", exitCode: 0 }), log, cwd: "/tmp/fake" } as unknown as GitRunner
 }
@@ -35,15 +35,11 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+new"] })],
     source: "available",
-    ...overrides,
+    ...overrides
   }
 }
 
-const AGGREGATE_FILES = [
-  makeFile({ key: "a", path: "src/a.ts" }),
-  makeFile({ key: "b", path: "src/b.ts" }),
-  makeFile({ key: "c", path: "src/c.ts" }),
-]
+const AGGREGATE_FILES = [makeFile({ key: "a", path: "src/a.ts" }), makeFile({ key: "b", path: "src/b.ts" }), makeFile({ key: "c", path: "src/c.ts" })]
 // The lens covers lastHead..HEAD, so the same file carries a narrower contentId.
 const LENS_FILES = [makeFile({ key: "b", path: "src/b.ts", contentId: "content-b@lens" })]
 
@@ -52,18 +48,15 @@ function makeDoc(files: readonly ReviewFile[], headOid = HEAD_OID): ReviewDocume
     identity: createReviewIdentity({ headRef: "refs/heads/feature", headOid, baseRef: "refs/heads/main" }),
     generation: createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "c".repeat(40), headOid }),
     commits: [{ oid: headOid, parents: [], author: "A", timestamp: 0, subject: "s", body: "" }],
-    files: [...files],
+    files: [...files]
   })
 }
 
-function makeController(
-  loadSinceLastReview: (aggregate: ReviewDocument, fromHeadOid: string) => Promise<SinceLastProjectionResult>,
-  files: readonly ReviewFile[] = AGGREGATE_FILES,
-) {
+function makeController(loadSinceLastReview: (aggregate: ReviewDocument, fromHeadOid: string) => Promise<SinceLastProjectionResult>, files: readonly ReviewFile[] = AGGREGATE_FILES) {
   return new ReviewWorkspaceController({
     runner: fakeRunner(),
     loadDocument: async () => makeDoc(files),
-    loadSinceLastReview,
+    loadSinceLastReview
   })
 }
 
@@ -74,8 +67,8 @@ function okLens(): (aggregate: ReviewDocument, fromHeadOid: string) => Promise<S
       reviewId: aggregate.identity.id,
       generationId: aggregate.generation.id,
       projection: { kind: "since-last-review", fromHeadOid },
-      files: LENS_FILES,
-    },
+      files: LENS_FILES
+    }
   })
 }
 
@@ -89,8 +82,8 @@ function withLastSubmission(controller: ReviewWorkspaceController): void {
       artifactId: "artifact-1",
       generationId: state.document.generation.id,
       headOid: LAST_REVIEWED_OID,
-      submittedAt: "2026-09-01T00:00:00.000Z",
-    },
+      submittedAt: "2026-09-01T00:00:00.000Z"
+    }
   }
 }
 
@@ -135,16 +128,18 @@ describe("Since-last-review projection lens", () => {
     const before = controller.state!
     ;(controller as unknown as { _state: unknown })._state = {
       ...before,
-      feedback: [{
-        id: "feedback-1",
-        kind: "note" as const,
-        severity: "comment" as const,
-        body: "keep me",
-        anchor: createFileAnchor(AGGREGATE_FILES[0]!),
-        resolution: "active" as const,
-        createdAt: "2026-09-01T00:00:00.000Z",
-        updatedAt: "2026-09-01T00:00:00.000Z",
-      }],
+      feedback: [
+        {
+          id: "feedback-1",
+          kind: "note" as const,
+          severity: "comment" as const,
+          body: "keep me",
+          anchor: createFileAnchor(AGGREGATE_FILES[0]!),
+          resolution: "active" as const,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z"
+        }
+      ]
     }
     const withFeedback = controller.state!
 
@@ -159,7 +154,7 @@ describe("Since-last-review projection lens", () => {
       kind: "history-rewritten",
       lastHeadOid: LAST_REVIEWED_OID,
       headOid: HEAD_OID,
-      reason: "history rewritten: last submission head is not an ancestor of current HEAD",
+      reason: "history rewritten: last submission head is not an ancestor of current HEAD"
     }))
     await controller.open("refs/heads/main")
     withLastSubmission(controller)
@@ -172,7 +167,9 @@ describe("Since-last-review projection lens", () => {
   })
 
   test("surfaces a loader failure without leaving a half-applied lens", async () => {
-    const controller = makeController(async () => { throw new Error("git exploded") })
+    const controller = makeController(async () => {
+      throw new Error("git exploded")
+    })
     await controller.open("refs/heads/main")
     withLastSubmission(controller)
 
@@ -211,7 +208,7 @@ describe("Since-last-review projection lens", () => {
     const controller = new ReviewWorkspaceController({
       runner: fakeRunner(),
       loadDocument: async () => makeDoc(AGGREGATE_FILES, head),
-      loadSinceLastReview: okLens(),
+      loadSinceLastReview: okLens()
     })
     await controller.open("refs/heads/main")
     withLastSubmission(controller)

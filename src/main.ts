@@ -9,14 +9,8 @@ import { GitCommandError, GitRunner } from "./git/runner"
  * input after the renderer exits. Never issue palette queries in a zellij process or capability
  * context. `ZELLIJ=0` is still the zellij marker, so presence—not truthiness—is intentional.
  */
-export function shouldQueryTerminalPalette(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-  capabilities?: Pick<TerminalCapabilities, "multiplexer"> | null,
-): boolean {
-  return env.ZELLIJ === undefined
-    && env.ZELLIJ_SESSION_NAME === undefined
-    && env.TERM_PROGRAM?.toLowerCase() !== "zellij"
-    && capabilities?.multiplexer !== "zellij"
+export function shouldQueryTerminalPalette(env: Readonly<Record<string, string | undefined>> = process.env, capabilities?: Pick<TerminalCapabilities, "multiplexer"> | null): boolean {
+  return env.ZELLIJ === undefined && env.ZELLIJ_SESSION_NAME === undefined && env.TERM_PROGRAM?.toLowerCase() !== "zellij" && capabilities?.multiplexer !== "zellij"
 }
 
 export type StartAppOptions = {
@@ -25,9 +19,7 @@ export type StartAppOptions = {
 }
 
 export async function startApp(options: StartAppOptions = {}): Promise<number> {
-  const startDirectory = options.startDirectory === undefined
-    ? process.cwd()
-    : resolve(process.cwd(), options.startDirectory)
+  const startDirectory = options.startDirectory === undefined ? process.cwd() : resolve(process.cwd(), options.startDirectory)
   const runner = new GitRunner(startDirectory)
   let repositoryRoot: string
 
@@ -43,7 +35,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<number> {
     exitOnCtrlC: true,
     useMouse: true,
     enableMouseMovement: true,
-    targetFps: 30,
+    targetFps: 30
   })
 
   if (shouldQueryTerminalPalette(process.env, renderer.capabilities)) {
@@ -60,9 +52,11 @@ export async function startApp(options: StartAppOptions = {}): Promise<number> {
     runner,
     renderer,
     onQuit: () => renderer.destroy(),
-    background: backgroundOptionsFromEnv(),
+    background: backgroundOptionsFromEnv()
   })
-  renderer.once("destroy", () => { void app.destroy() })
+  renderer.once("destroy", () => {
+    void app.destroy()
+  })
 
   try {
     await app.refresh()

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
+import { createReviewDocument } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
 import { createInitialReviewState } from "../../../src/review/core/state"
 import { coverageForFile, reviewProgress } from "../../../src/review/core/selectors"
@@ -10,7 +10,7 @@ import type { ReviewDocument, ReviewFile } from "../../../src/review/core/types"
 function makeIdentity() {
   return createReviewIdentity({ headRef: "refs/heads/feature", headOid: "h1", baseRef: "refs/remotes/origin/main" })
 }
-function makeGeneration(id = "g1") {
+function makeGeneration() {
   return createReviewGeneration({ mergeBaseOid: "m1", baseOid: "b1", headOid: "h1" })
 }
 function file(overrides: { path: string; previousPath?: string; contentId: string; key?: string }): ReviewFile {
@@ -28,7 +28,7 @@ function file(overrides: { path: string; previousPath?: string; contentId: strin
     patchDigest: `patch-${key}`,
     stats: { additions: 1, deletions: 1 },
     hunks: [],
-    source: "available",
+    source: "available"
   } as unknown as ReviewFile
 }
 function makeDoc(files: ReviewFile[]): ReviewDocument {
@@ -58,7 +58,7 @@ describe("coverageForFile path plus content identity", () => {
     const f1 = file({ path: "src/a.ts", contentId: "c1" })
     const f2 = file({ path: "src/b.ts", contentId: "c2" })
     const viewedMap = {
-      "src/a.ts": { fileKey: "src/a.ts", path: "src/a.ts", contentId: "c1", generationId: "g1", viewedAt: "2026-08-27T00:00:00.000Z" },
+      "src/a.ts": { fileKey: "src/a.ts", path: "src/a.ts", contentId: "c1", generationId: "g1", viewedAt: "2026-08-27T00:00:00.000Z" }
     }
     expect(coverageForFile(f1, viewedMap)).toBe("viewed")
     expect(coverageForFile(f2, viewedMap)).toBe("not-viewed")
@@ -123,7 +123,7 @@ describe("reviewProgress without scanning patch text", () => {
           anchor,
           resolution: "active" as const,
           createdAt: "2026-09-01T00:00:00.000Z",
-          updatedAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z"
         },
         {
           id: "resolved",
@@ -134,9 +134,9 @@ describe("reviewProgress without scanning patch text", () => {
           resolution: "active" as const,
           status: "resolved" as const,
           createdAt: "2026-09-01T00:00:00.000Z",
-          updatedAt: "2026-09-01T00:00:00.000Z",
-        },
-      ],
+          updatedAt: "2026-09-01T00:00:00.000Z"
+        }
+      ]
     })
 
     expect(progress.pending).toBe(1)
@@ -157,7 +157,7 @@ describe("active aggregate Viewed coverage", () => {
       path: "src/a.ts",
       contentId: "c1",
       generationId: s0.document.generation.id,
-      viewedAt: "2026-08-27T00:00:00.000Z",
+      viewedAt: "2026-08-27T00:00:00.000Z"
     })
     expect(coverageForFile(f, s1.viewed)).toBe("viewed")
   })
@@ -172,5 +172,4 @@ describe("active aggregate Viewed coverage", () => {
     expect(sCommit.projection.kind).toBe("commit")
     expect(() => planReviewIntent(sCommit, { type: "viewed/mark", fileKey: "src/a.ts", viewedAt: "2026-08-27T00:00:00.000Z" })).toThrow()
   })
-
 })

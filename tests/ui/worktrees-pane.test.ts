@@ -1,22 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import type { AppModel } from "../../src/app/model"
 import type { Worktree } from "../../src/domain/worktree"
-import {
-  MAIN_WORKTREE_LABEL,
-  MISSING_WORKTREE_LABEL,
-  NO_WORKTREES_THIS_REPO,
-  selectedWorktreeFrom,
-  worktreePreviewText,
-  worktreeRowId,
-  worktreeRows,
-} from "../../src/ui/panes/worktrees-pane"
-import {
-  WORKTREE_BRANCH_FG,
-  WORKTREE_CURRENT_FG,
-  WORKTREE_DETACHED_FG,
-  WORKTREE_INACTIVE_MARKER_FG,
-  WORKTREE_MISSING_FG,
-} from "../../src/ui/theme"
+import { MAIN_WORKTREE_LABEL, MISSING_WORKTREE_LABEL, NO_WORKTREES_THIS_REPO, selectedWorktreeFrom, worktreePreviewText, worktreeRowId, worktreeRows } from "../../src/ui/panes/worktrees-pane"
+import { WORKTREE_BRANCH_FG, WORKTREE_CURRENT_FG, WORKTREE_DETACHED_FG, WORKTREE_INACTIVE_MARKER_FG, WORKTREE_MISSING_FG } from "../../src/ui/theme"
 
 function model(worktrees: readonly Worktree[]): AppModel {
   return { worktrees } as unknown as AppModel
@@ -31,7 +17,7 @@ const main: Worktree = {
   shortHead: "12345678",
   isMain: true,
   isCurrent: true,
-  isPathMissing: false,
+  isPathMissing: false
 }
 
 const detached: Worktree = {
@@ -42,7 +28,7 @@ const detached: Worktree = {
   shortHead: "abcdefab",
   isMain: false,
   isCurrent: false,
-  isPathMissing: false,
+  isPathMissing: false
 }
 
 const missing: Worktree = {
@@ -51,7 +37,7 @@ const missing: Worktree = {
   branch: "gone",
   isMain: false,
   isCurrent: false,
-  isPathMissing: true,
+  isPathMissing: true
 }
 
 /**
@@ -74,19 +60,14 @@ describe("worktree rows", () => {
     expect(rows[0]!.columns[1]!.text).toBe("repo")
     expect(rows[0]!.columns[1]!.color).toBeUndefined()
     expect(rows[0]!.columns[2]!.text).toBe(`master ${MAIN_WORKTREE_LABEL}`)
-    expect(rows[0]!.columns[2]!.segments).toEqual([
-      { text: "master", color: WORKTREE_BRANCH_FG },
-      { text: ` ${MAIN_WORKTREE_LABEL}` },
-    ])
+    expect(rows[0]!.columns[2]!.segments).toEqual([{ text: "master", color: WORKTREE_BRANCH_FG }, { text: ` ${MAIN_WORKTREE_LABEL}` }])
     expect(MAIN_WORKTREE_LABEL).toBe("(main worktree)")
   })
 
   test("a detached worktree shows the shortened head in yellow and no main label", () => {
     const rows = worktreeRows(model([detached]))
     expect(rows[0]!.columns[2]!.text).toBe("HEAD detached at abcdefab")
-    expect(rows[0]!.columns[2]!.segments).toEqual([
-      { text: "HEAD detached at abcdefab", color: WORKTREE_DETACHED_FG },
-    ])
+    expect(rows[0]!.columns[2]!.segments).toEqual([{ text: "HEAD detached at abcdefab", color: WORKTREE_DETACHED_FG }])
   })
 
   test("a missing worktree turns red and gets the missing label appended to its name", () => {
@@ -119,21 +100,15 @@ describe("worktree rows", () => {
  */
 describe("worktree preview", () => {
   test("aligns Name, Branch and Path the way Go's tabwriter does", () => {
-    expect(worktreePreviewText(main)).toBe(
-      `Name:    repo ${MAIN_WORKTREE_LABEL}\nBranch:  master\nPath:    /repo\n`,
-    )
+    expect(worktreePreviewText(main)).toBe(`Name:    repo ${MAIN_WORKTREE_LABEL}\nBranch:  master\nPath:    /repo\n`)
   })
 
   test("a detached worktree shows the shortened head in the branch row", () => {
-    expect(worktreePreviewText(detached)).toBe(
-      "Name:    wt-detached\nBranch:  HEAD detached at abcdefab\nPath:    /repo/wt-detached\n",
-    )
+    expect(worktreePreviewText(detached)).toBe("Name:    wt-detached\nBranch:  HEAD detached at abcdefab\nPath:    /repo/wt-detached\n")
   })
 
   test("a missing worktree appends the missing label to the path row", () => {
-    expect(worktreePreviewText(missing)).toBe(
-      `Name:    wt-gone\nBranch:  gone\nPath:    /repo/wt-gone ${MISSING_WORKTREE_LABEL}\n`,
-    )
+    expect(worktreePreviewText(missing)).toBe(`Name:    wt-gone\nBranch:  gone\nPath:    /repo/wt-gone ${MISSING_WORKTREE_LABEL}\n`)
   })
 
   test("no selection renders lazygit's NoWorktreesThisRepo string", () => {

@@ -58,7 +58,7 @@ export function remoteRows(model: AppModel, filter = "", options: RemoteRowOptio
       { text: remote.name, priority: 2 },
       { text: operation === undefined ? "" : `${itemOperationLabel(operation)} ${loaderFrame(spinnerNowMs)}`, priority: 1, color: BRANCH_ITEM_OPERATION_FG },
       { text: remote.fetchUrl ?? "", priority: 4, style: "dim" as const },
-      { text: remote.pushUrl !== undefined && remote.pushUrl !== remote.fetchUrl ? remote.pushUrl : "", priority: 4, style: "dim" as const },
+      { text: remote.pushUrl !== undefined && remote.pushUrl !== remote.fetchUrl ? remote.pushUrl : "", priority: 4, style: "dim" as const }
     ]
     return { id, columns }
   })
@@ -73,11 +73,7 @@ export function remoteBranchRows(model: AppModel, remote: string, filter = ""): 
   if (remoteEntry?.branches === undefined) return []
   const rows: ListRow[] = remoteEntry.branches.map((branch) => {
     const id = `remote-branch:${branch.ref}`
-    const columns: ListRow["columns"] = [
-      { text: branch.name, priority: 2 },
-      { text: branch.ref, priority: 3, style: "dim" as const },
-      ...(branch.oid ? [{ text: branch.oid.slice(0, 7), priority: 1, style: "yellow" as const }] : []),
-    ]
+    const columns: ListRow["columns"] = [{ text: branch.name, priority: 2 }, { text: branch.ref, priority: 3, style: "dim" as const }, ...(branch.oid ? [{ text: branch.oid.slice(0, 7), priority: 1, style: "yellow" as const }] : [])]
     return { id, columns }
   })
   if (filter.length === 0) return rows

@@ -14,7 +14,7 @@ function snapshot(scope: "all" | "staged" | "unstaged", marker: string): Working
     upstream: "origin/main",
     reviewTarget: { kind: "working-tree", scope },
     files: [],
-    patches: [{ label: "UNSTAGED", text: marker }],
+    patches: [{ label: "UNSTAGED", text: marker }]
   }
 }
 
@@ -22,7 +22,7 @@ describe("AppController", () => {
   test("switches working tree scope and title", async () => {
     const controller = new AppController({
       repositoryRoot: "/tmp/repo",
-      load: async (target) => snapshot(target.scope, target.scope),
+      load: async (target) => snapshot(target.scope, target.scope)
     })
     await controller.refresh()
     await controller.setWorkingTreeScope("staged")
@@ -39,9 +39,12 @@ describe("AppController", () => {
       repositoryRoot: "/tmp/repo",
       load: async (target) => {
         count += 1
-        if (count === 1) return new Promise((resolve) => { resolveFirst = resolve })
+        if (count === 1)
+          return new Promise((resolve) => {
+            resolveFirst = resolve
+          })
         return snapshot(target.scope, "new")
-      },
+      }
     })
     const first = controller.refresh()
     // refresh() now unconditionally awaits stash/branch listing before it
@@ -58,7 +61,7 @@ describe("AppController", () => {
     expect(controller.state.reviewTarget).toEqual({ kind: "working-tree", scope: "staged" })
     expect(controller.state.patches[0]?.text).toBe("new")
   })
- 
+
   test("keeps the last successful snapshot when refresh fails", async () => {
     let calls = 0
     const controller = new AppController({
@@ -74,9 +77,9 @@ describe("AppController", () => {
           durationMs: 1,
           exitCode: 128,
           stdout: "",
-          stderr: "repository unavailable",
+          stderr: "repository unavailable"
         })
-      },
+      }
     })
 
     await controller.refresh()
@@ -97,7 +100,7 @@ describe("AppController", () => {
       durationMs: 1,
       exitCode: 128,
       stdout: "",
-      stderr: "scope unavailable",
+      stderr: "scope unavailable"
     })
     runner.log.logAction("scope unavailable")
     const controller = new AppController({
@@ -107,15 +110,17 @@ describe("AppController", () => {
         if (calls === 1) {
           return {
             ...snapshot(target.scope, "old patch"),
-            files: [{
-              path: "old.ts",
-              indexStatus: "M",
-              worktreeStatus: ".",
-              untracked: false,
-              conflicted: false,
-              additions: 1,
-              deletions: 0,
-            }],
+            files: [
+              {
+                path: "old.ts",
+                indexStatus: "M",
+                worktreeStatus: ".",
+                untracked: false,
+                conflicted: false,
+                additions: 1,
+                deletions: 0
+              }
+            ]
           }
         }
         throw error
@@ -126,7 +131,7 @@ describe("AppController", () => {
       loadTags: async () => [],
       loadReflog: async () => [],
       loadWorktrees: async () => [],
-      loadSubmodules: async () => [],
+      loadSubmodules: async () => []
     })
 
     await controller.refresh()
@@ -137,7 +142,12 @@ describe("AppController", () => {
     expect(controller.state.files.map((file) => file.path)).toEqual(["old.ts"])
     expect(controller.state.patches[0]?.text).toBe("old patch")
     expect(controller.state.banner).toBe("scope unavailable")
-    expect(controller.state.commandLog.at(-1)?.spans.map((span) => span.text).join("")).toBe("scope unavailable")
+    expect(
+      controller.state.commandLog
+        .at(-1)
+        ?.spans.map((span) => span.text)
+        .join("")
+    ).toBe("scope unavailable")
   })
 
   test("refreshes after each toggle-all mutation and exposes the first failure", async () => {
@@ -145,11 +155,13 @@ describe("AppController", () => {
     let loads = 0
     const files = [
       { path: "first.txt", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 },
-      { path: "second.txt", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 },
+      { path: "second.txt", indexStatus: ".", worktreeStatus: "M", untracked: false, conflicted: false, additions: 1, deletions: 0 }
     ]
     const mutations = {
-      stageFile: async (path: string) => { if (path === "second.txt") throw new Error("second failed") },
-      unstageFile: async () => undefined,
+      stageFile: async (path: string) => {
+        if (path === "second.txt") throw new Error("second failed")
+      },
+      unstageFile: async () => undefined
     } as unknown as GitMutations
     const controller = new AppController({
       runner,
@@ -161,7 +173,7 @@ describe("AppController", () => {
           branch: "main",
           reviewTarget: target,
           files,
-          patches: [],
+          patches: []
         }
       },
       loadCommits: async () => [],
@@ -170,7 +182,7 @@ describe("AppController", () => {
       loadTags: async () => [],
       loadReflog: async () => [],
       loadWorktrees: async () => [],
-      loadSubmodules: async () => [],
+      loadSubmodules: async () => []
     })
     await controller.refresh()
     await expect(controller.toggleAllFiles()).rejects.toThrow("second failed")
@@ -183,9 +195,11 @@ describe("AppController", () => {
     let loads = 0
     const staged: string[][] = []
     const mutations = {
-      stageFiles: async (paths: readonly string[]) => { staged.push([...paths]) },
+      stageFiles: async (paths: readonly string[]) => {
+        staged.push([...paths])
+      },
       unstageFiles: async () => undefined,
-      discardFiles: async () => undefined,
+      discardFiles: async () => undefined
     } as unknown as GitMutations
     const controller = new AppController({
       runner,
@@ -194,23 +208,26 @@ describe("AppController", () => {
         loads += 1
         return {
           ...snapshot(target.scope, "batch"),
-          files: [{
-            path: "first.txt",
-            indexStatus: ".",
-            worktreeStatus: "M",
-            untracked: false,
-            conflicted: false,
-            additions: 1,
-            deletions: 0,
-          }, {
-            path: "second.txt",
-            indexStatus: ".",
-            worktreeStatus: "M",
-            untracked: false,
-            conflicted: false,
-            additions: 1,
-            deletions: 0,
-          }],
+          files: [
+            {
+              path: "first.txt",
+              indexStatus: ".",
+              worktreeStatus: "M",
+              untracked: false,
+              conflicted: false,
+              additions: 1,
+              deletions: 0
+            },
+            {
+              path: "second.txt",
+              indexStatus: ".",
+              worktreeStatus: "M",
+              untracked: false,
+              conflicted: false,
+              additions: 1,
+              deletions: 0
+            }
+          ]
         }
       },
       loadCommits: async () => [],
@@ -219,7 +236,7 @@ describe("AppController", () => {
       loadTags: async () => [],
       loadReflog: async () => [],
       loadWorktrees: async () => [],
-      loadSubmodules: async () => [],
+      loadSubmodules: async () => []
     })
 
     await controller.refresh()
@@ -238,16 +255,29 @@ describe("AppController", () => {
         throw new Error("batch failed")
       },
       unstageFiles: async () => undefined,
-      discardFiles: async () => undefined,
+      discardFiles: async () => undefined
     } as unknown as GitMutations
     const controller = new AppController({
       runner,
       mutations,
       load: async (target) => {
         loads += 1
-        return { ...snapshot(target.scope, changed ? "changed patch" : "old patch"), files: changed ? [{
-          path: "changed.txt", indexStatus: "M", worktreeStatus: ".", untracked: false, conflicted: false, additions: 1, deletions: 0,
-        }] : [] }
+        return {
+          ...snapshot(target.scope, changed ? "changed patch" : "old patch"),
+          files: changed
+            ? [
+                {
+                  path: "changed.txt",
+                  indexStatus: "M",
+                  worktreeStatus: ".",
+                  untracked: false,
+                  conflicted: false,
+                  additions: 1,
+                  deletions: 0
+                }
+              ]
+            : []
+        }
       },
       loadCommits: async () => [],
       loadBranches: async () => ({ detached: true, localBranches: [], remotes: [] }),
@@ -255,7 +285,7 @@ describe("AppController", () => {
       loadTags: async () => [],
       loadReflog: async () => [],
       loadWorktrees: async () => [],
-      loadSubmodules: async () => [],
+      loadSubmodules: async () => []
     })
 
     await controller.refresh()
@@ -267,15 +297,13 @@ describe("AppController", () => {
     expect(controller.state.banner).toBe("batch failed")
   })
 
-
-
   test("refresh publishes the worktree and submodule listings", async () => {
     const worktrees = [{ path: "/tmp/repo", name: "repo", isMain: true, isCurrent: true, isPathMissing: false }] as const
     const submodules = [{ name: "vendor/lib", path: "vendor/lib", url: "/tmp/lib" }] as const
     const controller = new AppController({
       load: async (target) => snapshot(target.scope, ""),
       loadWorktrees: async () => worktrees,
-      loadSubmodules: async () => submodules,
+      loadSubmodules: async () => submodules
     })
     await controller.refresh()
     expect(controller.state.worktrees).toEqual(worktrees)
@@ -285,8 +313,10 @@ describe("AppController", () => {
   test("a failing worktree or submodule listing only raises a banner", async () => {
     const controller = new AppController({
       load: async (target) => snapshot(target.scope, ""),
-      loadWorktrees: async () => { throw new Error("worktree listing failed") },
-      loadSubmodules: async () => [],
+      loadWorktrees: async () => {
+        throw new Error("worktree listing failed")
+      },
+      loadSubmodules: async () => []
     })
     await controller.refresh()
     expect(controller.state.banner).toBe("worktree listing failed")
@@ -296,7 +326,9 @@ describe("AppController", () => {
     const other = new AppController({
       load: async (target) => snapshot(target.scope, ""),
       loadWorktrees: async () => [],
-      loadSubmodules: async () => { throw new Error("submodule listing failed") },
+      loadSubmodules: async () => {
+        throw new Error("submodule listing failed")
+      }
     })
     await other.refresh()
     expect(other.state.banner).toBe("submodule listing failed")
@@ -306,12 +338,16 @@ describe("AppController", () => {
   test("when several auxiliary listings fail the last one in load order sets the banner", async () => {
     const controller = new AppController({
       load: async (target) => snapshot(target.scope, ""),
-      loadBranches: async () => { throw new Error("branches failed") },
+      loadBranches: async () => {
+        throw new Error("branches failed")
+      },
       loadStashes: async () => [],
       loadTags: async () => [],
       loadReflog: async () => [],
       loadWorktrees: async () => [],
-      loadSubmodules: async () => { throw new Error("submodules failed") },
+      loadSubmodules: async () => {
+        throw new Error("submodules failed")
+      }
     })
     await controller.refresh()
     expect(controller.state.banner).toBe("submodules failed")
@@ -323,7 +359,7 @@ describe("AppController", () => {
     const tags = [{ name: "v1", ref: "refs/tags/v1", kind: "lightweight", objectOid: "a", targetOid: "a", subject: "release" }] as const
     const controller = new AppController({
       load: async (target) => snapshot(target.scope, ""),
-      loadTags: async () => tags,
+      loadTags: async () => tags
     })
     await controller.refresh()
     expect(controller.state.tags).toEqual(tags)
@@ -334,7 +370,9 @@ describe("AppController", () => {
     let resolvePullRequest: ((value: readonly PullRequest[]) => void) | undefined
     let publications = 0
     let resolvePublication: (() => void) | undefined
-    const publication = new Promise<void>((resolve) => { resolvePublication = resolve })
+    const publication = new Promise<void>((resolve) => {
+      resolvePublication = resolve
+    })
     const branch = {
       name: "feature",
       upstream: "origin/feature",
@@ -342,7 +380,7 @@ describe("AppController", () => {
       upstreamBranch: "feature",
       isCurrent: true,
       committedAt: "1",
-      subject: "feature",
+      subject: "feature"
     } as const
     const controller = new AppController({
       repositoryRoot: "/tmp/repo",
@@ -350,13 +388,18 @@ describe("AppController", () => {
       loadBranches: async () => ({
         detached: false,
         localBranches: [branch],
-        remotes: [{ name: "origin", fetchUrl: "git@github.com:acme/repo.git" }],
+        remotes: [{ name: "origin", fetchUrl: "git@github.com:acme/repo.git" }]
       }),
       loadPullRequests: async () => {
         pullRequestStarted = true
-        return new Promise<readonly PullRequest[]>((resolve) => { resolvePullRequest = resolve })
+        return new Promise<readonly PullRequest[]>((resolve) => {
+          resolvePullRequest = resolve
+        })
       },
-      onPullRequestsChanged: () => { publications += 1; resolvePublication?.() },
+      onPullRequestsChanged: () => {
+        publications += 1
+        resolvePublication?.()
+      }
     })
 
     const refresh = controller.refresh()
@@ -366,15 +409,17 @@ describe("AppController", () => {
     expect(controller.state.patches[0]?.text).toBe("local")
     expect(publications).toBe(0)
 
-    resolvePullRequest?.([{
-      number: 1,
-      title: "merged",
-      state: "MERGED",
-      checksState: "",
-      url: "",
-      headRefName: "feature",
-      headRepositoryOwner: "acme",
-    }])
+    resolvePullRequest?.([
+      {
+        number: 1,
+        title: "merged",
+        state: "MERGED",
+        checksState: "",
+        url: "",
+        headRefName: "feature",
+        headRepositoryOwner: "acme"
+      }
+    ])
     await publication
 
     expect(publications).toBe(1)
@@ -385,7 +430,9 @@ describe("AppController", () => {
     let initialRefreshDone = false
     let oldRequestStarted = false
     let resolveOldRequest: ((value: readonly PullRequest[]) => void) | undefined
-    const oldRequest = new Promise<readonly PullRequest[]>((resolve) => { resolveOldRequest = resolve })
+    const oldRequest = new Promise<readonly PullRequest[]>((resolve) => {
+      resolveOldRequest = resolve
+    })
     const branch = {
       name: "feature",
       upstream: "origin/feature",
@@ -393,7 +440,7 @@ describe("AppController", () => {
       upstreamBranch: "feature",
       isCurrent: true,
       committedAt: "1",
-      subject: "feature",
+      subject: "feature"
     } as const
     const controller = new AppController({
       repositoryRoot: "/tmp/repo",
@@ -401,7 +448,7 @@ describe("AppController", () => {
       loadBranches: async () => ({
         detached: false,
         localBranches: [branch],
-        remotes: [{ name: "origin", fetchUrl: "git@github.com:acme/repo.git" }],
+        remotes: [{ name: "origin", fetchUrl: "git@github.com:acme/repo.git" }]
       }),
       loadPullRequests: async () => {
         if (!initialRefreshDone) return []
@@ -409,16 +456,18 @@ describe("AppController", () => {
           oldRequestStarted = true
           return await oldRequest
         }
-        return [{
-          number: 2,
-          title: "merged",
-          state: "MERGED",
-          checksState: "",
-          url: "",
-          headRefName: "feature",
-          headRepositoryOwner: "acme",
-        }]
-      },
+        return [
+          {
+            number: 2,
+            title: "merged",
+            state: "MERGED",
+            checksState: "",
+            url: "",
+            headRefName: "feature",
+            headRepositoryOwner: "acme"
+          }
+        ]
+      }
     })
 
     await controller.refresh()
@@ -428,15 +477,17 @@ describe("AppController", () => {
     await second
     expect(controller.state.pullRequests?.feature?.state).toBe("MERGED")
 
-    resolveOldRequest?.([{
-      number: 1,
-      title: "open",
-      state: "OPEN",
-      checksState: "",
-      url: "",
-      headRefName: "feature",
-      headRepositoryOwner: "acme",
-    }])
+    resolveOldRequest?.([
+      {
+        number: 1,
+        title: "open",
+        state: "OPEN",
+        checksState: "",
+        url: "",
+        headRefName: "feature",
+        headRepositoryOwner: "acme"
+      }
+    ])
     await first
 
     expect(controller.state.pullRequests?.feature?.state).toBe("MERGED")
@@ -471,14 +522,15 @@ describe("AppController", () => {
         loadTags: async () => [],
         loadReflog: async () => [],
         loadWorktrees: async () => [],
-        loadSubmodules: async () => [],
+        loadSubmodules: async () => []
       })
 
       await controller.refresh()
       await controller.inspectStash(firstOid)
       await controller.dropStashes([firstOid, secondOid], { confirmed: true })
 
-      const dropCommands = runner.log.lines()
+      const dropCommands = runner.log
+        .lines()
         .map((line) => line.spans.map((span) => span.text).join(""))
         .filter((text) => text.includes("git stash drop"))
       expect(dropCommands).toEqual(["  git stash drop stash@{1}", "  git stash drop stash@{0}"])
@@ -511,7 +563,7 @@ describe("AppController", () => {
         load: async (target) => {
           loads += 1
           return snapshot(target.scope, "working")
-        },
+        }
       })
 
       await controller.refresh()
@@ -560,35 +612,32 @@ describe("AppController", () => {
           detached: false,
           current: "master",
           localBranches: [],
-          remotes: [{ name: "origin" }],
+          remotes: [{ name: "origin" }]
         }),
         loadStashes: async () => [],
         loadTags: async () => [],
         loadReflog: async () => [],
         loadWorktrees: async () => [],
-        loadSubmodules: async () => [],
+        loadSubmodules: async () => []
       })
       const requests: readonly BranchDeleteRequest[] = [
         { mode: "local", branch: "local-only", force: false },
         { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
-        { mode: "local-and-remote", branch: "both", remote: "origin", remoteBranch: "both", force: false },
+        { mode: "local-and-remote", branch: "both", remote: "origin", remoteBranch: "both", force: false }
       ]
 
       await controller.refresh()
       await controller.deleteBranches(requests)
 
       expect((await repository.git(["show-ref", "--verify", "--quiet", "refs/heads/local-only"])).exitCode).not.toBe(0)
-      const deleteCommands = runner.log.lines()
+      const deleteCommands = runner.log
+        .lines()
         .map((line) => line.spans.map((span) => span.text).join(""))
         .filter((text) => text.includes("git branch -d --") || text.includes("git branch -D --") || text.includes("git push origin --delete"))
-      expect(deleteCommands).toEqual([
-        "  git branch -d -- local-only",
-        "  git push origin --delete refs/heads/remote-only",
-        "  git push origin --delete refs/heads/both",
-        "  git branch -D -- both",
-      ])
+      expect(deleteCommands).toEqual(["  git branch -d -- local-only", "  git push origin --delete refs/heads/remote-only", "  git push origin --delete refs/heads/both", "  git branch -D -- both"])
 
-      const actions = runner.log.lines()
+      const actions = runner.log
+        .lines()
         .filter((line) => line.spans.some((span) => span.style === "action"))
         .map((line) => line.spans.map((span) => span.text).join(""))
       expect(actions).toEqual(["Delete local branch", "Delete remote branch"])
@@ -596,7 +645,6 @@ describe("AppController", () => {
       expect(loads).toBe(2)
       expect(remoteRefreshes).toBe(1)
     } finally {
-
       await remote.cleanup()
       await repository.cleanup()
     }
@@ -627,20 +675,24 @@ describe("AppController", () => {
           const listing = await listBranches(runner)
           return {
             ...listing,
-            remotes: await Promise.all(listing.remotes.map(async (candidate) => ({
-              ...candidate,
-              branches: await listRemoteBranches(runner, candidate.name),
-            }))),
+            remotes: await Promise.all(
+              listing.remotes.map(async (candidate) => ({
+                ...candidate,
+                branches: await listRemoteBranches(runner, candidate.name)
+              }))
+            )
           }
-        },
+        }
       })
 
       await controller.refresh()
-      await expect(controller.deleteBranches([
-        { mode: "local", branch: "local-only", force: false },
-        { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
-        { mode: "local", branch: "missing", force: false },
-      ])).rejects.toThrow()
+      await expect(
+        controller.deleteBranches([
+          { mode: "local", branch: "local-only", force: false },
+          { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
+          { mode: "local", branch: "missing", force: false }
+        ])
+      ).rejects.toThrow()
 
       expect(controller.state.branches?.localBranches.map((branch) => branch.name)).not.toContain("local-only")
       expect(controller.state.branches?.remotes[0]?.branches?.map((branch) => branch.name)).not.toContain("remote-only")
@@ -683,15 +735,17 @@ describe("AppController", () => {
           detached: false,
           current: "master",
           localBranches: [],
-          remotes: [{ name: "origin", branches: [staleRemoteBranch] }],
-        }),
+          remotes: [{ name: "origin", branches: [staleRemoteBranch] }]
+        })
       })
 
       await controller.refresh()
-      await expect(controller.deleteBranches([
-        { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
-        { mode: "local", branch: "missing", force: false },
-      ])).rejects.toThrow()
+      await expect(
+        controller.deleteBranches([
+          { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
+          { mode: "local", branch: "missing", force: false }
+        ])
+      ).rejects.toThrow()
 
       expect(controller.state.branches?.remotes[0]?.branches).toEqual([])
       expect(controller.state.banner).toContain("missing")
@@ -738,15 +792,17 @@ describe("AppController", () => {
           detached: false,
           current: "master",
           localBranches: [],
-          remotes: [{ name: "origin", branches: [] }],
-        }),
+          remotes: [{ name: "origin", branches: [] }]
+        })
       })
 
       await controller.refresh()
-      await expect(controller.deleteBranches([
-        { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
-        { mode: "local", branch: "missing", force: false },
-      ])).rejects.toThrow()
+      await expect(
+        controller.deleteBranches([
+          { mode: "remote", branch: "remote-only", remote: "origin", remoteBranch: "remote-only", force: false },
+          { mode: "local", branch: "missing", force: false }
+        ])
+      ).rejects.toThrow()
 
       expect(controller.state.banner).toContain("missing")
       expect(controller.state.banner).not.toContain("remote browse failed")
@@ -773,21 +829,28 @@ describe("AppController", () => {
       const controller = new AppController({
         repositoryRoot: repository.path,
         runner,
-        load: async (target) => snapshot(target.scope, "working"),
+        load: async (target) => snapshot(target.scope, "working")
       })
       runner.log.logAction("before batch validation")
 
-
-      await expect(controller.deleteBranches([
-        { mode: "local", branch: "local-only", force: false },
-        { mode: "remote", branch: "remote-only", remote: "origin", force: false },
-      ])).rejects.toThrow("remote branch deletion requires an upstream")
+      await expect(
+        controller.deleteBranches([
+          { mode: "local", branch: "local-only", force: false },
+          { mode: "remote", branch: "remote-only", remote: "origin", force: false }
+        ])
+      ).rejects.toThrow("remote branch deletion requires an upstream")
       expect(controller.state.banner).toBe("remote branch deletion requires an upstream")
-      expect(controller.state.commandLog.at(-1)?.spans.map((span) => span.text).join("")).toBe("before batch validation")
+      expect(
+        controller.state.commandLog
+          .at(-1)
+          ?.spans.map((span) => span.text)
+          .join("")
+      ).toBe("before batch validation")
 
       expect((await repository.git(["show-ref", "--verify", "--quiet", "refs/heads/local-only"])).exitCode).toBe(0)
       expect((await remote.git(["show-ref", "--verify", "--quiet", "refs/heads/remote-only"])).exitCode).toBe(0)
-      const deleteCommands = runner.log.lines()
+      const deleteCommands = runner.log
+        .lines()
         .map((line) => line.spans.map((span) => span.text).join(""))
         .filter((text) => text.includes("git branch -d --") || text.includes("git push origin --delete"))
       expect(deleteCommands).toEqual([])
@@ -818,13 +881,15 @@ describe("AppController", () => {
       const controller = new AppController({
         repositoryRoot: repository.path,
         runner: new GitRunner({ cwd: repository.path }),
-        load: async (target) => snapshot(target.scope, "working"),
+        load: async (target) => snapshot(target.scope, "working")
       })
 
-      await expect(controller.deleteBranches([
-        { mode: "local-and-remote", branch: "merged", remote: "origin", remoteBranch: "merged", force: false },
-        { mode: "local-and-remote", branch: "unmerged", remote: "origin", remoteBranch: "unmerged", force: false },
-      ])).rejects.toThrow("force deletion requires separate confirmation for unmerged")
+      await expect(
+        controller.deleteBranches([
+          { mode: "local-and-remote", branch: "merged", remote: "origin", remoteBranch: "merged", force: false },
+          { mode: "local-and-remote", branch: "unmerged", remote: "origin", remoteBranch: "unmerged", force: false }
+        ])
+      ).rejects.toThrow("force deletion requires separate confirmation for unmerged")
 
       for (const branch of ["merged", "unmerged"]) {
         expect((await repository.git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).exitCode).toBe(0)
@@ -835,7 +900,6 @@ describe("AppController", () => {
       await repository.cleanup()
     }
   })
-
 })
 
 describe("commit history limit", () => {
@@ -849,15 +913,15 @@ describe("commit history limit", () => {
         authorName: "A",
         authoredAt: "2026-01-01T00:00:00Z",
         subject: `commit ${i}`,
-        body: "",
+        body: ""
       }))
     const controller = new AppController({
       repositoryRoot: "/tmp/repo",
       load: async (target) => snapshot(target.scope, target.scope),
       loadCommits: (async (_range: string, _filter?: string, options?: { readonly limit?: boolean }) => {
         seen.push(options)
-        return options?.limit ?? true ? commits(300) : commits(1000)
-      }) as never,
+        return (options?.limit ?? true) ? commits(300) : commits(1000)
+      }) as never
     })
     await controller.refresh()
     expect(controller.state.commits?.length).toBe(300)
@@ -870,4 +934,3 @@ describe("commit history limit", () => {
     expect(again).toBe(false)
   })
 })
-

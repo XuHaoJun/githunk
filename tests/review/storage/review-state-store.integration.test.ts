@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { mkdir, stat, writeFile, readdir } from "node:fs/promises"
-import { join, dirname } from "node:path"
+import { dirname } from "node:path"
 import { createTempRepository, type TempRepository } from "../../helpers/temp-repository"
 import { GitRunner } from "../../../src/git/runner"
 import { ReviewStateStore } from "../../../src/review/storage/review-state-store"
-import type { ReviewDatabaseV2 } from "../../../src/review/storage/schemas"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
@@ -31,7 +30,7 @@ describe("ReviewStateStore integration", () => {
     const store = new ReviewStateStore(new GitRunner(repository.path))
     await store.saveSemanticChange((db) => ({
       ...db,
-      baseByHead: { "refs/heads/feature": { baseRef: "refs/heads/main" } },
+      baseByHead: { "refs/heads/feature": { baseRef: "refs/heads/main" } }
     }))
     const loaded = await store.load()
     expect(loaded.baseByHead["refs/heads/feature"]?.baseRef).toBe("refs/heads/main")
@@ -71,9 +70,9 @@ describe("ReviewStateStore integration", () => {
           draft: null,
           expandedGaps: [],
           lastSubmission: null,
-          submissionInProgress: null,
-        },
-      },
+          submissionInProgress: null
+        }
+      }
     }))
 
     const draft1 = { anchor: { kind: "file" as const, fileKey: "k1", contentId: "c1" }, kind: "note" as const, severity: "comment" as const, body: "first" }
@@ -110,9 +109,9 @@ describe("ReviewStateStore integration", () => {
           draft: null,
           expandedGaps: [],
           lastSubmission: null,
-          submissionInProgress: null,
-        },
-      },
+          submissionInProgress: null
+        }
+      }
     }))
     const draft = { anchor: { kind: "file" as const, fileKey: "k2", contentId: "c2" }, kind: "note" as const, severity: "comment" as const, body: "flush-test" }
     store.saveDraftDebounced(reviewId, draft)
@@ -172,9 +171,9 @@ describe("ReviewStateStore integration", () => {
           expandedGaps: [],
           lastSubmission: null,
           submissionInProgress: null,
-          patch: "raw diff should not be here",
-        },
-      },
+          patch: "raw diff should not be here"
+        }
+      }
     }
     await mkdir(dirname(path), { recursive: true }).catch(() => {})
     await writeFile(path, JSON.stringify(bad), "utf8")

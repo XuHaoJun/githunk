@@ -1,17 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  createInvalidBaseError,
-  createHistoryRewrittenError,
-  createGitError,
-  createParseError,
-  createSourceError,
-  createStorageError,
-  createCorruptStateError,
-  classifyLoadError,
-  isEmptyReview,
-  isDetachedSnapshot,
-  workspaceStatusForDocument,
-} from "../../../src/ui/review-workspace/error-state"
+import { createInvalidBaseError, createHistoryRewrittenError, createGitError, createParseError, createSourceError, createStorageError, createCorruptStateError, classifyLoadError, isEmptyReview, isDetachedSnapshot, workspaceStatusForDocument } from "../../../src/ui/review-workspace/error-state"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewIdentity, createReviewGeneration } from "../../../src/review/core/identity"
 import { ReviewWorkspaceController } from "../../../src/ui/review-workspace/controller"
@@ -39,16 +27,14 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [],
     source: "available",
-    ...overrides,
+    ...overrides
   } as unknown as ReviewFile
 }
 
 function makeDoc(files: ReviewFile[], opts?: { headRef?: string | null; headOid?: string }) {
   const headRef = opts?.headRef !== undefined ? opts.headRef : "refs/heads/feature"
   const headOid = opts?.headOid ?? "a".repeat(40)
-  const identity = headRef === null
-    ? createReviewIdentity({ headOid, baseRef: "refs/heads/main" })
-    : createReviewIdentity({ headRef, headOid, baseRef: "refs/heads/main" })
+  const identity = headRef === null ? createReviewIdentity({ headOid, baseRef: "refs/heads/main" }) : createReviewIdentity({ headRef, headOid, baseRef: "refs/heads/main" })
   const generation = createReviewGeneration({ baseOid: "b".repeat(40), mergeBaseOid: "c".repeat(40), headOid })
   return createReviewDocument({ identity, generation, commits: [{ oid: headOid, parents: [], author: "A", timestamp: 0, subject: "s", body: "" }], files })
 }
@@ -138,10 +124,12 @@ describe("error-state — typed actionable errors", () => {
     // Mock state store that throws on save
     const failingStore = {
       load: async () => ({ version: 2, baseByHead: {}, reviews: {} }),
-      saveSemanticChange: async () => { throw new Error("storage write failed: EIO") },
+      saveSemanticChange: async () => {
+        throw new Error("storage write failed: EIO")
+      },
       quarantineWarning: undefined,
       saveDraftDebounced: () => {},
-      flush: async () => {},
+      flush: async () => {}
     } as unknown as ReviewStateStore
     const controller = new ReviewWorkspaceController({ runner, loadDocument: async () => doc, stateStore: failingStore })
     await controller.open("refs/heads/main")
@@ -156,20 +144,12 @@ describe("error-state — typed actionable errors", () => {
   })
 
   test("each error kind has distinct title and action, not generic banner", () => {
-    const cases = [
-      createInvalidBaseError("refs/heads/main"),
-      createHistoryRewrittenError("a".repeat(40), "b".repeat(40)),
-      createGitError("git failure"),
-      createParseError("parse failure"),
-      createSourceError("source failure"),
-      createStorageError("storage failure"),
-      createCorruptStateError("/tmp/q"),
-    ]
-    const titles = cases.map(c => c.title)
+    const cases = [createInvalidBaseError("refs/heads/main"), createHistoryRewrittenError("a".repeat(40), "b".repeat(40)), createGitError("git failure"), createParseError("parse failure"), createSourceError("source failure"), createStorageError("storage failure"), createCorruptStateError("/tmp/q")]
+    const titles = cases.map((c) => c.title)
     const uniqTitles = new Set(titles)
     expect(uniqTitles.size).toBe(cases.length)
     // Ensure actions are within allowed set and not all same
-    const actions = cases.map(c => c.action)
+    const actions = cases.map((c) => c.action)
     for (const a of actions) {
       expect(["choose-base", "retry", "dismiss", "open-feedback"]).toContain(a)
     }
@@ -192,7 +172,9 @@ describe("error-state — typed actionable errors", () => {
     const runner = fakeRunner()
     const controller = new ReviewWorkspaceController({
       runner,
-      loadDocument: async () => { throw new Error("base ref does not resolve to a commit: refs/heads/ghost") },
+      loadDocument: async () => {
+        throw new Error("base ref does not resolve to a commit: refs/heads/ghost")
+      }
     })
     await expect(controller.open("refs/heads/ghost")).rejects.toThrow()
     expect(controller.error).toBeDefined()
@@ -207,10 +189,10 @@ describe("error-state — typed actionable errors", () => {
     let shouldFail = false
     const controller = new ReviewWorkspaceController({
       runner: fakeRunner(),
-      loadDocument: async (base) => {
+      loadDocument: async () => {
         if (shouldFail) throw new Error("Failed to parse patch: unsupported patch for src/broken.ts")
         return docV1
-      },
+      }
     })
     await controller.open("refs/heads/main")
     const beforeDoc = controller.state!.document

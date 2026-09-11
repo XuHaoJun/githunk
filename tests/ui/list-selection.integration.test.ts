@@ -122,7 +122,7 @@ describe("full-row list selection", () => {
         await repository.git(["commit", "-m", "base"])
         await repository.write("a.txt", "aa\n")
         await repository.write("b.txt", "bb\n")
-      },
+      }
     })
     const view = harness.app.view as unknown as ListViewProbe
     await harness.pressKey("2")
@@ -159,14 +159,14 @@ describe("full-row list selection", () => {
       files: [
         { path: "a.txt", indexStatus: "M", worktreeStatus: "M", untracked: false, additions: 1, deletions: 0, conflicted: false },
         { path: "b.txt", indexStatus: "M", worktreeStatus: "M", untracked: false, additions: 1, deletions: 0, conflicted: false },
-        { path: "c.txt", indexStatus: "M", worktreeStatus: "M", untracked: false, additions: 1, deletions: 0, conflicted: false },
+        { path: "c.txt", indexStatus: "M", worktreeStatus: "M", untracked: false, additions: 1, deletions: 0, conflicted: false }
       ],
       patches: [],
       rawPatchSections: [],
       reviewStatuses: {},
       loading: false,
       commandLog: [],
-      title: "t",
+      title: "t"
     } as unknown as AppModel
     const rowsFor = (m: AppModel) => filesTreeRows(createFilesTreeState(m), m)
     const rows = rowsFor(base)
@@ -191,9 +191,13 @@ describe("full-row list selection", () => {
       branches: {
         current: "main",
         detached: false,
-        localBranches: [{ name: "main", isCurrent: true }, { name: "feature", isCurrent: false }, { name: "side", isCurrent: false }],
-        remotes: [],
-      },
+        localBranches: [
+          { name: "main", isCurrent: true },
+          { name: "feature", isCurrent: false },
+          { name: "side", isCurrent: false }
+        ],
+        remotes: []
+      }
     } as unknown as AppModel
     const rows = localBranchRows(model)
     let state = createListState(rows)
@@ -203,9 +207,12 @@ describe("full-row list selection", () => {
       branches: {
         current: "main",
         detached: false,
-        localBranches: [{ name: "main", isCurrent: true }, { name: "side", isCurrent: false }],
-        remotes: [],
-      },
+        localBranches: [
+          { name: "main", isCurrent: true },
+          { name: "side", isCurrent: false }
+        ],
+        remotes: []
+      }
     } as unknown as AppModel
     const nextRows = localBranchRows(nextModel)
     state = setListRows(state, nextRows)
@@ -218,8 +225,8 @@ describe("full-row list selection", () => {
       tags: [
         { name: "v1", ref: "refs/tags/v1", targetOid: "abc", kind: "lightweight" },
         { name: "v2", ref: "refs/tags/v2", targetOid: "def", kind: "lightweight" },
-        { name: "v3", ref: "refs/tags/v3", targetOid: "ghi", kind: "lightweight" },
-      ],
+        { name: "v3", ref: "refs/tags/v3", targetOid: "ghi", kind: "lightweight" }
+      ]
     } as unknown as AppModel
     const rows = tagRows(model)
     let state = createListState(rows)
@@ -227,8 +234,8 @@ describe("full-row list selection", () => {
     const nextModel = {
       tags: [
         { name: "v1", ref: "refs/tags/v1", targetOid: "abc", kind: "lightweight" },
-        { name: "v3", ref: "refs/tags/v3", targetOid: "ghi", kind: "lightweight" },
-      ],
+        { name: "v3", ref: "refs/tags/v3", targetOid: "ghi", kind: "lightweight" }
+      ]
     } as unknown as AppModel
     const nextRows = tagRows(nextModel)
     state = setListRows(state, nextRows)
@@ -236,10 +243,17 @@ describe("full-row list selection", () => {
   })
 
   test("refresh retains index for commits", () => {
-    const rows = [{ id: "a", columns: [{ text: "a", priority: 2 }] }, { id: "b", columns: [{ text: "b", priority: 2 }] }, { id: "c", columns: [{ text: "c", priority: 2 }] }]
+    const rows = [
+      { id: "a", columns: [{ text: "a", priority: 2 }] },
+      { id: "b", columns: [{ text: "b", priority: 2 }] },
+      { id: "c", columns: [{ text: "c", priority: 2 }] }
+    ]
     let state = createListState(rows)
     state = selectListRow(state, "b")
-    const nextRows = [{ id: "a", columns: [{ text: "a", priority: 2 }] }, { id: "c", columns: [{ text: "c", priority: 2 }] }]
+    const nextRows = [
+      { id: "a", columns: [{ text: "a", priority: 2 }] },
+      { id: "c", columns: [{ text: "c", priority: 2 }] }
+    ]
     state = setListRows(state, nextRows)
     expect(state.selectedId).toBe("c")
     expect(state.selectedIndex).toBe(1)
@@ -247,13 +261,20 @@ describe("full-row list selection", () => {
 
   test("refresh retains index for stashes", () => {
     const model = {
-      stashes: [{ oid: "s1", ref: "stash@{0}", message: "m1" }, { oid: "s2", ref: "stash@{1}", message: "m2" }, { oid: "s3", ref: "stash@{2}", message: "m3" }],
+      stashes: [
+        { oid: "s1", ref: "stash@{0}", message: "m1" },
+        { oid: "s2", ref: "stash@{1}", message: "m2" },
+        { oid: "s3", ref: "stash@{2}", message: "m3" }
+      ]
     } as unknown as AppModel
     const rows = stashRows(model)
     let state = createListState(rows)
     state = selectListRow(state, "s2")
     const nextModel = {
-      stashes: [{ oid: "s1", ref: "stash@{0}", message: "m1" }, { oid: "s3", ref: "stash@{2}", message: "m3" }],
+      stashes: [
+        { oid: "s1", ref: "stash@{0}", message: "m1" },
+        { oid: "s3", ref: "stash@{2}", message: "m3" }
+      ]
     } as unknown as AppModel
     const nextRows = stashRows(nextModel)
     state = setListRows(state, nextRows, nextRows.length === 0 ? [{ kind: "message", text: "No stashes" }] : undefined)
@@ -264,10 +285,14 @@ describe("full-row list selection", () => {
     const details = {
       oid: "abc",
       document: {
-        files: [{ newPath: "a.txt", oldPath: "a.txt", hunks: [], lines: [] }, { newPath: "b.txt", oldPath: "b.txt", hunks: [], lines: [] }, { newPath: "c.txt", oldPath: "c.txt", hunks: [], lines: [] }],
+        files: [
+          { newPath: "a.txt", oldPath: "a.txt", hunks: [], lines: [] },
+          { newPath: "b.txt", oldPath: "b.txt", hunks: [], lines: [] },
+          { newPath: "c.txt", oldPath: "c.txt", hunks: [], lines: [] }
+        ],
         lines: [],
-        text: "",
-      },
+        text: ""
+      }
     } as unknown as CommitDetails
     const rows = commitFileRows(details)
     let state = createListState(rows)
@@ -275,10 +300,13 @@ describe("full-row list selection", () => {
     const nextDetails = {
       oid: "abc",
       document: {
-        files: [{ newPath: "a.txt", oldPath: "a.txt", hunks: [], lines: [] }, { newPath: "c.txt", oldPath: "c.txt", hunks: [], lines: [] }],
+        files: [
+          { newPath: "a.txt", oldPath: "a.txt", hunks: [], lines: [] },
+          { newPath: "c.txt", oldPath: "c.txt", hunks: [], lines: [] }
+        ],
         lines: [],
-        text: "",
-      },
+        text: ""
+      }
     } as unknown as CommitDetails
     const nextRows = commitFileRows(nextDetails)
     state = setListRows(state, nextRows, nextRows.length === 0 ? [{ kind: "message", text: "No files" }] : undefined)

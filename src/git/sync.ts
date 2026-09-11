@@ -44,7 +44,10 @@ async function upstreamRef(runner: CommandRunner): Promise<string | undefined> {
 }
 
 async function upstreamCandidates(runner: CommandRunner): Promise<readonly UpstreamCandidate[]> {
-  const remotes = (await runner.run(["remote"], { readOnly: true })).stdout.split(/\r?\n/).map((remote) => remote.trim()).filter(Boolean)
+  const remotes = (await runner.run(["remote"], { readOnly: true })).stdout
+    .split(/\r?\n/)
+    .map((remote) => remote.trim())
+    .filter(Boolean)
   const refs = (await runner.run(["for-each-ref", "--format=%(refname)", "refs/remotes"], { readOnly: true })).stdout
     .split(/\r?\n/)
     .map((ref) => ref.trim())
@@ -52,7 +55,10 @@ async function upstreamCandidates(runner: CommandRunner): Promise<readonly Upstr
   const candidates: UpstreamCandidate[] = []
   for (const ref of refs) {
     const remoteRef = ref.slice("refs/remotes/".length)
-    const remote = remotes.slice().sort((left, right) => right.length - left.length).find((candidate) => remoteRef.startsWith(`${candidate}/`))
+    const remote = remotes
+      .slice()
+      .sort((left, right) => right.length - left.length)
+      .find((candidate) => remoteRef.startsWith(`${candidate}/`))
     if (remote === undefined) continue
     const branch = remoteRef.slice(remote.length + 1)
     if (branch.length > 0) candidates.push({ remote, branch })
@@ -74,10 +80,7 @@ export type FetchOptions = {
 }
 
 export async function fetch(runner: CommandRunner, remote?: string, options: FetchOptions = {}): Promise<void> {
-  await runner.run(
-    remote === undefined ? ["fetch"] : ["fetch", remote],
-    options.background === true ? { dontLog: true } : { streamOutput: true },
-  )
+  await runner.run(remote === undefined ? ["fetch"] : ["fetch", remote], options.background === true ? { dontLog: true } : { streamOutput: true })
 }
 
 export async function pull(runner: CommandRunner, options: PullOptions = {}): Promise<PullResult> {
@@ -87,7 +90,7 @@ export async function pull(runner: CommandRunner, options: PullOptions = {}): Pr
     await runner.run(["pull", options.upstream.remote, options.upstream.branch], { streamOutput: true })
     return { kind: "pulled" }
   }
-  if (await upstreamRef(runner) === undefined) {
+  if ((await upstreamRef(runner)) === undefined) {
     return { kind: "upstream-required", branch, candidates: await upstreamCandidates(runner), operation: "pull" }
   }
   await runner.run(["pull"], { streamOutput: true })
@@ -101,7 +104,7 @@ export async function push(runner: CommandRunner, options: PushOptions = {}): Pr
     await runner.run(["push", "--set-upstream", options.upstream.remote, options.upstream.branch], { streamOutput: true })
     return { kind: "pushed" }
   }
-  if (await upstreamRef(runner) === undefined) {
+  if ((await upstreamRef(runner)) === undefined) {
     return { kind: "upstream-required", branch, candidates: await upstreamCandidates(runner), operation: "push" }
   }
   await runner.run(["push"], { streamOutput: true })

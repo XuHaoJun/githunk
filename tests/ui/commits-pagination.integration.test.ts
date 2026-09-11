@@ -10,7 +10,7 @@ function syntheticCommits(total: number): readonly CommitSummary[] {
     authorName: "Author",
     authoredAt: "2026-01-01T00:00:00Z",
     subject: `synthetic commit ${i}`,
-    body: "",
+    body: ""
   }))
 }
 
@@ -32,8 +32,7 @@ describe("commits pagination", () => {
   test("moving past row 200 loads the full history and keeps the selection", async () => {
     const all = syntheticCommits(1000)
     harness = await createShellHarness({
-      loadCommits: (async (_range: string, _filter?: string, options?: { readonly limit?: boolean }) =>
-        (options?.limit ?? true ? all.slice(0, 300) : all)) as never,
+      loadCommits: (async (_range: string, _filter?: string, options?: { readonly limit?: boolean }) => ((options?.limit ?? true) ? all.slice(0, 300) : all)) as never
     })
     const view = harness.app.view as unknown as { selectedListId(pane: string): string | undefined }
     await harness.pressKey("4")
@@ -48,8 +47,7 @@ describe("commits pagination", () => {
   test("End expands first, then lands on the oldest commit", async () => {
     const all = syntheticCommits(1000)
     harness = await createShellHarness({
-      loadCommits: (async (_range: string, _filter?: string, options?: { readonly limit?: boolean }) =>
-        (options?.limit ?? true ? all.slice(0, 300) : all)) as never,
+      loadCommits: (async (_range: string, _filter?: string, options?: { readonly limit?: boolean }) => ((options?.limit ?? true) ? all.slice(0, 300) : all)) as never
     })
     const view = harness.app.view as unknown as {
       selectedListId(pane: string): string | undefined
@@ -65,8 +63,7 @@ describe("commits pagination", () => {
   test("Home returns to the newest commit", async () => {
     const all = syntheticCommits(1000)
     harness = await createShellHarness({
-      loadCommits: (async (_range: string, _filter?: string, options?: { readonly limit?: boolean }) =>
-        (options?.limit ?? true ? all.slice(0, 300) : all)) as never,
+      loadCommits: (async (_range: string, _filter?: string, options?: { readonly limit?: boolean }) => ((options?.limit ?? true) ? all.slice(0, 300) : all)) as never
     })
     const view = harness.app.view as unknown as { selectedListId(pane: string): string | undefined }
     await harness.pressKey("4")

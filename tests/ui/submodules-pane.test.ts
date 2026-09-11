@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { AppModel } from "../../src/app/model"
 import type { SubmoduleConfig } from "../../src/domain/submodule"
-import {
-  NO_SUBMODULES,
-  selectedSubmoduleFrom,
-  submodulePreviewText,
-  submoduleRowId,
-  submoduleRows,
-} from "../../src/ui/panes/submodules-pane"
+import { NO_SUBMODULES, selectedSubmoduleFrom, submodulePreviewText, submoduleRowId, submoduleRows } from "../../src/ui/panes/submodules-pane"
 
 function model(submodules: readonly SubmoduleConfig[]): AppModel {
   return { submodules } as unknown as AppModel
@@ -52,9 +46,7 @@ describe("submodule rows", () => {
 /** pkg/gui/controllers/submodules_controller.go:113-121. */
 describe("submodule preview", () => {
   test("emits lazygit's Name/Path/Url prefix block, blank line included", () => {
-    expect(submodulePreviewText(nested)).toBe(
-      "Name: libs/mid/vendor/inner\nPath: libs/mid/vendor/inner\nUrl:  /tmp/inner\n\n",
-    )
+    expect(submodulePreviewText(nested)).toBe("Name: libs/mid/vendor/inner\nPath: libs/mid/vendor/inner\nUrl:  /tmp/inner\n\n")
   })
 
   test("a submodule section with no url leaves the Url cell empty", () => {

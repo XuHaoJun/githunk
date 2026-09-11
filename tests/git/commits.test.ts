@@ -12,7 +12,9 @@ describe("commit history loaders", () => {
     expect(parsed[0]?.body).toBe("body\u001fline")
   })
   let repository: TempRepository | undefined
-  afterEach(async () => { await repository?.cleanup() })
+  afterEach(async () => {
+    await repository?.cleanup()
+  })
 
   test("parses Unicode, multiline, signatures, root, and merge commits", async () => {
     repository = await createTempRepository()
@@ -96,7 +98,7 @@ describe("commit log limit", () => {
       run: async (args: readonly string[]) => {
         calls.push([...args])
         return { exitCode: 0, stdout: "", stderr: "", record: {} as never }
-      },
+      }
     }
     await listCommits(runner as never, "HEAD")
     // lazygit's `ArgIf(opts.Limit, "-300")` (commit_loader.go:597).
@@ -109,24 +111,24 @@ describe("commit log limit", () => {
       run: async (args: readonly string[]) => {
         calls.push([...args])
         return { exitCode: 0, stdout: "", stderr: "", record: {} as never }
-      },
+      }
     }
     await listCommits(runner as never, "HEAD", undefined, { limit: false })
     expect(calls[0]).not.toContain("-300")
   })
 })
 
- describe("commit log ordering", () => {
-   test("requests topo-order so the graph renders as contiguous lanes", async () => {
-     const calls: string[][] = []
-     const runner = {
-       run: async (args: readonly string[]) => {
-         calls.push([...args])
-         return { exitCode: 0, stdout: "", stderr: "", record: {} as never }
-       },
-     }
-     await listCommits(runner as never, "HEAD")
-     // Matches lazygit's default `git.log.order: topo-order`.
-     expect(calls[0]).toContain("--topo-order")
-   })
- })
+describe("commit log ordering", () => {
+  test("requests topo-order so the graph renders as contiguous lanes", async () => {
+    const calls: string[][] = []
+    const runner = {
+      run: async (args: readonly string[]) => {
+        calls.push([...args])
+        return { exitCode: 0, stdout: "", stderr: "", record: {} as never }
+      }
+    }
+    await listCommits(runner as never, "HEAD")
+    // Matches lazygit's default `git.log.order: topo-order`.
+    expect(calls[0]).toContain("--topo-order")
+  })
+})

@@ -18,7 +18,7 @@ function makeFile(overrides: Partial<ReviewFile> & { key: string; path: string }
     stats: { additions: 1, deletions: 1 },
     hunks: [createReviewHunk({ index: 0, oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, lines: ["-old", "+new"] })],
     source: "available",
-    ...overrides,
+    ...overrides
   }
 }
 
@@ -27,15 +27,11 @@ function makeDoc(files: readonly ReviewFile[]): ReviewDocument {
     identity: createReviewIdentity({ headRef: "refs/heads/feature", headOid: "h1", baseRef: "refs/remotes/origin/main" }),
     generation: createReviewGeneration({ mergeBaseOid: "m1", baseOid: "b1", headOid: "h1" }),
     commits: [],
-    files: [...files],
+    files: [...files]
   })
 }
 
-const aggregateFiles = [
-  makeFile({ key: "src/a.ts", path: "src/a.ts" }),
-  makeFile({ key: "src/b.ts", path: "src/b.ts" }),
-  makeFile({ key: "src/c.ts", path: "src/c.ts" }),
-]
+const aggregateFiles = [makeFile({ key: "src/a.ts", path: "src/a.ts" }), makeFile({ key: "src/b.ts", path: "src/b.ts" }), makeFile({ key: "src/c.ts", path: "src/c.ts" })]
 // A since-last-review lens sees a narrower range, so the same file carries a
 // different contentId than the aggregate does.
 const lensFiles = [makeFile({ key: "src/b.ts", path: "src/b.ts", contentId: "content-src/b.ts@lens" })]
@@ -51,19 +47,21 @@ function stateWithProgress() {
         path: "src/a.ts",
         contentId: "content-src/a.ts",
         generationId: state.document.generation.id,
-        viewedAt: "2026-09-01T00:00:00.000Z",
-      },
+        viewedAt: "2026-09-01T00:00:00.000Z"
+      }
     },
-    feedback: [{
-      id: "feedback-1",
-      kind: "note" as const,
-      severity: "comment" as const,
-      body: "look here",
-      anchor: createFileAnchor(aggregateFiles[0]!),
-      resolution: "active" as const,
-      createdAt: "2026-09-01T00:00:00.000Z",
-      updatedAt: "2026-09-01T00:00:00.000Z",
-    }],
+    feedback: [
+      {
+        id: "feedback-1",
+        kind: "note" as const,
+        severity: "comment" as const,
+        body: "look here",
+        anchor: createFileAnchor(aggregateFiles[0]!),
+        resolution: "active" as const,
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:00.000Z"
+      }
+    ],
     expandedGaps: [{ fileKey: "src/a.ts", gapId: "before:1", expanded: true }],
     lineSelection: {
       fileKey: "src/a.ts",
@@ -71,8 +69,8 @@ function stateWithProgress() {
       side: "new" as const,
       line: 1,
       contentId: "content-src/a.ts",
-      contextDigest: "digest",
-    },
+      contextDigest: "digest"
+    }
   }
 }
 
@@ -82,7 +80,7 @@ describe("Projection lens", () => {
     const next = reduceReviewState(state, {
       type: "projection/apply",
       projection: { kind: "since-last-review", fromHeadOid: "c1" },
-      document: makeDoc(lensFiles),
+      document: makeDoc(lensFiles)
     })
 
     expect(next.projection).toEqual({ kind: "since-last-review", fromHeadOid: "c1" })
@@ -95,7 +93,7 @@ describe("Projection lens", () => {
     const next = reduceReviewState(state, {
       type: "projection/apply",
       projection: { kind: "since-last-review", fromHeadOid: "c1" },
-      document: makeDoc(lensFiles),
+      document: makeDoc(lensFiles)
     })
 
     // The lens is a different view of the same review, not a different review:
@@ -110,7 +108,7 @@ describe("Projection lens", () => {
     const next = reduceReviewState(state, {
       type: "projection/apply",
       projection: { kind: "since-last-review", fromHeadOid: "c1" },
-      document: makeDoc(lensFiles),
+      document: makeDoc(lensFiles)
     })
 
     // src/c.ts is not in the lens, and gap ids and line selections address
@@ -125,7 +123,7 @@ describe("Projection lens", () => {
     const next = reduceReviewState(state, {
       type: "projection/apply",
       projection: { kind: "since-last-review", fromHeadOid: "c1" },
-      document: makeDoc(lensFiles),
+      document: makeDoc(lensFiles)
     })
 
     expect(next.reveal.fileTopRequestToken).toBe(state.reveal.fileTopRequestToken + 1)
@@ -137,12 +135,12 @@ describe("Projection lens", () => {
     const lens = reduceReviewState(state, {
       type: "projection/apply",
       projection: { kind: "since-last-review", fromHeadOid: "c1" },
-      document: makeDoc(lensFiles),
+      document: makeDoc(lensFiles)
     })
     const back = reduceReviewState(lens, {
       type: "projection/apply",
       projection: { kind: "aggregate" },
-      document: state.document,
+      document: state.document
     })
 
     expect(back.projection).toEqual({ kind: "aggregate" })
@@ -156,7 +154,7 @@ describe("Projection lens", () => {
     const next = reduceReviewState(state, {
       type: "projection/apply",
       projection: { kind: "since-last-review", fromHeadOid: "c1" },
-      document: makeDoc([]),
+      document: makeDoc([])
     })
 
     expect(next.document.files).toEqual([])
