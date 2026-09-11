@@ -85,7 +85,7 @@ function isSingleLineMode(mode: CommitDialogMode): boolean {
 
 export function commitDialogKey(state: CommitDialogState, key: CommitDialogKey): { readonly state: CommitDialogState; readonly result?: CommitDialogResult } {
   if (key.name === "escape") return reduceCommitDialog(state, { kind: "cancel" })
-  if (key.name === "enter") {
+  if (key.name === "enter" || (key.name === "kpenter" && isSingleLineMode(state.mode))) {
     if (isSingleLineMode(state.mode)) {
       if (key.ctrl === true || key.meta === true || key.shift === true) return { state }
       return reduceCommitDialog(state, { kind: "confirm" })

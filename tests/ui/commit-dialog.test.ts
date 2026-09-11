@@ -51,6 +51,10 @@ describe("commit dialog", () => {
       expect(dialog.handleKey({ name: "enter" })).toEqual({ kind: "confirmed", message: "x" })
     }
   })
+  test("single-line prompts confirm on keypad Enter", () => {
+    const dialog = new CommitDialog("branch-create", "feature")
+    expect(dialog.handleKey({ name: "kpenter" })).toEqual({ kind: "confirmed", message: "feature" })
+  })
 
   test("Esc cancels without producing a message", () => {
     const dialog = new CommitDialog("amend", "existing\n")

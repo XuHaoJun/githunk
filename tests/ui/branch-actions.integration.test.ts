@@ -348,6 +348,17 @@ describe("branch action parity", () => {
     expect(harness.frame()).toContain("New branch name")
     expect((await harness.repository.git(["show-ref", "--verify", "--quiet", "refs/heads/child"])).exitCode).not.toBe(0)
   })
+  test("new branch prompt submits with keypad Enter", async () => {
+    harness = await createShellHarness()
+
+    await harness.pressKey("3")
+    await harness.pressKey("n")
+    for (const key of "child") await harness.pressKey(key)
+    await harness.pressKey("\u001b[57414u")
+    await harness.settle()
+
+    expect((await harness.repository.git(["branch", "--show-current"])).stdout.trim()).toBe("child")
+  })
 
   test("empty branch prompt keeps its validation error visible", async () => {
     harness = await createShellHarness()

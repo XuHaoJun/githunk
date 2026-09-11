@@ -119,7 +119,7 @@ const PANE_TITLES: Readonly<Record<FocusId, string>> = {
 }
 
 function isPlainEnter(key: KeyEvent): boolean {
-  return key.name === "enter"
+  return (key.name === "enter" || key.name === "kpenter")
     && key.ctrl !== true
     && key.meta !== true
     && key.shift !== true
