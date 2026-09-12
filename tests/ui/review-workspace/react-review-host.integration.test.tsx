@@ -163,13 +163,20 @@ describe("React review host lifecycle", () => {
       controller = undefined
     }
 
-    try {
-      for (let cycle = 0; cycle < 4; cycle += 1) await mountAndClose()
-      for (let attempt = 0; attempt < 5; attempt += 1) {
+    async function waitForCollection(): Promise<void> {
+      // WeakRef targets are collected asynchronously in Bun. Poll after each forced collection
+      // instead of assuming five GC turns are enough on every runtime scheduling path.
+      for (let attempt = 0; attempt < 100; attempt += 1) {
         Bun.gc(true)
         await Bun.sleep(0)
+        if (references.every((reference) => reference.deref() === undefined)) return
       }
       for (const reference of references) expect(reference.deref()).toBeUndefined()
+    }
+
+    try {
+      for (let cycle = 0; cycle < 4; cycle += 1) await mountAndClose()
+      await waitForCollection()
     } finally {
       await act(async () => setup.renderer.destroy())
     }
