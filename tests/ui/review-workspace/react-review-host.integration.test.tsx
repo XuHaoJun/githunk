@@ -147,4 +147,31 @@ describe("React review host lifecycle", () => {
       await act(async () => setup.renderer.destroy())
     }
   })
+  test("releases a closed review controller for garbage collection", async () => {
+    const setup = await createTestRenderer({ width: 100, height: 20 })
+    const references: WeakRef<ReviewWorkspaceController>[] = []
+
+    async function mountAndClose(): Promise<void> {
+      let controller: ReviewWorkspaceController | undefined = controllerWithReviewState()
+      references.push(new WeakRef(controller))
+      await act(async () => {
+        const host = new ReactReviewHost(setup.renderer as unknown as CliRenderer, controller!, () => undefined)
+        host.destroy()
+        await setup.renderOnce()
+      })
+      await controller!.destroy()
+      controller = undefined
+    }
+
+    try {
+      for (let cycle = 0; cycle < 4; cycle += 1) await mountAndClose()
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        Bun.gc(true)
+        await Bun.sleep(0)
+      }
+      for (const reference of references) expect(reference.deref()).toBeUndefined()
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
 })

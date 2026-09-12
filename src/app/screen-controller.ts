@@ -1,7 +1,7 @@
 import type { CliRenderer } from "@opentui/core"
 import type { AppController } from "./controller"
 import type { RootView } from "../ui/root-view"
-import { ReactReviewHost } from "../ui/review-workspace/react-review-host"
+import { disposeLoadedReactReviewRenderer } from "../ui/review-workspace/react-review-host-lazy"
 import { ReviewWorkspaceController } from "../ui/review-workspace/controller"
 export type ReviewScreenRoot = Readonly<{
   findDescendantById: (id: string) => unknown
@@ -31,7 +31,7 @@ export type AppScreenControllerOptions = {
   readonly repositoryView?: RootView | undefined
   readonly renderer?: CliRenderer | undefined
   readonly createReviewController: () => ReviewWorkspaceController
-  readonly createReviewView: (controller: ReviewWorkspaceController, onClose: () => void) => ReviewScreenView
+  readonly createReviewView: (controller: ReviewWorkspaceController, onClose: () => void) => ReviewScreenView | Promise<ReviewScreenView>
 }
 export class AppScreenController {
   private activeScreen: ActiveScreen
@@ -42,6 +42,12 @@ export class AppScreenController {
   private _timerCount = 0
   private destroyed = false
   private pendingOpen: Promise<void> | undefined
+  /**
+   * Whether a Branch Review view was ever built. Shutdown must not reach into the Branch Review
+   * chunk to dispose a React renderer that was never created — pulling that chunk in at teardown
+   * would undo the startup saving the lazy import exists for.
+   */
+  private reviewViewCreated = false
   private openToken = 0
 
   constructor(private readonly opts: AppScreenControllerOptions) {
@@ -164,7 +170,7 @@ export class AppScreenController {
       }
       let reviewView: ReviewScreenView
       try {
-        reviewView = this.opts.createReviewView(reviewController, () => {
+        reviewView = await this.opts.createReviewView(reviewController, () => {
           void this.closeBranchReview()
         })
       } catch (err) {
@@ -184,6 +190,7 @@ export class AppScreenController {
         throw new Error("open superseded")
       }
 
+      this.reviewViewCreated = true
       this.activeScreen = { kind: "branch-review", controller: reviewController, view: reviewView }
       this._lastError = undefined
       this._reviewHandlerCount++
@@ -301,9 +308,9 @@ export class AppScreenController {
       } catch {}
     }
     this._timerCount = 0
-    if (this.opts.renderer) {
+    if (this.opts.renderer && this.reviewViewCreated) {
       try {
-        ReactReviewHost.disposeRenderer(this.opts.renderer)
+        disposeLoadedReactReviewRenderer(this.opts.renderer)
       } catch {}
     }
   }

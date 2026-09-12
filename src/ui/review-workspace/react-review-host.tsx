@@ -43,7 +43,6 @@ export class ReactReviewHost {
     })
     this.subscribeController(controller)
   }
-
   private subscribeController(controller: ReviewWorkspaceController): void {
     this.unsubscribeController = controller.subscribe(() => {
       if (!this.destroyed) this.session.invalidate()
@@ -64,6 +63,8 @@ export class ReactReviewHost {
       entry.mounted = false
     }
     disposeHighlightWorker()
+    // The renderer root is reused on the next open, so release the closed session after unmount.
+    this.session.release()
   }
 
   static disposeRenderer(renderer: CliRenderer): void {
@@ -72,6 +73,7 @@ export class ReactReviewHost {
     try {
       flushSync(() => entry.root.unmount())
     } catch {}
+    entry.session.release()
     entry.mounted = false
     rootsByRenderer.delete(renderer)
   }

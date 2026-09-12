@@ -17,7 +17,7 @@ import { LOG_ACTIONS } from "./log-actions"
 import { seedCommandLog } from "./command-log-tips"
 import { AppScreenController, type ReviewScreenView } from "./screen-controller"
 import { ReviewWorkspaceController } from "../ui/review-workspace/controller"
-import { ReactReviewHost } from "../ui/review-workspace/react-review-host"
+import { createReactReviewView } from "../ui/review-workspace/react-review-host-lazy"
 import { ReviewStateStore } from "../review/storage/review-state-store"
 import { ReviewArtifactStore } from "../review/storage/review-artifact-store"
 
@@ -450,7 +450,7 @@ export function createApp(options: CreateAppOptions): App {
     repositoryView: view,
     renderer,
     createReviewController: makeReviewController,
-    createReviewView: (rc, onClose) => new ReactReviewHost(renderer, rc, onClose)
+    createReviewView: (rc, onClose) => createReactReviewView(renderer, rc, onClose)
   })
   renderPullRequests = (state) => {
     if (destroyed || !screenController.shouldRenderRepository()) return

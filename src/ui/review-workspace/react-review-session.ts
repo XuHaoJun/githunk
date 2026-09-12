@@ -14,18 +14,27 @@ function createFinishDialog(controller: ReviewWorkspaceController): FinishDialog
 }
 
 export class ReactReviewSession {
-  controller: ReviewWorkspaceController
+  private controllerRef: ReviewWorkspaceController | undefined
   onClose: () => void
   active = true
   viewportStart = 0
-  finishDialog: FinishDialog
+  private finishDialogRef: FinishDialog | undefined
   private version = 0
   private readonly listeners = new Set<Listener>()
+  get controller(): ReviewWorkspaceController {
+    if (this.controllerRef === undefined) throw new Error("review session released")
+    return this.controllerRef
+  }
+
+  get finishDialog(): FinishDialog {
+    if (this.finishDialogRef === undefined) throw new Error("review session released")
+    return this.finishDialogRef
+  }
 
   constructor(controller: ReviewWorkspaceController, onClose: () => void) {
-    this.controller = controller
+    this.controllerRef = controller
     this.onClose = onClose
-    this.finishDialog = createFinishDialog(controller)
+    this.finishDialogRef = createFinishDialog(controller)
   }
 
   getSnapshot = (): number => this.version
@@ -38,9 +47,9 @@ export class ReactReviewSession {
   }
 
   activate(controller: ReviewWorkspaceController, onClose: () => void): void {
-    this.controller = controller
+    this.controllerRef = controller
     this.onClose = onClose
-    this.finishDialog = createFinishDialog(controller)
+    this.finishDialogRef = createFinishDialog(controller)
     this.active = true
     this.version += 1
     this.publish()
@@ -49,9 +58,17 @@ export class ReactReviewSession {
   deactivate(): void {
     if (!this.active) return
     this.active = false
-    this.finishDialog.close()
+    this.finishDialogRef?.close()
     this.version += 1
     this.publish()
+  }
+  /** Release review-specific references after the reusable React root has unmounted the tree. */
+  release(): void {
+    this.active = false
+    this.controllerRef = undefined
+    this.finishDialogRef = undefined
+    this.onClose = () => undefined
+    this.listeners.clear()
   }
 
   invalidate(): void {
