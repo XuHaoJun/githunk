@@ -152,14 +152,15 @@ describe("React review host lifecycle", () => {
     const references: WeakRef<ReviewWorkspaceController>[] = []
 
     async function mountAndClose(): Promise<void> {
-      const controller = controllerWithReviewState()
+      let controller: ReviewWorkspaceController | undefined = controllerWithReviewState()
       references.push(new WeakRef(controller))
       await act(async () => {
-        const host = new ReactReviewHost(setup.renderer as unknown as CliRenderer, controller, () => undefined)
+        const host = new ReactReviewHost(setup.renderer as unknown as CliRenderer, controller!, () => undefined)
         host.destroy()
         await setup.renderOnce()
       })
-      await controller.destroy()
+      await controller!.destroy()
+      controller = undefined
     }
 
     try {
