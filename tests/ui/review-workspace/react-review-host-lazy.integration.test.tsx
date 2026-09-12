@@ -4,10 +4,7 @@ import { act } from "react"
 import type { CliRenderer } from "@opentui/core"
 import { AppScreenController } from "../../../src/app/screen-controller"
 import type { AppController } from "../../../src/app/controller"
-import {
-  createReactReviewView,
-  disposeLoadedReactReviewRenderer,
-} from "../../../src/ui/review-workspace/react-review-host-lazy"
+import { createReactReviewView, disposeLoadedReactReviewRenderer } from "../../../src/ui/review-workspace/react-review-host-lazy"
 import type { ReviewWorkspaceController } from "../../../src/ui/review-workspace/controller"
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -16,7 +13,7 @@ function emptyController(): ReviewWorkspaceController {
     state: undefined,
     error: undefined,
     subscribe: () => () => undefined,
-    getExpandedSourceByGap: () => new Map(),
+    getExpandedSourceByGap: () => new Map()
   } as unknown as ReviewWorkspaceController
 }
 
@@ -80,7 +77,9 @@ describe("lazy React review host", () => {
       repositoryController: { refresh: async () => undefined } as unknown as AppController,
       renderer,
       createReviewController: () => emptyController(),
-      createReviewView: () => { throw new Error("Branch Review must not be opened in this test") },
+      createReviewView: () => {
+        throw new Error("Branch Review must not be opened in this test")
+      }
     })
 
     await act(async () => {

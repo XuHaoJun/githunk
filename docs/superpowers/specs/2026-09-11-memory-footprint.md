@@ -8,17 +8,17 @@ addressable from githunk's own code. See "Where the remaining 87 MB is".
 ## Problem
 
 githunk idles at ~91 MB RSS where lazygit idles at ~20 MB. The gap is not the Bun
-runtime: a `console.log` compiled with `bun build --compile` idles at 14 MB, *below*
+runtime: a `console.log` compiled with `bun build --compile` idles at 14 MB, _below_
 lazygit's Go runtime. The cost is what githunk puts on top.
 
 Measured ladder (Bun 1.4.2, linux x64, compiled binaries, idle under a pty):
 
-| build | RSS | file-backed | anon | threads |
-| --- | --- | --- | --- | --- |
-| lazygit | 21 MB | 12 MB | 8 MB | 7 |
-| `console.log("hi")` compiled | 14 MB | 12 MB | 2 MB | 9 |
-| + OpenTUI renderer, hello world | 52 MB | 35 MB | 17 MB | 13 |
-| githunk | 91 MB | 42 MB | 51 MB | 18 |
+| build                           | RSS   | file-backed | anon  | threads |
+| ------------------------------- | ----- | ----------- | ----- | ------- |
+| lazygit                         | 21 MB | 12 MB       | 8 MB  | 7       |
+| `console.log("hi")` compiled    | 14 MB | 12 MB       | 2 MB  | 9       |
+| + OpenTUI renderer, hello world | 52 MB | 35 MB       | 17 MB | 13      |
+| githunk                         | 91 MB | 42 MB       | 51 MB | 18      |
 
 OpenTUI's 38 MB is the floor we accept; it buys the renderer. The remaining ~40 MB is
 addressable.
@@ -41,7 +41,7 @@ instantiated at startup.
 
 ## What dominates the addressable 40 MB
 
-> **Superseded by phase 2's result.** Everything below was measured *before* `--splitting`
+> **Superseded by phase 2's result.** Everything below was measured _before_ `--splitting`
 > and was true then. Once `--splitting` is on, Shiki stops being the problem: its grammars
 > are dynamic imports, and deferring them is enough. Kept because it explains why phase 2
 > looked like the obvious next step, and why it was not.
@@ -62,19 +62,19 @@ packages".**
 
 ## Approaches considered
 
-| approach | verdict |
-| --- | --- |
-| `await import()` alone | **Rejected.** No effect without `--splitting`; binary byte-identical. |
-| `--compile --splitting` | **Adopted (phase 1).** Startup RSS 54 → 16 MB in a staged probe. |
-| `--minify` | **Adopted (phase 1).** ~2 MB binary, ~4 MB RSS. No trade-off. |
-| `--bytecode` | **Deferred.** Needs `--format=esm` under `--compile` (@opentui/core uses top-level await, so plain `--bytecode` will not build); grows the binary 107 → 127 MB. Buys startup time, not memory. Worth revisiting on its own merits, since this project accepts a larger binary for faster startup. |
-| `shiki/core` instead of `shiki` | **Rejected.** githunk does not import `shiki`; `@pierre/diffs` does. Our choice of specifier is irrelevant. |
-| Tree-shaking `bundledLanguages` | **Rejected.** It is a live map of `() => import(…)` thunks. A stored thunk is never shakeable, and `sideEffects: false` does not help. |
-| `tsconfig` `paths` alias | **Rejected.** Verified not to apply to a bare specifier imported from inside `node_modules`; the binary came out larger. |
-| `--external` / `--packages=external` | **Rejected.** Incoherent with a standalone binary. |
-| Grammars as external files beside the binary | **Rejected.** Breaks the single-file distribution that `install.sh` and the five platform packages depend on. |
-| Splitting Branch Review into a second binary | **Rejected.** Ten platform artifacts instead of five, and both processes are resident while review is open, so peak gets worse. |
-| **Build-time stub alias for `shiki` + curated grammars** | **Attempted (phase 2), reverted.** Works and shrinks the binary, but buys no memory once `--splitting` is on. See below. |
+| approach                                                 | verdict                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `await import()` alone                                   | **Rejected.** No effect without `--splitting`; binary byte-identical.                                                                                                                                                                                                                             |
+| `--compile --splitting`                                  | **Adopted (phase 1).** Startup RSS 54 → 16 MB in a staged probe.                                                                                                                                                                                                                                  |
+| `--minify`                                               | **Adopted (phase 1).** ~2 MB binary, ~4 MB RSS. No trade-off.                                                                                                                                                                                                                                     |
+| `--bytecode`                                             | **Deferred.** Needs `--format=esm` under `--compile` (@opentui/core uses top-level await, so plain `--bytecode` will not build); grows the binary 107 → 127 MB. Buys startup time, not memory. Worth revisiting on its own merits, since this project accepts a larger binary for faster startup. |
+| `shiki/core` instead of `shiki`                          | **Rejected.** githunk does not import `shiki`; `@pierre/diffs` does. Our choice of specifier is irrelevant.                                                                                                                                                                                       |
+| Tree-shaking `bundledLanguages`                          | **Rejected.** It is a live map of `() => import(…)` thunks. A stored thunk is never shakeable, and `sideEffects: false` does not help.                                                                                                                                                            |
+| `tsconfig` `paths` alias                                 | **Rejected.** Verified not to apply to a bare specifier imported from inside `node_modules`; the binary came out larger.                                                                                                                                                                          |
+| `--external` / `--packages=external`                     | **Rejected.** Incoherent with a standalone binary.                                                                                                                                                                                                                                                |
+| Grammars as external files beside the binary             | **Rejected.** Breaks the single-file distribution that `install.sh` and the five platform packages depend on.                                                                                                                                                                                     |
+| Splitting Branch Review into a second binary             | **Rejected.** Ten platform artifacts instead of five, and both processes are resident while review is open, so peak gets worse.                                                                                                                                                                   |
+| **Build-time stub alias for `shiki` + curated grammars** | **Attempted (phase 2), reverted.** Works and shrinks the binary, but buys no memory once `--splitting` is on. See below.                                                                                                                                                                          |
 
 ## Phase 1 — build flags and a lazy Branch Review chunk
 
@@ -85,9 +85,9 @@ packages".**
 
 Measured on the real `cli.ts` binary, idle in this repository, median of 3 runs:
 
-| build | binary | idle RSS |
-| --- | --- | --- |
-| baseline | 107.5 MB | 92 MB |
+| build                                                     | binary   | idle RSS  |
+| --------------------------------------------------------- | -------- | --------- |
+| baseline                                                  | 107.5 MB | 92 MB     |
 | shipped (`--splitting --minify` + lazy `ReactReviewHost`) | 105.3 MB | **87 MB** |
 
 Startup, before the app does any work, drops much further than the idle figure suggests:
@@ -99,9 +99,9 @@ most of the graph; what `--splitting` removes is everything the screen never tou
 The key observation is that a payload embedded as a **file asset** is free until read,
 while the same payload as a **module** is not. Same 1.9 MB JSON, same binary size:
 
-| form | startup RSS |
-| --- | --- |
-| `import data from "./g.json"` | 36 MB |
+| form                                                                          | startup RSS        |
+| ----------------------------------------------------------------------------- | ------------------ |
+| `import data from "./g.json"`                                                 | 36 MB              |
 | `import blob from "./g.json" with { type: "file" }` + `Bun.file(blob).text()` | 16 MB (= baseline) |
 
 So:
@@ -114,7 +114,7 @@ So:
    branch.
 3. A curated grammar set dumped to JSON, embedded `with { type: "file" }`, registered
    through `@pierre/diffs`' public `registerCustomLanguage` / `registerCustomTheme`.
-   `resolveLanguage.js:11` checks custom loaders *before* `bundledLanguages`, so this is
+   `resolveLanguage.js:11` checks custom loaders _before_ `bundledLanguages`, so this is
    a supported seam.
 4. `scripts/build-bin.ts` moves from `Bun.spawnSync` of the CLI to the `Bun.build` JS API
    so the plugin can be applied. `compile.target` keeps the `-baseline` constraint that
@@ -129,14 +129,14 @@ an unknown extension null in both). The binary shrank 105.3 MB → 100.0 MB.
 **Idle RSS did not move.** Medians of three runs each, measured in one batch with no other
 load:
 
-| build | idle RSS |
-| --- | --- |
-| baseline | 92 MB |
-| phase 1 | 87 MB |
-| phase 1 + Shiki stub | 88 MB |
+| build                | idle RSS |
+| -------------------- | -------- |
+| baseline             | 92 MB    |
+| phase 1              | 87 MB    |
+| phase 1 + Shiki stub | 88 MB    |
 
 The reason is that phase 1 already solved it. Shiki's `bundledLanguages` entries are
-*already* dynamic imports; what made them expensive was `--compile` without `--splitting`
+_already_ dynamic imports; what made them expensive was `--compile` without `--splitting`
 mapping the whole graph into the process image. Once `--splitting` defers them, narrowing
 346 deferred chunks to 60 deferred chunks saves binary bytes and no memory.
 
@@ -180,7 +180,7 @@ That cost is not reachable from githunk. OpenTUI already embeds its tree-sitter 
 with `with { type: "file" }` — the cheap form, free until read — so there is no wasm
 payload to strip. What remains is its own JavaScript plus extracting the 6.1 MB
 `libopentui.so` to a temporary file at import time, both intrinsic to loading the renderer.
-The floor for *any* Bun + OpenTUI application measured 52 MB for a hello-world TUI.
+The floor for _any_ Bun + OpenTUI application measured 52 MB for a hello-world TUI.
 
 Reaching ~70 MB would need one of:
 

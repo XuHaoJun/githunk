@@ -20,11 +20,7 @@ type ReactReviewHostModule = typeof import("./react-review-host")
 
 let loadedModule: ReactReviewHostModule | undefined
 
-export async function createReactReviewView(
-  renderer: CliRenderer,
-  controller: ReviewWorkspaceController,
-  onClose: () => void,
-): Promise<ReviewScreenView> {
+export async function createReactReviewView(renderer: CliRenderer, controller: ReviewWorkspaceController, onClose: () => void): Promise<ReviewScreenView> {
   const module = loadedModule ?? (await import("./react-review-host"))
   loadedModule = module
   return new module.ReactReviewHost(renderer, controller, onClose)
