@@ -186,10 +186,70 @@ Reaching ~70 MB would need one of:
 
 - upstream OpenTUI work (a smaller or lazily-loaded native backend), or
 - githunk's own `refresh` step, worth +17 MB with only +6 MB of JS heap behind it, meaning
-  the bulk is OpenTUI text buffers and Git output rather than githunk objects, or
+  the bulk is OpenTUI text buffers and Git output rather than githunk objects — the buffer half
+  of which is Phase 3's leak, and is now reclaimed on write
 - not using OpenTUI.
 
 None of those is a build-flag change, so none was attempted within this task's budget.
+
+## Phase 3 — unbounded growth while running (OpenTUI's text buffer)
+
+Phase 1/2 were about the _floor_ this process starts at. This phase is about growth over a
+session, reported from the field: RSS climbing to ~1 GB for users who leave githunk open for
+hours, and 100 MB → 300 MB for a session of ordinary use, in both cases **without ever opening
+Branch Review**.
+
+### The leak is native, in OpenTUI's text buffer, and per write
+
+`UnifiedTextBuffer.setTextInternal` (`packages/native/src/text-buffer.zig`) parses the write into
+segments and hands them to `UnifiedRope.setSegments` (`packages/native/src/rope.zig`), which
+allocates a fresh leaf node per segment from the buffer's arena and then overwrites `self.root`.
+The previous tree is never freed, and the `clear()` that precedes the write only assigns
+`root = empty_leaf` — the pointer is dropped, the memory is not. `reset()` is the one path that
+calls `arena.reset`, clears the memory registry and re-inits the rope, so writes land in reused
+capacity instead of on top of everything ever written.
+
+Everything else in the repository screen was measured flat first, so the attribution is not a
+guess:
+
+| measured                                                    | result                                                                                   |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 6000 git processes through `GitRunner`                      | JS heap oscillates 16–30 MB, RSS 111–134 MB, no trend                                    |
+| 2000 controller refreshes (headless, 22 342 spawns)         | heap 13–58 MB, RSS plateaus ~160–180 MB                                                  |
+| review/highlight/diff caches reachable from the repo screen | one entry per live pane; Branch Review caches are not constructed until the screen opens |
+| `BackgroundRefresher` / `RefsWatcher` / `IndexWatcher`      | state replaced per tick, one-shot timers cleared; idle reads are `dontLog`               |
+| highlight-only repaints (text unchanged, band repainted)    | plateaus: +13.8 MB, +10.2 MB, +0.1 MB, +0.0 MB per 2000 passes                           |
+| **`TextBuffer.setText`, 2000-line buffer, forced GC**       | **4000 writes retain 5283.6 MB with a flat 5.7 MB heap**                                 |
+| same, with `reset()` first                                  | 19.3 MB after 4000 writes (16.4 after 500, 17.0 after 1000, 18.5 after 2000)             |
+
+Leak per write is proportional to the text written, roughly 7 bytes of RSS per byte of text (12×
+for a 100-line padded write through the `content` path, which spends most of it on chunk
+encoding). In the app, 200 moves through the Files panel — each installing one file's patch into
+the main pane, 1.8 MB of text in total — cost **54.4 MB** of RSS with the heap flat at 18 MB.
+
+### Fix
+
+`src/ui/panes/pane-text.ts`'s `setText` now calls the buffer's native `reset()` before writing.
+That is the only place in githunk that touches OpenTUI's buffer internals, so list, diff, ansi and
+command-log panes are all covered by the one change; it degrades to a plain write if a future
+OpenTUI removes `reset`.
+
+Bounds after the fix, same probes:
+
+| workload                                      | before            | after                                             |
+| --------------------------------------------- | ----------------- | ------------------------------------------------- |
+| 4000 writes of a 2000-line text               | +5283 MB          | +19.3 MB, flat after ~500                         |
+| 3200 writes of a 100 000-byte text            | ~2200 MB (linear) | +27.4 MB, flat after ~800                         |
+| 12 000 Files-panel moves (12 067 pane writes) | ~3.3 GB (linear)  | +61 MB total, ~2.8 KB/write beyond the first 1500 |
+
+Growth is now a high-water mark set by the largest text ever written into a pane, not a function
+of how often panes are rewritten, so an idle or busy session converges instead of climbing.
+`tests/ui/pane-text-memory.test.ts` guards it: with the `reset` call removed, a 5000-write window
+costs an order of magnitude more than the 300-write window before it (70 KB of RSS per 10 KB
+written, and climbing); with it, the second window rides the first window's high-water.
+
+Upstream: `anomalyco/opentui#1493` reports native RSS climbing with a flat JS heap against 0.5.11.
+Drop the `reset` call once a release frees replaced content itself.
 
 ## Measurement method
 

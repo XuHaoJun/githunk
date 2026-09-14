@@ -41,6 +41,13 @@ export type PaneTextBuffer = {
 type Internals = {
   readonly textBuffer: {
     setText(value: string): void
+    /**
+     * Drops the buffer's parsed content *and* the allocations behind it: `arena.reset`,
+     * `mem_registry.clear`, a fresh rope. See `paneTextBuffer`'s `setText` for why every write
+     * needs it. Optional so a future OpenTUI that stops leaking (or renames it) degrades to the
+     * write alone rather than throwing.
+     */
+    reset?(): void
     addHighlight(row: number, highlight: PaneHighlight): void
     clearLineHighlights(row: number): void
     clearAllHighlights(): void
@@ -72,6 +79,27 @@ export function paneTextBuffer(text: TextRenderable): PaneTextBuffer | undefined
   internals._hasManualStyledText = true
   return {
     setText(value: string): void {
+      // Reclaim the previous content's native allocations before writing the new ones.
+      //
+      // OpenTUI 0.5.11's native text buffer never frees what a write replaced. `UnifiedTextBuffer
+      // .setTextInternal` (packages/native/src/text-buffer.zig) hands the parsed segments to
+      // `UnifiedRope.setSegments` (packages/native/src/rope.zig), which builds a fresh leaf node per
+      // segment from the buffer's arena and then overwrites `self.root` — the previous tree is
+      // leaked, and the `clear()` that precedes it only assigns `root = empty_leaf`, dropping the
+      // pointer without freeing anything. `reset()` is the one path that calls `arena.reset`,
+      // clears the memory registry and re-inits the rope, so a write becomes an allocation *into
+      // reused capacity* instead of on top of everything ever written.
+      //
+      // Measured through this wrapper (2000-line buffer, one `setText` per iteration, forced GC,
+      // RSS via process.memoryUsage): 4000 writes retained 5283.6 MB with a flat 5.7 MB JS heap;
+      // with `reset()` first the same 4000 writes retain 19.3 MB and stop growing (16.4 MB after
+      // 500, 17.0 MB after 1000, 18.5 MB after 2000). In the app, 200 files-panel selection moves
+      // wrote 1.8 MB of patch text through the main pane and cost 54.4 MB of RSS; the buffer is the
+      // leak, not githunk's own retention (the controller and git layers were measured flat).
+      //
+      // Upstream: anomalyco/opentui#1493 reports the same signature (native RSS climbing with a
+      // flat JS heap) against 0.5.11; drop this call once a release frees replaced content itself.
+      internals.textBuffer.reset?.()
       internals.textBuffer.setText(value)
       internals.updateTextInfo()
     },
