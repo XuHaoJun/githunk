@@ -1,5 +1,5 @@
 import { BoxRenderable, RGBA, StyledText, TextRenderable, bg, bold, fg, strikethrough, type CliRenderer, type TextChunk } from "@opentui/core"
-import { ANSI_CYAN, SELECTED_LINE_BG, TAB_ACTIVE_FG, brightenAnsiForeground } from "./theme"
+import { ANSI_CYAN, SELECTED_LINE_BG, TAB_ACTIVE_FG } from "./theme"
 import { popupPanelWidth, popupPanelGeometry, wrapMessage } from "./popup-layout"
 /**
  * A titled, keyed, actionable menu — lazygit's `types.CreateMenuOptions` / `types.MenuItem`
@@ -29,10 +29,9 @@ function plainChunk(text: string): TextChunk {
   return { __isChunk: true as const, text } as unknown as TextChunk
 }
 
+/** The selected menu row keeps its colors and is bolded, as a selected list line is (`../list-view`). */
 function highlightChunk(chunk: TextChunk, selectedBg: (input: TextChunk) => TextChunk): TextChunk {
-  const current = (chunk as unknown as { fg?: unknown }).fg as RGBA | undefined
-  const brightened = current === undefined ? chunk : fg(brightenAnsiForeground(current as unknown as RGBA))(chunk)
-  return bold(selectedBg(brightened)) as unknown as TextChunk
+  return bold(selectedBg(chunk)) as unknown as TextChunk
 }
 
 export function renderActionMenuLines(items: readonly ActionMenuItem[], selectedIndex: number): readonly string[] {

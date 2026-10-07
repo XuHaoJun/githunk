@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { RGBA } from "@opentui/core"
-import { ANSI_GREEN, DEFAULT_BACKGROUND, DEFAULT_FOREGROUND, SELECTED_LINE_BG, brightenAnsiForeground, configureTerminalPalette, indexedColor } from "../../src/ui/theme"
+import { ANSI_GREEN, DEFAULT_BACKGROUND, DEFAULT_FOREGROUND, SELECTED_LINE_BG, configureTerminalPalette, indexedColor } from "../../src/ui/theme"
 
 describe("lazygit color semantics", () => {
   test("keeps named colors as indexed terminal colors", () => {
@@ -21,14 +20,6 @@ describe("lazygit color semantics", () => {
     expect(DEFAULT_FOREGROUND.intent).toBe("default")
   })
 
-  test("brightens only base indexed colors", () => {
-    const brightGreen = brightenAnsiForeground(ANSI_GREEN)
-    expect(brightGreen.intent).toBe("indexed")
-    expect(brightGreen.slot).toBe(10)
-
-    const rgb = RGBA.fromInts(26, 43, 60)
-    expect(brightenAnsiForeground(rgb)).toBe(rgb)
-  })
   test("uses the terminal palette as the indexed fallback", () => {
     configureTerminalPalette({
       palette: [null, "#112233", "#445566", null, "#778899"],

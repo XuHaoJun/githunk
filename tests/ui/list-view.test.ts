@@ -106,10 +106,11 @@ describe("list column layout", () => {
 })
 
 /**
- * lazygit v0.65 brightened every base-ANSI foreground on a highlighted line, ORed in bold, and only
- * then swapped in the selection background — `View.setCharacter` (ea91639 pkg/gocui/view.go:665-680;
- * v0.66 view.go:954-961 keeps the colors and only adds bold). The test
- * checks the indexed slots directly so terminal palette brightness remains terminal-owned.
+ * lazygit v0.66 draws a highlighted line's text in the colors it has elsewhere, ORs in
+ * `SelectedLineFgColor` (default bold) and swaps in the selection background — `View.setCharacter`,
+ * pkg/gocui/view.go:954-961, pkg/config/user_config.go:910 (commit c1b14ea2a stopped promoting
+ * base-ANSI colors to their bright variants). The test checks the indexed slots directly so the
+ * terminal palette stays terminal-owned.
  */
 describe("selected row highlighting", () => {
   const highlightRows = [
@@ -175,10 +176,10 @@ describe("selected row highlighting", () => {
     return found!
   }
 
-  test("brightens a base-ANSI foreground and bolds it over the selection background", () => {
+  test("keeps a base-ANSI foreground and bolds it over the selection background", () => {
     const hash = chunkFor(render(), "abc1234")
     expectIndexed(hash.bg, 4)
-    expectIndexed(hash.fg, 12)
+    expectIndexed(hash.fg, 4)
     expect(isBold(hash)).toBe(true)
   })
 
@@ -189,19 +190,19 @@ describe("selected row highlighting", () => {
     expect(isBold(subject)).toBe(true)
   })
 
-  test("brightens per-character segments and semantic list styles alike", () => {
+  test("keeps per-character segments and semantic list styles in their own colors alike", () => {
     const chunks = render()
     const staged = chunks.filter((c) => c.text === "M")
     expect(staged.length).toBe(2)
-    expectIndexed(staged[0]!.fg, 10)
+    expectIndexed(staged[0]!.fg, 2)
     expect(staged.every(isBold)).toBe(true)
 
     const note = chunkFor(chunks, "note")
-    expectIndexed(note.fg, 10)
+    expectIndexed(note.fg, 2)
     expect(isBold(note)).toBe(true)
 
     const tag = chunkFor(chunks, "tag")
-    expectIndexed(tag.fg, 14)
+    expectIndexed(tag.fg, 6)
     expect(isBold(tag)).toBe(true)
   })
 

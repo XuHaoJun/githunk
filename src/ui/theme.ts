@@ -155,13 +155,3 @@ export function configureTerminalPalette(snapshot: TerminalPaletteSnapshot): voi
   copyRgbFallback(DEFAULT_BACKGROUND, defaultBackgroundFallback)
   updateHoverLineBackground()
 }
-
-/**
- * Mirrors lazygit v0.65's highlighted-line rule (ea91639 `pkg/gocui/view.go:675-685`): only base
- * ANSI indices become bright; RGB and terminal-default values are left untouched. The caller adds
- * bold. lazygit v0.66 dropped the brightening (view.go:954-961, commit c1b14ea2a).
- */
-export function brightenAnsiForeground(color: RGBA): RGBA {
-  if (color.intent !== "indexed" || color.slot < 0 || color.slot > 7) return color
-  return [ANSI_BRIGHT_BLACK, ANSI_BRIGHT_RED, ANSI_BRIGHT_GREEN, ANSI_BRIGHT_YELLOW, ANSI_BRIGHT_BLUE, ANSI_BRIGHT_MAGENTA, ANSI_BRIGHT_CYAN, ANSI_BRIGHT_WHITE][color.slot]!
-}

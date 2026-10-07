@@ -1,6 +1,6 @@
 import type { ColorInput, TextChunk } from "@opentui/core"
 import { StyledText, bg, bold, dim, fg } from "@opentui/core"
-import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, HOVER_LINE_BG, SELECTED_LINE_BG, brightenAnsiForeground } from "./theme"
+import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, HOVER_LINE_BG, SELECTED_LINE_BG } from "./theme"
 
 export type ListColumnSegment = { readonly text: string; readonly color?: ColorInput | undefined }
 
@@ -542,20 +542,15 @@ function renderColumns(row: ListRow, layout: ListColumnLayout): TextChunk[] {
 }
 
 /**
- * One rune of a highlighted line, lazygit v0.65's way: the base-ANSI foreground is promoted to its
- * bright variant, bold is ORed in, and the selection background replaces whatever was there —
- * `View.setCharacter` at lazygit ea91639 pkg/gocui/view.go:665-680. lazygit v0.66 stopped
- * brightening (commit c1b14ea2a): it keeps the line's colors and ORs in `SelectedLineFgColor`
- * (default bold) — pkg/gocui/view.go:954-961, pkg/config/user_config.go:910. githunk has not
- * followed yet.
- *
- * Every chunk reaching here already carries a resolved foreground. Indexed colors are promoted by
- * slot; truecolor and terminal-default values are left untouched.
+ * One rune of a highlighted line: its foreground stays the color it has elsewhere, bold is ORed in
+ * (`SelectedLineFgColor`, default bold) and the selection background replaces whatever was there —
+ * `View.setCharacter`, lazygit pkg/gocui/view.go:954-961, pkg/config/user_config.go:910. lazygit
+ * v0.66 stopped promoting base-ANSI colors to their bright variants (commit c1b14ea2a): in most
+ * palettes the bright variant is barely different on the dark highlight, and on a light one, or
+ * with Solarized's grays, it is harder to read.
  */
 function highlightChunk(chunk: TextChunk, selectedBg: (input: TextChunk) => TextChunk): TextChunk {
-  const current = chunk.fg
-  const brightened = current === undefined ? chunk : fg(brightenAnsiForeground(current))(chunk)
-  return bold(selectedBg(brightened))
+  return bold(selectedBg(chunk))
 }
 
 export function renderListRows(state: ListState, focused: boolean, width: number, hoveredId?: string): StyledText {

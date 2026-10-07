@@ -123,9 +123,9 @@ describe("panel 4 Reflog tab", () => {
     expect(view.selectedListId("commits")).toBe(entries[0]!.id)
   })
 
-  test("the selected reflog row's hash is bright and bold with ANSI intent", async () => {
-    // lazygit v0.65 view.go:665-680 brightened and bolded every base ANSI rune before swapping in
-    // SelBgColor (v0.66 view.go:954-961 only bolds).
+  test("the selected reflog row's hash keeps its ANSI blue and is bolded", async () => {
+    // lazygit v0.66 view.go:954-961 keeps a highlighted line's colors, ORs in bold and swaps in
+    // SelBgColor; reflog hashes are blue (presentation/reflog_commits.go:53).
     harness = await createShellHarness({ commits: ["alpha commit", "beta commit"] })
     await harness.pressKey("4")
     await harness.pressKey("]")
@@ -141,7 +141,7 @@ describe("panel 4 Reflog tab", () => {
     const hash = spans.find((s) => s.text.trim().startsWith(shortOid.slice(0, 4)))
     expect(hash).toBeDefined()
     expect(isIndexed(hash!.bg, 4)).toBe(true)
-    expect(isIndexed(hash!.fg, 12)).toBe(true)
+    expect(isIndexed(hash!.fg, 4)).toBe(true)
     expect(hash!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
 
     // The row below it is unhighlighted, so its hash keeps lazygit's plain ANSI blue.
