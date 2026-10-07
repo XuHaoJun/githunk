@@ -3,7 +3,7 @@ import { filterItems } from "../../app/filter"
 import { submoduleDepth, submoduleFullName, submoduleFullPath, type SubmoduleConfig } from "../../domain/submodule"
 import type { ListRow } from "../list-view"
 
-/** Shown in place of the list, and in the main pane, when nothing is selected — submodules_controller.go:113. */
+/** Shown in place of the list, and in the main pane, when nothing is selected — submodules_controller.go:115. */
 export const NO_SUBMODULES = "No submodules"
 
 /** Row identity: lazygit's `FullName`, which is unique across the parent chain. */
@@ -36,7 +36,7 @@ export function submoduleRows(model: AppModel, filter = ""): ListRow[] {
 
 /**
  * The main-pane prefix block for the selected submodule —
- * `SubmodulesController.GetOnRenderToMain` (pkg/gui/controllers/submodules_controller.go:107-121).
+ * `SubmodulesController.GetOnRenderToMain` (pkg/gui/controllers/submodules_controller.go:109-123).
  * lazygit follows this with the submodule's own working-tree diff when the parent repo reports one;
  * githunk's model carries no submodule diff, so only the prefix is emitted.
  */

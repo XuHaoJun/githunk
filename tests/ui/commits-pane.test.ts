@@ -105,7 +105,7 @@ describe("commits pane rows", () => {
   })
 
   /**
-   * lazygit's `getHashColor` (pkg/gui/presentation/commits.go:485-501). A fixed hash colour would
+   * lazygit's `getHashColor` (pkg/gui/presentation/commits.go:570-586). A fixed hash colour would
    * throw away the panel's only signal for how far a commit has travelled.
    */
   test("colours the hash by commit status", () => {

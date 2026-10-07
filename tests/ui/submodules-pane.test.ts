@@ -43,7 +43,7 @@ describe("submodule rows", () => {
   })
 })
 
-/** pkg/gui/controllers/submodules_controller.go:113-121. */
+/** pkg/gui/controllers/submodules_controller.go:115-123. */
 describe("submodule preview", () => {
   test("emits lazygit's Name/Path/Url prefix block, blank line included", () => {
     expect(submodulePreviewText(nested)).toBe("Name: libs/mid/vendor/inner\nPath: libs/mid/vendor/inner\nUrl:  /tmp/inner\n\n")

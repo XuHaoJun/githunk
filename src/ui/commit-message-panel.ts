@@ -27,7 +27,7 @@ export type CommitMessagePanelLayout = {
 /**
  * lazygit leaves popup views at gocui's `ColorDefault` background/foreground instead of
  * choosing an RGB black. OpenTUI's RGBA intent preserves that terminal-resolved colour, so a
- * grey terminal stays grey (`pkg/gocui/gui.go:294-295`, `pkg/gui/views.go:121-127`).
+ * grey terminal stays grey (`pkg/gocui/gui.go:311-312`, `pkg/gui/views.go:119-125`).
  */
 const POPUP_BACKGROUND = RGBA.defaultBackground()
 const POPUP_FOREGROUND = RGBA.defaultForeground()
@@ -35,7 +35,7 @@ const FIELD_BORDER = POPUP_FOREGROUND
 const FIELD_ACTIVE_BORDER = TAB_ACTIVE_FG
 /**
  * lazygit only enables the terminal cursor for editable views; it does not emit a cursor-shape
- * override (`pkg/gui/context.go:199`). Its normal terminal cursor is therefore OpenTUI's block
+ * override (`pkg/gui/context.go:197`). Its normal terminal cursor is therefore OpenTUI's block
  * cursor, not the previous custom cyan line.
  */
 const POPUP_CURSOR_STYLE = { style: "block" as const, blinking: true }

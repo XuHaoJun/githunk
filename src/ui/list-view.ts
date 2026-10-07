@@ -542,9 +542,12 @@ function renderColumns(row: ListRow, layout: ListColumnLayout): TextChunk[] {
 }
 
 /**
- * One rune of a highlighted line, lazygit's way: the base-ANSI foreground is promoted to its
+ * One rune of a highlighted line, lazygit v0.65's way: the base-ANSI foreground is promoted to its
  * bright variant, bold is ORed in, and the selection background replaces whatever was there —
- * pkg/gocui/view.go:665-680 (`View.setCharacter`).
+ * `View.setCharacter` at lazygit ea91639 pkg/gocui/view.go:665-680. lazygit v0.66 stopped
+ * brightening (commit c1b14ea2a): it keeps the line's colors and ORs in `SelectedLineFgColor`
+ * (default bold) — pkg/gocui/view.go:954-961, pkg/config/user_config.go:910. githunk has not
+ * followed yet.
  *
  * Every chunk reaching here already carries a resolved foreground. Indexed colors are promoted by
  * slot; truecolor and terminal-default values are left untouched.

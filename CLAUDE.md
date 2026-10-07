@@ -10,7 +10,7 @@ and dependencies; `bun.lock` pins the dependency graph. Do not add runtime depen
 - **lazygit is the parity specification.** Read the vendored Go source in
   `learn-projects/lazygit` (`git submodule update --init` if absent). Cite the relevant
   `file:line` in code comments and commit bodies, explaining why the behavior exists.
-  Examples: `pkg/gui/background.go:169-208`, `user_config.go:1002`.
+  Examples: `pkg/gui/background.go:169-208`, `user_config.go:1023`.
   Key reference: `learn-projects/lazygit/docs/keybindings/Keybindings_en.md`.
 - **Record parity changes** in `docs/lazygit-compatibility-v0.1.md`, the authoritative matrix:
   `compatible` / `githunk review extension` / `not yet implemented` / `blocked`.

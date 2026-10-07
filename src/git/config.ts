@@ -7,7 +7,7 @@ type CommandRunner = Pick<GitRunner, "run">
  *
  * lazygit reads every remote's URLs with a single
  * `git config --local --get-regexp '^remote\.[^.]+\.(url|pushurl)$'`
- * (pkg/commands/git_commands/remote_loader.go:69-71) rather than a `git remote get-url` per
+ * (pkg/commands/git_commands/remote_loader.go:41-43) rather than a `git remote get-url` per
  * remote per direction. The branch keys ride along in the same call: `branch.<name>.remote` is
  * how a branch can be *configured* to track a remote whose ref is not in the local object store,
  * which is the only way to tell lazygit's magenta `?` (tracking, count unknown) apart from a

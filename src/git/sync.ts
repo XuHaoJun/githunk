@@ -73,7 +73,7 @@ function validateUpstream(upstream: UpstreamCandidate): void {
 export type FetchOptions = {
   /**
    * lazygit's `FetchBackgroundCmdObj` is `DontLog().FailOnCredentialRequest()` while the foreground
-   * `FetchCmdObj` is neither (pkg/commands/git_commands/sync.go:65-84): a fetch every 60 seconds
+   * `FetchCmdObj` is neither (pkg/commands/git_commands/sync.go:69-88): a fetch every 60 seconds
    * would bury the commands the user actually ran.
    */
   readonly background?: boolean

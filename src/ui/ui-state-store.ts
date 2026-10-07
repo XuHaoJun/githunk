@@ -14,8 +14,8 @@ export function defaultUiState(): UiState {
   return {
     sidePanelRatio: DEFAULT_SIDE_PANEL_RATIO,
     commandLogHeight: DEFAULT_LOG_HEIGHT,
-    // `Gui.ShowCommandLog: true` (pkg/config/user_config.go:901). A persisted `false` still wins,
-    // which is lazygit's `HideCommandLog` app-state flag (pkg/gui/gui.go:523).
+    // `Gui.ShowCommandLog: true` (pkg/config/user_config.go:921). A persisted `false` still wins,
+    // which is lazygit's `HideCommandLog` app-state flag (pkg/gui/gui.go:541).
     commandLogVisible: true
   }
 }
@@ -23,10 +23,10 @@ export function defaultUiState(): UiState {
 /**
  * On-disk schema version. Bumped from 1 -> 2 when persistence switched from the positive
  * `commandLogVisible` to the negative `commandLogHidden`, mirroring lazygit's on-disk
- * `AppState.HideCommandLog bool` (pkg/config/app_config.go:858) rather than the in-memory
- * `gui.ShowExtrasWindow` (pkg/gui/gui.go:190) it is inverted from at the boundary
- * (gui.go:523, extras_panel.go:26). `getDefaultAppState()` returns a bare `&AppState{}`
- * (app_config.go:861-862), so an absent/older app state reads back `HideCommandLog: false` ->
+ * `AppState.HideCommandLog bool` (pkg/config/app_config.go:912) rather than the in-memory
+ * `gui.ShowExtrasWindow` (pkg/gui/gui.go:202) it is inverted from at the boundary
+ * (gui.go:541, extras_panel.go:26). `getDefaultAppState()` returns a bare `&AppState{}`
+ * (app_config.go:915-916), so an absent/older app state reads back `HideCommandLog: false` ->
  * shown; version 2 reproduces that by making `commandLogHidden`'s *absence* (i.e. a version-1
  * file) the migration trigger, rather than defaulting a field that isn't there.
  */
@@ -42,7 +42,7 @@ function isValidCommandLogHeight(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= MIN_LOG_HEIGHT
 }
 
-/** Version 2: the current shape, `commandLogHidden` persisted per app_config.go:858. */
+/** Version 2: the current shape, `commandLogHidden` persisted per app_config.go:912. */
 function parseCurrent(candidate: RawRecord): UiState | undefined {
   if (!isValidSidePanelRatio(candidate.sidePanelRatio) || !isValidCommandLogHeight(candidate.commandLogHeight) || typeof candidate.commandLogHidden !== "boolean") return undefined
   return {

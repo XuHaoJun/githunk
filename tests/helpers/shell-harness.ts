@@ -65,7 +65,7 @@ export type ShellHarnessOptions = {
    * the command log's starting visibility explicitly rather than depending on whatever
    * `defaultUiState()` (src/ui/ui-state-store.ts) currently defaults to — the same reasoning
    * `RootView`'s own `logVisible ?? true` default follows `Gui.ShowCommandLog: true`
-   * (pkg/config/user_config.go:901).
+   * (pkg/config/user_config.go:921).
    */
   readonly logVisible?: boolean
   /** Overrides the default (real editor-spawning) `editFile`, e.g. to observe the edit without spawning a process. */

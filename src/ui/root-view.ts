@@ -108,7 +108,7 @@ const PANE_TITLES: Readonly<Record<FocusId, string>> = {
   branches: "Branches",
   commits: "Commits",
   stash: "Stash",
-  // `Tr.CommandLog` (pkg/i18n/english.go:1928) — lowercase "log", as the pane's own title reads.
+  // `Tr.CommandLog` (pkg/i18n/english.go:1996) — lowercase "log", as the pane's own title reads.
   "command-log": "Command log"
 }
 
@@ -214,7 +214,7 @@ export type GestureOwner =
 
 /**
  * Lines the main view scrolls per press of the *global* scroll keys — lazygit's
- * `gui.scrollHeight`, default 2 (pkg/config/user_config.go:857). `<pgup>`/`<pgdown>`, `K`/`J` and
+ * `gui.scrollHeight`, default 2 (pkg/config/user_config.go:877). `<pgup>`/`<pgdown>`, `K`/`J` and
  * `<ctrl+u>`/`<ctrl+d>` are all aliases of the one handler (`scrollUpMain`/`scrollDownMain`,
  * pkg/gui/global_handlers.go:15-22), as is the mouse wheel over the main view
  * (keybindings.go:177-189), so they all move by this.
@@ -312,7 +312,7 @@ export class RootView {
     this.renderer = renderer
     this.model = model
     // Shown unless the caller says otherwise, matching `Gui.ShowCommandLog: true`
-    // (pkg/config/user_config.go:901).
+    // (pkg/config/user_config.go:921).
     this.focusManager.logVisible = options.logVisible ?? true
     this.logHeight = options.logHeight ?? DEFAULT_LOG_HEIGHT
     if (options.sidePanelRatio !== undefined) this.sidePanelRatio = options.sidePanelRatio
@@ -359,7 +359,7 @@ export class RootView {
       this.renderCommitsPane()
     }
     // Panel 2's tabs are lazygit's `{"files", "worktrees", "submodules"}` group
-    // (pkg/config/user_config.go:872). Worktrees and Submodules are navigation-only here.
+    // (pkg/config/user_config.go:892). Worktrees and Submodules are navigation-only here.
     {
       this.filesTree = createFilesTreeState(model)
       const rows = filesTreeRows(this.filesTree, model)
@@ -553,7 +553,7 @@ export class RootView {
     this.renderCommitsPane()
     this.refreshStashState(model)
     this.renderStashPane()
-    // lazygit's `postRefreshUpdate` (pkg/gui/view_helpers.go:135): while the focused context is
+    // lazygit's `postRefreshUpdate` (pkg/gui/view_helpers.go:139,164-169): while the focused context is
     // the main view, the *side* context underneath it in the stack is the one asked to
     // re-render main — the main context itself has nothing to render.
     this.syncPreviewForFocus(this.focusManager.active === "main" ? this.focusManager.lastSide : this.focusManager.active)
@@ -709,7 +709,7 @@ export class RootView {
     }
     // Lazygit's files_controller.go:569-600 expands directories to individual
     // visible files when filtering, so a filtered directory row does not stage
-    // files hidden by the filter (pkg/gui/filetree/file_tree_view_model.go:270).
+    // files hidden by the filter (pkg/gui/filetree/file_tree_view_model.go:278).
     const filesFilter = this.getFilterForKey(this.filterKey("files", "files"))
     const isFiltering = filesFilter.length > 0
     let visiblePaths: ReadonlySet<string> | undefined
@@ -1803,8 +1803,9 @@ export class RootView {
         return
       }
       case "main": {
-        // One line, like lazygit's `ViewSelectionController.handleLineChange(±1)`
-        // (pkg/gui/controllers/view_selection_controller.go:53-70). The line-range cursor is
+        // One line, like lazygit's `MainViewController.handleLineChange(±1)` over non-diff content
+        // (pkg/gui/controllers/main_view_controller.go:997-1015); over a diff lazygit v0.66 moves
+        // its line cursor without forcing a scroll (adjustSelection, :898-909). The line-range cursor is
         // separate from the hunk cursor used by `h`/`l`; ordinary movement still scrolls exactly
         // one row, while non-sticky keyboard ranges cancel before the scroll.
         const state = getMainDiffLineRangeState(this.panes.main)
@@ -1849,7 +1850,7 @@ export class RootView {
 
   /**
    * lazygit's `ViewTrait.PageDelta()`: one row short of the viewport, so a page scroll leaves a
-   * line of overlap to read against (pkg/gui/context/view_trait.go:87-96). The window height
+   * line of overlap to read against (pkg/gui/context/view_trait.go:82-91). The window height
    * includes both border rows, hence the extra one.
    */
   get mainPageDelta(): number {
@@ -1902,7 +1903,7 @@ export class RootView {
 
   private actionPage(direction: "next" | "previous"): void {
     if (this.focusManager.active === "main") {
-      // `ViewSelectionController.handlePrevPage`/`handleNextPage` — view_selection_controller.go:72-78.
+      // `MainViewController.handlePrevPage`/`handleNextPage` — main_view_controller.go:1017-1025.
       const delta = direction === "next" ? this.mainPageDelta : -this.mainPageDelta
       this.adjustMainLineCursor(delta)
       this.scrollMainBy(delta)
@@ -1911,7 +1912,7 @@ export class RootView {
     const step = this.focusedPageStep()
     if (this.focusManager.active === "command-log") {
       // `pageUpExtrasPanel`/`pageDownExtrasPanel` scroll by `PageDelta()` — the pane's visible
-      // height — and both clear `Autoscroll` (pkg/gui/extras_panel.go:65,73, view_trait.go:87-96).
+      // height — and both clear `Autoscroll` (pkg/gui/extras_panel.go:65,73, view_trait.go:82-91).
       this.commandLog.scrollBy(direction === "next" ? step : -step)
       this.commandLog.applyScrollInput(direction === "next" ? "page-down" : "page-up")
       return
@@ -1921,8 +1922,9 @@ export class RootView {
 
   private actionJump(edge: "top" | "bottom"): void {
     if (this.focusManager.active === "main") {
-      // `handleGotoTop`/`handleGotoBottom` scroll by the whole content height, which the pane's
-      // own clamping turns into "as far as it goes" — view_selection_controller.go:81-97.
+      // `handleGotoTop`/`handleGotoBottom` select the first/last diff line, or over non-diff content
+      // scroll by the whole content height, which clamping turns into "as far as it goes" —
+      // main_view_controller.go:1027-1053.
       this.selectMainLineCursor(edge)
       this.scrollMainBy(edge === "bottom" ? this.panes.main.text.scrollHeight : -this.panes.main.text.scrollHeight)
       return
@@ -2000,7 +2002,7 @@ export class RootView {
 
   /**
    * lazygit loads the rest once the cursor passes `COMMIT_THRESHOLD`
-   * (local_commits_controller.go:1790-1797). Fire-and-forget: the reload
+   * (local_commits_controller.go:1808-1815). Fire-and-forget: the reload
    * preserves the selection by stable id, so navigation continues uninterrupted.
    */
   private maybeExpandCommits(selectedIndex: number): void {
@@ -2018,7 +2020,7 @@ export class RootView {
         // wholesale and are out of scope.
         if (this.filesPanel.activeTab !== "files") return
         const row = this.selectedFileRow()
-        // files_controller.go:715 EnterFile: a node with no file toggles its collapsed state.
+        // files_controller.go:718 EnterFile: a node with no file toggles its collapsed state.
         if (row?.kind === "directory") {
           this.applyFilesTree(toggleFileTreeCollapsedPath(this.filesTree, row.internalPath))
           return
@@ -2204,9 +2206,9 @@ export class RootView {
   }
   /**
    * Opens the selected file in an external editor, mirroring lazygit's
-   * `Universal.Edit` (`e`) binding across Files, Staging and Commit Files
-   * (pkg/gui/controllers/files_controller.go:91, staging_controller.go:63,
-   * commits_files_controller.go:77, etc.). The Files pane edits the
+   * `Universal.Edit` (`e`) binding across Files, the focused main view and Commit Files
+   * (pkg/gui/controllers/files_controller.go:95, main_view_controller.go:85-90,
+   * commits_files_controller.go:92, etc.). The Files pane edits the
    * selected file, the Main pane edits the file at the hunk cursor (with
    * `+line` when available), and the Commits drill-down edits the selected
    * commit file. Directories are rejected explicitly, matching lazygit's
@@ -2403,7 +2405,7 @@ export class RootView {
     this.openConfirmation(discardConfirmation(label || path), () => this.runUiMutation(() => this.ports.commands.onDiscardSelection(selected.document, selected.indexes)))
   }
 
-  /** lazygit's `` ` `` binding — files_controller.go:1502 toggleTreeView. */
+  /** lazygit's `` ` `` binding — files_controller.go:1501 toggleTreeView. */
   private actionToggleFileTree(): void {
     if (this.filesPanel.activeTab !== "files") return
     this.applyFilesTree(toggleFileTreeMode(this.filesTree))
@@ -2433,7 +2435,7 @@ export class RootView {
     return undefined
   }
 
-  /** Activates a tab by index, as a click on the title row does (gocui/gui.go:1807). */
+  /** Activates a tab by index, as a click on the title row does (gocui/gui.go:1889). */
   private selectPaneTab(paneId: FocusId, index: number): void {
     if (paneId === "files") {
       const tab = FILES_TAB_ORDER[index]
@@ -2515,7 +2517,7 @@ export class RootView {
     if (id === undefined) return
     if (id.startsWith("local:")) {
       const name = id.slice("local:".length)
-      // refs_helper.go:73 attributes a checkout to the branch being checked out.
+      // refs_helper.go:72 attributes a checkout to the branch being checked out.
       this.runUiMutation(() => this.ports.commands.onSwitchLocalBranch(name), { rowId: id, operation: "checking-out" })
     }
   }
@@ -3081,7 +3083,7 @@ export class RootView {
     if (this.commitsPanel.child !== undefined) return
     // Only the Commits tab drills into commit files: lazygit attaches
     // `SwitchToDiffFilesController` to LocalCommits/SubCommits/Stash, never to the reflog
-    // context (pkg/gui/controllers.go:240-249).
+    // context (pkg/gui/controllers.go:236-245).
     if (this.commitsPanel.activeTab !== "commits") return
     const selectedId = this.commitsPanel.views.commits?.selectedId
     if (selectedId === undefined) return
@@ -3128,7 +3130,7 @@ export class RootView {
   }
 
   /**
-   * Escape out of the focused main pane, lazygit's `ContextMgr.Pop()` (pkg/gui/context.go:132).
+   * Escape out of the focused main pane, lazygit's `ContextMgr.Pop()` (pkg/gui/context.go:133).
    * Pushing the main context left the side context underneath it on the stack, so popping lands
    * back on the pane the main view was focused from — `FocusManager.lastSide` here. Returns
    * whether it handled the key, so both Escape handlers can defer to it first.
@@ -3327,8 +3329,9 @@ export class RootView {
   }
 
   /**
-   * sync_controller.go:161,196 attributes a pull or a push to the *current* branch's row, whichever
-   * panel the key was pressed in.
+   * sync_controller.go:362-363,473-476 attributes a pull or a push to the *current* branch's row,
+   * whichever panel the key was pressed in. (lazygit v0.66 also marks stacked branches below it
+   * when the user opts to update those too; githunk has no stacked-branch pull/push.)
    */
   private currentBranchRowId(): string | undefined {
     const current = this.model.branches?.localBranches.find((branch) => branch.isCurrent)?.name
@@ -3373,13 +3376,13 @@ export class RootView {
       return
     }
     // Generic filter for files, commits, stash, main, and branches children
-    // (lazygit's per-context filter: pkg/gui/context/filtered_list_view_model.go:27,
+    // (lazygit's per-context filter: pkg/gui/context/filtered_list_view_model.go:25,
     // pkg/gui/controllers/helpers/search_helper.go:32-48).
     this.activeFilterKey = target.key
     const existing = this.getFilterForKey(target.key)
     if (existing.length > 0) this.filters.delete(target.key)
     // lazygit loads the full history when the commits search opens
-    // (`openSearch`, local_commits_controller.go:1672-1680): matches may live
+    // (`openSearch`, local_commits_controller.go:1689-1698): matches may live
     // past row 300. The reload's repaint preserves this prompt (see `update`).
     if (target.key === this.filterKey("commits", "commits")) {
       void this.ports.commands.onExpandCommits()
@@ -4038,8 +4041,8 @@ export class RootView {
 
   /**
    * Mirrors lazygit's `CheckoutRef`: the refresh selects the checked-out branch and the
-   * branches context is visible before/after the operation (`pkg/gui/controllers/helpers/refs_helper.go:42-83`;
-   * `pkg/gui/controllers/helpers/refresh_helper.go:1206-1209`). Remote-branch checkout uses the
+   * branches context is visible before/after the operation (`pkg/gui/controllers/helpers/refs_helper.go:42-82`;
+   * `pkg/gui/controllers/helpers/refresh_helper.go:1204-1207`). Remote-branch checkout uses the
    * same completion path as local branch creation so a successful checkout is visibly complete.
    */
   private finishLocalBranchCheckout(branchName: string): void {
@@ -4160,7 +4163,7 @@ export class RootView {
     const pane = this.panes.commits
     if (this.commitsPanel.child !== undefined) {
       // lazygit's commit files are their own view with a `DynamicTitleBuilder` and no tabs
-      // (pkg/gui/context/commit_files_context.go:48), so the strip is replaced, not extended.
+      // (pkg/gui/context/commit_files_context.go:64), so the strip is replaced, not extended.
       const short = this.commitsPanel.child.value.details.shortOid ?? this.commitsPanel.child.value.details.oid.slice(0, 8)
       pane.setPlainTitle?.(`[${COMMITS_JUMP_KEY}]${TITLE_PREFIX_FRAME_RUNE}Diff files (${short})`)
     } else {
@@ -4206,7 +4209,7 @@ export class RootView {
   /**
    * The selected node's own patch, as lazygit's files pane renders it: a file row diffs that file
    * and a directory row diffs its subtree (`pathsForDiff` →
-   * `WorktreeFileDiffCmdObj`, pkg/gui/controllers/files_controller.go:373). Sliced out of the
+   * `WorktreeFileDiffCmdObj`, pkg/gui/controllers/files_controller.go:387-401). Sliced out of the
    * already-parsed tree patch instead of re-running git, and re-parsed standalone so line staging
    * and selection see a patch `git apply` accepts.
    */
@@ -4250,8 +4253,8 @@ export class RootView {
   /**
    * lazygit's `GetGraphCmdObj(ref.FullRefName())` render-to-main: the selected ref's commit graph,
    * coloured by git itself. All three panel-3 tabs and the RemoteBranches drill-down share it,
-   * because lazygit shares it too — branches_controller.go:207, remote_branches_controller.go:122
-   * and tags_controller.go:109 all call the one command.
+   * because lazygit shares it too — branches_controller.go:206, remote_branches_controller.go:122
+   * and tags_controller.go:110 all call the one command.
    */
   private requestRefLog(source: RefLogTarget["kind"], name: string, label: string, preamble?: string): void {
     const preambleField = preamble === undefined ? {} : { preamble }
@@ -4288,7 +4291,7 @@ export class RootView {
         return
       }
       if (this.commitsPanel.activeTab === "reflog") {
-        // reflog_commits_controller.go:40-52 — `git show <hash>` for the selection, or the
+        // reflog_commits_controller.go:60-73 — `git show <hash>` for the selection, or the
         // literal "No reflog history" when there is none. A reflog entry points at a real
         // commit, so this reuses the Commits tab's own commit preview, keyed on that oid.
         const entry = this.selectedReflogEntry()
@@ -4327,7 +4330,7 @@ export class RootView {
         return
       }
       if (active === "submodules") {
-        // submodules_controller.go:107-127 GetOnRenderToMain.
+        // submodules_controller.go:109-127 GetOnRenderToMain.
         const submodule = selectedSubmoduleFrom(this.model, this.filesPanel.views.submodules?.selectedId)
         this.mainGate.installSynchronous(submodule === undefined ? { source: "submodule", stableId: "submodule-empty", label: "Submodule", plainText: NO_SUBMODULES } : { source: "submodule", stableId: submoduleFullName(submodule), label: submoduleFullName(submodule), plainText: submodulePreviewText(submodule) })
         return
@@ -4372,7 +4375,7 @@ export class RootView {
         return
       }
       if (active === "tags") {
-        // tags_controller.go:101-123: the tag's own info, a `---` rule, then the graph.
+        // tags_controller.go:102-124: the tag's own info, a `---` rule, then the graph.
         const ref = selectedId !== undefined && selectedId.startsWith("tag:") ? selectedId.slice("tag:".length) : undefined
         const tag = ref === undefined ? undefined : this.model.tags?.find((candidate) => candidate.ref === ref)
         if (tag === undefined) {
@@ -5062,7 +5065,7 @@ export class RootView {
           return
         }
         const paneId = hit.id
-        // A plain left click on the top border row activates a tab — gocui/gui.go:1807.
+        // A plain left click on the top border row activates a tab — gocui/gui.go:1889.
         const tabsGeometry = this.paneTabsGeometryFor(paneId)
         const tabWindow = (this.geometry.windows as unknown as Record<string, { x0: number; y0: number } | undefined>)[hit.winName]
         if (tabsGeometry !== undefined && tabWindow !== undefined && event.y === tabWindow.y0) {
@@ -5197,7 +5200,7 @@ export class RootView {
               }
             }
             if (arrowRow !== undefined) {
-              // files_controller.go:232-242 toggles only the arrow and its trailing space.
+              // files_controller.go:236-246 toggles only the arrow and its trailing space.
               this.applyFilesTree(toggleFileTreeCollapsedPath(this.filesTree, arrowRow.internalPath))
             }
             event.preventDefault()
@@ -5281,7 +5284,7 @@ export class RootView {
   /**
    * lazygit's `@` menu (pkg/gui/extras_panel.go:12-38). Labels are `Tr.CommandLog`,
    * `Tr.ToggleShowCommandLog` and `Tr.FocusCommandLog` verbatim
-   * (pkg/i18n/english.go:1946,1949-1950).
+   * (pkg/i18n/english.go:2014,2017-2018).
    */
   private openCommandLogMenu(): void {
     this.actionMenu.openMenu("Command log", [
@@ -5360,7 +5363,7 @@ export class RootView {
   /** Width the review-status segment occupies in the bottom row's right-hand window. */
   private statusSegmentWidth(): number {
     // Lazygit's infoSectionChildren hides appStatus/information/options when InSearchPrompt
-    // (window_arrangement_helper.go:281). Githunk's equivalent is filterStatusForHints() !== undefined:
+    // (window_arrangement_helper.go:272). Githunk's equivalent is filterStatusForHints() !== undefined:
     // the global bottom row is then the search bar (searchPrefix + search) spanning full width,
     // not hints + review status. Return 0 to make the 'info' window zero-width.
     if (this.filterStatusForHints() !== undefined) return 0
@@ -5368,8 +5371,8 @@ export class RootView {
   }
 
   private syncPaneBorders(): void {
-    // Mirrors lazygit's setSearchingFrameColor / setNonSearchingFrameColor (search_helper.go:321).
-    // ActiveBorderColor is green+bold, SearchingActiveBorderColor is cyan+bold (user_config.go:885).
+    // Mirrors lazygit's setSearchingFrameColor / setNonSearchingFrameColor (search_helper.go:326).
+    // ActiveBorderColor is green+bold, SearchingActiveBorderColor is cyan+bold (user_config.go:906-907).
     const focused = this.focusManager.active
     const isFiltering = this.filterStatusForHints() !== undefined
     for (const id of FOCUS_IDS) {
@@ -5448,7 +5451,7 @@ export class RootView {
     const hintsWidth = widthOf(windows.hints)
     const filterStatus = this.filterStatusForHints()
     if (filterStatus !== undefined) {
-      // Lazygit's search view lives at the global bottom (window_arrangement_helper.go:281):
+      // Lazygit's search view lives at the global bottom (window_arrangement_helper.go:272):
       // InSearchPrompt true => bottom is searchPrefix (size of prefix) + search (weight 1),
       // with no appStatus/information/options. Githunk's hints+info becomes a single full-width
       // search bar (statusWidth 0 above), so show only the filter/search text and hide review status.

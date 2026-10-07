@@ -157,7 +157,7 @@ describe("mouse parity - row selection and wheel routing", () => {
 
   test("wheel over Command Log scrolls only log", async () => {
     // Stated explicitly (Task 10 made this the default, `Gui.ShowCommandLog: true`,
-    // pkg/config/user_config.go:901) rather than relied on: this test's own `if (!logBox) return`
+    // pkg/config/user_config.go:921) rather than relied on: this test's own `if (!logBox) return`
     // guard used to silently no-op once the log started shown by default and the `@`/`t` toggle
     // below (still present pre-Task-10, when the log started hidden) began hiding it instead of
     // showing it.

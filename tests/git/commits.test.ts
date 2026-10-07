@@ -101,7 +101,7 @@ describe("commit log limit", () => {
       }
     }
     await listCommits(runner as never, "HEAD")
-    // lazygit's `ArgIf(opts.Limit, "-300")` (commit_loader.go:597).
+    // lazygit's `ArgIf(opts.Limit, "-300")` (commit_loader.go:614).
     expect(calls[0]).toContain("-300")
   })
 

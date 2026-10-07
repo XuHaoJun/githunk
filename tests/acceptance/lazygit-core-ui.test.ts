@@ -411,7 +411,7 @@ describe("lazygit core UI acceptance", () => {
     expect(view.selectedListId("branches")).toBe("tag:refs/tags/light")
     await view.whenPreviewSettled().catch(() => {})
     await harness.flush()
-    // tags_controller.go:101-123: the tag's own info, a `---` rule, then its commit graph.
+    // tags_controller.go:102-124: the tag's own info, a `---` rule, then its commit graph.
     expect(view.mainContent?.source).toBe("tag")
     let tagPreamble = view.mainContent?.preamble ?? ""
     expect(tagPreamble).toContain("Lightweight tag: light")

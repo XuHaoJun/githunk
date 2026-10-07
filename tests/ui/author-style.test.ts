@@ -24,7 +24,7 @@ describe("authorInitials", () => {
   })
 
   test("lets a wide leading grapheme fill the column on its own", () => {
-    // lazygit's `width > 1` branch (authors.go:117-120): a grapheme already two cells wide *is* the
+    // lazygit's `width > 1` branch (authors.go:161-164): a grapheme already two cells wide *is* the
     // column, so no second character is taken.
     expect(authorInitials("中村 太郎")).toBe("中")
     expect(cellWidth(authorInitials("中村 太郎"))).toBe(AUTHOR_COLUMN_WIDTH)

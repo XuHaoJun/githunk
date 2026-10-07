@@ -7,7 +7,7 @@ import { createListState, type ListColumn, type ListColumnSegment, type ListRow 
 import { installListText } from "./list-text"
 import { FILE_MIXED_FG, FILE_STAGED_FG, UNSTAGED_CHANGES_FG } from "../theme"
 
-/** Panel 2's tab labels and jump label, in lazygit's order (`{"files", "worktrees", "submodules"}` — pkg/config/user_config.go:872). */
+/** Panel 2's tab labels and jump label, in lazygit's order (`{"files", "worktrees", "submodules"}` — pkg/config/user_config.go:892). */
 export const FILES_TABS = ["Files", "Worktrees", "Submodules"] as const
 export const FILES_JUMP_KEY = "2"
 

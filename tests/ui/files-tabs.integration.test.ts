@@ -57,7 +57,7 @@ const singleTopLevelTree = async (repository: TempRepository): Promise<void> => 
 
 /**
  * Panel 2's side-panel group is lazygit's `{"files", "worktrees", "submodules"}`
- * (pkg/config/user_config.go:872), and its Files tab renders `pkg/gui/filetree` through
+ * (pkg/config/user_config.go:892), and its Files tab renders `pkg/gui/filetree` through
  * `pkg/gui/presentation/files.go`.
  */
 /** One staged modification (a green `M ` status) and one untracked file (a red `??`). */
@@ -248,8 +248,8 @@ describe("panel 2 tabs", () => {
   })
 
   test("the selected file row's status characters are brightened and bolded with ANSI intent", async () => {
-    // view.go:665-680: a highlighted line's foregrounds are promoted to their bright ANSI variant
-    // and bolded before lazygit applies SelBgColor.
+    // lazygit v0.65 view.go:665-680: a highlighted line's foregrounds are promoted to their bright
+    // ANSI variant and bolded before SelBgColor applies (v0.66 view.go:954-961 no longer brightens).
     const shell = await createShellHarness({ setup: stagedAndUntracked })
     harness = shell
     const view = shell.app.view!

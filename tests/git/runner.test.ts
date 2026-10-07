@@ -87,8 +87,8 @@ describe("GitRunner", () => {
   })
 
   /**
-   * lazygit marks each of its 80 read paths DontLog() by hand
-   * (pkg/commands/git_commands/status.go:98,135,140; commit_loader.go:294,571,605;
+   * lazygit marks each of its 88 read paths DontLog() by hand
+   * (pkg/commands/git_commands/status.go:98,135,140; commit_loader.go:311,588,622;
    * stash_loader.go:36,71; file_loader.go:133,213,228; config.go:83). githunk gets the same set
    * from one rule, because `readOnly` already marks exactly the reads.
    */
@@ -119,7 +119,7 @@ describe("GitRunner", () => {
   /**
    * lazygit writes command output into the panel only for the commands it streams — the ones with a
    * credential strategy, i.e. push/pull/fetch (cmd_obj_runner.go:234-246,
-   * git_commands/sync.go:44,110,69) — behind `prefixWriter`'s magenta `Git output:`
+   * git_commands/sync.go:48,114,73) — behind `prefixWriter`'s magenta `Git output:`
    * (extras_panel.go:96-98).
    */
   test("streamOutput puts the output under a Git output: heading", async () => {

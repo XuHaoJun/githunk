@@ -5,7 +5,7 @@ import { PR_CHECKS_FAILING_FG, PR_CHECKS_PASSING_FG, PR_CHECKS_PENDING_FG, PR_CL
 
 /**
  * The dot lazygit draws between a branch's recency and its name —
- * pkg/gui/presentation/branches.go:143-160.
+ * pkg/gui/presentation/branches.go:145-162.
  *
  *     prIcon = "●"                                   // no nerd-font icons configured
  *     coloredPrIcon = WithPrColor(pr.State, prIcon, false)
@@ -28,7 +28,7 @@ const STATE_COLOR: Readonly<Record<PullRequestState, ColorInput>> = {
   DRAFT: PR_DRAFT_FG
 }
 
-/** `checksStatePresentation` — pkg/gui/presentation/branches.go:344-359. */
+/** `checksStatePresentation` — pkg/gui/presentation/branches.go:334-349. */
 const CHECKS_ICON: Readonly<Partial<Record<PullRequestChecksState, PullRequestIcon>>> = {
   SUCCESS: { text: "✓", color: PR_CHECKS_PASSING_FG },
   PENDING: { text: "●", color: PR_CHECKS_PENDING_FG },

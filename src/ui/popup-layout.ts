@@ -178,7 +178,7 @@ export function confirmationPopupGeometry(terminalWidth: number, terminalHeight:
  * prompt (as in `types.CreateMenuOptions.Prompt`), `itemCount` is the
  * number of menu items. The prompt is wrapped and an extra blank line is
  * counted after it when present, matching `layoutMenuPrompt`'s `append(
- * promptLines, "")` in confirmation_helper.go:356.
+ * promptLines, "")` in confirmation_helper.go:421.
  */
 export function menuPopupGeometry(terminalWidth: number, terminalHeight: number, itemCount: number, prompt = ""): PopupGeometry & { readonly wrappedPrompt: readonly string[]; readonly promptLinesCount: number } {
   const panelWidth = popupPanelWidth(terminalWidth, 90)

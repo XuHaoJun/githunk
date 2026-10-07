@@ -41,9 +41,9 @@ describe("UiStateStore", () => {
   })
 
   /**
-   * `Gui.ShowCommandLog: true` (pkg/config/user_config.go:901), and
+   * `Gui.ShowCommandLog: true` (pkg/config/user_config.go:921), and
    * `gui.ShowExtrasWindow = userConfig.Gui.ShowCommandLog && !GetAppState().HideCommandLog`
-   * (pkg/gui/gui.go:523) — so shown unless the user hid it, and the persisted choice wins.
+   * (pkg/gui/gui.go:541) — so shown unless the user hid it, and the persisted choice wins.
    */
   test("the command log is shown by default", () => {
     expect(defaultUiState().commandLogVisible).toBe(true)
@@ -60,7 +60,7 @@ describe("UiStateStore", () => {
 
   /**
    * `gui.ShowExtrasWindow = userConfig.Gui.ShowCommandLog && !GetAppState().HideCommandLog`
-   * (pkg/gui/gui.go:523) inverts `HideCommandLog` at read time, and `extras_panel.go:26`
+   * (pkg/gui/gui.go:541) inverts `HideCommandLog` at read time, and `extras_panel.go:26`
    * (`HideCommandLog = !show`) inverts it back at write time. githunk mirrors that: the on-disk
    * field is `commandLogHidden`, negated relative to the in-memory `commandLogVisible`.
    */

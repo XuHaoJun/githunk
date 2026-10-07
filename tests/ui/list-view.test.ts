@@ -106,8 +106,9 @@ describe("list column layout", () => {
 })
 
 /**
- * lazygit brightens every base-ANSI foreground on a highlighted line, ORs in bold, and only then
- * swaps in the selection background — pkg/gocui/view.go:665-680 (`View.setCharacter`). The test
+ * lazygit v0.65 brightened every base-ANSI foreground on a highlighted line, ORed in bold, and only
+ * then swapped in the selection background — `View.setCharacter` (ea91639 pkg/gocui/view.go:665-680;
+ * v0.66 view.go:954-961 keeps the colors and only adds bold). The test
  * checks the indexed slots directly so terminal palette brightness remains terminal-owned.
  */
 describe("selected row highlighting", () => {

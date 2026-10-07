@@ -38,7 +38,7 @@ export function formatRelativeTime(authoredAt: string, now: Date): string {
 
 /**
  * lazygit's `getHashColor` switch on `models.CommitStatus`
- * (pkg/gui/presentation/commits.go:138-145): the hash is coloured by whether the commit has
+ * (pkg/gui/presentation/commits.go:575-587): the hash is coloured by whether the commit has
  * been pushed, is merged into the main branch, or is still local-only.
  */
 function commitHashColor(status: CommitStatus | undefined) {
@@ -59,7 +59,7 @@ function commitHashColor(status: CommitStatus | undefined) {
  * hash → author initials → graph+subject as one trailing column, with the
  * relative time trailing (githunk extension — lazygit has no time column).
  * The graph and subject share one flex column exactly because lazygit's
- * `getPaddedDisplayStrings` (`pkg/utils/formatting.go:128-149`) pads every
+ * `getPaddedDisplayStrings` (`pkg/utils/formatting.go:134-155`) pads every
  * column except the last: `graphLine+mark+tag+name` is a single unpadded
  * string, so a narrow lane never pads out to the widest lane's width. A
  * separate graph column padded to the max lane is where the blank gap came

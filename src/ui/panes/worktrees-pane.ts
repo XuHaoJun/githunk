@@ -4,13 +4,13 @@ import type { Worktree } from "../../domain/worktree"
 import type { ListColumn, ListRow } from "../list-view"
 import { WORKTREE_BRANCH_FG, WORKTREE_CURRENT_FG, WORKTREE_DETACHED_FG, WORKTREE_INACTIVE_MARKER_FG, WORKTREE_MISSING_FG } from "../theme"
 
-/** Shown in place of the list, and in the main pane, when there is no worktree selected — pkg/i18n/english.go:2069. */
+/** Shown in place of the list, and in the main pane, when there is no worktree selected — pkg/i18n/english.go:2136. */
 export const NO_WORKTREES_THIS_REPO = "No worktrees"
 
-/** `tr.MissingWorktree` — pkg/i18n/english.go:2070. */
+/** `tr.MissingWorktree` — pkg/i18n/english.go:2137. */
 export const MISSING_WORKTREE_LABEL = "(missing)"
 
-/** `tr.MainWorktree` — pkg/i18n/english.go:2071. */
+/** `tr.MainWorktree` — pkg/i18n/english.go:2138. */
 export const MAIN_WORKTREE_LABEL = "(main worktree)"
 
 /** Row identity: a worktree's path is unique within `git worktree list` by construction. */
@@ -23,7 +23,7 @@ export function selectedWorktreeFrom(model: AppModel, id: string | undefined): W
   return (model.worktrees ?? []).find((worktree) => worktreeRowId(worktree) === id)
 }
 
-/** `worktree.Branch`, or lazygit's detached-head text — pkg/gui/presentation/worktrees.go:48-53. */
+/** `worktree.Branch`, or lazygit's detached-head text — pkg/gui/presentation/worktrees.go:48-54. */
 function branchText(worktree: Worktree): string {
   if (worktree.branch !== undefined && worktree.branch.length > 0) return worktree.branch
   if (worktree.shortHead !== undefined) return `HEAD detached at ${worktree.shortHead}`

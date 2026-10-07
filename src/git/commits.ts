@@ -11,7 +11,7 @@ const LOG_FORMAT = "%H%n%h%n%P%n%an%n%aI%n%s%n%b"
 
 /**
  * Initial commit-walk bound. lazygit limits the first load with `-300`
- * (`getLogCmd`, pkg/commands/git_commands/commit_loader.go:581-606) and only
+ * (`getLogCmd`, pkg/commands/git_commands/commit_loader.go:598-623) and only
  * loads the rest once the cursor passes the threshold; an unbounded walk on a
  * 27k-commit repo materializes megabytes of rows on every view update.
  */

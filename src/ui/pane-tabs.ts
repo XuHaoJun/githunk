@@ -4,7 +4,7 @@ import { TAB_ACTIVE_BOLD, TAB_ACTIVE_FG, TAB_SEPARATOR, TITLE_PREFIX_FRAME_RUNE 
 /**
  * The tab strip lazygit draws on a pane's top border row — `[3]─Local Branches - Remotes - Tags`,
  * the active tab green+bold while the pane is focused. Ported from pkg/gocui/gui.go `drawTitle`
- * (the renderer), pkg/gocui/view.go `GetClickedTabIndex` (the hit test) and pkg/gui/views.go:214
+ * (the renderer), pkg/gocui/view.go `GetClickedTabIndex` (the hit test) and pkg/gui/views.go:250
  * `keyToTitlePrefix` (the `[key]` prefix).
  *
  * Everything except `PaneTabsBoxRenderable` is pure, so panels can unit-test their strip without
@@ -23,15 +23,15 @@ export type PaneTabsInput = {
 /** The subset the hit test needs: the geometry of the strip, not its colours. */
 export type PaneTabsGeometry = Pick<PaneTabsInput, "jumpKey" | "tabs">
 
-/** Where the strip starts, relative to the pane's left edge: `x := v.x0 + 2` (gui.go:1440). */
+/** Where the strip starts, relative to the pane's left edge: `x := v.x0 + 2` (gui.go:1507). */
 export const PANE_TABS_START_OFFSET = 2
 
 function jumpKeyPrefix(jumpKey: string): string {
-  // views.go:214 keyToTitlePrefix — an empty binding means no prefix.
+  // views.go:250 keyToTitlePrefix — an empty binding means no prefix.
   return jumpKey.length === 0 ? "" : `[${jumpKey}]`
 }
 
-/** The rendered prefix: the jump label plus the view's first frame rune (gui.go:1409-1415). */
+/** The rendered prefix: the jump label plus the view's first frame rune (gui.go:1476-1482). */
 export function paneTabsTitlePrefix(jumpKey: string): string {
   const prefix = jumpKeyPrefix(jumpKey)
   return prefix.length === 0 ? "" : `${prefix}${TITLE_PREFIX_FRAME_RUNE}`
@@ -81,7 +81,7 @@ function visualWidth(text: string): number {
 /**
  * Which tab an x offset (relative to the pane's left edge) landed on, or `undefined` for the
  * prefix, a separator, or past the last tab. Straight port of `View.GetClickedTabIndex`
- * (pkg/gocui/view.go:1885), including its `len(v.Tabs) <= 1 -> 0` shortcut — with the one
+ * (pkg/gocui/view.go:2425), including its `len(v.Tabs) <= 1 -> 0` shortcut — with the one
  * refinement that a pane with *no* tabs reports nothing rather than tab 0.
  */
 export function paneTabAtOffset(input: PaneTabsGeometry, offsetX: number): number | undefined {
@@ -130,7 +130,7 @@ export class PaneTabsBoxRenderable extends BoxRenderable {
     if (!this.borderSides.top) return
     const baseFg = this._titleColor ?? this._borderColor
     const y = this._screenY
-    // gui.go:1447 stops at `x > v.x1-2`, where x1 is the right border column.
+    // gui.go:1512 stops at `x > v.x1-2`, where x1 is the right border column.
     const lastX = this._screenX + this.width - 3
     let x = this._screenX + PANE_TABS_START_OFFSET
     for (const chunk of strip.chunks) {

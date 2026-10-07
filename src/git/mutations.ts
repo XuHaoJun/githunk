@@ -87,7 +87,7 @@ export class GitMutations {
       // .git subdirectory) unless given a second -f (git-clean docs, --force).
       // lazygit deletes untracked files straight from disk instead
       // (pkg/commands/git_commands/working_tree.go:175-177 via
-      // pkg/commands/oscommands/os.go:52,188-189 os.RemoveAll), so a single -f
+      // pkg/commands/oscommands/os.go:50,186-187 os.RemoveAll), so a single -f
       // silently no-ops where lazygit discards.
       await this.runner.run(["clean", "-ff", "-d", "--", path])
       await this.refresh()
@@ -95,7 +95,7 @@ export class GitMutations {
   }
 
   /**
-   * Mirrors lazygit's FilesController.ResetSubmodule (files_controller.go:1805-1825):
+   * Mirrors lazygit's FilesController.ResetSubmodule (files_controller.go:1804-1824):
    * unstage the gitlink, stash the child worktree, then force it to the parent module's recorded
    * commit (submodule.go:185-207).
    */

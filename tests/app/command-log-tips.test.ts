@@ -8,7 +8,7 @@ function texts(log: CommandLog): readonly string[] {
 }
 
 describe("command log header", () => {
-  /** `CommandLogHeader` formatted with `Universal.ExtrasMenu` (english.go:1951, user_config.go:1072). */
+  /** `CommandLogHeader` formatted with `Universal.ExtrasMenu` (english.go:2019, user_config.go:1094). */
   test("names the key that hides and focuses the panel", () => {
     expect(COMMAND_LOG_HEADER).toBe("You can hide/focus this panel by pressing '@'")
   })
@@ -19,7 +19,7 @@ describe("command log header", () => {
     expect(texts(log)).toEqual([COMMAND_LOG_HEADER, "", `${RANDOM_TIP_LABEL}: ${COMMAND_LOG_TIPS[0]}`])
   })
 
-  /** `Gui.ShowRandomTip` (user_config.go:909) is on by default but can be off. */
+  /** `Gui.ShowRandomTip` (user_config.go:929) is on by default but can be off. */
   test("omits the tip when tips are off", () => {
     const log = new CommandLog()
     seedCommandLog(log, { showRandomTip: false })

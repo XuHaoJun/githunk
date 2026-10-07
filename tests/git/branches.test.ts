@@ -41,9 +41,9 @@ describe("branch and remote loaders", () => {
 })
 
 /**
- * lazygit's branch status inputs: `parseUpstreamInfo` (branch_loader.go:466-481) turns
+ * lazygit's branch status inputs: `parseUpstreamInfo` (branch_loader.go:442-457) turns
  * `%(upstream:short)` and `%(upstream:track)` into ahead/behind counts plus a `gone` flag, and
- * `branch.<name>.remote`/`.merge` (branch_loader.go:120-127) say whether the branch tracks
+ * `branch.<name>.remote`/`.merge` (branch_loader.go:131-138) say whether the branch tracks
  * anything at all — including when its remote-tracking ref is not in this repo.
  */
 describe("branch upstream state", () => {

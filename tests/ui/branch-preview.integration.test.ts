@@ -4,8 +4,8 @@ import { createTempRepository, type TempRepository } from "../helpers/temp-repos
 
 /**
  * Panel 3's render-to-main. lazygit shows a ref's commit graph for every selection the panel has:
- * branches_controller.go:199-227 (`GetGraphCmdObj`, title `Log`), remote_branches_controller.go:114
- * (title `Remote Branch`) and tags_controller.go:101 (the tag's own info, then `---`, then the same
+ * branches_controller.go:198-228 (`GetGraphCmdObj`, title `Log`), remote_branches_controller.go:114
+ * (title `Remote Branch`) and tags_controller.go:102 (the tag's own info, then `---`, then the same
  * graph). Only the Remotes tab renders something else: the remote's name and URLs
  * (remotes_controller.go:101-125).
  */

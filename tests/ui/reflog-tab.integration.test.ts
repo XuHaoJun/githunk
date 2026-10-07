@@ -28,7 +28,7 @@ function isIndexed(color: RGBA, slot: number): boolean {
 
 /**
  * Panel 4's side-panel group is lazygit's `{"commits", "reflog"}`
- * (pkg/config/user_config.go:874). The reflog rows are
+ * (pkg/config/user_config.go:894). The reflog rows are
  * `pkg/gui/presentation/reflog_commits.go` `getDisplayStringsForReflogCommit`: short hash in
  * `style.FgBlue`, then the reflog subject in the default text colour.
  */
@@ -124,7 +124,8 @@ describe("panel 4 Reflog tab", () => {
   })
 
   test("the selected reflog row's hash is bright and bold with ANSI intent", async () => {
-    // view.go:665-680 brightens and bolds every base ANSI rune before swapping in SelBgColor.
+    // lazygit v0.65 view.go:665-680 brightened and bolded every base ANSI rune before swapping in
+    // SelBgColor (v0.66 view.go:954-961 only bolds).
     harness = await createShellHarness({ commits: ["alpha commit", "beta commit"] })
     await harness.pressKey("4")
     await harness.pressKey("]")
@@ -173,7 +174,7 @@ describe("panel 4 Reflog tab", () => {
   test("enter on the Reflog tab does not drill into commit files", async () => {
     // lazygit attaches `SwitchToDiffFilesController` (the GoInto → commit files binding) to
     // LocalCommits, SubCommits and Stash only — the reflog context gets
-    // `SwitchToSubCommitsController` instead (pkg/gui/controllers.go:240-249), a panel githunk
+    // `SwitchToSubCommitsController` instead (pkg/gui/controllers.go:236-245), a panel githunk
     // has no equivalent for, so Enter is a no-op here rather than a commit-files drill-down.
     harness = await createShellHarness()
     const view = harness.app.view!
@@ -214,7 +215,7 @@ describe("panel 4 Reflog tab", () => {
     expect(view.commitsPanel.child?.value.kind).toBe("commit-files")
     const short = view.commitsPanel.child!.value.details.shortOid
     // lazygit's commit files live in their own view with a dynamic title
-    // (pkg/gui/context/commit_files_context.go:48), so no tab strip shows while drilled in.
+    // (pkg/gui/context/commit_files_context.go:64), so no tab strip shows while drilled in.
     expect(harness.frame()).toContain(`[4]─Diff files (${short})`)
     expect(harness.frame()).not.toContain("[4]─Commits - Reflog")
 

@@ -58,7 +58,7 @@ describe("short status derivation", () => {
 
 describe("panel 2 tab labels", () => {
   test("are lazygit's `{files, worktrees, submodules}` side-panel group", () => {
-    // pkg/config/user_config.go:872, titled by pkg/gui/views.go:188-191.
+    // pkg/config/user_config.go:892, titled by pkg/gui/views.go:228-231.
     expect(FILES_TABS).toEqual(["Files", "Worktrees", "Submodules"])
     expect(FILES_JUMP_KEY).toBe("2")
   })

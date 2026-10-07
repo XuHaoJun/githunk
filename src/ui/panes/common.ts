@@ -40,7 +40,7 @@ export type PaneHandle = {
   /**
    * Replaces the strip with a plain dynamic title, undoing the last `setTabs`. lazygit's own
    * drill-down views work this way: commit files is a separate view with a
-   * `DynamicTitleBuilder` and no `Tabs` at all (pkg/gui/context/commit_files_context.go:48), so
+   * `DynamicTitleBuilder` and no `Tabs` at all (pkg/gui/context/commit_files_context.go:64), so
    * gocui's `drawTitle` renders its bare title and no tab strip. Present only on tabbed panes.
    */
   setPlainTitle?(title: string): void

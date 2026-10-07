@@ -31,9 +31,9 @@ export type BranchRowOptions = {
 
 /**
  * lazygit's `getBranchDisplayStrings` in its default (normal-screen) configuration —
- * pkg/gui/presentation/branches.go:45-191: recency, then the pull-request dot, then the name with
+ * pkg/gui/presentation/branches.go:47-193: recency, then the pull-request dot, then the name with
  * its branch status. `gui.showBranchCommitHash` and `gui.showDivergenceFromBaseBranch` are off by
- * default (pkg/config/user_config.go:916-917), so neither the hash nor the base-branch divergence
+ * default (pkg/config/user_config.go:937-938), so neither the hash nor the base-branch divergence
  * cell exists here.
  *
  * The upstream and subject cells are githunk's own, at the priorities that make them the first
@@ -49,7 +49,7 @@ export function localBranchRows(model: AppModel, filter = "", options: BranchRow
   const pullRequests = options.pullRequests
   // Lazygit orders branches by committer date descending (default `localBranchSortOrder: "date"` →
   // `-committerdate`), with the current branch pinned to the top regardless of date
-  // (pkg/commands/git_commands/branch_loader.go:103-110). Recency ordering (`"recency"` mode merges
+  // (pkg/commands/git_commands/branch_loader.go:114-121). Recency ordering (`"recency"` mode merges
   // reflog recency) is not replicated here.
   const sortedBranches = [...listing.localBranches].sort((a, b) => {
     if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
@@ -61,7 +61,7 @@ export function localBranchRows(model: AppModel, filter = "", options: BranchRow
   const rows: ListRow[] = sortedBranches.map((branch) => {
     const id = `local:${branch.name}`
     const columns: ListColumn[] = []
-    // The checked-out branch's recency is the literal "  *" (branch_loader.go:106).
+    // The checked-out branch's recency is the literal "  *" (branch_loader.go:117).
     columns.push({
       text: branch.isCurrent ? "  *" : formatRecency(branch.committedAt, nowUnix),
       priority: 0,
@@ -87,7 +87,7 @@ export function localBranchRows(model: AppModel, filter = "", options: BranchRow
   return [...filterItems(filter, rows, (row) => row.columns[2]?.text ?? row.id)]
 }
 
-/** branches_controller.go:205 `self.c.Tr.NoBranchesThisRepo` — pkg/i18n/english.go:1315. */
+/** branches_controller.go:204 `self.c.Tr.NoBranchesThisRepo` — pkg/i18n/english.go:1343. */
 export const NO_BRANCHES_THIS_REPO = "No branches for this repo"
 
 /** Panel 3's tab labels and jump label, in lazygit's order (pkg/gui/views.go side-panel groups). */

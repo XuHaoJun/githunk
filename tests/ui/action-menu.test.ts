@@ -264,7 +264,7 @@ describe("createActionMenu", () => {
       expect(menu.box.visible).toBe(true)
       expect(menu.box.width).toBeGreaterThan(0)
       expect(menu.box.height).toBeGreaterThan(0)
-      // Lazygit centers popups on the full terminal (confirmation_helper.go:120-126),
+      // Lazygit centers popups on the full terminal (confirmation_helper.go:121-126),
       // not inside the main pane. For an 80×24 terminal the 2-item menu
       // should be 78 wide (popupPanelWidth 80→78) and centered at left 1.
       expect(menu.box.left).toBeGreaterThanOrEqual(0)

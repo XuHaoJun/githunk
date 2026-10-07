@@ -13,7 +13,7 @@ import type { UiState as PersistedUiState } from "../../src/ui/ui-state-store"
  *
  * Every harness below states `logVisible: false` explicitly: these tests are about the show/hide
  * transition itself (Task 10 made the log start shown by default, `Gui.ShowCommandLog: true`,
- * pkg/config/user_config.go:901), so their toggles need a known starting state rather than one
+ * pkg/config/user_config.go:921), so their toggles need a known starting state rather than one
  * that silently flips meaning if the default changes again.
  */
 describe("@ opens the command log menu", () => {

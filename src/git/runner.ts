@@ -22,10 +22,10 @@ export type GitRunOptions = {
   readonly acceptedExitCodes?: readonly number[]
   /**
    * Keeps the command out of the Command Log pane, or forces it in. lazygit's `DontLog()`
-   * (pkg/commands/oscommands/cmd_obj.go:118-128), which it sets by hand at 76 call sites (a naive
+   * (pkg/commands/oscommands/cmd_obj.go:126-136), which it sets by hand at 76 call sites (a naive
    * recursive grep for the literal text finds 80 hits; 4 of those are the declaration and its own
-   * comments, cmd_obj.go:19,118,125,130) — every loader and query, plus the background fetch
-   * (git_commands/sync.go:81).
+   * comments, cmd_obj.go:19,126,133,138) — every loader and query, plus the background fetch
+   * (git_commands/sync.go:85).
    *
    * githunk defaults it from `readOnly` instead: a read is never logged and a write always is,
    * which reproduces lazygit's set as a structural invariant rather than something each new loader
@@ -38,7 +38,7 @@ export type GitRunOptions = {
    * Writes the command's output into the log under a magenta `Git output:` heading. lazygit does
    * this for the commands it streams — the ones with a credential strategy, so push, pull and
    * foreground fetch (pkg/commands/oscommands/cmd_obj_runner.go:234-246,
-   * pkg/commands/git_commands/sync.go:44,110,69) — via `getCmdWriter`
+   * pkg/commands/git_commands/sync.go:48,114,73) — via `getCmdWriter`
    * (pkg/gui/extras_panel.go:96-98).
    */
   readonly streamOutput?: boolean
@@ -93,7 +93,7 @@ export class GitRunner {
     // `logCmdObj` itself is :201-203): the point is to see what is running, not what has run. The
     // argv is prefixed with `git` and *not* with `--no-pager`, so the line matches what lazygit's
     // `CmdObj.ToString()` shows for the same command (its builder prepends only `git`,
-    // git_commands/git_command_builder.go:141).
+    // git_commands/git_command_builder.go:165).
     if (shouldLog) this.log.logCommand(formatCommandLine(["git", ...commandArgs]), true)
     // One writer per command, so two commands' output can never share a heading. See Step 3a.
     const writer = this.log.outputWriter()

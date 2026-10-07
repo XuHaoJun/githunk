@@ -84,7 +84,7 @@ export const ACTIONS = [
   "modal-confirm",
   "filter-backspace",
   "quit",
-  // search (lazygit's n/N for ISearchable contexts, pkg/gocui/gui.go:303)
+  // search (lazygit's n/N for ISearchable contexts, pkg/gocui/gui.go:320)
   "search-next",
   "search-previous"
 ] as const
@@ -306,7 +306,7 @@ const branchRangeSelection = (_model: AppModel, ui: UiState): boolean => ui.sele
  * Only panel 4's Commits tab drills into commit files. lazygit attaches
  * `SwitchToDiffFilesController` (the GoInto -> commit files binding) to LocalCommits, SubCommits
  * and Stash only; the reflog context instead gets `SwitchToSubCommitsController`
- * (pkg/gui/controllers.go:229-249), a panel githunk has no equivalent for.
+ * (pkg/gui/controllers.go:225-245), a panel githunk has no equivalent for.
  */
 const onCommitsTab = (_model: AppModel, ui: UiState): boolean => (ui.commitsTab ?? "commits") === "commits"
 
@@ -332,8 +332,8 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["3"], action: "focus-branches", description: "branches pane" },
   { keys: ["4"], action: "focus-commits", description: "commits pane" },
   { keys: ["5"], action: "focus-stash", description: "stash pane" },
-  // `Tr.OpenCommandLogMenu` (pkg/i18n/english.go:1853) behind Universal.ExtrasMenu, default "@"
-  // (pkg/config/user_config.go:1072, pkg/gui/keybindings.go:171-174).
+  // `Tr.OpenCommandLogMenu` (pkg/i18n/english.go:1918) behind Universal.ExtrasMenu, default "@"
+  // (pkg/config/user_config.go:1094, pkg/gui/keybindings.go:171-174).
   { keys: ["@"], action: "command-log", description: "log", menuDescription: "view command log options" },
   { keys: ["l", "right", "tab"], action: "pane-next", description: "pane", displayKeys: "h/l", displayOnScreen: true, menuDescription: "focus the next pane" },
   { keys: ["h", "left", "shift+tab"], action: "pane-previous", description: "previous pane", menuDescription: "focus the previous pane" },
@@ -348,7 +348,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["<", "home"], action: "goto-top", description: "go to top" },
   // `<pgup>`/`<pgdown>`, `K`/`J` and `<ctrl+u>`/`<ctrl+d>` are one binding in lazygit —
   // `scrollUpMain`/`scrollDownMain` with `scrollUpMain-alt1`/`-alt2` merged into it
-  // (pkg/config/user_config.go:1047-1052, pkg/gui/keybindings.go:87-100) — so they scroll the same
+  // (pkg/config/user_config.go:1069-1074, pkg/gui/keybindings.go:87-100) — so they scroll the same
   // `gui.scrollHeight` lines rather than one of them meaning "half a page".
   { keys: ["J", "pagedown", "ctrl+d"], action: "main-scroll-down", description: "scroll main down" },
   { keys: ["K", "pageup", "ctrl+u"], action: "main-scroll-up", description: "scroll main up" },
@@ -405,7 +405,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["e"], action: "edit-file", description: "edit", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "open the file in an external editor" },
   { keys: ["r"], action: "mark-reviewed", description: "reviewed", contexts: ["files"], displayOnScreen: true, available: onFilesTab, menuDescription: "mark the file reviewed" },
   { keys: ["enter"], action: "inspect", description: "open", contexts: ["files"], displayOnScreen: true, menuDescription: "open the file in the main pane, or collapse a directory" },
-  // pkg/config/user_config.go:1100-1106 — ToggleTreeView, CollapseAll, ExpandAll.
+  // pkg/config/user_config.go:1122-1128 — ToggleTreeView, CollapseAll, ExpandAll.
   { keys: ["`"], action: "toggle-file-tree", description: "tree view", contexts: ["files"], available: onFilesTab, menuDescription: "toggle between the file tree and a flat list" },
   { keys: ["-"], action: "collapse-files", description: "collapse all", contexts: ["files"], available: onFilesTab, menuDescription: "collapse every directory in the file tree" },
   { keys: ["v"], action: "toggle-range-select", description: "range", contexts: ["files"], available: onFilesTab },
@@ -434,7 +434,7 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["/"], action: "filter", description: "filter", contexts: ["stash"], displayOnScreen: true },
   { keys: ["/"], action: "filter", description: "filter", contexts: ["commits"], displayOnScreen: true },
   { keys: ["/"], action: "filter", description: "filter", contexts: ["main"], displayOnScreen: true },
-  // Lazygit's Next/Prev match for searchable contexts (pkg/gocui/gui.go:303, pkg/gui/types/context.go:147)
+  // Lazygit's Next/Prev match for searchable contexts (pkg/gocui/gui.go:320, pkg/gui/types/context.go:154)
   { keys: ["n"], action: "search-next", description: "next match", contexts: ["commits", "main"] },
   { keys: ["N"], action: "search-previous", description: "previous match", contexts: ["commits", "main"] },
   { keys: ["]"], action: "tab-next", description: "next tab", contexts: ["files", "branches", "commits"], displayOnScreen: true, menuDescription: "next tab" },

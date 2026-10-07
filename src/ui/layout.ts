@@ -8,8 +8,8 @@ export const MIN_LOG_HEIGHT = 3
 export const SPLITTER_SIZE = 1
 export const DEFAULT_SIDE_PANEL_RATIO = 0.3333
 /**
- * `Gui.CommandLogSize`, default 8 (pkg/config/user_config.go:918), plus the 2-row frame
- * `getExtrasWindowSize` adds (window_arrangement_helper.go:414). githunk's `logHeight` is a
+ * `Gui.CommandLogSize`, default 8 (pkg/config/user_config.go:939), plus the 2-row frame
+ * `getExtrasWindowSize` adds (window_arrangement_helper.go:405). githunk's `logHeight` is a
  * total including the border, so the default content area is 8 rows as lazygit's is.
  */
 export const DEFAULT_LOG_HEIGHT = 10
@@ -19,7 +19,7 @@ export const MIN_HEIGHT_FOR_NORMAL_LAYOUT = 28
 export const MIN_HEIGHT_FOR_TALL_SQUASHED = 21
 /**
  * Below this, `getExtrasWindowSize` drops the log to a single content row
- * (window_arrangement_helper.go:409-410) rather than letting it eat a short terminal.
+ * (window_arrangement_helper.go:400-401) rather than letting it eat a short terminal.
  */
 export const MIN_HEIGHT_FOR_FULL_LOG = 40
 
@@ -151,9 +151,9 @@ export function computeLayout(terminal: TerminalSize, requested: LayoutRequest =
   const mainWidth = mainHidden ? 0 : terminalWidth - sideWidth - splitterWidth
 
   const logCapacity = bodyHeight - SPLITTER_SIZE - MIN_MAIN_HEIGHT
-  // `getExtrasWindowSize` (window_arrangement_helper.go:403-417). The third branch takes the
+  // `getExtrasWindowSize` (window_arrangement_helper.go:394-408). The third branch takes the
   // requested height where lazygit takes its `commandLogSize` constant — which is itself a user
-  // setting (pkg/config/user_config.go:191), so githunk's draggable splitter is the same knob with
+  // setting (pkg/config/user_config.go:199), so githunk's draggable splitter is the same knob with
   // a different input, not a divergence.
   //
   // Compared as a literal rather than through focus.ts's COMMAND_LOG_FOCUS_ID: focus.ts imports

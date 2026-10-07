@@ -10,7 +10,7 @@ import { createViewportHighlights, LINE_END_COLS, type ViewportHighlights } from
  * viewport carry colour; ./viewport-highlights owns that mechanism, as it does for ./diff-text. This
  * file owns what is the log's own: the styles, and one line's highlights.
  *
- * lazygit sets `Wrap = true` on the extras view (pkg/gui/views.go:150) and gocui wraps at character
+ * lazygit sets `Wrap = true` on the extras view (pkg/gui/views.go:158) and gocui wraps at character
  * boundaries; the pane sets `wrapMode: "char"` to match. Letting the widget wrap is what keeps the
  * column arithmetic here to a single boundary: every log line but the random tip carries one span,
  * so it paints whole, and the tip's label/tip split is the only column this file has to measure.

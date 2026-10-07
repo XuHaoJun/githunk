@@ -44,8 +44,8 @@ export type MainPaneContent = {
   readonly document?: DiffDocument
   /**
    * A git command's own coloured output, already parsed by ../ansi. lazygit renders a ref's
-   * `git log --graph` this way for every panel-3 selection — branches_controller.go:207,
-   * remote_branches_controller.go:122, tags_controller.go:109.
+   * `git log --graph` this way for every panel-3 selection — branches_controller.go:206,
+   * remote_branches_controller.go:122, tags_controller.go:110.
    */
   readonly ansi?: AnsiText
   readonly plainText?: string
@@ -53,10 +53,10 @@ export type MainPaneContent = {
 
 /**
  * The titles lazygit gives the main view per panel-3 selection. The panel, not the selected ref,
- * names the view: `self.c.Tr.LogTitle` for a local branch (branches_controller.go:221,
- * pkg/i18n/english.go:1183), then the literals `"Remote Branch"`
+ * names the view: `self.c.Tr.LogTitle` for a local branch (branches_controller.go:222,
+ * pkg/i18n/english.go:1211), then the literals `"Remote Branch"`
  * (remote_branches_controller.go:129), `"Remote"` (remotes_controller.go:119) and `"Tag"`
- * (tags_controller.go:117).
+ * (tags_controller.go:118).
  */
 export const MAIN_TITLE_LOG = "Log"
 export const MAIN_TITLE_REMOTE_BRANCH = "Remote Branch"

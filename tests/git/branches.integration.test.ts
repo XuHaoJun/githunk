@@ -77,7 +77,7 @@ describe("branch and remote operations", () => {
       await advancer.git(["commit", "-m", "advance"])
       await advancer.git(["push", "--force", "origin", "master"])
 
-      // lazygit's FetchRemote is PromptOnCredentialRequest, so it streams (sync.go:127-132,
+      // lazygit's FetchRemote is PromptOnCredentialRequest, so it streams (sync.go:141-146,
       // cmd_obj_runner.go:38-40,234-246) — pin that a *succeeding* fetch still gets the Git
       // output: heading, which is what distinguishes streamOutput from the failure-only branch.
       await fetchRemote(runner, "origin")

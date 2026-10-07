@@ -8,9 +8,10 @@ import { BRANCH_DIVERGED_FG, BRANCH_ITEM_OPERATION_FG, BRANCH_MATCHES_UPSTREAM_F
 /**
  * The cell lazygit draws right of a branch's name, and the recency cell left of it.
  *
- * `BranchStatus` — pkg/gui/presentation/branches.go:219-249 — with the same precedence: an
+ * `BranchStatus` — pkg/gui/presentation/branches.go:207-242 — with the same precedence: an
  * in-flight operation on the item wins over every tracking state, so a row that is being pushed
- * says `Pushing ●∙∙` rather than its now-stale ahead/behind counts.
+ * says `Pushing ●∙∙` rather than its now-stale ahead/behind counts. (lazygit v0.66 also dims the
+ * `↓n↑m` of a branch whose upstream was merely rewritten; githunk does not detect that.)
  */
 
 export type BranchStatusCell = {
@@ -18,14 +19,14 @@ export type BranchStatusCell = {
   readonly color: ColorInput
 }
 
-/** lazygit's `tr.UpstreamGone` — pkg/i18n/english.go:2007. */
+/** lazygit's `tr.UpstreamGone` — pkg/i18n/english.go:2073. */
 const UPSTREAM_GONE = "(upstream gone)"
 
 /**
  * `utils.UnixToTimeAgo` → `formatSecondsAgo` (pkg/utils/date.go:8-56): the largest unit whose
  * period the age has not yet reached, as one integer and one letter — `5s`, `1m`, `3h`, `2d`,
  * `3w`, `5M`, `2y`. lazygit stores this on the branch as `Recency` whenever branches are sorted by
- * date, which is the default (`git.localBranchSortOrder: "date"`, pkg/config/user_config.go:954).
+ * date, which is the default (`git.localBranchSortOrder: "date"`, pkg/config/user_config.go:975).
  */
 const PERIODS: readonly (readonly [string, number])[] = [
   ["s", 1],
@@ -53,7 +54,7 @@ export function formatRecency(committedAtUnix: string | undefined, nowUnix: numb
 }
 
 /**
- * `IsTrackingRemote()` is `UpstreamRemote != ""` (pkg/commands/models/branch.go:85) — the
+ * `IsTrackingRemote()` is `UpstreamRemote != ""` (pkg/commands/models/branch.go:99) — the
  * *configured* upstream, not a resolvable ref, which is why a branch whose remote-tracking ref is
  * missing locally still gets a status (the magenta `?`) rather than none.
  */

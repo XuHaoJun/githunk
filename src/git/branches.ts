@@ -56,7 +56,7 @@ async function listRemoteNames(runner: CommandRunner): Promise<readonly string[]
 }
 
 /**
- * lazygit's `parseUpstreamInfo` (pkg/commands/git_commands/branch_loader.go:466-481). An empty
+ * lazygit's `parseUpstreamInfo` (pkg/commands/git_commands/branch_loader.go:442-457). An empty
  * `%(upstream:short)` means the remote-tracking ref is not in this repo, so the counts are unknown
  * rather than zero — the distinction the magenta `?` row is drawn from.
  */
@@ -124,7 +124,7 @@ export async function listRemoteBranches(runner: CommandRunner, remote: string):
 
 /**
  * lazygit sorts remotes with `origin` pinned first, then case-insensitively by name
- * (pkg/commands/git_commands/remote_loader.go:55-64) — "we want origin at the top because we'll be
+ * (pkg/commands/git_commands/remote_loader.go:27-36) — "we want origin at the top because we'll be
  * most likely to want it".
  */
 function compareRemoteNames(left: string, right: string): number {
@@ -136,7 +136,7 @@ function compareRemoteNames(left: string, right: string): number {
 /**
  * Every remote's URLs from the one `git config --get-regexp` `listBranches` already ran, rather
  * than a `git remote get-url` per remote per direction — lazygit's `getRemotesFromConfig`
- * (pkg/commands/git_commands/remote_loader.go:68-110). Pass `config` to reuse that read; omit it
+ * (pkg/commands/git_commands/remote_loader.go:40-82). Pass `config` to reuse that read; omit it
  * and this loads its own.
  */
 export async function listRemotes(runner: CommandRunner, includeBranches = false, config?: RepoConfig): Promise<readonly Remote[]> {
@@ -239,7 +239,7 @@ export async function renameBranch(runner: CommandRunner, oldName: string, newNa
 export async function fetchRemote(runner: CommandRunner, remote: string): Promise<void> {
   const remotes = await listRemoteNames(runner)
   if (!remotes.includes(remote)) throw new Error(`remote does not exist: ${remote}`)
-  // lazygit's FetchRemote builds with PromptOnCredentialRequest (sync.go:127-132), which routes it
+  // lazygit's FetchRemote builds with PromptOnCredentialRequest (sync.go:141-146), which routes it
   // through runAndStream and so into the Git output: block (cmd_obj_runner.go:38-40,234-246).
   await runner.run(["fetch", "--", remote], { streamOutput: true })
 }

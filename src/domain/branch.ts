@@ -13,7 +13,7 @@ export type LocalBranch = {
    * lazygit's `AheadForPull`/`BehindForPull` (pkg/commands/models/branch.go:17-20): decimal counts
    * against the upstream, or `"?"` when the upstream's ref is not in this repo — which is what
    * distinguishes "up to date" from "we cannot tell". `parseUpstreamInfo`,
-   * pkg/commands/git_commands/branch_loader.go:466-481.
+   * pkg/commands/git_commands/branch_loader.go:442-457.
    */
   readonly aheadForPull?: string
   readonly behindForPull?: string
@@ -21,7 +21,7 @@ export type LocalBranch = {
   readonly upstreamGone?: boolean
   /**
    * `branch.<name>.remote` and `branch.<name>.merge`. lazygit fills `UpstreamRemote`/
-   * `UpstreamBranch` from exactly these keys (branch_loader.go:120-127), which is why a branch can
+   * `UpstreamBranch` from exactly these keys (branch_loader.go:131-138), which is why a branch can
    * be known to track a remote whose ref is absent locally.
    */
   readonly upstreamRemote?: string

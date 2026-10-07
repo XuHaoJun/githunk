@@ -5,7 +5,7 @@
  *
  *     index := milliseconds / int64(config.Rate) % int64(len(config.Frames))
  *
- * Frames and rate are `gui.spinner`'s defaults — pkg/config/user_config.go:929-932.
+ * Frames and rate are `gui.spinner`'s defaults — pkg/config/user_config.go:950-953.
  */
 
 export const SPINNER_FRAMES: readonly string[] = ["●∙∙", "∙●∙", "∙∙●", "∙●∙"]

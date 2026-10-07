@@ -125,7 +125,7 @@ export type WorkingTreeLoadOptions = {
    * contend for `index.lock`; a foreground refresh drops the suppression instead, letting git
    * persist the stat-cache it just refreshed — lazygit's one exception to suppressing locks
    * everywhere (pkg/commands/git_commands/file_loader.go:228-236,
-   * pkg/gui/types/refresh.go:89-96).
+   * pkg/gui/types/refresh.go:91-98).
    */
   readonly background?: boolean
 }

@@ -78,7 +78,7 @@ updateHoverLineBackground()
 export const TAB_ACTIVE_FG = ANSI_GREEN
 export const TAB_ACTIVE_BOLD = true
 
-/** Tab separator inside a pane title: `separator := " - "` — pkg/gocui/gui.go:1421. */
+/** Tab separator inside a pane title: `separator := " - "` — pkg/gocui/gui.go:1488. */
 export const TAB_SEPARATOR = " - "
 
 /** Appended to the `[key]` title prefix: the view's first frame rune, `─` by default. */
@@ -89,7 +89,7 @@ export const REFLOG_HASH_FG = ANSI_BLUE
 
 /**
  * lazygit's commit-hash colours, keyed by `models.CommitStatus` in `getHashColor`
- * (pkg/gui/presentation/commits.go:477-512): unpushed red, pushed yellow, merged green. A commit
+ * (pkg/gui/presentation/commits.go:562-597): unpushed red, pushed yellow, merged green. A commit
  * whose status githunk did not compute falls back to `theme.DefaultTextColor`, i.e. the terminal's
  * default foreground (pkg/theme/theme.go:11).
  */
@@ -157,8 +157,9 @@ export function configureTerminalPalette(snapshot: TerminalPaletteSnapshot): voi
 }
 
 /**
- * Mirrors lazygit's highlighted-line rule in `pkg/gocui/view.go:675-685`: only base ANSI indices
- * become bright; RGB and terminal-default values are left untouched. The caller adds bold.
+ * Mirrors lazygit v0.65's highlighted-line rule (ea91639 `pkg/gocui/view.go:675-685`): only base
+ * ANSI indices become bright; RGB and terminal-default values are left untouched. The caller adds
+ * bold. lazygit v0.66 dropped the brightening (view.go:954-961, commit c1b14ea2a).
  */
 export function brightenAnsiForeground(color: RGBA): RGBA {
   if (color.intent !== "indexed" || color.slot < 0 || color.slot > 7) return color

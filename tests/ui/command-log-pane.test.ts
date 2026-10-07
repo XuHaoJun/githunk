@@ -82,7 +82,7 @@ describe("command log pane", () => {
       const second: readonly CommandLogLine[] = [...first, { id: 7, spans: [{ text: "  git commit", style: "command" }] }]
       pane.update(second)
       expect(pane.text.plainText).toBe(second.map((entry) => entry.spans[0]!.text).join("\n"))
-      // lazygit's extras view is created with `Autoscroll = true` (pkg/gui/views.go:149), so a new
+      // lazygit's extras view is created with `Autoscroll = true` (pkg/gui/views.go:157), so a new
       // line must pull the viewport back to the bottom.
       expect(pane.maxScrollY()).toBeGreaterThan(0)
       expect(pane.text.scrollY).toBe(pane.maxScrollY())
