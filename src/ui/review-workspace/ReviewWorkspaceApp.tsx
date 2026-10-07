@@ -1,5 +1,5 @@
 import type { InputRenderable, KeyEvent, MouseEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
-import { useKeyboard, useTerminalDimensions } from "@opentui/react"
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { ReviewWorkspaceController } from "./controller"
 import type { ReviewState, ReviewLineSelection } from "../../review/core/state"
@@ -21,6 +21,7 @@ import { cellWidth } from "../cell-width"
 import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
 import { splitterGlyphs } from "../splitter"
 import { PANE_SCROLLBAR_GUTTER } from "../panes/common"
+import { copySelection, formatCopyResult } from "../clipboard"
 export type ReviewWorkspaceAppProps = Readonly<{
   session: ReactReviewSession
 }>
@@ -98,6 +99,7 @@ function reviewFooter(state: ReviewState, layout: "split" | "stack", focus: "str
     command("review.focusFiles", true),
     command("review.toggleFocus", true),
     `${command("review.layoutCycle", true)}(${layout})`,
+    command("review.copySelection"),
     command("review.chooseBase"),
     pair("review.moveDown", "review.moveUp"),
     pair("review.nextHunk", "review.prevHunk"),
@@ -243,6 +245,7 @@ function fallbackSelectionIntent(state: ReviewState, unit: "file" | "hunk", dire
 
 export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const terminal = useTerminalDimensions()
+  const renderer = useRenderer()
   const sessionVersion = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot)
   const controller: ReviewWorkspaceController = session.controller
   const active = session.active
@@ -746,6 +749,13 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
         return true
       }
       const current = controller.state
+      if (commandId === "review.copySelection") {
+        // lazygit patch_explorer_controller.go:343-357 strips diff prefixes; this
+        // review extension deliberately copies native screen text unchanged.
+        const text = renderer.getSelection()?.getSelectedText() ?? ""
+        setFeedbackMessage(formatCopyResult(copySelection(text, renderer)))
+        return true
+      }
       if (commandId === "review.focusDiff") {
         setFocus("stream")
         return true
@@ -998,7 +1008,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       }
       return false
     },
-    [controller, deleteFeedback, diffWidth, editFeedback, finishDialog, focus, onClose, pendingRangeAnchor, rangeStart, reanchorFeedback, requestBaseSelection, selectedFeedbackId, selectFeedback, selectDiffAddress, session, sidebarWidth, toggleGap]
+    [controller, deleteFeedback, diffWidth, editFeedback, finishDialog, focus, onClose, pendingRangeAnchor, rangeStart, reanchorFeedback, renderer, requestBaseSelection, selectedFeedbackId, selectFeedback, selectDiffAddress, session, sidebarWidth, toggleGap]
   )
 
   const handleKey = useCallback(

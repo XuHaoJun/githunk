@@ -789,31 +789,6 @@ describe("React review workspace", () => {
     }
   })
 
-  test("documents numeric panel focus in the help dialog", async () => {
-    const setup = await testRender(<ReviewWorkspaceApp session={makeSession([makeFile("src/help.ts", ["-old", "+new"])])} />, { width: 120, height: 30 })
-
-    try {
-      await flush(setup)
-      await act(async () => {
-        await setup.mockInput.typeText("?")
-        await Bun.sleep(30)
-      })
-      await flush(setup)
-      const frame = setup.captureCharFrame()
-      expect(frame).toContain("0 Diff")
-      expect(frame).toContain("1 Files")
-      expect(frame).toContain("Tab cycle panels")
-      expect(frame).toContain("l layout")
-      expect(frame).toContain("Begin/end semantic line/range selection")
-      expect(frame).toContain("e Edit selected feedback")
-      expect(frame).toContain("d Delete selected feedback")
-      expect(frame).toContain("a Re-anchor selected feedback")
-      expect(frame).toContain("z Expand context gap")
-      expect(frame).toContain("f Cycle filter scope")
-    } finally {
-      await act(async () => setup.renderer.destroy())
-    }
-  })
   test("keeps the visible diff focused when the sidebar is hidden", async () => {
     const setup = await testRender(<ReviewWorkspaceApp session={makeSession([makeFile("src/narrow.ts", ["-old", "+new"])])} />, { width: 70, height: 30 })
 

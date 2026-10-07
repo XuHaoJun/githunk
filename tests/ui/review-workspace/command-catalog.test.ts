@@ -107,7 +107,6 @@ describe("command-catalog defaults — exact spec §5.4 keys", () => {
       { id: "main-scroll-right", keys: ["ArrowRight", "right"] },
       { id: "review.currentLine", keys: ["g", "G", "home", "end"] },
       { id: "review.theme", keys: ["t", "T"] },
-      { id: "review.copySelection", keys: ["y", "Y"] },
       { id: "review.copyDecorations", keys: ["copy-selection", "copy-decorations"] },
       { id: "review.agentAnnotations", keys: ["@"] },
       { id: "review.extensionPanes", keys: ["x", "X"] },

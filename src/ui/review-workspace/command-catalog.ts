@@ -137,6 +137,14 @@ export const REVIEW_COMMANDS: readonly ReviewCommand[] = [
     available: always
   },
   {
+    id: "review.copySelection",
+    title: "Copy selected screen text",
+    keys: ["y"],
+    focus: ["stream"],
+    available: always,
+    hint: "copy"
+  },
+  {
     id: "review.toggleRange",
     title: "Begin/end semantic line/range selection",
     keys: ["v"],

@@ -94,6 +94,11 @@ githunk handoff          # what the reviewer wants changed, as markdown
 githunk handoff --json   # the same thing, with ids and line numbers
 ```
 
+To copy text from the Branch Review diff, drag to select it and press `y`.
+This copies the selected screen text as displayed, including selected line numbers,
+padding and either diff column; it does not produce a clean source range or patch.
+Copy uses OSC52: githunk reports emission or blocking, not confirmed clipboard delivery.
+
 Your agent reads that, changes what it changes, and commits. Reopen githunk:
 
 ```
