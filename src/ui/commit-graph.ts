@@ -45,13 +45,15 @@ function right(pipe: Pipe): number {
 }
 
 function getNextPipes(prevPipes: readonly Pipe[], commit: GraphCommit, color: ColorInput | undefined): Pipe[] {
-  let maxPos = 0
-  for (const pipe of prevPipes) {
+  // A pipe that terminated on the previous line has no bearing on this one, and neither has the
+  // pipe from a root commit to the empty tree: nothing comes after a root commit, so it must not
+  // run on below it (lazygit pkg/gui/presentation/graph/graph.go:109-120, commit 91378b1e8).
+  const currentPipes = prevPipes.filter((pipe) => pipe.kind !== TERMINATES && pipe.toHash !== EMPTY_TREE_HASH)
+
+  let maxPos = -1
+  for (const pipe of currentPipes) {
     if (pipe.toPos > maxPos) maxPos = pipe.toPos
   }
-
-  // A pipe that terminated on the previous line has no bearing on this one.
-  const currentPipes = prevPipes.filter((pipe) => pipe.kind !== TERMINATES)
 
   const newPipes: Pipe[] = []
   // Assume a brand new commit unrelated to anything above it; it goes on the far end.
