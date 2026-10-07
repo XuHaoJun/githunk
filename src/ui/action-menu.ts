@@ -1,4 +1,4 @@
-import { BoxRenderable, RGBA, StyledText, TextRenderable, bg, bold, dim, fg, type CliRenderer, type TextChunk } from "@opentui/core"
+import { BoxRenderable, RGBA, StyledText, TextRenderable, bg, bold, fg, strikethrough, type CliRenderer, type TextChunk } from "@opentui/core"
 import { ANSI_CYAN, SELECTED_LINE_BG, TAB_ACTIVE_FG, brightenAnsiForeground } from "./theme"
 import { popupPanelWidth, popupPanelGeometry, wrapMessage } from "./popup-layout"
 /**
@@ -63,8 +63,10 @@ function renderActionMenuStyledContent(items: readonly ActionMenuItem[], selecte
     lineChunks.push(fg(ANSI_CYAN)(paddedKey) as unknown as TextChunk)
     lineChunks.push(plainChunk("  "))
     const label = actionMenuLabel(item)
-    // lazygit: `style.FgDefault.SetStrikethrough()` for disabled rows — OpenTUI has no strikethrough, use dim
-    const labelChunk = item.disabledReason === undefined ? plainChunk(label) : (dim(label) as unknown as TextChunk)
+    // lazygit: `menu_context.go:142` strikes through a disabled item's first column
+    // (`style.FgDefault.SetStrikethrough()`); OpenTUI renders the chunk's strikethrough attribute
+    // (`TextAttributes.STRIKETHROUGH`), so no dimmed substitute is needed.
+    const labelChunk = item.disabledReason === undefined ? plainChunk(label) : (strikethrough(label) as unknown as TextChunk)
     lineChunks.push(labelChunk)
     if (isSelected) {
       const highlighted = lineChunks.map((c) => highlightChunk(c, selectedBg))
