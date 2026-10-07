@@ -1,7 +1,8 @@
-import { BoxRenderable, ScrollBarRenderable, TextRenderable, type CliRenderer, type StyledText } from "@opentui/core"
+import { BoxRenderable, ScrollBarRenderable, TextRenderable, type CliRenderer, type OptimizedBuffer, type StyledText } from "@opentui/core"
 import type { FocusId } from "../focus"
 import { PaneTabsBoxRenderable, buildPaneTabsStrip, paneTabsPlainTitle } from "../pane-tabs"
-import { ANSI_GREEN, DEFAULT_FOREGROUND } from "../theme"
+import { ANSI_GREEN, DEFAULT_BACKGROUND, DEFAULT_FOREGROUND } from "../theme"
+import type { ListState } from "../list-view"
 /** One text cell reserved beside every side-pane list when its scrollbar is visible. */
 export const PANE_SCROLLBAR_GUTTER = 1
 
@@ -32,6 +33,8 @@ export type PaneHandle = {
   readonly text: TextRenderable
   update(content: string | StyledText): void
   setFocused(focused: boolean): void
+  /** Cursor/total for the active list; undefined clears it without touching bottomTitle notices. */
+  setListFooter(state: ListState | undefined): void
   /**
    * Repaints the pane's tab strip. Present only on panes created with `options.tabs`, so a
    * pane without tabs cannot silently swallow the call.
@@ -154,12 +157,54 @@ export function clearScrollbarViewportOverride(text: TextRenderable): void {
   syncVerticalScrollbar(bar, text)
 }
 
+/** Overdraw the border itself: child renderables are clipped inside the border ring. */
+class PaneBoxRenderable extends PaneTabsBoxRenderable {
+  private listFooter: string | undefined
+  private measuredNotice: string | undefined
+  private noticeWidth = 0
+
+  setListFooter(state: ListState | undefined): void {
+    // lazygit pkg/gui/context/list_context_trait.go:92-104 uses model position, not viewport
+    // position or range size. Empty githunk lists have index 0 rather than lazygit's -1.
+    const footer = state === undefined ? undefined : `${state.rows.length === 0 ? 0 : state.selectedIndex + 1} of ${state.rows.length}`
+    if (this.listFooter === footer) return
+    this.listFooter = footer
+    this.requestRender()
+  }
+
+  protected override renderSelf(buffer: OptimizedBuffer): void {
+    super.renderSelf(buffer)
+    const footer = this.listFooter
+    if (footer === undefined || !this.borderSides.bottom || this.height <= 2) return
+    const notice = this.bottomTitle
+    if (notice !== this.measuredNotice) {
+      // Use the same width table as OpenTUI's border title, including wide/combining text.
+      // Cache by notice so cursor movement and scrolling do not re-encode it.
+      let width = 0
+      if (notice !== undefined && notice.length > 0) {
+        const encoded = buffer.encodeUnicode(notice)
+        if (encoded === null) return
+        try {
+          for (const char of encoded.data) width += char.width
+        } finally {
+          buffer.freeUnicode(encoded)
+        }
+      }
+      this.noticeWidth = width
+      this.measuredNotice = notice
+    }
+    // lazygit pkg/gocui/gui.go:1557-1580 right-aligns before one border cell and hides
+    // the whole footer if it cannot fit. Existing githunk notices take priority.
+    const start = this.width - 2 - footer.length
+    const hasNotice = notice !== undefined && notice.length > 0
+    if (start < 1 || (hasNotice && (this.bottomTitleAlignment !== "left" || start < this.noticeWidth + 3))) return
+    buffer.drawText(footer, this._screenX + start, this._screenY + this.height - 1, this._borderColor, DEFAULT_BACKGROUND)
+  }
+}
+
 export function createPane(renderer: CliRenderer, id: FocusId, title: string, content: string, selectable = false, options: CreatePaneOptions = {}): PaneHandle {
   const tabsConfig = options.tabs
-  // Tabbed panes need a box that can overdraw its own border row with per-tab colours; the
-  // rest keep the plain BoxRenderable, so nothing about them changes.
-  const BoxClass = tabsConfig === undefined ? BoxRenderable : PaneTabsBoxRenderable
-  const box = new BoxClass(renderer, {
+  const box = new PaneBoxRenderable(renderer, {
     id: `${id}-pane`,
     border: true,
     borderColor: DEFAULT_FOREGROUND,
@@ -192,7 +237,7 @@ export function createPane(renderer: CliRenderer, id: FocusId, title: string, co
   const bar = attachVerticalScrollbar(box, text, id)
   let tabState: PaneTabsUpdate | undefined
   const paintTabs = (update: PaneTabsUpdate): void => {
-    if (tabsConfig === undefined || !(box instanceof PaneTabsBoxRenderable)) return
+    if (tabsConfig === undefined) return
     const tabs = update.tabs ?? tabState?.tabs ?? tabsConfig.tabs
     tabState = { ...update, tabs }
     const input = { jumpKey: tabsConfig.jumpKey, tabs, activeIndex: update.activeIndex, focused: update.focused }
@@ -209,6 +254,9 @@ export function createPane(renderer: CliRenderer, id: FocusId, title: string, co
     id,
     box,
     text,
+    setListFooter(state) {
+      box.setListFooter(state)
+    },
     update(nextContent: string | StyledText) {
       text.content = nextContent
       // Valid immediately after a content change (no layout involved); the viewport side is
@@ -227,7 +275,6 @@ export function createPane(renderer: CliRenderer, id: FocusId, title: string, co
             paintTabs(update)
           },
           setPlainTitle(title: string) {
-            if (!(box instanceof PaneTabsBoxRenderable)) return
             // Drop the remembered strip too, so the next setTabs repaints from the config's labels
             // rather than resurrecting whatever was active before the drill-down.
             tabState = undefined
