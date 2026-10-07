@@ -6,8 +6,8 @@ import { createTempRepository, type TempRepository } from "../helpers/temp-repos
  * lazygit's inline statuses: while a long-running git operation belongs to one list row, that row
  * says what is happening to it and animates a spinner, instead of showing counts the operation is
  * in the middle of invalidating — `WithInlineStatus`
- * (pkg/gui/controllers/helpers/inline_status_helper.go:66-97) plus `BranchStatus`'s first branch
- * (pkg/gui/presentation/branches.go:224-227).
+ * (pkg/gui/controllers/helpers/inline_status_helper.go:64-95) plus `BranchStatus`'s first branch
+ * (pkg/gui/presentation/branches.go:214-217).
  */
 describe("inline item operations", () => {
   let harness: ShellHarness | undefined

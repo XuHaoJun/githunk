@@ -5,7 +5,7 @@ import { commitStatusFor, loadCommitStatusSets, resolveMainBranches } from "../.
 import { createTempRepository, type TempRepository } from "../helpers/temp-repository"
 
 /**
- * lazygit's `setCommitStatuses` table (pkg/commands/git_commands/commit_loader.go:543-558): the
+ * lazygit's `setCommitStatuses` table (pkg/commands/git_commands/commit_loader.go:560-575): the
  * merged question is asked first, and a set that could not be built is nil rather than empty.
  */
 describe("commit status classification", () => {

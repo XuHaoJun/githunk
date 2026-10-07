@@ -6,11 +6,11 @@ import { createListState, setListRows, type ListState } from "../list-view"
 import { installListText } from "./list-text"
 import type { PaneHandle } from "./common"
 
-/** tags_controller.go:107. */
+/** tags_controller.go:108. */
 export const NO_TAGS = "No tags"
 
 /**
- * tags_controller.go:142-156 `filterOutPgpSignature`: an annotated tag's signature block is
+ * tags_controller.go:143-157 `filterOutPgpSignature`: an annotated tag's signature block is
  * dropped from the info shown above the graph, terminator line included.
  */
 function withoutPgpSignature(message: string): string {
@@ -30,7 +30,7 @@ function withoutPgpSignature(message: string): string {
 
 /**
  * What lazygit renders above a tag's commit graph: `getTagInfo(tag) + "\n\n---\n\n"`
- * (tags_controller.go:110,125-141). An annotated tag adds its own annotation
+ * (tags_controller.go:111,126-142). An annotated tag adds its own annotation
  * (`git tag -n99 --list <name>`, here already carried on the summary as `message`); a lightweight
  * one is just the header line.
  */

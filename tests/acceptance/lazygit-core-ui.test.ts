@@ -85,8 +85,7 @@ describe("lazygit core UI acceptance", () => {
     // 1. Commits rows contain author initials (lazygit CommitAuthorShortLength=2 → "Noah Reviewer"→"NR"), short hash (8), graph glyphs, no arrow cursor
     await harness.pressKey("4")
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     const commitsText = view.renderedListText("commits")
     expect(commitsText).toContain("NR")
     expect(commitsText).toMatch(/\b[0-9a-f]{8}\b/)
@@ -109,7 +108,7 @@ describe("lazygit core UI acceptance", () => {
 
     // 2. Keyboard and mouse commit selection update Main metadata + file changed stat + patch
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
+    await harness.settlePreview()
     let mainMeta = view.mainContent?.preamble ?? mainText(view)
     expect(mainMeta).toContain("Noah Reviewer")
     expect(mainMeta).toMatch(/file changed|files changed/)
@@ -119,8 +118,7 @@ describe("lazygit core UI acceptance", () => {
     expect(firstOid).toMatch(/^[0-9a-f]{40}$/)
     await harness.pressKey("j")
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     const secondOid = view.commitsSelectedOid!
     expect(secondOid).not.toBe(firstOid)
     expect(view.mainContent?.stableId).toBe(secondOid)
@@ -133,8 +131,7 @@ describe("lazygit core UI acceptance", () => {
     expect(commitsBox.height).toBeGreaterThanOrEqual(3)
     await mouse.click(commitsBox.screenX + 2, commitsBox.screenY + 2)
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     const thirdOid = view.commitsSelectedOid!
     expect(thirdOid).not.toBe(secondOid)
     expect(view.mainContent?.stableId).toBe(thirdOid)
@@ -161,8 +158,7 @@ describe("lazygit core UI acceptance", () => {
     const textBeforeMove = mainText(view)
     await harness.pressKey("k")
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     expect(view.mainPane.text.scrollY).toBe(0)
     expect(view.mainPane.text.scrollX).toBe(0)
     expect(typeof mainView.hasSelection === "function" ? mainView.hasSelection() : false).toBe(false)
@@ -177,8 +173,7 @@ describe("lazygit core UI acceptance", () => {
     await harness.flush()
     const secondRapid = view.whenPreviewSettled().catch(() => {})
     await Promise.all([firstRapid, secondRapid])
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     const oidAfterRapid = view.commitsSelectedOid!
     expect(oidAfterRapid).not.toBe(oidBeforeRapid)
     expect(view.mainContent?.stableId).toBe(oidAfterRapid)
@@ -187,7 +182,7 @@ describe("lazygit core UI acceptance", () => {
     while (view.commitsSelectedOid !== stableBeforeMove && attempts < 10) {
       await harness.pressKey("k")
       await harness.flush()
-      await view.whenPreviewSettled().catch(() => {})
+      await harness.settlePreview()
       attempts++
     }
     expect(view.commitsSelectedOid).toBe(stableBeforeMove)
@@ -245,7 +240,7 @@ describe("lazygit core UI acceptance", () => {
       while (view.commitsSelectedOid !== mergeOid && attemptsMerge < 12) {
         await harness.pressKey("j")
         await harness.flush()
-        await view.whenPreviewSettled().catch(() => {})
+        await harness.settlePreview()
         attemptsMerge++
         if (view.commitsSelectedOid === mergeOid) break
         // also try k wrapping
@@ -253,7 +248,7 @@ describe("lazygit core UI acceptance", () => {
           for (let k = 0; k < 6; k++) {
             await harness.pressKey("k")
             await harness.flush()
-            await view.whenPreviewSettled().catch(() => {})
+            await harness.settlePreview()
             if (view.commitsSelectedOid === mergeOid) break
           }
         }
@@ -266,8 +261,7 @@ describe("lazygit core UI acceptance", () => {
     await harness.flush()
     await harness.pressKey("RETURN")
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     expect(view.commitsPanel.child).toBeDefined()
     expect(view.commitsPanel.child?.value.kind).toBe("commit-files")
     expect(view.commitsPanel.child?.value.oid).toBe(oidForDrill)
@@ -276,8 +270,7 @@ describe("lazygit core UI acceptance", () => {
     const beforeFileSel = view.mainContent?.stableId
     await harness.pressKey("j")
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     if (view.commitsPanel.child) {
       expect(view.mainContent?.source).toBe("commit-file")
       const files = view.mainContent?.document?.files ?? []
@@ -289,13 +282,11 @@ describe("lazygit core UI acceptance", () => {
     const commitFilesBox = harness.paneTextGeometry("commits")!
     await mouse.click(commitFilesBox.screenX + 1, commitFilesBox.screenY + 1)
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     expect(view.mainContent?.stableId).toBeDefined()
     await harness.pressKey("ESCAPE")
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     expect(view.commitsPanel.child).toBeUndefined()
     expect(view.commitsSelectedOid).toBe(oidForDrill)
     expect(view.mainContent?.source).toBe("commit")
@@ -305,8 +296,7 @@ describe("lazygit core UI acceptance", () => {
     const commitsBox2 = harness.paneTextGeometry("commits")!
     await mouse.doubleClick(commitsBox2.screenX + 2, commitsBox2.screenY + 1)
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     if (view.commitsPanel.child === undefined) {
       await harness.pressKey("RETURN")
       await harness.flush()
@@ -316,8 +306,7 @@ describe("lazygit core UI acceptance", () => {
     const oidInChild = view.commitsPanel.child!.value.oid
     await harness.pressKey("ESCAPE")
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     expect(view.commitsPanel.child).toBeUndefined()
     expect(view.commitsSelectedOid).toBe(oidInChild)
     expect(view.mainContent?.stableId).toBe(oidInChild)
@@ -409,9 +398,8 @@ describe("lazygit core UI acceptance", () => {
       }
     }
     expect(view.selectedListId("branches")).toBe("tag:refs/tags/light")
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
-    // tags_controller.go:101-123: the tag's own info, a `---` rule, then its commit graph.
+    await harness.settlePreview()
+    // tags_controller.go:102-124: the tag's own info, a `---` rule, then its commit graph.
     expect(view.mainContent?.source).toBe("tag")
     let tagPreamble = view.mainContent?.preamble ?? ""
     expect(tagPreamble).toContain("Lightweight tag: light")
@@ -432,8 +420,7 @@ describe("lazygit core UI acceptance", () => {
       }
     }
     expect(view.selectedListId("branches")).toBe("tag:refs/tags/v1")
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     expect(view.mainContent?.source).toBe("tag")
     tagPreamble = view.mainContent?.preamble ?? ""
     expect(tagPreamble).toContain("Annotated tag: v1")
@@ -485,8 +472,7 @@ describe("lazygit core UI acceptance", () => {
     // 9. Wheel affects only the pointed pane; track click/thumb drag keep scrollbar synchronized without focus change
     await harness.pressKey("4")
     await harness.flush()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     await harness.resize(120, 22)
     await harness.flush()
     const commitsBoxSmall = harness.paneTextGeometry("commits")!

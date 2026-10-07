@@ -29,7 +29,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     borderColor: DEFAULT_FOREGROUND,
     focusedBorderColor: ANSI_GREEN,
     titleColor: DEFAULT_FOREGROUND,
-    // `Tr.ExtrasTitle` / `Tr.CommandLog` (pkg/i18n/english.go:1928,1946) — lowercase "log".
+    // `Tr.ExtrasTitle` / `Tr.CommandLog` (pkg/i18n/english.go:1996,2014) — lowercase "log".
     title: "Command log",
     position: "absolute",
     width: "100%",
@@ -41,7 +41,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
     content: "",
     fg: DEFAULT_FOREGROUND,
     selectable: false,
-    // lazygit sets `Wrap = true` on the extras view (pkg/gui/views.go:150); gocui wraps at
+    // lazygit sets `Wrap = true` on the extras view (pkg/gui/views.go:158); gocui wraps at
     // character boundaries, which is `"char"` here. Letting OpenTUI wrap is also what lets
     // command-log-text.ts colour whole logical lines instead of laying out visual rows itself.
     wrapMode: "char",
@@ -69,7 +69,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
   }
   const bar = attachVerticalScrollbar(box, text, "command-log")
   let rendered: { readonly count: number; readonly newest: CommandLogLine | undefined } | undefined
-  // `gui.Views.Extras.Autoscroll = true` at startup (pkg/gui/views.go:149).
+  // `gui.Views.Extras.Autoscroll = true` at startup (pkg/gui/views.go:157).
   let autoscroll = true
   // Closes the shrinking-direction gap left by resize()'s immediate pin (see the comment
   // there): compose onto attachVerticalScrollbar's box.onSizeChange (it fires reliably on a

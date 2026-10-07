@@ -103,9 +103,9 @@ describe("computeLayout command log", () => {
   })
 
   /**
-   * `getExtrasWindowSize` (pkg/gui/controllers/helpers/window_arrangement_helper.go:403-417):
+   * `getExtrasWindowSize` (pkg/gui/controllers/helpers/window_arrangement_helper.go:394-408):
    * focused -> 1000 ("my way of saying 'fill the available space'"), terminal height < 40 -> 1,
-   * otherwise Gui.CommandLogSize (default 8, pkg/config/user_config.go:918) — and +2 for the frame
+   * otherwise Gui.CommandLogSize (default 8, pkg/config/user_config.go:939) — and +2 for the frame
    * in every case. githunk's logHeight is a total including the border, so those are 8+2 and 1+2.
    */
   test("an unfocused log takes the configured height plus its frame", () => {

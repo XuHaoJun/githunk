@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { parseDiff } from "../../src/domain/diff/parse"
@@ -179,6 +180,48 @@ describe("GitMutations", () => {
     const unstaged = (await repo.git(["diff", "--no-color", "--binary", "--", "file.txt"])).stdout
     expect(withoutIndex(staged)).toBe(["diff --git a/file.txt b/file.txt", "--- a/file.txt", "+++ b/file.txt", "@@ -1,2 +1 @@", "-base", " keep", ""].join("\n"))
     expect(withoutIndex(unstaged)).toBe(["diff --git a/file.txt b/file.txt", "--- a/file.txt", "+++ b/file.txt", "@@ -1 +0,0 @@", "-keep", ""].join("\n"))
+  })
+
+  test("stages a deleted file as deleted when every line of it is selected", async () => {
+    await repo.write("other.txt", "other\n")
+    await repo.git(["add", "--", "other.txt"])
+    await repo.git(["commit", "--quiet", "-m", "other"])
+    await rm(join(repo.path, "file.txt"))
+    await repo.write("other.txt", "other\nmore\n")
+    const patch = (await runner.run(["diff", "--no-ext-diff", "--no-color"], { readOnly: true })).stdout
+    const document = parseDiff(patch)
+    const selected = document.lines.flatMap((line, index) => (line.raw === "-base\n" || line.raw === "-keep\n" || line.raw === "+more\n" ? [index] : []))
+    await new GitMutations(runner).applySelection(document, selected, { reverse: false, wholeFile: false })
+
+    expect((await repo.git(["status", "--porcelain"])).stdout).toBe("D  file.txt\nM  other.txt\n")
+  })
+
+  test("unstages an added file back to untracked when every line of it is selected", async () => {
+    await repo.write("added.txt", "one\ntwo\n")
+    await repo.git(["add", "--", "added.txt"])
+    const patch = (await runner.run(["diff", "--cached", "--no-ext-diff", "--no-color"], { readOnly: true })).stdout
+    const document = parseDiff(patch)
+    const selected = document.lines.flatMap((line, index) => (line.kind === "addition" ? [index] : []))
+    await new GitMutations(runner).applySelection(document, selected, { reverse: true, wholeFile: false })
+
+    expect((await repo.git(["status", "--porcelain"])).stdout).toBe("?? added.txt\n")
+  })
+
+  test("unstages a whole added file before the first commit", async () => {
+    const unborn = await createTempRepository()
+    try {
+      const unbornRunner = new GitRunner({ cwd: unborn.path })
+      await unborn.write("first.txt", "one\n")
+      await unborn.git(["add", "--", "first.txt"])
+      const patch = (await unbornRunner.run(["diff", "--cached", "--no-ext-diff", "--no-color"], { readOnly: true })).stdout
+      const document = parseDiff(patch)
+      const selected = document.lines.flatMap((line, index) => (line.kind === "addition" ? [index] : []))
+      await new GitMutations(unbornRunner).applySelection(document, selected, { reverse: true, wholeFile: false })
+
+      expect((await unborn.git(["status", "--porcelain"])).stdout).toBe("?? first.txt\n")
+    } finally {
+      await unborn.cleanup()
+    }
   })
 
   test("stages a selected change in a quoted Unicode path", async () => {

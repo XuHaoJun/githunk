@@ -412,7 +412,7 @@ export function createApp(options: CreateAppOptions): App {
           }
         },
         onEditFile: async (path, line) => {
-          // `LogAction(Tr.Actions.OpenFile)` (pkg/gui/controllers/helpers/files_helper.go:78). Logged
+          // `LogAction(Tr.Actions.OpenFile)` (pkg/gui/controllers/helpers/files_helper.go:86). Logged
           // at the wiring, not inside the default `editFile` above, so it fires whether the default or
           // an injected `options.onEditFile` runs.
           options.runner.log.logAction(LOG_ACTIONS.openFile)
@@ -420,7 +420,7 @@ export function createApp(options: CreateAppOptions): App {
         }
       },
       queries: {
-        loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
+        loadCommitInspection: (oid, options) => controller.loadCommitInspection(oid, options),
         loadBranchCommits: options.loadBranchCommits ?? ((branch) => controller.loadBranchCommits(branch)),
         loadCommitFileInspection: (oid, path) => controller.loadCommitFileInspection(oid, path),
         loadTagInspection: (tag) => controller.loadTagInspection(tag),
@@ -467,7 +467,7 @@ export function createApp(options: CreateAppOptions): App {
       ? new BackgroundRefresher({
           fetch: async () => {
             // lazygit's background fetch is DontLog() while its foreground one is not
-            // (pkg/commands/git_commands/sync.go:65-84).
+            // (pkg/commands/git_commands/sync.go:69-88).
             await controller.fetch(undefined, { background: true })
             syncView()
             await refsWatcher.resync()
@@ -496,7 +496,7 @@ export function createApp(options: CreateAppOptions): App {
 
   /**
    * lazygit triggers an overdue background fetch when a repository becomes active again
-   * (`pkg/gui/gui.go:332-339`); OpenTUI's terminal focus event is the equivalent signal when the
+   * (`pkg/gui/gui.go:344-351`); OpenTUI's terminal focus event is the equivalent signal when the
    * user returns to this TUI.
    */
   const onTerminalFocus = (): void => {

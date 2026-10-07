@@ -7,7 +7,7 @@ const POPUP_BACKGROUND = RGBA.defaultBackground()
 const POPUP_FOREGROUND = RGBA.defaultForeground()
 /**
  * lazygit enables the terminal cursor for its editable prompt view
- * (`pkg/gui/context.go:172-200`, `pkg/gui/views.go:133-136`). Keep the
+ * (`pkg/gui/context.go:173-202`, `pkg/gui/views.go:131-134`). Keep the
  * normal OpenTUI block cursor instead of rendering a prompt as plain text.
  */
 const POPUP_CURSOR_STYLE = { style: "block" as const, blinking: true }

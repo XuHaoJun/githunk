@@ -101,7 +101,7 @@ describe("commit log limit", () => {
       }
     }
     await listCommits(runner as never, "HEAD")
-    // lazygit's `ArgIf(opts.Limit, "-300")` (commit_loader.go:597).
+    // lazygit's `ArgIf(opts.Limit, "-300")` (commit_loader.go:614).
     expect(calls[0]).toContain("-300")
   })
 
@@ -130,5 +130,25 @@ describe("commit log ordering", () => {
     await listCommits(runner as never, "HEAD")
     // Matches lazygit's default `git.log.order: topo-order`.
     expect(calls[0]).toContain("--topo-order")
+  })
+})
+
+describe("commit diffstat width", () => {
+  let repository: TempRepository | undefined
+  afterEach(async () => {
+    await repository?.cleanup()
+  })
+
+  test("lays the diffstat out to the width it is given rather than git's 80-column default", async () => {
+    repository = await createTempRepository()
+    const path = `${"deeply/nested/".repeat(6)}file-with-a-long-name.txt`
+    await repository.write(path, "one\n")
+    await repository.git(["add", "-A"])
+    await repository.git(["commit", "-m", "long path"])
+    const oid = (await repository.git(["rev-parse", "HEAD"])).stdout.trim()
+    const runner = new GitRunner({ cwd: repository.path })
+
+    expect((await loadCommit(runner, oid)).preamble).toContain(" .../")
+    expect((await loadCommit(runner, oid, { statWidth: 160 })).preamble).toContain(` ${path} `)
   })
 })

@@ -318,7 +318,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
   const sidebarEntries = useMemo(() => (state ? buildReviewSidebarEntries(state) : []), [state])
   const sidebarFileEntries = useMemo(() => sidebarEntries.filter((entry) => entry.kind === "file") as Extract<(typeof sidebarEntries)[number], { kind: "file" }>[], [sidebarEntries])
   const sidebarStatsWidth = useMemo(() => Math.max(0, ...sidebarFileEntries.map((entry) => sidebarEntryStatsWidth(entry))), [sidebarFileEntries])
-  // Match lazygit's right-edge overflow check (pkg/gocui/gui.go:1246-1287); the native bar is
+  // Match lazygit's right-edge overflow check (pkg/gocui/gui.go:1325-1361); the native bar is
   // absolute, so reserve its one-cell gutter only while the sidebar overflows.
   const sidebarScrollViewportHeight = Math.max(1, diffHeight - 1)
   const sidebarScrollbarGutter = sidebarEntries.length > sidebarScrollViewportHeight ? PANE_SCROLLBAR_GUTTER : 0
@@ -750,7 +750,7 @@ export function ReviewWorkspaceApp({ session }: ReviewWorkspaceAppProps) {
       }
       const current = controller.state
       if (commandId === "review.copySelection") {
-        // lazygit patch_explorer_controller.go:343-357 strips diff prefixes; this
+        // lazygit main_view_controller.go:486-499 + diff_copy.go:13-43 strips diff prefixes; this
         // review extension deliberately copies native screen text unchanged.
         const text = renderer.getSelection()?.getSelectedText() ?? ""
         setFeedbackMessage(formatCopyResult(copySelection(text, renderer)))

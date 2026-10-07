@@ -76,7 +76,7 @@ describe("cellWidth", () => {
 /**
  * `isWide` answers for one grapheme, and only about its *leading* code point — which is what
  * lazygit's `getInitials` asks of `uniseg.FirstGraphemeClusterInString`
- * (`pkg/gui/presentation/authors/authors.go:117-120`).
+ * (`pkg/gui/presentation/authors/authors.go:161-164`).
  */
 describe("isWide", () => {
   test("looks only at the leading code point", () => {

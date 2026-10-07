@@ -3,14 +3,14 @@ import type { GitRunner } from "./runner"
 
 type CommandRunner = Pick<GitRunner, "run">
 
-/** lazygit's `git.mainBranches` default (pkg/config/user_config.go:957). */
+/** lazygit's `git.mainBranches` default (pkg/config/user_config.go:978). */
 export const DEFAULT_MAIN_BRANCHES: readonly string[] = ["master", "main"]
 
 export type CommitStatusSets = {
   /**
    * Commits reachable from the checked-out branch but not from its upstream or a main branch.
    * Absent on a detached HEAD, where lazygit leaves `unpushedCommitHashes` nil
-   * (`refresh_helper.go:833-838` returns no ref, `commit_loader.go:118-121` then skips the query).
+   * (`refresh_helper.go:815-820` returns no ref, `commit_loader.go:118-121` then skips the query).
    */
   readonly unpushed?: ReadonlySet<string>
   /** Commits not reachable from any main branch. Absent when no configured main branch exists. */
@@ -19,7 +19,7 @@ export type CommitStatusSets = {
 
 /**
  * A query whose failure is not an error: lazygit's `getReachableHashes` swallows the rev-list error
- * and returns an empty set (commit_loader.go:563-577), and `determineMainBranches` treats a failed
+ * and returns an empty set (commit_loader.go:580-594), and `determineMainBranches` treats a failed
  * rev-parse as "this main branch does not exist here" (main_branches.go:89-116).
  */
 async function tryOutput(runner: CommandRunner, args: readonly string[]): Promise<string | undefined> {
@@ -64,7 +64,7 @@ export function resolveMainBranches(runner: CommandRunner, names: readonly strin
   return branches
 }
 
-/** `git rev-list <refName> ^<notRefName>…`, lazygit's `getReachableHashes` (commit_loader.go:563). */
+/** `git rev-list <refName> ^<notRefName>…`, lazygit's `getReachableHashes` (commit_loader.go:580). */
 export async function reachableHashes(runner: CommandRunner, refName: string, notRefNames: readonly string[]): Promise<ReadonlySet<string>> {
   const output = await tryOutput(runner, ["rev-list", refName, ...notRefNames.map((name) => `^${name}`)])
   if (output === undefined) return new Set()
@@ -78,7 +78,7 @@ export async function reachableHashes(runner: CommandRunner, refName: string, no
 
 /**
  * The checked-out branch's short name, or undefined on a detached HEAD — lazygit's
- * `determineCheckedOutRef` (refresh_helper.go:829-838), which returns no ref in that case so the
+ * `determineCheckedOutRef` (refresh_helper.go:811-820), which returns no ref in that case so the
  * unpushed query is skipped and nothing renders red.
  */
 async function checkedOutBranch(runner: CommandRunner): Promise<string | undefined> {
@@ -102,7 +102,7 @@ export async function loadCommitStatusSets(runner: CommandRunner, options: { rea
 }
 
 /**
- * lazygit's `setCommitStatuses` (commit_loader.go:543-558). A missing `unmerged` set means no main
+ * lazygit's `setCommitStatuses` (commit_loader.go:560-575). A missing `unmerged` set means no main
  * branch exists to be merged into, so nothing is merged; a missing `unpushed` set means the pushed
  * question could not be asked, so everything unmerged reads as pushed rather than as unpushed.
  */

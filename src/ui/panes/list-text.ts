@@ -1,7 +1,7 @@
 import { parseColor, type RGBA, type TextRenderable } from "@opentui/core"
 import { cellWidth } from "../../domain/diff/cell-width"
 import { computeColumnLayout, getListSelectionRange, isListRangeActive, layoutListRowSegments, renderListRows, type ListDisplayRow, type ListRow, type ListState } from "../list-view"
-import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, HOVER_LINE_BG, SELECTED_LINE_BG, brightenAnsiForeground } from "../theme"
+import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, HOVER_LINE_BG, SELECTED_LINE_BG } from "../theme"
 import { paneTextBuffer, type PaneTextBuffer } from "./pane-text"
 import { createViewportHighlights, LINE_END_COLS, type ViewportHighlights } from "./viewport-highlights"
 
@@ -184,12 +184,12 @@ function paintRow(record: PainterRecord, line: number): void {
     const cells = cellWidth(segment.text)
     if (cells > 0) {
       if (visual === 1) {
-        // `highlightChunk` in `../list-view` (gocui `View.setCharacter`): promote
-        // the foreground, OR in bold, and replace the background.
+        // `highlightChunk` in `../list-view` (gocui `View.setCharacter`): keep the
+        // foreground, OR in bold, and replace the background.
         buffer.addHighlight(line, {
           start: column,
           end: column + cells,
-          styleId: styleIdFor(record, segment.fg === undefined ? undefined : brightenAnsiForeground(segment.fg), true, segment.dim === true, bg)
+          styleId: styleIdFor(record, segment.fg, true, segment.dim === true, bg)
         })
       } else if (bg !== undefined) {
         // Range and hover keep the base foreground, adding only the background.

@@ -3,7 +3,7 @@
  *
  * lazygit's `checkForExternalChanges` (pkg/gui/background.go:169-208) plus the snapshot bookkeeping
  * in its refresh helper (`SetRefsSnapshot` / `RefsSnapshotChangedSince`,
- * pkg/gui/controllers/helpers/refresh_helper.go:592-617). The shape that matters:
+ * pkg/gui/controllers/helpers/refresh_helper.go:576-601). The shape that matters:
  *
  *   - **No baseline means no change.** Until one snapshot has been taken there is nothing to
  *     compare against, so the first poll seeds the baseline and reports nothing. Otherwise every

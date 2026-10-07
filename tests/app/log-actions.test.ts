@@ -73,14 +73,14 @@ describe("action labels", () => {
     const { controller, log } = harness()
     await controller.refresh()
     await controller.discardFile("a.ts")
-    // english.go:2174 omits "in" before "selected" — that's upstream's typo, reproduced verbatim.
+    // english.go:2241 omits "in" before "selected" — that's upstream's typo, reproduced verbatim.
     expect(actions(log)).toContain("Discard all unstaged changes selected file(s)")
   })
 
   /**
-   * staging_controller.go:239-265: staging a selection (`ApplySelection`) and discarding one
-   * (`DiscardSelection`, which routes into `applySelectionAndRefresh(true)`) share the same
-   * `Tr.Actions.ApplyPatch` label (english.go:2215). Both call sites are exercised directly here —
+   * working_tree_diff_actions.go:211-259: staging a selection (`PrimaryAction`) and discarding one
+   * (`DiscardSelection`) both route into `applyDiffLineSelection` and share the same
+   * `Tr.Actions.ApplyPatch` label (english.go:2282). Both call sites are exercised directly here —
    * `applyPatch` is referenced twice in `LOG_ACTIONS`' mapping (once per method), so a static
    * reachability check alone cannot tell whether either call site still exists.
    */
@@ -102,7 +102,7 @@ describe("action labels", () => {
    * The two tests above only assert the logged action against `LOG_ACTIONS.applyPatch` itself —
    * the constant against itself — so a typo in the constant's value (unlike every other label,
    * which is pinned verbatim somewhere in this file, e.g. `toContain("Unstage file")` above) would
-   * never be caught. `english.go:2215`.
+   * never be caught. `english.go:2282`.
    */
   test("LOG_ACTIONS.applyPatch is the literal lazygit label", () => {
     expect(LOG_ACTIONS.applyPatch).toBe("Apply patch")
@@ -158,7 +158,7 @@ describe("action labels", () => {
 
   /**
    * createStash picks its label from `includeUntracked`, the way `handleStashSave`'s caller does
-   * (files_controller.go:1282/:1482 push vs :1300 include-untracked -> :1516). githunk has no
+   * (files_controller.go:1281/:1482 push vs :1300 include-untracked -> :1516). githunk has no
    * staged-only stash, but does have this distinction.
    */
   test("createStash logs Stash all changes when untracked files are excluded", async () => {
@@ -178,7 +178,7 @@ describe("action labels", () => {
   })
 
   /**
-   * The background fetch is `DontLog()` in lazygit (git_commands/sync.go:81): no action label,
+   * The background fetch is `DontLog()` in lazygit (git_commands/sync.go:85): no action label,
    * so the 60-second timer never buries what the user actually ran.
    */
   test("a background fetch logs nothing, a foreground fetch logs Fetch", async () => {
@@ -192,7 +192,7 @@ describe("action labels", () => {
 
   /**
    * Delegating methods stay silent so one keypress never produces two labels: `switchLocal`
-   * defers to `switchLocalBranch`, which is the one that logs (branches_controller.go:417,516).
+   * defers to `switchLocalBranch`, which is the one that logs (branches_controller.go:418,517).
    *
    * Branch mutations go straight to the real `GitRunner` (unlike `stageFile` etc., which route
    * through the injectable `GitMutations`), so against this harness's non-repository `/tmp/repo`
@@ -376,7 +376,7 @@ describe("action labels", () => {
    * branch with no upstream configured; that path is git/sync.ts's own concern, not this label's,
    * so the private field is set directly to isolate what's under test here — that
    * `chooseUpstream` logs `Set branch upstream` itself and then still gets `push`'s own label from
-   * delegating to it (remote_branches_controller.go:187; english.go:2210).
+   * delegating to it (remote_branches_controller.go:187; english.go:2277).
    */
   test("chooseUpstream logs Set branch upstream, then push's own label", async () => {
     const { controller, log } = harness()

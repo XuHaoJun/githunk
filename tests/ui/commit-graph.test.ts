@@ -41,4 +41,15 @@ describe("commit graph", () => {
     // Fillers stay unstyled spaces, as in lazygit's cell renderer.
     expect(rows[0]!.segments[1]).toEqual({ text: " " })
   })
+
+  // Nothing comes after a root commit, so no line runs on below it — lazygit
+  // pkg/gui/presentation/graph/graph_test.go "with a root commit followed by an unrelated history"
+  // and "with a merge of an unrelated history" (commit 91378b1e8).
+  test("draws no line below a root commit followed by an unrelated history", () => {
+    expect(texts([commit("1", ["2"]), commit("2", []), commit("A", ["B"]), commit("B", [])]).map((row) => row.trimEnd())).toEqual(["○", "○", "○", "○"])
+  })
+
+  test("draws no line below the root of a merged unrelated history", () => {
+    expect(texts([commit("1", ["2", "A"]), commit("2", ["3"]), commit("A", []), commit("3", [])]).map((row) => row.trimEnd())).toEqual(["◎─╮", "○ │", "│ ○", "○"])
+  })
 })

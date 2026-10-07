@@ -27,7 +27,7 @@ describe("command log autoscroll", () => {
    */
   async function harnessWithUpstream(height?: number): Promise<ShellHarness> {
     // Every test here needs the log shown to begin with; stated explicitly (Task 10 made that
-    // the default, `Gui.ShowCommandLog: true`, pkg/config/user_config.go:901) rather than relied
+    // the default, `Gui.ShowCommandLog: true`, pkg/config/user_config.go:921) rather than relied
     // on, so a future default change cannot silently retarget these autoscroll assertions.
     const created = await createShellHarness({
       commits: ["base commit"],
@@ -72,7 +72,7 @@ describe("command log autoscroll", () => {
     await pull(harness)
     const logBox = view.paneTextGeometry("command-log")
     if (!logBox) throw new Error("the command log window is not laid out")
-    // Armed at startup (pkg/gui/views.go:149), so the viewport sits pinned at the bottom.
+    // Armed at startup (pkg/gui/views.go:157), so the viewport sits pinned at the bottom.
     expect(view.commandLogAutoscroll).toBe(true)
     const before = view.paneScrollY("command-log")
     expect(before).toBeGreaterThanOrEqual(3)
@@ -129,7 +129,7 @@ describe("command log autoscroll", () => {
    */
   test("j/k step the log one line and clear autoscroll, the same as the wheel", async () => {
     // A shorter terminal than the module default: a focused log now fills the available space
-    // (getExtrasWindowSize's baseSize 1000 branch, window_arrangement_helper.go:404-406), so a
+    // (getExtrasWindowSize's baseSize 1000 branch, window_arrangement_helper.go:395-397), so a
     // full-height 40-row terminal gives it ~28 content rows — too tall for three pulls' worth of
     // log lines to overflow. Shrinking the terminal keeps the same pull count meaningful.
     harness = await harnessWithUpstream(20)
@@ -193,7 +193,7 @@ describe("command log autoscroll", () => {
     await harness.pressKey(".")
     await harness.flush()
     const afterPageDown = view.paneScrollY("command-log")
-    // PageDelta() is the pane's visible height (pkg/gui/context/view_trait.go:87-96), so a page
+    // PageDelta() is the pane's visible height (pkg/gui/context/view_trait.go:82-91), so a page
     // from the top lands short of the bottom rather than jumping straight there — a wrong step
     // size (e.g. one line, or the whole extent) would fail one side of this bound or the other.
     expect(afterPageDown).toBeGreaterThan(0)

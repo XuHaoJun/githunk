@@ -3,7 +3,7 @@
  *
  * lazygit measures the same way: `utils.StringWidth` (pkg/utils/formatting.go:25-35) takes an ASCII
  * fast path and otherwise defers to `uniseg.StringWidth`, and `getInitials`
- * (pkg/gui/presentation/authors/authors.go:117-120) treats a leading grapheme wider than one cell as
+ * (pkg/gui/presentation/authors/authors.go:161-164) treats a leading grapheme wider than one cell as
  * filling the author column on its own. githunk cannot ship uniseg's table (no new runtime
  * dependencies), so `WIDE_RANGES` approximates the Unicode East Asian Width `W`/`F` blocks.
  *

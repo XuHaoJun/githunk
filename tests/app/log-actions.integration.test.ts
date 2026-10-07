@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { createShellHarness, type ShellHarness } from "../helpers/shell-harness"
 
 /**
- * `Open file` (`Actions.OpenFile`, english.go:2195) is lazygit's one `LogAction` call outside a UI
- * controller — it lives in a helper (`pkg/gui/controllers/helpers/files_helper.go:78`), because
+ * `Open file` (`Actions.OpenFile`, english.go:2262) is lazygit's one `LogAction` call outside a UI
+ * controller — it lives in a helper (`pkg/gui/controllers/helpers/files_helper.go:86`), because
  * opening an editor is not a git mutation. githunk mirrors that: the label is logged at
  * `create-app.ts`'s `onEditFile` wiring rather than in `AppController`, so exercising it needs a
  * real `RootView` and a real keypress, not just the controller.

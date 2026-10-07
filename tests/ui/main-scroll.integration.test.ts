@@ -14,16 +14,17 @@ import { MAIN_SCROLL_HEIGHT } from "../../src/ui/root-view"
  *
  *   - **Globally**, whatever holds focus, `<pgup>`/`<pgdown>`, `K`/`J` and `<ctrl+u>`/`<ctrl+d>`
  *     scroll the main view by `gui.scrollHeight` lines — default 2
- *     (pkg/config/user_config.go:857, pkg/gui/global_handlers.go:15-22, keybindings.go:87-100).
+ *     (pkg/config/user_config.go:877, pkg/gui/global_handlers.go:15-22, keybindings.go:87-100).
  *     All six are aliases of the one handler.
- *   - **With the main view focused**, `Contexts.Normal` carries a `ViewSelectionController`
- *     (pkg/gui/controllers.go:310-314), whose `j`/`k` scroll *one line*, `,`/`.` scroll a page
- *     (`InnerHeight() - 1`) and `<`/`>` jump to the ends
- *     (pkg/gui/controllers/view_selection_controller.go:37-97).
+ *   - **With the main view focused**, `Contexts.Normal` carries `MainViewController`
+ *     (pkg/gui/controllers.go:284-287). Over non-diff content its `j`/`k` scroll *one line*,
+ *     `,`/`.` scroll a page (`InnerHeight() - 1`) and `<`/`>` jump to the ends; over a diff,
+ *     lazygit v0.66 moves a line cursor with the same keys instead, and `h`/`l` step between
+ *     change blocks (pkg/gui/controllers/main_view_controller.go:898-909, 997-1053;
+ *     user_config.go:1193-1194).
  *
- * lazygit's main view has no hunk cursor: hunk-granular movement lives in the staging contexts,
- * which are a different view entirely. githunk keeps a hunk cursor for its own line staging, so
- * `h`/`l` move it — but `j`/`k` scroll, which is why they work on a branch's commit graph too.
+ * githunk's `j`/`k` always scroll exactly one row (carrying its line-range cursor along), which is
+ * why they work on a branch's commit graph too; `h`/`l` move its hunk cursor for line staging.
  */
 describe("main view scrolling", () => {
   let harness: ShellHarness | undefined
@@ -86,8 +87,7 @@ describe("main view scrolling", () => {
       }
     })
     await created.pressKey("4")
-    await created.app.view!.whenPreviewSettled()
-    await created.flush()
+    await created.settlePreview()
     return created
   }
 
@@ -227,8 +227,7 @@ describe("main view scrolling", () => {
       commits: Array.from({ length: 40 }, (_, index) => `commit number ${index}`)
     })
     await harness.pressKey("3")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
     expect(harness.app.view!.mainContent?.source).toBe("local-branch")
 
     await harness.pressKey("0")

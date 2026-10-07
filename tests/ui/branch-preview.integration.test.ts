@@ -4,8 +4,8 @@ import { createTempRepository, type TempRepository } from "../helpers/temp-repos
 
 /**
  * Panel 3's render-to-main. lazygit shows a ref's commit graph for every selection the panel has:
- * branches_controller.go:199-227 (`GetGraphCmdObj`, title `Log`), remote_branches_controller.go:114
- * (title `Remote Branch`) and tags_controller.go:101 (the tag's own info, then `---`, then the same
+ * branches_controller.go:198-228 (`GetGraphCmdObj`, title `Log`), remote_branches_controller.go:114
+ * (title `Remote Branch`) and tags_controller.go:102 (the tag's own info, then `---`, then the same
  * graph). Only the Remotes tab renders something else: the remote's name and URLs
  * (remotes_controller.go:101-125).
  */
@@ -23,8 +23,7 @@ describe("panel 3 render-to-main", () => {
   test("selecting a local branch shows its commit graph, coloured by git", async () => {
     harness = await createShellHarness({ commits: ["first commit", "second commit"] })
     await harness.pressKey("3")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
 
     const content = harness.app.view!.mainContent
     expect(content?.source).toBe("local-branch")
@@ -40,15 +39,14 @@ describe("panel 3 render-to-main", () => {
   test("the main pane is titled Log while a local branch is selected", async () => {
     harness = await createShellHarness()
     await harness.pressKey("3")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
     expect(harness.frame()).toContain("0 Main — Log")
   })
 
   test("copies selected text from a branch's ANSI preview", async () => {
     harness = await createShellHarness({ commits: ["first commit", "second commit"] })
     await harness.pressKey("3")
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     await harness.pressKey("0")
 
     const view = harness.app.view!
@@ -86,12 +84,11 @@ describe("panel 3 render-to-main", () => {
     await harness.repository.git(["checkout", "-", "--quiet"])
     await harness.app.refresh()
     await harness.pressKey("3")
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     expect(harness.app.view!.mainContent?.ansi?.text).not.toContain("feature only commit")
 
     await harness.pressKey("j")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
     const content = harness.app.view!.mainContent
     expect(content?.stableId).toBe("feature")
     expect(content?.ansi?.text).toContain("feature only commit")
@@ -105,8 +102,7 @@ describe("panel 3 render-to-main", () => {
     await harness.app.refresh()
     await harness.pressKey("3")
     await harness.pressKey("]")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
 
     const content = harness.app.view!.mainContent
     expect(content?.source).toBe("remote")
@@ -127,8 +123,7 @@ describe("panel 3 render-to-main", () => {
     await harness.pressKey("]")
     await harness.pressKey("RETURN")
     await harness.settle()
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
 
     const content = harness.app.view!.mainContent
     expect(content?.source).toBe("remote-branch")
@@ -143,8 +138,7 @@ describe("panel 3 render-to-main", () => {
     await harness.pressKey("3")
     await harness.pressKey("]")
     await harness.pressKey("]")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
 
     const content = harness.app.view!.mainContent
     expect(content?.source).toBe("tag")
@@ -156,13 +150,11 @@ describe("panel 3 render-to-main", () => {
     harness = await createShellHarness()
     await harness.pressKey("3")
     await harness.pressKey("]")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
     expect(harness.app.view!.mainContent?.plainText).toBe("No remotes")
 
     await harness.pressKey("]")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
     expect(harness.app.view!.mainContent?.plainText).toBe("No tags")
   })
 })

@@ -31,13 +31,13 @@ export type BackgroundRefresherOptions = {
    * `checkForExternalChanges` (pkg/gui/background.go:169-208).
    */
   readonly detectExternalChanges?: () => Promise<void>
-  /** `git.autoFetch` — pkg/config/user_config.go:958. */
+  /** `git.autoFetch` — pkg/config/user_config.go:979. */
   readonly autoFetch?: boolean
-  /** `git.autoRefresh` — pkg/config/user_config.go:959. */
+  /** `git.autoRefresh` — pkg/config/user_config.go:980. */
   readonly autoRefresh?: boolean
   /** `refresher.fetchInterval`, in milliseconds. Default 60s. */
   readonly fetchIntervalMs?: number
-  /** `git.autoDetectExternalChanges` — pkg/config/user_config.go:960. */
+  /** `git.autoDetectExternalChanges` — pkg/config/user_config.go:981. */
   readonly autoDetectExternalChanges?: boolean
   /** `refresher.refreshInterval`, in milliseconds. Default 10s. */
   readonly refreshIntervalMs?: number

@@ -4,13 +4,13 @@ import type { CommandLog } from "./command-log"
  * lazygit's startup header for the command log (`printCommandLogHeader`,
  * pkg/gui/command_log_panel.go:70-85): a cyan line naming the key that hides and focuses the
  * panel, then — when `Gui.ShowRandomTip` is on, which it is by default
- * (pkg/config/user_config.go:909) — a yellow label and a green tip.
+ * (pkg/config/user_config.go:929) — a yellow label and a green tip.
  */
 
-/** `Tr.CommandLogHeader` (pkg/i18n/english.go:1951) formatted with `Universal.ExtrasMenu`, "@". */
+/** `Tr.CommandLogHeader` (pkg/i18n/english.go:2019) formatted with `Universal.ExtrasMenu`, "@". */
 export const COMMAND_LOG_HEADER = "You can hide/focus this panel by pressing '@'"
 
-/** `Tr.RandomTip` (pkg/i18n/english.go:1952). */
+/** `Tr.RandomTip` (pkg/i18n/english.go:2020). */
 export const RANDOM_TIP_LABEL = "Random tip"
 
 /**
@@ -54,7 +54,7 @@ export const COMMAND_LOG_TIP_KEYS = {
  * The flat-file-view tip (below) is *not* excluded: `buildFlatTreeFromFiles`
  * (src/ui/file-tree.ts:237-253) sorts merge-conflict files to the top exactly as
  * `pkg/gui/filetree/build_tree.go:138` does, and `toggle-file-tree` is bound to the same default
- * key, "`" (pkg/config/user_config.go:1100).
+ * key, "`" (pkg/config/user_config.go:1122).
  *
  * Nor is the amend-last-commit tip (`Files.AmendLastCommit`, :166-169) excluded, despite sitting
  * right next to the tip above that *is* excluded: githunk's `A` is not global in effect —
@@ -62,7 +62,7 @@ export const COMMAND_LOG_TIP_KEYS = {
  * `A` in the files panel" (this tip's claim) is exactly what happens: `actionAmend`
  * (root-view.ts:2174-2178) runs `withEnsureCommittableFiles` then the amend dialog, reaching
  * `git commit --amend -F -` (src/git/commit-mutations.ts:45-49) against the staged changes. Same
- * default key as lazygit's (`user_config.go:1090`), same panel, true statement.
+ * default key as lazygit's (`user_config.go:1112`), same panel, true statement.
  */
 export const COMMAND_LOG_TIPS: readonly string[] = [
   // command_log_panel.go:105-108
@@ -78,7 +78,7 @@ export const COMMAND_LOG_TIPS: readonly string[] = [
   // :166-169 (the adjacent :162-165 amend-to-commit tip is excluded — see the block comment above)
   `You can amend the last commit with your new file changes by pressing '${COMMAND_LOG_TIP_KEYS.amendLastCommit.label}' in the files panel`,
   // :170-174. lazygit interpolates `NextBlockAlt2`/`PrevBlockAlt2` here, default tab/backtab
-  // (user_config.go:1022-1023); githunk binds those to the same `pane-next`/`pane-previous`
+  // (user_config.go:1043-1044); githunk binds those to the same `pane-next`/`pane-previous`
   // actions (bindings.ts:295-296) alongside `l`/`h`, and this substitutes the latter — the
   // primary, on-screen-displayed pair (`displayKeys: "h/l"`) — instead. Both pairs are equally
   // true, so nothing here lies, but it is the one tip where the substituted key is not the config
@@ -108,7 +108,7 @@ export function randomTip(pick: (count: number) => number = (count) => Math.floo
 }
 
 export type SeedCommandLogOptions = {
-  /** `Gui.ShowRandomTip`, default true (pkg/config/user_config.go:909). */
+  /** `Gui.ShowRandomTip`, default true (pkg/config/user_config.go:929). */
   readonly showRandomTip?: boolean
   readonly pick?: (count: number) => number
 }

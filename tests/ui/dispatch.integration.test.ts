@@ -94,7 +94,7 @@ describe("root view dispatch", () => {
     expect(view.commitsContextKind).toBe("commits")
     await harness.pressKey("RETURN")
     await harness.settle()
-    await view.whenPreviewSettled()
+    await harness.settlePreview()
     expect(controller.state.reviewTarget).toEqual(beforeTarget)
     expect(view.commitsContextKind).toBe("commit-files")
   })
@@ -255,7 +255,7 @@ describe("root view dispatch", () => {
     await harness.settle()
     await harness.pressKey("]")
     await harness.settle()
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     expect(harness.app.view!.mainContent?.source).toBe("files")
     await harness.pressKey("l")
     expect(harness.app.view!.mainCursorTarget).toBeDefined()
@@ -276,7 +276,7 @@ describe("root view dispatch", () => {
     await harness.pressKey("4")
     await harness.pressKey("RETURN")
     await harness.settle()
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     expect(harness.app.view!.commitsContextKind).toBe("commit-files")
 
     await harness.pressKey("2")
@@ -418,7 +418,7 @@ describe("commits pane drives the main pane like lazygit", () => {
   /** Preview loads run outside the mutation queue; RootView exposes their inflight promise. */
   async function pressKeyForPreview(key: string): Promise<void> {
     await harness!.pressKey(key)
-    await harness!.app.view!.whenPreviewSettled()
+    await harness!.settlePreview()
   }
 
   test("focusing commits previews the selected commit without entering it", async () => {
@@ -448,7 +448,7 @@ describe("commits pane drives the main pane like lazygit", () => {
     await pressKeyForPreview("4")
     expect(harness.frame()).toContain("revision 2")
     await harness.pressKey("2")
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     const frame = harness.frame()
     expect(frame).toContain("+unstaged")
     expect(frame).not.toContain("revision 2")
@@ -851,7 +851,7 @@ describe("commit files transient context", () => {
       expect(view.commitsContextKind).toBe("commits")
       await harness.pressKey("RETURN")
       await harness.settle()
-      await view.whenPreviewSettled()
+      await harness.settlePreview()
       expect(controller.state.reviewTarget).toEqual(beforeTarget)
       expect(view.commitsContextKind).toBe("commit-files")
       expect(view.focusManager.active).toBe("commits")
@@ -859,13 +859,13 @@ describe("commit files transient context", () => {
       expect(firstStable).toBeDefined()
       await harness.pressKey("j")
       await harness.settle()
-      await view.whenPreviewSettled()
+      await harness.settlePreview()
       const secondStable = view.mainContent?.stableId
       expect(secondStable).toBeDefined()
       expect(secondStable).not.toBe(firstStable)
       await harness.pressKey("ESCAPE")
       await harness.settle()
-      await view.whenPreviewSettled()
+      await harness.settlePreview()
       expect(view.commitsContextKind).toBe("commits")
       // Main restores parent commit preview
       expect(view.mainContent?.source).toBe("commit")
@@ -894,7 +894,7 @@ describe("commit files transient context", () => {
       expect(view.commitsContextKind).toBe("commits")
       await harness.pressKey("RETURN")
       await harness.settle()
-      await view.whenPreviewSettled()
+      await harness.settlePreview()
       expect(view.commitsContextKind).toBe("commits")
       harness.app.controller.loadCommitInspection = original
     } finally {
@@ -915,7 +915,7 @@ describe("commit files transient context", () => {
       const view = harness.app.view!
       await harness.pressKey("RETURN")
       await harness.settle()
-      await view.whenPreviewSettled()
+      await harness.settlePreview()
       // No files message is non-selectable row; Main retains commit preview
       expect(view.mainContent?.source).toBe("commit")
       const child = view.commitsPanel.child

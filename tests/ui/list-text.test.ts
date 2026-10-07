@@ -112,9 +112,9 @@ describe("list text painter", () => {
       await pane.flush()
       expect(setTexts()).toBe(1)
       const spans = pane.spans()
-      // Selected row carries a background; its green is brightened like `highlightChunk`.
+      // Selected row carries a background; its green stays green, as in `highlightChunk`.
       expect(hasSelectionBackground(spans[0]!)).toBe(true)
-      expect(spans[0]!.some((span) => span.fg.intent === "indexed" && span.fg.slot === 10)).toBe(true)
+      expect(spans[0]!.some((span) => span.fg.intent === "indexed" && span.fg.slot === 2)).toBe(true)
       // Unselected rows keep the base colour: green hash, default background.
       expect(hasSelectionBackground(spans[1]!)).toBe(false)
       expect(spans[1]!.some((span) => span.fg.intent === "indexed" && span.fg.slot === 2)).toBe(true)
@@ -137,10 +137,10 @@ describe("list text painter", () => {
       installListText(pane.text, { state, width: WIDTH, focused: true, hoveredId: "commit:0" })
       await pane.flush()
       const spans = pane.spans()
-      // Hovered-but-selected row paints as selected: brightened fg plus bold.
+      // Hovered-but-selected row paints as selected: its own fg plus bold.
       const hash = spans[0]!.find((span) => span.text.includes("c0000"))!
       expect(hash.fg.intent).toBe("indexed")
-      expect(hash.fg.slot).toBe(10)
+      expect(hash.fg.slot).toBe(2)
       expect(hash.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
       expect(hasSelectionBackground(spans[1]!)).toBe(false)
     } finally {

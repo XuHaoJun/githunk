@@ -4,8 +4,8 @@ type CommandRunner = Pick<GitRunner, "run">
 
 /**
  * The three ref kinds panel 3 can select. lazygit renders the same graph for all of them, from
- * `BranchCommands.GetGraphCmdObj(ref.FullRefName())` — branches_controller.go:207,
- * remote_branches_controller.go:122 and tags_controller.go:109.
+ * `BranchCommands.GetGraphCmdObj(ref.FullRefName())` — branches_controller.go:206,
+ * remote_branches_controller.go:122 and tags_controller.go:110.
  */
 export type RefLogTarget = {
   readonly kind: "local-branch" | "remote-branch" | "tag"
@@ -38,7 +38,7 @@ export function refLogFullName(target: RefLogTarget): string {
 /**
  * lazygit's default `git.branchLogCmd`:
  * `git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium
- * {{branchName}} --` (pkg/config/user_config.go:964).
+ * {{branchName}} --` (pkg/config/user_config.go:985).
  *
  * `--color=always` is kept: git's own colouring is what ../ui/ansi re-renders, and it carries the
  * per-lane graph colours that make the graph readable. `--end-of-options` is added because the ref

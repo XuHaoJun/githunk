@@ -24,7 +24,7 @@ describe("panel 0 keeps the main pane's content", () => {
     await harness.pressKey("4")
     await harness.pressKey("j")
     await harness.settle()
-    await view.whenPreviewSettled().catch(() => {})
+    await harness.settlePreview()
     const selectedOid = view.commitsSelectedOid
     expect(selectedOid).toBeDefined()
     expect(view.mainContent?.source).toBe("commit")
@@ -32,7 +32,7 @@ describe("panel 0 keeps the main pane's content", () => {
 
     await harness.pressKey("0")
     await harness.settle()
-    await view.whenPreviewSettled().catch(() => {})
+    await harness.settlePreview()
 
     expect(view.focusManager.active).toBe("main")
     // The commit diff survives the focus change — no snap back to the working-tree files diff.
@@ -47,7 +47,7 @@ describe("panel 0 keeps the main pane's content", () => {
 
     await harness.pressKey("4")
     await harness.settle()
-    await view.whenPreviewSettled().catch(() => {})
+    await harness.settlePreview()
     expect(view.mainContent?.source).toBe("commit")
 
     await harness.pressKey("2")
@@ -90,7 +90,7 @@ describe("panel 0 keeps the main pane's content", () => {
 
     await harness.pressKey("4")
     await harness.settle()
-    await view.whenPreviewSettled().catch(() => {})
+    await harness.settlePreview()
     const firstOid = view.commitsSelectedOid
 
     // No settle between the two presses: the `j` preview request is (very likely) still
@@ -100,7 +100,7 @@ describe("panel 0 keeps the main pane's content", () => {
     const secondOid = view.commitsSelectedOid
     expect(secondOid).not.toBe(firstOid)
     await harness.settle()
-    await view.whenPreviewSettled().catch(() => {})
+    await harness.settlePreview()
 
     expect(view.focusManager.active).toBe("main")
     expect(view.mainContent?.source).toBe("commit")

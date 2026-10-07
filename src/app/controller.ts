@@ -1,7 +1,7 @@
 import { GitRunner } from "../git/runner"
 import { describeGitError } from "../git/error-message"
 import { loadWorkingTree } from "../git/diff"
-import { listCommits, loadCommit, loadCommitFilePatch, type CommitListOptions } from "../git/commits"
+import { listCommits, loadCommit, loadCommitFilePatch, type CommitListOptions, type CommitLoadOptions } from "../git/commits"
 import type { CommitDetails, CommitSummary } from "../domain/commit"
 import { parseDiff } from "../domain/diff/parse"
 import type { DiffDocument, DiffFile } from "../domain/diff/document"
@@ -48,7 +48,7 @@ import { LOG_ACTIONS } from "./log-actions"
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>, options?: { readonly background?: boolean }) => Promise<WorkingTreeSnapshot>
 export type BranchListingLoader = () => Promise<BranchListing>
 export type CommitListLoader = (range: string, filter?: string, options?: CommitListOptions) => Promise<readonly CommitSummary[]>
-export type CommitLoader = (oid: string) => Promise<CommitDetails>
+export type CommitLoader = (oid: string, options?: CommitLoadOptions) => Promise<CommitDetails>
 export type CommitFilePatchLoader = (oid: string, path: string) => Promise<DiffDocument>
 export type TagListLoader = () => Promise<readonly TagSummary[]>
 export type ReflogListLoader = () => Promise<readonly ReflogEntry[]>
@@ -105,7 +105,7 @@ function defaultLoaders(runner: GitRunner | undefined): AppLoaders {
     load: (target, snapshotOptions) => loadWorkingTree(runner, target.scope, snapshotOptions ?? {}),
     loadBranches: () => listBranches(runner),
     loadCommits: (range, filter, listOptions) => listCommits(runner, range, filter, listOptions),
-    loadCommit: (oid) => loadCommit(runner, oid),
+    loadCommit: (oid, commitOptions) => loadCommit(runner, oid, commitOptions ?? {}),
     loadCommitFilePatch: (oid, path) => loadCommitFilePatch(runner, oid, path),
     loadStashes: () => listStashes(runner),
     loadTags: () => listTags(runner),
@@ -242,7 +242,7 @@ export class AppController {
   private generation = 0
   /**
    * Whether the commit history loads bounded. lazygit defaults its
-   * `limitCommits` to true (pkg/gui/context/local_commits_context.go:224-235)
+   * `limitCommits` to true (pkg/gui/context/local_commits_context.go:344-355)
    * and only drops the bound once the cursor passes the threshold.
    */
   private limitCommits = true
@@ -334,7 +334,7 @@ export class AppController {
   /**
    * The last pull requests fetched, kept so a branch refresh can re-key them against the new branch
    * list without another network call — lazygit's `rebuildPullRequestsMap`
-   * (pkg/gui/controllers/helpers/refresh_helper.go:1819-1825).
+   * (pkg/gui/controllers/helpers/refresh_helper.go:1860-1866).
    */
   private pullRequestList: readonly PullRequest[] = []
 
@@ -349,7 +349,7 @@ export class AppController {
   /**
    * Asks `gh` for this repo's pull requests and re-keys them by branch. A failure is swallowed:
    * `gh` missing or unauthenticated must not erase the last successful dots, and lazygit likewise
-   * treats GitHub refresh failure as auxiliary (refresh_helper.go:1840-1843).
+   * treats GitHub refresh failure as auxiliary (refresh_helper.go:1881-1884).
    */
   async refreshPullRequests(): Promise<void> {
     if (this.loadPullRequestList === undefined) return
@@ -479,7 +479,7 @@ export class AppController {
   async createStash(message: string, options: StashCreateOptions): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
     // `handleStashSave`'s caller picks the label from which stash variant was invoked
-    // (files_controller.go:1300 vs :1282/:1482 -> :1516). githunk has no staged-only stash, but
+    // (files_controller.go:1299 vs :1282/:1482 -> :1516). githunk has no staged-only stash, but
     // does have the untracked-files distinction lazygit labels separately here.
     this.logAction(options.includeUntracked ? LOG_ACTIONS.stashIncludeUntrackedChanges : LOG_ACTIONS.stashAllChanges)
     await this.runMutation(() => this.requireRunnerOperation((runner) => createGitStash(runner, message, options)).then(() => undefined))
@@ -555,7 +555,7 @@ export class AppController {
   }
   async fetch(remote?: string, options: FetchOptions = {}): Promise<void> {
     if (!this.ensureWorkingTreeMutation()) return
-    // The background fetch is `DontLog()` in lazygit (git_commands/sync.go:81): no command line
+    // The background fetch is `DontLog()` in lazygit (git_commands/sync.go:85): no command line
     // and no action label, so a 60-second timer does not bury what the user actually ran.
     if (options.background !== true) this.logAction(LOG_ACTIONS.fetch)
     await this.runMutation(() => this.requireRunnerOperation((runner) => fetchSync(runner, remote, options)))
@@ -583,7 +583,7 @@ export class AppController {
     const choice = this.currentState.upstreamChoice
     if (choice === undefined) return
     // Setting the upstream is a distinct intent lazygit labels separately
-    // (remote_branches_controller.go:187, `Actions.SetBranchUpstream`; english.go:2210) before the
+    // (remote_branches_controller.go:187, `Actions.SetBranchUpstream`; english.go:2277) before the
     // pull/push it then performs; `pull`/`push` below add their own label, so this is deliberately
     // the only site that logs twice per keypress.
     this.logAction(LOG_ACTIONS.setBranchUpstream)
@@ -832,8 +832,8 @@ export class AppController {
     this.setState({}, ["upstreamChoice"])
   }
 
-  async loadCommitInspection(oid: string): Promise<CommitDetails> {
-    return this.loadCommitDetails(oid)
+  async loadCommitInspection(oid: string, options?: CommitLoadOptions): Promise<CommitDetails> {
+    return this.loadCommitDetails(oid, options)
   }
   async loadBranchCommits(branch: string): Promise<readonly CommitSummary[]> {
     return this.loadCommitList(`refs/heads/${branch}`, undefined, { limit: this.limitCommits })
@@ -868,7 +868,7 @@ export class AppController {
   /**
    * A ref's commit graph, still carrying git's own SGR sequences. What panel 3 renders into the
    * main pane for every selection it has, the way lazygit does
-   * (branches_controller.go:207 `GetGraphCmdObj`).
+   * (branches_controller.go:206 `GetGraphCmdObj`).
    */
   async loadRefLogInspection(target: RefLogTarget): Promise<string> {
     if (this.runner === undefined) throw new Error("Ref log inspection requires a GitRunner")
@@ -1056,8 +1056,8 @@ export class AppController {
   /**
    * lazygit's `LogAction`, called from its UI controllers — the layer where one user intent
    * becomes N git commands (pkg/gui/controllers/files_controller.go:544,559;
-   * pkg/gui/controllers/stash_controller.go:127,141,169;
-   * pkg/gui/controllers/sync_controller.go:167,197). This controller is githunk's equivalent: its
+   * pkg/gui/controllers/stash_controller.go:130,144,172;
+   * pkg/gui/controllers/sync_controller.go:380,476). This controller is githunk's equivalent: its
    * mutation methods map one-to-one onto user intents, where `root-view.ts` corresponds to
    * lazygit's keybinding table and views.
    *

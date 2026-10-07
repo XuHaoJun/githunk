@@ -1,6 +1,6 @@
 import type { CommandLogLine, CommandLogSpan, CommandLogStyle } from "../domain/command"
 
-/** `Tr.GitOutput` (pkg/i18n/english.go:1977). */
+/** `Tr.GitOutput` (pkg/i18n/english.go:2044). */
 const GIT_OUTPUT_HEADING = "Git output:"
 
 /**
@@ -99,7 +99,7 @@ export class CommandLog {
   /**
    * The cyan intro of `printCommandLogHeader` (pkg/gui/command_log_panel.go:70-76). The blank line
    * after it is `CommandLogHeader`'s own trailing `\n` plus `Fprintln`'s
-   * (pkg/i18n/english.go:1951).
+   * (pkg/i18n/english.go:2019).
    */
   logIntro(text: string): void {
     this.push([{ style: "intro", text }])

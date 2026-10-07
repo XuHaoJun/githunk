@@ -57,7 +57,7 @@ const singleTopLevelTree = async (repository: TempRepository): Promise<void> => 
 
 /**
  * Panel 2's side-panel group is lazygit's `{"files", "worktrees", "submodules"}`
- * (pkg/config/user_config.go:872), and its Files tab renders `pkg/gui/filetree` through
+ * (pkg/config/user_config.go:892), and its Files tab renders `pkg/gui/filetree` through
  * `pkg/gui/presentation/files.go`.
  */
 /** One staged modification (a green `M ` status) and one untracked file (a red `??`). */
@@ -247,9 +247,9 @@ describe("panel 2 tabs", () => {
     expect(paneScrollbar(view.filesPane.text)?.visible).toBe(false)
   })
 
-  test("the selected file row's status characters are brightened and bolded with ANSI intent", async () => {
-    // view.go:665-680: a highlighted line's foregrounds are promoted to their bright ANSI variant
-    // and bolded before lazygit applies SelBgColor.
+  test("the selected file row's status characters keep their ANSI colors and are bolded", async () => {
+    // lazygit v0.66 view.go:954-961: a highlighted line keeps its foregrounds, ORs in bold, and
+    // takes SelBgColor (commit c1b14ea2a stopped promoting them to their bright variants).
     const shell = await createShellHarness({ setup: stagedAndUntracked })
     harness = shell
     const view = shell.app.view!
@@ -261,11 +261,11 @@ describe("panel 2 tabs", () => {
     const geometry = shell.paneTextGeometry("files")!
     const rowSpans = (offset: number) => spansAt(shell, geometry.screenY + offset, geometry.screenX, geometry.screenX + geometry.width - 1)
 
-    // Row 1 is selected: staged status is ANSI green promoted to bright ANSI green.
+    // Row 1 is selected: staged status stays ANSI green.
     const staged = rowSpans(1).find((s) => s.text.includes("M"))
     expect(staged).toBeDefined()
     expect(isIndexed(staged!.bg, 4)).toBe(true)
-    expect(isIndexed(staged!.fg, 10)).toBe(true)
+    expect(isIndexed(staged!.fg, 2)).toBe(true)
     expect(staged!.fg).not.toEqual(staged!.bg)
     expect(staged!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
 
@@ -281,7 +281,7 @@ describe("panel 2 tabs", () => {
     const nowSelected = rowSpans(2).find((s) => s.text.includes("??"))
     expect(nowSelected).toBeDefined()
     expect(isIndexed(nowSelected!.bg, 4)).toBe(true)
-    expect(isIndexed(nowSelected!.fg, 9)).toBe(true)
+    expect(isIndexed(nowSelected!.fg, 1)).toBe(true)
     expect(nowSelected!.fg).not.toEqual(nowSelected!.bg)
     expect(nowSelected!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
   })

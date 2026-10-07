@@ -5,7 +5,7 @@ import { runProcess } from "../runtime/process"
  * Pull requests via the `gh` CLI.
  *
  * lazygit talks to GitHub's GraphQL API itself, discovering a token from `gh`'s hosts.yml or the
- * environment (pkg/commands/git_commands/github.go, refresh_helper.go:1694-1726). githunk shells
+ * environment (pkg/commands/git_commands/github.go, refresh_helper.go:1735-1767). githunk shells
  * out to `gh` instead, which is the same shape as everything else it does and inherits `gh`'s own
  * authentication, host configuration and enterprise support rather than re-deriving them. The
  * consequence is that a repo without `gh` on PATH, or without `gh auth login`, has no initial dots;
