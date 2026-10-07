@@ -52,7 +52,7 @@ export type CommandLogHighlight = {
  *
  * The only multi-span line is `Random tip: <tip>`, so the label/tip boundary is the one column this
  * file measures. It is measured in **display cells** (../cell-width), which is the unit
- * `addHighlight`'s columns count: probed against OpenTUI 0.5.6 by highlighting `[0, 8)` of
+ * `addHighlight`'s columns count: probed against OpenTUI 0.5.14 by highlighting `[0, 8)` of
  * `"中 tip: GREEN"` and of `"🎲 tip: GREEN"` and getting back `"中 tip: "` and `"🎲 tip: "` — 7 code
  * points each, 7 and 8 UTF-16 units, 8 cells each. Code points end either label at column 7 — where
  * the `[0, 7)` probe stopped, on `"中 tip:"` — handing the label's trailing space to the tip's

@@ -10,7 +10,7 @@
  * The approximation is deliberate and its error is bounded: the two callers use it for a *boundary*
  * between adjacent styled runs (a column in an already-installed line), so a grapheme the table
  * misjudges — a combining mark, a variation selector, a ZWJ sequence, a regional-indicator pair,
- * none of which OpenTUI 0.5.6 clusters either — shifts that boundary by a cell. It never changes
+ * none of which OpenTUI 0.5.14 clusters either — shifts that boundary by a cell. It never changes
  * which line is coloured, and it cannot fail.
  */
 

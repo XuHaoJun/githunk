@@ -49,11 +49,11 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
   })
   box.add(text)
   // The same local-default suppression every other pane gets from `createPane`
-  // (src/ui/panes/common.ts:177-184). OpenTUI 0.5.6's `TextBufferRenderable.onMouseEvent` scrolls
+  // (src/ui/panes/common.ts:177-184). OpenTUI's `TextBufferRenderable.onMouseEvent` scrolls
   // the view itself on a wheel event and never consults `defaultPrevented`
-  // (node_modules/@opentui/core/chunk-bun-da1keqyp.js:2814-2833), so the handler has to be replaced
+  // (node_modules/@opentui/core/chunk-bun-j2z63cdy.js:2880-2899), so the handler has to be replaced
   // rather than merely prevented. It deliberately does *not* `stopPropagation()`:
-  // `processMouseEvent` keeps bubbling the event to the parent chain (`:1259-1266`) up to
+  // `processMouseEvent` keeps bubbling the event to the parent chain (`:1455-1462`) up to
   // RootView's single wheel dispatcher, which owns the scroll distance for every pane and — for
   // this one — clears autoscroll, the way lazygit's wheel binding over the extras view runs
   // `scrollUpExtra`/`scrollDownExtra` (pkg/gui/keybindings.go:248-258), both of which assign
@@ -73,12 +73,12 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
   let autoscroll = true
   // Closes the shrinking-direction gap left by resize()'s immediate pin (see the comment
   // there): compose onto attachVerticalScrollbar's box.onSizeChange (it fires reliably on a
-  // real resize — chunk-node-ks0581vk.js:967-969,2488-2743 — unlike text.onSizeChange, which
-  // never fires at all, chunk-node-ks0581vk.js:3001-3007) a `queueMicrotask` that re-pins once
+  // real resize — chunk-bun-j2z63cdy.js:1164-1165,2551-2806 — unlike text.onSizeChange, which
+  // never fires at all, chunk-bun-j2z63cdy.js:3095) a `queueMicrotask` that re-pins once
   // the frame's Yoga traversal has actually finished. Both matter: box.onSizeChange itself
   // fires *before* text's own `_heightValue` refreshes, because a parent's updateFromLayout()
   // (and the resize hooks it fires) runs before it recurses into children's
-  // (chunk-node-ks0581vk.js:1120 vs. 1156-1158) — so reading text.height synchronously inside
+  // (chunk-bun-j2z63cdy.js:1323 vs. 1327,1361) — so reading text.height synchronously inside
   // this handler would be exactly as stale as reading it synchronously inside resize(). Only
   // deferring past the *end* of that synchronous traversal, via a microtask, reaches a point
   // where text.height is fresh.
@@ -101,7 +101,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
       text.width = Math.max(1, Math.floor(width) - 2)
       text.height = contentHeight
       // `text.maxScrollY` subtracts `text.height`'s *getter* from scrollHeight, and that getter
-      // only refreshes from Yoga once per render pass (chunk-node-ks0581vk.js:901-921's
+      // only refreshes from Yoga once per render pass (chunk-bun-j2z63cdy.js:1098-1102's
       // `updateFromLayout`, gated by `_lastLayoutFrame`) — so right after the assignment above it
       // would still read the pane's height from before this resize. That was invisible before
       // Task 9, when a focus change never resized the log at all; now that a focused log can grow
@@ -109,7 +109,7 @@ export function createCommandLogPane(renderer: CliRenderer, lines: readonly Comm
       // getter re-armed the *old*, smaller viewport's bottom instead of the new one. Compute the
       // target from the content height just set instead.
       //
-      // That fixes growing exactly: the `scrollY` setter (chunk-node-ks0581vk.js:2847-2853) also
+      // That fixes growing exactly: the `scrollY` setter (chunk-bun-j2z63cdy.js:2931) also
       // clamps against the same stale getter, i.e. `min(target, scrollHeight - H_old)`, and for
       // growing (`H_new > H_old`) the correct target `scrollHeight - H_new` is always ≤ that
       // stale bound, so it passes through unclamped. Shrinking (`H_new < H_old`) is the opposite:

@@ -249,7 +249,13 @@ costs an order of magnitude more than the 300-write window before it (70 KB of R
 written, and climbing); with it, the second window rides the first window's high-water.
 
 Upstream: `anomalyco/opentui#1493` reports native RSS climbing with a flat JS heap against 0.5.11.
-Drop the `reset` call once a release frees replaced content itself.
+
+**Resolved upstream (2026-10-07).** OpenTUI 0.5.13 shipped "native: release replaced text buffer
+ropes" (#1544), so a write frees the rope it replaced and the leak this phase worked around is
+gone. `pane-text.ts` no longer calls the buffer's native `reset()` — re-measured on 0.5.14, 5000
+rewrites of a 2000-line buffer retain ~1 MB without it, and with it the write re-allocates the
+arena instead (the more expensive path). `tests/ui/pane-text-memory.test.ts` stays as the
+regression guard for the property itself.
 
 ## Measurement method
 

@@ -50,11 +50,11 @@ describe("command log autoscroll", () => {
 
   /**
    * A genuine `type: "scroll"` mouse event, not the programmatic `pane.scrollBy(...)` that every
-   * other wheel test drives. The distinction is the whole point: OpenTUI 0.5.6's
+   * other wheel test drives. The distinction is the whole point: OpenTUI's
    * `TextBufferRenderable.onMouseEvent` scrolls the view itself on a wheel event
-   * (node_modules/@opentui/core/chunk-bun-da1keqyp.js:2814-2833) *without* consulting
+   * (node_modules/@opentui/core/chunk-bun-j2z63cdy.js:2880-2899) *without* consulting
    * `defaultPrevented`, and then `processMouseEvent` bubbles the same event up to
-   * `RootView`'s own dispatcher (`:1259-1266`). A pane that does not suppress its local default
+   * `RootView`'s own dispatcher (`:1455-1462`). A pane that does not suppress its local default
    * therefore applies two independent scrolls per tick, only one of which goes through the
    * autoscroll transition. lazygit binds the wheel over the extras view to the same
    * `scrollUpExtra`/`scrollDownExtra` handlers as `,`/`.` (pkg/gui/keybindings.go:248-258), and

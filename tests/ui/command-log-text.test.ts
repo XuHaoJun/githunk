@@ -33,7 +33,7 @@ describe("commandLogLineHighlights", () => {
   })
 
   test("measures the label in display cells, not code points or UTF-16 units", () => {
-    // `addHighlight`'s columns are display cells. Probed against OpenTUI 0.5.6 directly: with
+    // `addHighlight`'s columns are display cells. Probed against OpenTUI 0.5.14 directly: with
     // `"中 tip: GREEN"` installed, highlighting `[0, 8)` came back as `"中 tip: "` — 7 code points
     // and 7 UTF-16 units, but 8 cells, because 中 occupies two columns. `"🎲 tip: GREEN"` behaves
     // the same way (7 code points, 8 UTF-16 units, 8 cells). Code points end either label at column
@@ -69,7 +69,7 @@ function expectIndexed(color: RGBA, slot: number): void {
 
 /**
  * `OpenTUI`'s `TextBuffer.addHighlight` addresses a *logical* (pre-wrap) line, not the visual row
- * `lineInfo.lineSources` is indexed by (confirmed against 0.5.6: `TextBufferRenderable` keeps a
+ * `lineInfo.lineSources` is indexed by (confirmed against 0.5.14: `TextBufferRenderable` keeps a
  * pre-wrap `textBuffer` the highlight calls hit, separate from the wrapped `textBufferView` that
  * produces `lineInfo`), and its columns are display cells. `installCommandLogText` therefore paints
  * per logical line, in that line's own cell columns — these tests exercise that against a real

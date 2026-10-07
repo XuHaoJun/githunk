@@ -1842,7 +1842,7 @@ export class RootView {
   private revealListRow(name: SideWindow | "main", pane: PaneHandle, line: number): void {
     const visibleLines = Math.max(1, heightOf(this.geometry.windows[name]) - 2)
     pane.text.scrollY = scrollYToReveal(line, line, visibleLines, pane.text.scrollY)
-    // No scroll-change event exists in OpenTUI 0.5.6: without this the thumb freezes
+    // No scroll-change event exists in OpenTUI 0.5.14: without this the thumb freezes
     // whenever a reveal mutates scrollY without a content update.
     pane.syncScrollbar()
   }

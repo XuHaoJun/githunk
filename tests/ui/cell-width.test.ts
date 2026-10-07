@@ -44,7 +44,7 @@ describe("cellWidth", () => {
   })
 
   test("counts emoji as two cells, which is what OpenTUI's buffer gives them", () => {
-    // The ranges these pin were the fix for a mis-measured tip label: OpenTUI 0.5.6 renders U+1F3B2
+    // The ranges these pin were the fix for a mis-measured tip label: OpenTUI 0.5.14 renders U+1F3B2
     // in two columns, so a label ending in one measured a cell short and handed its last column to
     // the run after it (see ./command-log-text.test.ts's wide-label test).
     expect(cellWidth("🎲")).toBe(2)
@@ -61,7 +61,7 @@ describe("cellWidth", () => {
   })
 
   test("gives a combining mark a cell of its own, as the approximation's bound says", () => {
-    // No grapheme clustering — neither here nor in OpenTUI 0.5.6 — so a decomposed é is two cells
+    // No grapheme clustering — neither here nor in OpenTUI 0.5.14 — so a decomposed é is two cells
     // where its precomposed form is one. That is the documented error: one column on a boundary
     // between two styled runs, never a mis-coloured line.
     expect(cellWidth("e\u0301")).toBe(2) // decomposed: e + COMBINING ACUTE ACCENT

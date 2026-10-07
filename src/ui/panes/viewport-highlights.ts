@@ -16,7 +16,7 @@ import { onPaneLifecyclePass, type PaneTextBuffer } from "./pane-text"
  * arithmetic, the caching, and the lifecycle hook.
  *
  * The unit throughout is the *logical* (pre-wrap) line, because that is what
- * `PaneTextBuffer.addHighlight` addresses — OpenTUI 0.5.6's `TextBufferRenderable` keeps the
+ * `PaneTextBuffer.addHighlight` addresses — OpenTUI 0.5.14's `TextBufferRenderable` keeps the
  * pre-wrap `textBuffer` the highlight calls reach separate from the wrapped `textBufferView` that
  * produces `lineInfo`. A line painted once is therefore coloured on every visual row it wrapped
  * onto, and a wrapped line above the viewport cannot shift anything.
