@@ -1143,6 +1143,7 @@ export class RootView {
     }
     const focused = this.focusManager.active === "branches"
     const activeView = this.activeListView("branches")
+    pane.setListFooter(activeView?.state)
     if (activeView === undefined) {
       releaseListText(pane.text)
       pane.update("")
@@ -1219,6 +1220,7 @@ export class RootView {
     const tabsInput = this.filesTabsInput()
     pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
     const activeView = this.activeListView("files")
+    pane.setListFooter(activeView?.state)
     if (activeView === undefined) {
       releaseListText(pane.text)
       pane.update("")
@@ -1243,6 +1245,7 @@ export class RootView {
   private renderStashPane(): void {
     const pane = this.panes.stash
     const activeView = this.activeListView("stash")
+    pane.setListFooter(activeView?.state)
     if (activeView === undefined) {
       releaseListText(pane.text)
       pane.update("")
@@ -4305,6 +4308,7 @@ export class RootView {
       pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
     }
     const activeView = this.activeListView("commits")
+    pane.setListFooter(activeView?.state)
     if (activeView === undefined) {
       releaseListText(pane.text)
       pane.update("")
