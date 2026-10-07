@@ -77,6 +77,8 @@ describe("main pane selection after a line action", () => {
     await harness.repository.write("a.txt", `${CHANGED.map((line, index) => (index === 17 ? "Line 18" : line)).join("\n")}\n`)
     await harness.pressKey("R")
     await harness.settle()
+    // `settle` waits for the refresh's git work; the main pane's reload lands after it.
+    await harness.app.view!.whenPreviewSettled()
 
     expect(getMainDocument(harness.app.view!.mainPane)!.text).toContain("+Line 18")
     expect(selectedRaws(harness)).toEqual(["-line 2", "+LINE 2"])
@@ -90,6 +92,8 @@ describe("main pane selection after a line action", () => {
     await harness.repository.write("a.txt", `${CHANGED.map((line, index) => (index === 17 ? "Line 18" : line)).join("\n")}\n`)
     await harness.pressKey("R")
     await harness.settle()
+    // `settle` waits for the refresh's git work; the main pane's reload lands after it.
+    await harness.app.view!.whenPreviewSettled()
 
     const pane = harness.app.view!.mainPane
     expect(getMainDocument(pane)!.text).toContain("+Line 18")
