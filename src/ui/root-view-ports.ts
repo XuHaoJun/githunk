@@ -5,6 +5,7 @@ import type { SubmoduleConfig } from "../domain/submodule"
 import type { CommitDetails, CommitSummary } from "../domain/commit"
 import type { TagPreview, TagSummary } from "../domain/tag"
 import type { RefLogTarget } from "../git/ref-log"
+import type { CommitLoadOptions } from "../git/commits"
 import type { CheckoutRemoteTrackingResult, CreateBranchOptions, RemoteBranchSelection } from "../git/branches"
 import type { UiState as PersistedUiState } from "./ui-state-store"
 
@@ -60,7 +61,7 @@ export type RepositoryCommands = {
 
 /** Read-only lookups the view renders from. None of these change the model. */
 export type RepositoryQueries = {
-  readonly loadCommitInspection: (oid: string) => Promise<CommitDetails>
+  readonly loadCommitInspection: (oid: string, options?: CommitLoadOptions) => Promise<CommitDetails>
   readonly loadBranchCommits: (branch: string) => Promise<readonly CommitSummary[]>
   readonly loadCommitFileInspection: (oid: string, path: string) => Promise<DiffDocument>
   readonly loadTagInspection: (tag: TagSummary) => Promise<TagPreview>

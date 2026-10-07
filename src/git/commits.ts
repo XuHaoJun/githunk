@@ -107,9 +107,19 @@ async function parentOidsFor(runner: CommandRunner, oid: string): Promise<readon
   return fields.slice(1)
 }
 
-export async function loadCommit(runner: CommandRunner, oid: string): Promise<CommitDetails> {
+export type CommitLoadOptions = {
+  /**
+   * The width to lay the diffstat out to. Output to a pipe is laid out to 80 columns, which
+   * truncates long paths to `...` in a wider main view, so lazygit hands git the view's width
+   * (pkg/gui/main_view_render.go:250-256, via `COLUMNS`).
+   */
+  readonly statWidth?: number
+}
+
+export async function loadCommit(runner: CommandRunner, oid: string, options: CommitLoadOptions = {}): Promise<CommitDetails> {
+  const stat = options.statWidth === undefined ? "--stat" : `--stat=${Math.max(1, Math.floor(options.statWidth))}`
   // --stat before -m so preamble includes diff stat ("1 file changed"); file-specific patch omits stat
-  const result = await runner.run(["show", "--format=fuller", "--no-ext-diff", "--no-color", "--find-renames", "--binary", "--stat", "-m", oid, "--"], { readOnly: true })
+  const result = await runner.run(["show", "--format=fuller", "--no-ext-diff", "--no-color", "--find-renames", "--binary", stat, "-m", oid, "--"], { readOnly: true })
   const parents = await parentOidsFor(runner, oid)
   return detailsFromShow(result.stdout, oid, parents)
 }

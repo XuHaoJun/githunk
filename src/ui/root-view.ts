@@ -63,6 +63,7 @@ import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { PANE_SCROLLBAR_GUTTER, paneScrollbar, scrollYToReveal, type PaneHandle } from "./panes/common"
 import { copySelection } from "../domain/diff/selection"
 import { clearDiffLineRange, diffLineSelectionRange, expandDiffLineRange, moveDiffLineSelection, toggleDiffLineRange } from "../domain/diff/line-selection"
+import type { CommitLoadOptions } from "../git/commits"
 import { newFilePosition } from "../domain/diff/line-restore"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
@@ -266,6 +267,8 @@ export class RootView {
    * act on the diff the first press is about to change.
    */
   private heldKeys: KeyEvent[] | undefined
+  /** The width the shown commit preview's diffstat was laid out to; see requestCommitPreview. */
+  private commitPreviewStatWidth: number | undefined
   private fileRangeRefreshSelectionId: string | undefined
   private pendingRemoteMismatch: { readonly selection: RemoteBranchSelection; readonly message: string } | undefined
   private remoteCheckoutGeneration = 0
@@ -3134,7 +3137,7 @@ export class RootView {
     if (selectedId === undefined) return
     const oid = selectedId
     this.previewInflight = this.ports.queries
-      .loadCommitInspection(oid)
+      .loadCommitInspection(oid, this.commitLoadOptions())
       .then((details) => {
         const fileRows = commitFileRows(details)
         if (fileRows.length === 0) {
@@ -3165,10 +3168,7 @@ export class RootView {
       this.commitsPanel = leavePanelChild(this.commitsPanel)
       this.renderCommitsPane()
       {
-        const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(oid)
-        const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
-        const promise = this.mainGate.request("commit", oid, load, present)
-        this.previewInflight = promise.catch(() => {})
+        this.requestCommitPreview(oid)
       }
       this.root.requestRender()
     }
@@ -3204,10 +3204,7 @@ export class RootView {
       this.commitsPanel = leavePanelChild(this.commitsPanel)
       this.renderCommitsPane()
       {
-        const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(oid)
-        const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
-        const promise = this.mainGate.request("commit", oid, load, present)
-        this.previewInflight = promise.catch(() => {})
+        this.requestCommitPreview(oid)
       }
       this.root.requestRender()
       return
@@ -4206,6 +4203,33 @@ export class RootView {
     }
   }
 
+  /**
+   * Requests a commit's preview with its diffstat laid out to the main view's width, remembering
+   * that width so a layout that changes it can lay the diffstat out again (lazygit
+   * pkg/gui/main_view_render.go:250-256; commit 0afb94e97 redoes it after a screen-mode change).
+   */
+  private requestCommitPreview(oid: string): void {
+    const options = this.commitLoadOptions()
+    this.commitPreviewStatWidth = options.statWidth
+    const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(oid, options)
+    const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
+    this.previewInflight = this.mainGate.request("commit", oid, load, present).catch(() => {})
+  }
+
+  private commitLoadOptions(): CommitLoadOptions {
+    const window = this.geometry.windows.main
+    return window === undefined ? {} : { statWidth: Math.max(1, widthOf(window) - 2) }
+  }
+
+  /** Lays the shown commit's diffstat out again when the main view's width has changed. */
+  private relayCommitPreviewStat(): void {
+    const content = this.installedMainContent
+    if (content?.source !== "commit" || this.commitPreviewStatWidth === undefined) return
+    const width = this.commitLoadOptions().statWidth
+    if (width === undefined || width === this.commitPreviewStatWidth) return
+    this.requestCommitPreview(content.stableId)
+  }
+
   /** Resolves when the current Main preview or panel-3 branch-history load has settled. */
   whenPreviewSettled(): Promise<void> {
     return Promise.all([this.previewInflight, this.branchCommitsInflight]).then(() => {})
@@ -4410,10 +4434,7 @@ export class RootView {
           return
         }
         {
-          const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(entry.oid)
-          const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
-          const promise = this.mainGate.request("commit", entry.oid, load, present)
-          this.previewInflight = promise.catch(() => {})
+          this.requestCommitPreview(entry.oid)
         }
         return
       }
@@ -4424,10 +4445,7 @@ export class RootView {
       }
       const oid = state.selectedId
       {
-        const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(oid)
-        const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
-        const promise = this.mainGate.request("commit", oid, load, present)
-        this.previewInflight = promise.catch(() => {})
+        this.requestCommitPreview(oid)
       }
       return
     }
@@ -4460,10 +4478,7 @@ export class RootView {
             this.mainGate.installSynchronous({ source: "commit", stableId: "local-commits-empty", label: "Commit", plainText: "No commits" })
             return
           }
-          const load = (): Promise<CommitDetails> => this.ports.queries.loadCommitInspection(selectedId)
-          const present = (details: CommitDetails): MainPaneContent => this.presentCommitContent(details)
-          const promise = this.mainGate.request("commit", selectedId, load, present)
-          this.previewInflight = promise.catch(() => {})
+          this.requestCommitPreview(selectedId)
           return
         }
         const selectedId = child.view.selectedId
@@ -5033,6 +5048,8 @@ export class RootView {
           if (event.type === "up") {
             this.gestureOwner = undefined
             this.activeSplitterDrag = undefined
+            // A drag re-lays the diffstat once, at the width it ends on.
+            this.relayCommitPreviewStat()
             event.preventDefault()
             event.stopPropagation()
             return
@@ -5053,6 +5070,8 @@ export class RootView {
           if (event.type === "up") {
             this.gestureOwner = undefined
             this.activeSplitterDrag = undefined
+            // A drag re-lays the diffstat once, at the width it ends on.
+            this.relayCommitPreviewStat()
             event.preventDefault()
             event.stopPropagation()
             return
@@ -5471,6 +5490,8 @@ export class RootView {
       return before?.x0 !== after?.x0 || before?.y0 !== after?.y0 || before?.x1 !== after?.x1 || before?.y1 !== after?.y1
     })
     if (sideGeometryChanged) this.renderSidePanes()
+    const dragging = this.gestureOwner?.kind === "vertical-splitter" || this.gestureOwner?.kind === "horizontal-splitter"
+    if (!dragging) this.relayCommitPreviewStat()
   }
 
   private layoutOptions(): LayoutRequest {

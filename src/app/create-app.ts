@@ -420,7 +420,7 @@ export function createApp(options: CreateAppOptions): App {
         }
       },
       queries: {
-        loadCommitInspection: (oid) => controller.loadCommitInspection(oid),
+        loadCommitInspection: (oid, options) => controller.loadCommitInspection(oid, options),
         loadBranchCommits: options.loadBranchCommits ?? ((branch) => controller.loadBranchCommits(branch)),
         loadCommitFileInspection: (oid, path) => controller.loadCommitFileInspection(oid, path),
         loadTagInspection: (tag) => controller.loadTagInspection(tag),

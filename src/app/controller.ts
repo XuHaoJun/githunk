@@ -1,7 +1,7 @@
 import { GitRunner } from "../git/runner"
 import { describeGitError } from "../git/error-message"
 import { loadWorkingTree } from "../git/diff"
-import { listCommits, loadCommit, loadCommitFilePatch, type CommitListOptions } from "../git/commits"
+import { listCommits, loadCommit, loadCommitFilePatch, type CommitListOptions, type CommitLoadOptions } from "../git/commits"
 import type { CommitDetails, CommitSummary } from "../domain/commit"
 import { parseDiff } from "../domain/diff/parse"
 import type { DiffDocument, DiffFile } from "../domain/diff/document"
@@ -48,7 +48,7 @@ import { LOG_ACTIONS } from "./log-actions"
 export type WorkingTreeLoader = (target: Extract<ReviewTarget, { readonly kind: "working-tree" }>, options?: { readonly background?: boolean }) => Promise<WorkingTreeSnapshot>
 export type BranchListingLoader = () => Promise<BranchListing>
 export type CommitListLoader = (range: string, filter?: string, options?: CommitListOptions) => Promise<readonly CommitSummary[]>
-export type CommitLoader = (oid: string) => Promise<CommitDetails>
+export type CommitLoader = (oid: string, options?: CommitLoadOptions) => Promise<CommitDetails>
 export type CommitFilePatchLoader = (oid: string, path: string) => Promise<DiffDocument>
 export type TagListLoader = () => Promise<readonly TagSummary[]>
 export type ReflogListLoader = () => Promise<readonly ReflogEntry[]>
@@ -105,7 +105,7 @@ function defaultLoaders(runner: GitRunner | undefined): AppLoaders {
     load: (target, snapshotOptions) => loadWorkingTree(runner, target.scope, snapshotOptions ?? {}),
     loadBranches: () => listBranches(runner),
     loadCommits: (range, filter, listOptions) => listCommits(runner, range, filter, listOptions),
-    loadCommit: (oid) => loadCommit(runner, oid),
+    loadCommit: (oid, commitOptions) => loadCommit(runner, oid, commitOptions ?? {}),
     loadCommitFilePatch: (oid, path) => loadCommitFilePatch(runner, oid, path),
     loadStashes: () => listStashes(runner),
     loadTags: () => listTags(runner),
@@ -832,8 +832,8 @@ export class AppController {
     this.setState({}, ["upstreamChoice"])
   }
 
-  async loadCommitInspection(oid: string): Promise<CommitDetails> {
-    return this.loadCommitDetails(oid)
+  async loadCommitInspection(oid: string, options?: CommitLoadOptions): Promise<CommitDetails> {
+    return this.loadCommitDetails(oid, options)
   }
   async loadBranchCommits(branch: string): Promise<readonly CommitSummary[]> {
     return this.loadCommitList(`refs/heads/${branch}`, undefined, { limit: this.limitCommits })
