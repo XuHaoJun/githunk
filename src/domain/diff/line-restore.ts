@@ -72,3 +72,28 @@ export function findDiffLineByIdentity(document: DiffDocument, identity: DiffLin
   }
   return undefined
 }
+
+/**
+ * The line of the new file a diff row points at, for opening an editor there: an addition's or
+ * context line's own new line, the position a deletion sits at, a hunk header's first line
+ * (lazygit's `DiffLineInfo.NewLine`, pkg/gui/types/diff_line_info.go:29-32). Undefined for a
+ * file header and other rows outside a hunk, which point at the file as a whole.
+ */
+export function newFilePosition(document: DiffDocument, index: number): number | undefined {
+  const line = document.lines[index]
+  if (line === undefined || line.hunkIndex === undefined) return undefined
+  if (line.newLine !== undefined) return line.newLine
+  const hunk = document.files[line.fileIndex]?.hunks[line.hunkIndex]
+  if (hunk === undefined) return undefined
+  if (line.kind === "hunk-header") return hunk.newStart
+  const position = hunk.lines.indexOf(line)
+  for (let next = position + 1; next < hunk.lines.length; next += 1) {
+    const newLine = hunk.lines[next]!.newLine
+    if (newLine !== undefined) return newLine
+  }
+  for (let previous = position - 1; previous >= 0; previous -= 1) {
+    const newLine = hunk.lines[previous]!.newLine
+    if (newLine !== undefined) return newLine + 1
+  }
+  return hunk.newStart
+}

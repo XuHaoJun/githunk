@@ -111,4 +111,82 @@ describe("main pane selection after a line action", () => {
     expect(staged).toContain("+LINE 10")
     expect(staged).not.toContain("+LINE 18")
   })
+
+  test("d on the staged side takes the selected lines back out of the index without asking", async () => {
+    harness = await createShellHarness({
+      width: 140,
+      height: 40,
+      setup: async (repository: TempRepository) => {
+        await repository.write("a.txt", `${BASE.join("\n")}\n`)
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("a.txt", `${CHANGED.join("\n")}\n`)
+        await repository.git(["add", "-A"])
+      }
+    })
+    await harness.pressKey("0")
+    await harness.pressKey("]")
+    await harness.settle()
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    expect(selectedRaws(harness)).toEqual(["-line 2", "+LINE 2"])
+
+    await harness.pressKey("d")
+    await harness.settle()
+
+    const staged = (await harness.repository.git(["diff", "--cached", "--", "a.txt"])).stdout
+    expect(staged).not.toContain("+LINE 2")
+    expect(staged).toContain("+LINE 10")
+    expect((await harness.repository.git(["diff", "--", "a.txt"])).stdout).toContain("+LINE 2")
+  })
+
+  test("e opens the editor at the selected line rather than at its hunk's start", async () => {
+    const edits: Array<{ readonly path: string; readonly line: number | undefined }> = []
+    harness = await createShellHarness({
+      width: 140,
+      height: 40,
+      onEditFile: async (path, line) => {
+        edits.push({ path, line })
+      },
+      setup: async (repository: TempRepository) => {
+        await repository.write("a.txt", `${BASE.join("\n")}\n`)
+        await repository.git(["add", "-A"])
+        await repository.git(["commit", "-m", "base"])
+        await repository.write("a.txt", `${CHANGED.join("\n")}\n`)
+      }
+    })
+    await harness.pressKey("0")
+    await harness.pressKey("]")
+    await harness.settle()
+    await harness.pressKey("]")
+    await harness.settle()
+    await harness.pressKey("l")
+    await harness.pressKey("e")
+    await harness.settle()
+    await harness.pressKey("ARROW_DOWN", { shift: true })
+    expect(selectedRaws(harness)).toEqual(["-line 2", "+LINE 2"])
+    await harness.pressKey("e")
+    await harness.settle()
+
+    // The hunk cursor alone opens at the hunk's first line, as before; a selection opens at the
+    // line its cursor end is on.
+    expect(edits).toEqual([
+      { path: "a.txt", line: 1 },
+      { path: "a.txt", line: 2 }
+    ])
+  })
+
+  test("escape dismisses a range before it leaves the main view", async () => {
+    harness = await unstagedHarness()
+    const view = harness.app.view!
+    await harness.pressKey("v")
+    await harness.pressKey("ARROW_DOWN")
+    expect(selectedRaws(harness)).toEqual(["-line 2", "+LINE 2"])
+
+    await harness.pressKey("ESCAPE")
+    expect(view.focusManager.active).toBe("main")
+    expect(selectedRaws(harness)).toEqual([])
+
+    await harness.pressKey("ESCAPE")
+    expect(view.focusManager.active).not.toBe("main")
+  })
 })

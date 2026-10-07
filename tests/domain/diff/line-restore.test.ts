@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { parseDiff } from "../../../src/domain/diff/parse"
-import { changeLineAtOrdinal, changeOrdinalBefore, diffLineIdentity, findDiffLineByIdentity } from "../../../src/domain/diff/line-restore"
+import { changeLineAtOrdinal, changeOrdinalBefore, diffLineIdentity, findDiffLineByIdentity, newFilePosition } from "../../../src/domain/diff/line-restore"
 
 const twoFiles = parseDiff(["diff --git a/a.txt b/a.txt", "--- a/a.txt", "+++ b/a.txt", "@@ -1,3 +1,3 @@", " keep", "-old", "+new", " tail", "diff --git a/b.txt b/b.txt", "--- a/b.txt", "+++ b/b.txt", "@@ -1,1 +1,2 @@", " one", "+two", ""].join("\n"))
 
@@ -41,5 +41,23 @@ describe("diff line identity", () => {
     const identity = diffLineIdentity(twoFiles, indexOf(twoFiles, "+two"))!
     expect(findDiffLineByIdentity(after, identity)).toBe(indexOf(after, "+two"))
     expect(findDiffLineByIdentity(after, { path: "a.txt", kind: "addition", line: 99 })).toBeUndefined()
+  })
+})
+
+describe("new-file position", () => {
+  test("is the new line of an addition or context line and where a deletion sits", () => {
+    expect(newFilePosition(twoFiles, indexOf(twoFiles, " keep"))).toBe(1)
+    expect(newFilePosition(twoFiles, indexOf(twoFiles, "-old"))).toBe(2)
+    expect(newFilePosition(twoFiles, indexOf(twoFiles, "+new"))).toBe(2)
+    expect(newFilePosition(twoFiles, indexOf(twoFiles, "@@ -1,3 +1,3 @@"))).toBe(1)
+  })
+
+  test("places a trailing deletion after the last line before it", () => {
+    const trailing = parseDiff(["diff --git a/c.txt b/c.txt", "--- a/c.txt", "+++ b/c.txt", "@@ -1,2 +1 @@", " first", "-gone", ""].join("\n"))
+    expect(newFilePosition(trailing, indexOf(trailing, "-gone"))).toBe(2)
+  })
+
+  test("has no position on a file header", () => {
+    expect(newFilePosition(twoFiles, 0)).toBeUndefined()
   })
 })

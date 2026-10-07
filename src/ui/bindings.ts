@@ -384,8 +384,9 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["l"], action: "hunk-next", description: "hunk", displayKeys: "h/l", contexts: ["main"], displayOnScreen: true, menuDescription: "next hunk" },
   { keys: ["h"], action: "hunk-previous", description: "previous hunk", contexts: ["main"] },
   { keys: ["space"], action: "stage-selection", description: "stage", contexts: ["main"], displayOnScreen: true, available: lineActions, menuDescription: "stage the selected lines" },
-  { keys: ["d"], action: "discard-selection", description: "discard", contexts: ["main"], displayOnScreen: true, available: (model, ui) => lineActions(model, ui) && ui.mainScope !== "staged", menuDescription: "discard the selected lines" },
-  { keys: ["e"], action: "edit-file", description: "edit", contexts: ["main"], displayOnScreen: true, available: (_model, ui) => ui.hasMainDocument === true, menuDescription: "open the file in an external editor, at the selected hunk" },
+  // On the staged side `d` takes the lines back out of the index (working_tree_diff_actions.go:73-97).
+  { keys: ["d"], action: "discard-selection", description: "discard", contexts: ["main"], displayOnScreen: true, available: lineActions, menuDescription: "discard the selected lines (unstage them in the staged scope)" },
+  { keys: ["e"], action: "edit-file", description: "edit", contexts: ["main"], displayOnScreen: true, available: (_model, ui) => ui.hasMainDocument === true, menuDescription: "open the file in an external editor, at the selected line or hunk" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["main"] },
   { keys: ["k", "up"], action: "previous", description: "up", contexts: ["main"] },
   { keys: ["v"], action: "toggle-range-select", description: "range", contexts: ["main"], available: (_model, ui) => ui.hasMainDocument === true },
@@ -435,8 +436,12 @@ export const GITHUNK_BINDINGS: readonly Binding[] = [
   { keys: ["/"], action: "filter", description: "filter", contexts: ["commits"], displayOnScreen: true },
   { keys: ["/"], action: "filter", description: "filter", contexts: ["main"], displayOnScreen: true },
   // Lazygit's Next/Prev match for searchable contexts (pkg/gocui/gui.go:320, pkg/gui/types/context.go:154)
-  { keys: ["n"], action: "search-next", description: "next match", contexts: ["commits", "main"] },
-  { keys: ["N"], action: "search-previous", description: "previous match", contexts: ["commits", "main"] },
+  { keys: ["n"], action: "search-next", description: "next match", contexts: ["commits"] },
+  { keys: ["N"], action: "search-previous", description: "previous match", contexts: ["commits"] },
+  // Without an active search, Main's n/N step from file to file (Main.NextFile/PrevFile,
+  // pkg/config/user_config.go:1195-1196).
+  { keys: ["n"], action: "search-next", description: "next match/file", contexts: ["main"], menuDescription: "next search match, or the next file when not searching" },
+  { keys: ["N"], action: "search-previous", description: "previous match/file", contexts: ["main"], menuDescription: "previous search match, or the previous file when not searching" },
   { keys: ["]"], action: "tab-next", description: "next tab", contexts: ["files", "branches", "commits"], displayOnScreen: true, menuDescription: "next tab" },
   { keys: ["["], action: "tab-previous", description: "previous tab", contexts: ["files", "branches", "commits"], displayOnScreen: true, menuDescription: "previous tab" },
   { keys: ["j", "down"], action: "next", description: "down", contexts: ["branches"] },

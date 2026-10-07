@@ -439,6 +439,19 @@ export function moveMainCursor(document: DiffDocument, current: MainCursorTarget
 }
 
 /**
+ * The first hunk of the next or previous file, for lazygit's `n`/`N` in the focused main view
+ * (`nextFile`/`prevFile`, pkg/gui/controllers/main_view_controller.go:148-161). Without a cursor
+ * the diff is read from its first file, so `n` goes to the second.
+ */
+export function moveMainCursorToFile(document: DiffDocument, current: MainCursorTarget | undefined, direction: "next" | "previous"): MainCursorTarget | undefined {
+  if (document.files.length === 0) return undefined
+  const from = current?.fileIndex ?? 0
+  const fileIndex = Math.max(0, Math.min(document.files.length - 1, from + (direction === "next" ? 1 : -1)))
+  const file = document.files[fileIndex]!
+  return file.hunks.length > 0 ? { fileIndex, hunkIndex: 0 } : { fileIndex }
+}
+
+/**
  * First rendered row of a main cursor target: the hunk's `@@` header for hunk targets, or
  * the file's `diff --git` header for files without hunks (binary/conflicted). renderDiff
  * emits exactly one display row per document line, so the document-lines index is directly

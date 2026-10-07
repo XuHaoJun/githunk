@@ -48,6 +48,7 @@ import {
   setMainCursorTarget,
   setMainDiffLineRangeState,
   revealChangeAfterAction,
+  moveMainCursorToFile,
   setMainLoading,
   virtualMainPaneFor,
   MAIN_TITLE_LOG,
@@ -62,6 +63,7 @@ import { createStatusPane, updateStatusPane } from "./panes/status-pane"
 import { PANE_SCROLLBAR_GUTTER, paneScrollbar, scrollYToReveal, type PaneHandle } from "./panes/common"
 import { copySelection } from "../domain/diff/selection"
 import { clearDiffLineRange, diffLineSelectionRange, expandDiffLineRange, moveDiffLineSelection, toggleDiffLineRange } from "../domain/diff/line-selection"
+import { newFilePosition } from "../domain/diff/line-restore"
 import type { CopyMode, DiffDocument } from "../domain/diff/document"
 import { parseDiff } from "../domain/diff/parse"
 import { ClipboardService, formatCopyResult, type ClipboardPort } from "./clipboard"
@@ -2273,7 +2275,16 @@ export class RootView {
       const target = getMainCursorTarget(this.panes.main)
       let filePath: string | undefined
       let line: number | undefined
-      if (target !== undefined) {
+      // A selection opens the editor at the line its cursor end is on, as lazygit's `editLine`
+      // does (pkg/gui/controllers/main_view_controller.go:1055-1083); with only the hunk cursor
+      // it opens at the hunk's first line.
+      const selectedIndex = this.mainSelectedLineIndex(document)
+      const selectedLine = selectedIndex === undefined ? undefined : document.lines[selectedIndex]
+      if (selectedIndex !== undefined && selectedLine !== undefined) {
+        const file = document.files[selectedLine.fileIndex]
+        filePath = file?.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file?.oldPath
+        line = newFilePosition(document, selectedIndex)
+      } else if (target !== undefined) {
         const file = document.files[target.fileIndex]
         if (file !== undefined) {
           filePath = file.newPath !== undefined && file.newPath !== "/dev/null" ? file.newPath : file.oldPath
@@ -2379,8 +2390,11 @@ export class RootView {
       this.panes.main.box.bottomTitle = "Line actions disabled in All scope; press ] to choose staged or unstaged"
       return
     }
+    // On the staged side "discard this" means "I don't want it staged": the lines go back out of
+    // the index, which loses nothing, so it is the same as Space and asks no confirmation
+    // (lazygit pkg/gui/controllers/working_tree_diff_actions.go:73-97).
     if (this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged") {
-      this.panes.main.box.bottomTitle = "Discard disabled for staged content; unstage with Space"
+      this.actionStageSelection()
       return
     }
     const selected = this.mainChangeSelection()
@@ -3166,8 +3180,19 @@ export class RootView {
    * back on the pane the main view was focused from — `FocusManager.lastSide` here. Returns
    * whether it handled the key, so both Escape handlers can defer to it first.
    */
+  /**
+   * Escape in the focused main view dismisses a selection a step at a time before it leaves: a
+   * keyboard or mouse range goes first, and only then does focus return to the side panel
+   * (lazygit `MainViewController.escape`, pkg/gui/controllers/main_view_controller.go:308-320).
+   */
   private popFocusedMainView(): boolean {
     if (this.focusManager.active !== "main") return false
+    const state = getMainDiffLineRangeState(this.panes.main)
+    if (state !== undefined && (state.rangeMode !== "none" || getMainSelection(this.panes.main) !== undefined)) {
+      setMainDiffLineRangeState(this.panes.main, clearDiffLineRange(state))
+      this.root.requestRender()
+      return true
+    }
     this.focusManager.focus(this.focusManager.lastSide)
     return true
   }
@@ -3469,7 +3494,10 @@ export class RootView {
     }
     if (focus === "main") {
       const query = this.getFilterForKey(this.filterKey("main"))
-      if (query.length === 0) return
+      if (query.length === 0) {
+        this.moveMainCursorToFile("next")
+        return
+      }
       const document = getMainDocument(this.panes.main)
       const virtual = virtualMainPaneFor(this.panes.main)
       const normalizedQuery = query.toLowerCase()
@@ -3582,7 +3610,10 @@ export class RootView {
     }
     if (focus === "main") {
       const query = this.getFilterForKey(this.filterKey("main"))
-      if (query.length === 0) return
+      if (query.length === 0) {
+        this.moveMainCursorToFile("previous")
+        return
+      }
       const document = getMainDocument(this.panes.main)
       const virtual = virtualMainPaneFor(this.panes.main)
       const normalizedQuery = query.toLowerCase()
@@ -3693,6 +3724,16 @@ export class RootView {
       }
     }
     return getMainCursorTarget(this.panes.main)
+  }
+
+  /** The diff line a keyboard range's cursor end, or a mouse selection's first line, is on. */
+  private mainSelectedLineIndex(document: DiffDocument): number | undefined {
+    const keyboard = getMainDiffLineSelection(this.panes.main)
+    if (keyboard !== undefined) return keyboard.state.selectedIndex
+    const resolved = getMainSelection(this.panes.main)
+    if (resolved === undefined || !resolved.valid || resolved.kind !== "document") return undefined
+    const index = document.lines.findIndex((line) => line.endUtf16 > resolved.selection.startUtf16)
+    return index < 0 ? undefined : index
   }
 
   private mainChangeSelection(): { readonly document: DiffDocument; readonly indexes: readonly number[] } | undefined {
@@ -4497,6 +4538,22 @@ export class RootView {
     const targetLine = mainCursorTargetLine(document, target)
     if (targetLine !== undefined) this.revealListRow("main", pane, targetLine)
     this.clearTransientMenus()
+    this.root.requestRender()
+  }
+  /**
+   * `n`/`N` in the focused main view when no search is active: the hunk cursor steps to the next or
+   * previous file's first hunk (lazygit `Main.NextFile`/`Main.PrevFile`,
+   * pkg/config/user_config.go:1195-1196; a search takes the keys first, pkg/gocui/gui.go:320).
+   */
+  private moveMainCursorToFile(direction: "next" | "previous"): void {
+    this.clearNonStickyMainRange()
+    const pane = this.panes.main
+    const document = getMainDocument(pane)
+    const target = document === undefined ? undefined : moveMainCursorToFile(document, getMainCursorTarget(pane), direction)
+    if (document === undefined || target === undefined) return
+    setMainCursorTarget(pane, target)
+    const targetLine = mainCursorTargetLine(document, target)
+    if (targetLine !== undefined) this.revealListRow("main", pane, targetLine)
     this.root.requestRender()
   }
   private copyMainMode(mode: CopyMode): void {
