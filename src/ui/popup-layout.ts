@@ -17,16 +17,23 @@ import { cellWidth } from "./cell-width"
  * size logic.
  */
 
+/** The width a popup keeps as long as it fits into the window at all (`popupPanelMinWidth`). */
 const MIN_POPUP_WIDTH = 80
+/** Columns kept free beside a popup while it can afford them (`popupPanelMargin`). */
+const POPUP_MARGIN = 3
 const TAB_WIDTH = 4
 
+/**
+ * lazygit v0.66's `getPopupPanelWidth` (confirmation_helper.go:129-151, commit d0fa50d4e): a panel
+ * gets the width it asks for while a three-column margin fits beside it, gives the margin up before
+ * going below 80 columns, and leaves a column on either side in the end. The 4/7-of-the-window
+ * ratio it replaced kept menus at 80 columns until the window was 140 wide.
+ */
 export function popupPanelWidth(terminalWidth: number, maxWidth: number): number {
   const width = Math.max(1, Math.floor(terminalWidth))
-  const capped = Math.min(Math.floor((width * 4) / 7), maxWidth)
-  if (capped < MIN_POPUP_WIDTH) {
-    return Math.min(width - 2, MIN_POPUP_WIDTH)
-  }
-  return capped
+  const widthWithMargin = width - 2 * POPUP_MARGIN
+  const widthAtMinWidth = Math.min(MIN_POPUP_WIDTH, width - 2)
+  return Math.max(1, Math.min(maxWidth, Math.max(widthWithMargin, widthAtMinWidth)))
 }
 
 export type PopupGeometry = {
@@ -52,8 +59,8 @@ export function popupPanelGeometry(terminalWidth: number, terminalHeight: number
   const tw = Math.max(1, Math.floor(terminalWidth))
   const th = Math.max(1, Math.floor(terminalHeight))
 
-  // Integer-division mirroring Go's `width/2 - panelWidth/2`
-  const left = Math.max(0, Math.floor(tw / 2) - Math.floor(panelWidth / 2))
+  // `(width - panelWidth) / 2`, which keeps a panel of odd width centred (commit 7253a45c2).
+  const left = Math.max(0, Math.floor((tw - panelWidth) / 2))
   const top = Math.max(0, Math.floor(th / 2) - Math.floor(panelHeight / 2) - (panelHeight % 2))
 
   return {
