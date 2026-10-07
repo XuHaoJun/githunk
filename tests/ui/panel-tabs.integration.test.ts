@@ -126,8 +126,7 @@ describe("panel 3 tabs and transient children", () => {
 
     await harness.pressKey("RETURN")
     await harness.settle()
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
 
     const view = harness.app.view!
     const child = view.branchesPanel.child
@@ -153,7 +152,7 @@ describe("panel 3 tabs and transient children", () => {
     await harness.pressKey("3")
     await harness.pressKey("j")
     await harness.pressKey("RETURN")
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     expect(harness.app.view!.renderedListText("branches")).toContain("feature-only commit")
 
     await harness.repository.git(["checkout", "feature", "--quiet"])
@@ -162,8 +161,7 @@ describe("panel 3 tabs and transient children", () => {
     await harness.repository.git(["commit", "-m", "feature-second commit"])
     await harness.repository.git(["checkout", "-", "--quiet"])
     await harness.app.refresh()
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
 
     expect(harness.app.view!.renderedListText("branches")).toContain("feature-second commit")
   })
@@ -215,12 +213,11 @@ describe("panel 3 tabs and transient children", () => {
     await harness.pressKey("3")
     await harness.pressKey("j")
     await harness.pressKey("RETURN")
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
 
     expect(harness.app.view!.branchesPanel.child?.value.kind).toBe("local-commits")
     await harness.pressKey("ESCAPE")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
 
     expect(harness.app.view!.branchesPanel.child).toBeUndefined()
     expect(harness.app.view!.selectedListId("branches")).toBe("local:feature")
@@ -241,7 +238,7 @@ describe("panel 3 tabs and transient children", () => {
     await harness.pressKey("3")
     await harness.pressKey("j")
     await harness.pressKey("RETURN")
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     await harness.pressKey("j")
     const view = harness.app.view!
     const selectedBefore = view.selectedListId("branches")

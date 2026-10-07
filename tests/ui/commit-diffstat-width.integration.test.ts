@@ -29,13 +29,13 @@ describe("commit preview diffstat width", () => {
     const view = harness.app.view!
     await harness.pressKey("4")
     await harness.settle()
-    await view.whenPreviewSettled()
+    await harness.settlePreview()
     expect(view.mainContent?.source).toBe("commit")
     expect(view.mainContent?.preamble).toContain(` ${LONG_PATH} `)
 
     await harness.resize(90, 40)
     await harness.settle()
-    await view.whenPreviewSettled()
+    await harness.settlePreview()
     expect(view.mainContent?.preamble).not.toContain(` ${LONG_PATH} `)
     expect(view.mainContent?.preamble).toContain("...")
   })

@@ -94,6 +94,11 @@ export type ShellHarness = {
    *  view has settled, rather than relying on `flush()` alone or a fixed sleep. Use this after a
    *  key press that triggers an async git operation and before asserting on its outcome. */
   settle(): Promise<void>
+  /** Waits for RootView's in-flight Main preview and branch-history loads, then renders. A load
+   *  installs its content and only requests a render, while `frame()` reads the last rendered
+   *  buffer — so asserting on the frame straight after `whenPreviewSettled()` can (and on a busy
+   *  CI runner did) see the frame from before the content arrived. */
+  settlePreview(): Promise<void>
   frame(): string
   /** Per-span `fg`/`bg` RGBA and `attributes` for the last rendered frame, for colour assertions. */
   captureSpans(): CapturedFrame
@@ -230,6 +235,10 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
         }
         await new Promise((resolve) => setTimeout(resolve, 1))
       }
+      await setup.flush()
+    },
+    async settlePreview() {
+      await app.view?.whenPreviewSettled()
       await setup.flush()
     },
     frame: () => setup.captureCharFrame(),

@@ -142,8 +142,7 @@ describe("main pane diff rendering", () => {
       }
     })
     await harness.pressKey("4")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
 
     const top = harness.app.view!.paneTextGeometry("main")!.screenY
     // `git show`'s header and stat come before the patch, and carry no diff styling.
@@ -180,8 +179,7 @@ describe("main pane diff rendering", () => {
       }
     })
     await harness.pressKey("4")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
     await harness.pressKey("0")
 
     const content = harness.app.view!
@@ -217,7 +215,7 @@ describe("main pane diff rendering", () => {
       }
     })
     await harness.pressKey("4")
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     await harness.pressKey("0")
     const selected = await dragMainRange(harness, "-two", "+TWO")
     expect(selected).toContain("-two")
@@ -250,7 +248,7 @@ describe("main pane diff rendering", () => {
       }
     })
     await harness.pressKey("4")
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     await harness.pressKey("0")
     const selected = await dragMainRange(harness, "commit ", "+TWO")
     expect(selected).toContain("commit ")
@@ -289,7 +287,7 @@ describe("main pane diff rendering", () => {
       }
     })
     await harness.pressKey("4")
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     await harness.pressKey("0")
 
     const view = harness.app.view!
@@ -330,7 +328,7 @@ describe("main pane diff rendering", () => {
       }
     })
     await harness.pressKey("4")
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
     await harness.pressKey("0")
 
     const view = harness.app.view!

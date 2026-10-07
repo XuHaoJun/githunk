@@ -29,7 +29,7 @@ describe("main pane n/N file navigation", () => {
     })
     await created.pressKey("4")
     await created.settle()
-    await created.app.view!.whenPreviewSettled().catch(() => {})
+    await created.settlePreview()
     await created.pressKey("0")
     await created.settle()
     return created

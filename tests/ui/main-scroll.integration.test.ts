@@ -87,8 +87,7 @@ describe("main view scrolling", () => {
       }
     })
     await created.pressKey("4")
-    await created.app.view!.whenPreviewSettled()
-    await created.flush()
+    await created.settlePreview()
     return created
   }
 
@@ -228,8 +227,7 @@ describe("main view scrolling", () => {
       commits: Array.from({ length: 40 }, (_, index) => `commit number ${index}`)
     })
     await harness.pressKey("3")
-    await harness.app.view!.whenPreviewSettled()
-    await harness.flush()
+    await harness.settlePreview()
     expect(harness.app.view!.mainContent?.source).toBe("local-branch")
 
     await harness.pressKey("0")

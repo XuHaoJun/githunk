@@ -157,7 +157,7 @@ describe("panel 4 Reflog tab", () => {
     await harness.pressKey("4")
     await harness.pressKey("]")
     await harness.settle()
-    await view.whenPreviewSettled().catch(() => {})
+    await harness.settlePreview()
 
     const entries = harness.app.controller.state.reflog ?? []
     expect(view.mainContent?.source).toBe("commit")
@@ -165,7 +165,7 @@ describe("panel 4 Reflog tab", () => {
 
     await harness.pressKey("j")
     await harness.settle()
-    await view.whenPreviewSettled().catch(() => {})
+    await harness.settlePreview()
     expect(view.selectedListId("commits")).toBe(entries[1]!.id)
     expect(view.mainContent?.source).toBe("commit")
     expect(view.mainContent?.stableId).toBe(entries[1]!.oid)
@@ -183,7 +183,7 @@ describe("panel 4 Reflog tab", () => {
     await harness.settle()
     await harness.pressKey("RETURN")
     await harness.settle()
-    await view.whenPreviewSettled().catch(() => {})
+    await harness.settlePreview()
     expect(view.commitsPanel.child).toBeUndefined()
     expect(view.activeCommitsTab).toBe("reflog")
 
@@ -210,8 +210,7 @@ describe("panel 4 Reflog tab", () => {
     await harness.settle()
     await harness.pressKey("RETURN")
     await harness.settle()
-    await view.whenPreviewSettled().catch(() => {})
-    await harness.flush()
+    await harness.settlePreview()
     expect(view.commitsPanel.child?.value.kind).toBe("commit-files")
     const short = view.commitsPanel.child!.value.details.shortOid
     // lazygit's commit files live in their own view with a dynamic title
@@ -267,7 +266,7 @@ describe("panel 4 Reflog tab", () => {
     await harness.pressKey("4")
     await harness.pressKey("]")
     await harness.settle()
-    await view.whenPreviewSettled().catch(() => {})
+    await harness.settlePreview()
     expect(view.renderedListText("commits")).toBe("No reflog history")
     expect(view.selectedListId("commits")).toBeUndefined()
     expect(view.mainContent?.source).toBe("reflog")

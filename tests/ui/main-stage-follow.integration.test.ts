@@ -78,7 +78,7 @@ describe("main pane selection after a line action", () => {
     await harness.pressKey("R")
     await harness.settle()
     // `settle` waits for the refresh's git work; the main pane's reload lands after it.
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
 
     expect(getMainDocument(harness.app.view!.mainPane)!.text).toContain("+Line 18")
     expect(selectedRaws(harness)).toEqual(["-line 2", "+LINE 2"])
@@ -93,7 +93,7 @@ describe("main pane selection after a line action", () => {
     await harness.pressKey("R")
     await harness.settle()
     // `settle` waits for the refresh's git work; the main pane's reload lands after it.
-    await harness.app.view!.whenPreviewSettled()
+    await harness.settlePreview()
 
     const pane = harness.app.view!.mainPane
     expect(getMainDocument(pane)!.text).toContain("+Line 18")
