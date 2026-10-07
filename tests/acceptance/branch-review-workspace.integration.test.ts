@@ -325,8 +325,26 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     await clickReopenedNode("review-finish-summary")
     await harness.typeText("please apply the validation replacement")
     await clickReopenedNode("review-finish-submit")
+    // Submit starts the Finish transaction fire-and-forget (`void finishDialog.submit()` in
+    // ReviewWorkspaceApp), so await the controller's own publish rather than a fixed delay.
+    // `lastSubmission` is `SubmittedReviewRef | null`, so `toBeDefined()` passes while it is
+    // still null and would mask an unfinished submission on a busy runner.
+    const { promise: submissionSettled, resolve: markSettled } = Promise.withResolvers<void>()
+    const settled = (): boolean => {
+      if ((reopened.state?.lastSubmission ?? null) === null) return false
+      markSettled()
+      return true
+    }
+    if (!settled()) {
+      const unsubscribe = reopened.subscribe(() => {
+        if (settled()) unsubscribe()
+      })
+    }
+    await submissionSettled
     await reopened.flushDrafts()
-    expect(reopened.state?.lastSubmission).toBeDefined()
+    const submission = reopened.state?.lastSubmission
+    expect(submission).toBeDefined()
+    expect(submission).not.toBeNull()
     expect(reopened.state?.feedback).toEqual([])
     const artifactId = reopened.state!.lastSubmission!.artifactId
     const artifactStore = new ReviewArtifactStore(new GitRunner(repository.path))
