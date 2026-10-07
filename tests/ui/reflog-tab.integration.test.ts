@@ -40,7 +40,7 @@ describe("panel 4 Reflog tab", () => {
     harness = undefined
   })
 
-  test("the border row shows [4]─Commits - Reflog with the active tab styled only while focused", async () => {
+  test("the border row shows [4]─Commits - Reflog with lazygit's tab and prefix colours", async () => {
     harness = await createShellHarness()
     await harness.pressKey("4")
     await harness.flush()
@@ -55,15 +55,20 @@ describe("panel 4 Reflog tab", () => {
     expect(isIndexed(active!.fg, 2)).toBe(true)
     expect(active!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
 
+    // drawTitle draws the prefix with the focused view's fg, i.e. the active border colour.
+    const prefix = spansAt(harness, win.y0, win.x0 + 2, win.x0 + 2 + "[4]─".length - 1)
+    expect(prefix.every((s) => isIndexed(s.fg, 2))).toBe(true)
+
     const reflogStart = commitsStart + "Commits - ".length
     const reflogSpans = spansAt(harness, win.y0, reflogStart, reflogStart + "Reflog".length - 1)
     expect(reflogSpans.every((s) => !isIndexed(s.fg, 2))).toBe(true)
 
-    // gocui's drawTitle highlights the active tab only while the view is focused.
+    // A non-current view keeps the selected tab green but clears AttrBold (gui.go:1522-1526).
     await harness.pressKey("1")
     await harness.flush()
     const unfocused = spansAt(harness, win.y0, commitsStart, commitsStart + "Commits".length - 1)
-    expect(unfocused.every((s) => !isIndexed(s.fg, 2))).toBe(true)
+    expect(unfocused.some((s) => isIndexed(s.fg, 2))).toBe(true)
+    expect(unfocused.every((s) => (s.attributes & TextAttributes.BOLD) === 0)).toBe(true)
     expect(harness.frame().split("\n")[win.y0]!).toContain("[4]─Commits - Reflog")
   })
 

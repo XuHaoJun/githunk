@@ -2,7 +2,7 @@ import type { ColorInput, TextChunk } from "@opentui/core"
 import { StyledText, bg, bold, dim, fg } from "@opentui/core"
 import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, HOVER_LINE_BG, SELECTED_LINE_BG } from "./theme"
 
-export type ListColumnSegment = { readonly text: string; readonly color?: ColorInput | undefined }
+export type ListColumnSegment = { readonly text: string; readonly color?: ColorInput | undefined; readonly bold?: boolean }
 
 export type ListColumn = {
   readonly text: string
@@ -474,6 +474,7 @@ export type ListRowSegment = {
   readonly text: string
   readonly style?: ListColumn["style"]
   readonly color?: ColorInput
+  readonly bold?: boolean
 }
 
 /**
@@ -505,14 +506,16 @@ export function layoutListRowSegments(row: ListRow, layout: ListColumnLayout): r
             segments.push({
               text: segment.text,
               ...(column.style === undefined ? {} : { style: column.style }),
-              ...(segment.color === undefined ? {} : { color: segment.color })
+              ...(segment.color === undefined ? {} : { color: segment.color }),
+              ...(segment.bold === true ? { bold: true } : {})
             })
             remaining -= chars.length
           } else {
             segments.push({
               text: chars.slice(0, remaining).join(""),
               ...(column.style === undefined ? {} : { style: column.style }),
-              ...(segment.color === undefined ? {} : { color: segment.color })
+              ...(segment.color === undefined ? {} : { color: segment.color }),
+              ...(segment.bold === true ? { bold: true } : {})
             })
             remaining = 0
             break
@@ -538,7 +541,12 @@ export function layoutListRowSegments(row: ListRow, layout: ListColumnLayout): r
 }
 
 function renderColumns(row: ListRow, layout: ListColumnLayout): TextChunk[] {
-  return layoutListRowSegments(row, layout).map((segment) => styleToChunk(segment.text, segment.style, segment.color))
+  return layoutListRowSegments(row, layout).map((segment) => {
+    const chunk = styleToChunk(segment.text, segment.style, segment.color)
+    // `SelectedLineFgColor` is bold for selected rows; a segment can be bold on its own (lazygit's
+    // commit tags). Both are the same attribute, so OR-ing it twice is harmless.
+    return segment.bold === true ? (bold(chunk) as TextChunk) : chunk
+  })
 }
 
 /**

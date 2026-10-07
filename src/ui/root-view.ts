@@ -9,7 +9,7 @@ import { DEFAULT_LOG_HEIGHT, DEFAULT_SIDE_PANEL_RATIO, SIDE_WINDOWS, computeLayo
 import { FocusManager, FOCUS_IDS, type FocusId } from "./focus"
 import { createBranchesPane, BRANCHES_JUMP_KEY, BRANCHES_TABS, NO_BRANCHES_THIS_REPO, type BranchRowOptions } from "./panes/branches-pane"
 import { localBranchRows } from "./panes/branches-pane"
-import { buildPanePlainTitle, buildPaneTabsStrip, paneTabAtOffset } from "./pane-tabs"
+import { buildPanePlainTitle, buildPaneTabsStrip, paneTabAtOffset, type PaneTabsInput } from "./pane-tabs"
 import { remoteRows, remoteBranchRows } from "./panes/remotes-pane"
 import { tagRows } from "./panes/tags-pane"
 import { buildCommitRows, COMMIT_THRESHOLD, createCommitsPane } from "./panes/commits-pane"
@@ -361,7 +361,7 @@ export class RootView {
     // Initialize PanelState for window 4 (commits + transient commit-files)
     {
       const commits = model.commits ?? []
-      const rows = buildCommitRows(commits, new Date())
+      const rows = buildCommitRows(commits, new Date(), "", model.tags)
       const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: model.loading ? "Loading…" : "No commits" }] : undefined
       const reflog = reflogRows(model)
       const reflogDisplayRows = reflog.length === 0 ? [{ kind: "message" as const, text: NO_REFLOG_HISTORY }] : undefined
@@ -964,12 +964,13 @@ export class RootView {
     return child.kind === "local-commits" ? `Commits (${child.branch})` : `Remote branches (${child.remote})`
   }
 
-  private branchesTabsInput(): { jumpKey: string; tabs: readonly string[]; activeIndex: number; focused: boolean } {
+  private branchesTabsInput(): PaneTabsInput {
     return {
       jumpKey: BRANCHES_JUMP_KEY,
       tabs: BRANCHES_TABS,
       activeIndex: Math.max(0, BRANCHES_TAB_ORDER.indexOf(this.branchesPanel.activeTab)),
-      focused: this.focusManager.active === "branches"
+      focused: this.focusManager.active === "branches",
+      searching: this.focusManager.active === "branches" && this.filterStatusForHints() !== undefined
     }
   }
 
@@ -978,12 +979,13 @@ export class RootView {
     return buildPaneTabsStrip(this.commitsTabsInput())
   }
 
-  private commitsTabsInput(): { jumpKey: string; tabs: readonly string[]; activeIndex: number; focused: boolean } {
+  private commitsTabsInput(): PaneTabsInput {
     return {
       jumpKey: COMMITS_JUMP_KEY,
       tabs: COMMITS_TABS,
       activeIndex: Math.max(0, COMMITS_TAB_ORDER.indexOf(this.commitsPanel.activeTab)),
-      focused: this.focusManager.active === "commits"
+      focused: this.focusManager.active === "commits",
+      searching: this.focusManager.active === "commits" && this.filterStatusForHints() !== undefined
     }
   }
 
@@ -1137,7 +1139,7 @@ export class RootView {
     const child = this.branchesPanel.child
     if (child === undefined) {
       const tabsInput = this.branchesTabsInput()
-      pane.setTabs?.({ activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
+      pane.setTabs?.({ activeIndex: tabsInput.activeIndex, focused: tabsInput.focused, searching: tabsInput.searching === true })
     } else {
       pane.setPlainTitle?.(`[${BRANCHES_JUMP_KEY}]${TITLE_PREFIX_FRAME_RUNE}${this.branchChildTitle(child.value)}`)
     }
@@ -1162,12 +1164,13 @@ export class RootView {
     return buildPaneTabsStrip(this.filesTabsInput())
   }
 
-  private filesTabsInput(): { jumpKey: string; tabs: readonly string[]; activeIndex: number; focused: boolean } {
+  private filesTabsInput(): PaneTabsInput {
     return {
       jumpKey: FILES_JUMP_KEY,
       tabs: FILES_TABS,
       activeIndex: Math.max(0, FILES_TAB_ORDER.indexOf(this.filesPanel.activeTab)),
-      focused: this.focusManager.active === "files"
+      focused: this.focusManager.active === "files",
+      searching: this.focusManager.active === "files" && this.filterStatusForHints() !== undefined
     }
   }
 
@@ -1218,7 +1221,7 @@ export class RootView {
   private renderFilesPane(): void {
     const pane = this.panes.files
     const tabsInput = this.filesTabsInput()
-    pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
+    pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused, searching: tabsInput.searching === true })
     const activeView = this.activeListView("files")
     pane.setListFooter(activeView?.state)
     if (activeView === undefined) {
@@ -3054,7 +3057,7 @@ export class RootView {
     const requestPromise = load
       .then(async (commits) => {
         if (!isCurrent()) return
-        const rows = buildCommitRows(commits, new Date())
+        const rows = buildCommitRows(commits, new Date(), "", this.model.tags)
         const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: "No commits" }] : undefined
         if (entering) {
           this.branchesPanel = enterPanelChild(this.branchesPanel, { kind: "local-commits", branch }, createListState(rows, displayRows))
@@ -4264,7 +4267,7 @@ export class RootView {
     // We keep the full list and highlight matches via bottomTitle and selection, rather than
     // filtering the rows (which would be `IFilterableContext` semantics).
     const commitsSearch = this.getFilterForKey(this.filterKey("commits", "commits"))
-    const rows = buildCommitRows(commits, new Date())
+    const rows = buildCommitRows(commits, new Date(), "", model.tags)
     const displayRows = rows.length === 0 ? [{ kind: "message" as const, text: model.loading ? "Loading…" : "No commits" }] : undefined
     const reflogFilter = this.getFilterForKey(this.filterKey("commits", "reflog"))
     const reflog = reflogRows(model, reflogFilter)
@@ -4305,7 +4308,7 @@ export class RootView {
       pane.setPlainTitle?.(`[${COMMITS_JUMP_KEY}]${TITLE_PREFIX_FRAME_RUNE}Diff files (${short})`)
     } else {
       const tabsInput = this.commitsTabsInput()
-      pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused })
+      pane.setTabs?.({ tabs: tabsInput.tabs, activeIndex: tabsInput.activeIndex, focused: tabsInput.focused, searching: tabsInput.searching === true })
     }
     const activeView = this.activeListView("commits")
     pane.setListFooter(activeView?.state)

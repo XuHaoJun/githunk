@@ -49,6 +49,11 @@ describe("shared pane tab strip on screen", () => {
     expect(isIndexed(active!.fg, 2)).toBe(true)
     expect(active!.attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
 
+    // The prefix takes the focused view's title fg, i.e. the active border colour (gui.go:1712-1723).
+    const prefix = spansAt(harness, win.y0, win.x0 + 2, win.x0 + 2 + "[3]─".length - 1)
+    expect(prefix.every((s) => isIndexed(s.fg, 2))).toBe(true)
+    expect(prefix.every((s) => (s.attributes & TextAttributes.BOLD) === TextAttributes.BOLD)).toBe(true)
+
     // Inactive tabs are not the active ANSI green.
     const remotesStart = activeStart + "Local Branches - ".length
     const remotes = spansAt(harness, win.y0, remotesStart, remotesStart + "Remotes".length - 1)
@@ -64,14 +69,32 @@ describe("shared pane tab strip on screen", () => {
     const remotes = spansAt(harness, win.y0, remotesStart, remotesStart + "Remotes".length - 1)
     expect(remotes.some((s) => isIndexed(s.fg, 2))).toBe(true)
 
-    // Focus elsewhere: gocui's drawTitle only highlights while IsFocused().
+    // Focus elsewhere: drawTitle keeps each view's selected tab green but clears AttrBold for a
+    // non-current view (gui.go:1522-1526), and the prefix drops back to the plain frame colour.
     await harness.pressKey("1")
     await harness.flush()
     const unfocused = spansAt(harness, win.y0, remotesStart, remotesStart + "Remotes".length - 1)
-    expect(unfocused.every((s) => !isIndexed(s.fg, 2))).toBe(true)
+    expect(unfocused.some((s) => isIndexed(s.fg, 2))).toBe(true)
+    expect(unfocused.every((s) => (s.attributes & TextAttributes.BOLD) === 0)).toBe(true)
+    const unfocusedPrefix = spansAt(harness, win.y0, win.x0 + 2, win.x0 + 2 + "[3]─".length - 1)
+    expect(unfocusedPrefix.every((s) => !isIndexed(s.fg, 2))).toBe(true)
     // The strip text itself stays on screen.
     const borderRow = harness.frame().split("\n")[win.y0]!
     expect(borderRow).toContain("[3]─Local Branches - Remotes - Tags")
+  })
+
+  test("the focused strip's prefix follows the searching border cyan while filtering", async () => {
+    harness = await createShellHarness()
+    await harness.pressKey("3")
+    await harness.pressKey("/")
+    await harness.flush()
+    const win = harness.app.view!.geometry.windows.branches!
+    const prefix = spansAt(harness, win.y0, win.x0 + 2, win.x0 + 2 + "[3]─".length - 1)
+    expect(prefix.every((s) => isIndexed(s.fg, 6))).toBe(true)
+    // The tab keeps ActiveBorderColor; only the frame and prefix follow SearchingActiveBorderColor.
+    const activeStart = win.x0 + 2 + "[3]─".length
+    const active = spansAt(harness, win.y0, activeStart, activeStart + "Local Branches".length - 1).find((s) => s.text.includes("Local Branches"))
+    expect(isIndexed(active!.fg, 2)).toBe(true)
   })
 
   test("clicking a tab in the title row switches to it; clicking a separator does nothing", async () => {

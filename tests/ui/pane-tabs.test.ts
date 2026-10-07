@@ -14,18 +14,31 @@ describe("pane tab strip", () => {
     expect(paneTabsPlainTitle(BRANCHES)).toBe("[3]─Local Branches - Remotes - Tags")
   })
 
-  test("focused strip paints only the active tab green and bold", () => {
+  test("focused strip paints the prefix and the active tab green and bold", () => {
     const strip = buildPaneTabsStrip({ ...BRANCHES, activeIndex: 0, focused: true })
     expect(strip.chunks.map((c) => c.text).join("")).toBe("[3]─Local Branches - Remotes - Tags")
+    // drawTitle draws the prefix with the focused view's fgColor — gui.go:1712-1723.
+    const prefix = strip.chunks.find((c) => c.text === "[3]─")!
+    expect(prefix.fg!.slot).toBe(2)
+    expect((prefix.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
     const active = strip.chunks.find((c) => c.text === "Local Branches")!
     expect(active.fg!.intent).toBe("indexed")
     expect(active.fg!.slot).toBe(2)
     expect((active.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
-    for (const text of ["Remotes", "Tags", "[3]─", " - "]) {
+    for (const text of ["Remotes", "Tags", " - "]) {
       const chunk = strip.chunks.find((c) => c.text === text)!
       expect(chunk.fg).toBeUndefined()
       expect((chunk.attributes ?? 0) & TextAttributes.BOLD).toBe(0)
     }
+  })
+
+  test("a filtering focused pane paints the prefix in the searching border cyan", () => {
+    const strip = buildPaneTabsStrip({ ...BRANCHES, activeIndex: 0, focused: true, searching: true })
+    const prefix = strip.chunks.find((c) => c.text === "[3]─")!
+    expect(prefix.fg!.intent).toBe("indexed")
+    expect(prefix.fg!.slot).toBe(6)
+    // The tab keeps the view's own SelFgColor: ActiveBorderColor, never the searching colour.
+    expect(strip.chunks.find((c) => c.text === "Local Branches")!.fg!.slot).toBe(2)
   })
 
   test("the active tab follows activeIndex", () => {
@@ -34,11 +47,17 @@ describe("pane tab strip", () => {
     expect(strip.chunks.find((c) => c.text === "Local Branches")!.fg).toBeUndefined()
   })
 
-  test("an unfocused pane renders the whole strip unhighlighted", () => {
-    // gocui/gui.go drawTitle only applies SelFgColor when g.IsFocused().
+  test("an unfocused pane keeps the active tab green without bold", () => {
+    // drawTitle colours the selected tab from the view's own SelFgColor for every view, clearing
+    // AttrBold when the view is not current (gui.go:1522-1526); the prefix takes g.FgColor.
     const strip = buildPaneTabsStrip({ ...BRANCHES, activeIndex: 0, focused: false })
-    expect(strip.chunks.every((c) => c.fg === undefined)).toBe(true)
+    const prefix = strip.chunks.find((c) => c.text === "[3]─")!
+    expect(prefix.fg).toBeUndefined()
+    const active = strip.chunks.find((c) => c.text === "Local Branches")!
+    expect(active.fg!.intent).toBe("indexed")
+    expect(active.fg!.slot).toBe(2)
     expect(strip.chunks.every((c) => ((c.attributes ?? 0) & TextAttributes.BOLD) === 0)).toBe(true)
+    for (const text of ["Remotes", "Tags", " - "]) expect(strip.chunks.find((c) => c.text === text)!.fg).toBeUndefined()
   })
 
   test("hit test maps an x offset from the pane's left edge to a tab index", () => {

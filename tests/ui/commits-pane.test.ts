@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { TextAttributes } from "@opentui/core"
 import { renderCommitRows } from "../../src/ui/panes/commits-pane"
 import type { CommitSummary } from "../../src/domain/commit"
-import { COMMIT_HASH_DEFAULT_FG, COMMIT_HASH_MERGED_FG, COMMIT_HASH_PUSHED_FG, COMMIT_HASH_UNPUSHED_FG } from "../../src/ui/theme"
+import { COMMIT_HASH_DEFAULT_FG, COMMIT_HASH_MERGED_FG, COMMIT_HASH_PUSHED_FG, COMMIT_HASH_UNPUSHED_FG, COMMIT_TAG_FG } from "../../src/ui/theme"
 
 const now = new Date("2026-08-25T00:00:00Z")
 
@@ -113,5 +114,25 @@ describe("commits pane rows", () => {
     const result = renderCommitRows(statuses, { focused: false, width: 80, now })
     const hashChunks = result.content.chunks.filter((chunk) => chunk.text.length === 8 && /^[a-f0-9]{8}$/.test(chunk.text))
     expect(hashChunks.map((chunk) => chunk.fg)).toEqual([COMMIT_HASH_UNPUSHED_FG, COMMIT_HASH_PUSHED_FG, COMMIT_HASH_MERGED_FG, COMMIT_HASH_DEFAULT_FG])
+  })
+
+  /**
+   * lazygit prints a commit's tags between the graph and the subject
+   * (pkg/gui/presentation/commits.go:481-489): `tag1 tag2 ` in `theme.DiffTerminalColor`
+   * (`style.FgMagenta`, pkg/theme/theme.go:47) bold, with the separating space uncoloured.
+   */
+  test("prints the tags pointing at a commit before its subject", () => {
+    const tagged = [mkCommit({ oid: "aaa1234567890", subject: "tagged commit" }), mkCommit({ oid: "bbb1234567890", subject: "untagged commit" })]
+    const tags = [
+      { name: "v0.9.0", ref: "refs/tags/v0.9.0", kind: "lightweight" as const, objectOid: "aaa1234567890", targetOid: "aaa1234567890", subject: "" },
+      { name: "v1.0.0", ref: "refs/tags/v1.0.0", kind: "annotated" as const, objectOid: "tagobject", targetOid: "aaa1234567890", subject: "release" }
+    ]
+    const result = renderCommitRows(tagged, { focused: false, width: 80, now, tags })
+    const lines = result.plainText.split("\n")
+    expect(lines[0]).toContain("v0.9.0 v1.0.0 tagged commit")
+    expect(lines[1]).not.toContain("v0.9.0")
+    const tagChunk = result.content.chunks.find((chunk) => chunk.text === "v0.9.0 v1.0.0")
+    expect(tagChunk!.fg).toBe(COMMIT_TAG_FG)
+    expect((tagChunk!.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
   })
 })

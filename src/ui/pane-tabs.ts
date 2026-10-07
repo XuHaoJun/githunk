@@ -1,5 +1,5 @@
 import { BoxRenderable, StyledText, bold, fg, type OptimizedBuffer, type TextChunk } from "@opentui/core"
-import { TAB_ACTIVE_BOLD, TAB_ACTIVE_FG, TAB_SEPARATOR, TITLE_PREFIX_FRAME_RUNE } from "./theme"
+import { ANSI_CYAN, TAB_ACTIVE_BOLD, TAB_ACTIVE_FG, TAB_SEPARATOR, TITLE_PREFIX_FRAME_RUNE } from "./theme"
 
 /**
  * The tab strip lazygit draws on a pane's top border row — `[3]─Local Branches - Remotes - Tags`,
@@ -18,6 +18,13 @@ export type PaneTabsInput = {
   readonly activeIndex: number
   /** `drawTitle` only highlights the active tab while `g.IsFocused()`. */
   readonly focused: boolean
+  /**
+   * The focused pane is filtering. lazygit swaps the gui's `SelFgColor`/`SelFrameColor` to
+   * `SearchingActiveBorderColor` while the search prompt is open (search_helper.go:326-333), so
+   * `drawTitle` draws that pane's prefix with the cyan border colour (gui.go:1712-1719); the
+   * selected tab keeps the view's own `SelFgColor`, which stays `ActiveBorderColor` (views.go:213).
+   */
+  readonly searching?: boolean
 }
 
 /** The subset the hit test needs: the geometry of the strip, not its colours. */
@@ -51,25 +58,39 @@ function plainChunk(text: string): TextChunk {
 }
 
 /**
- * The strip as a `StyledText`: one chunk per prefix, tab and separator. The active tab carries
- * `SelFgColor` (green+bold) only when the pane is focused; every other chunk is left without an
- * explicit colour so it inherits the pane's title colour, mirroring how `drawTitle` falls back
- * to the view's own fg for the de-highlighted tabs.
+ * The strip as a `StyledText`: one chunk per prefix, tab and separator, ported from
+ * `drawTitle` (pkg/gocui/gui.go:1470-1529).
+ *
+ * * Prefix — drawn with the title's `fgColor`, which for the current view is the gui's
+ *   `SelFgColor` (`ActiveBorderColor` green+bold, or `SearchingActiveBorderColor` cyan+bold while
+ *   searching) and otherwise the gui's plain `FgColor` (gui.go:1712-1723). So the focused pane's
+ *   jump label matches its border.
+ * * Active tab — always `v.SelFgColor` (`ActiveBorderColor`, views.go:213), with `AttrBold`
+ *   cleared when the view is not the current one (gui.go:1522-1526). Every pane therefore shows
+ *   which tab is active, not just the focused one.
+ * * Every other chunk — left without an explicit colour so it inherits the view's own fg, which
+ *   is what `drawTitle`'s de-highlight branch assigns (`currentFgColor = v.FgColor`).
  */
 export function buildPaneTabsStrip(input: PaneTabsInput): StyledText {
   const chunks: TextChunk[] = []
   const prefix = paneTabsTitlePrefix(input.jumpKey)
-  if (prefix.length > 0) chunks.push(plainChunk(prefix))
+  if (prefix.length > 0) {
+    if (!input.focused) chunks.push(plainChunk(prefix))
+    else {
+      const prefixColor = input.searching === true ? ANSI_CYAN : TAB_ACTIVE_FG
+      const coloured = fg(prefixColor)(prefix) as unknown as TextChunk
+      chunks.push(TAB_ACTIVE_BOLD ? (bold(coloured) as unknown as TextChunk) : coloured)
+    }
+  }
   for (let i = 0; i < input.tabs.length; i++) {
     if (i > 0) chunks.push(plainChunk(TAB_SEPARATOR))
     const text = input.tabs[i]!
-    const active = input.focused && i === input.activeIndex
-    if (!active) {
+    if (i !== input.activeIndex) {
       chunks.push(plainChunk(text))
       continue
     }
     const coloured = fg(TAB_ACTIVE_FG)(text) as unknown as TextChunk
-    chunks.push(TAB_ACTIVE_BOLD ? (bold(coloured) as unknown as TextChunk) : coloured)
+    chunks.push(input.focused && TAB_ACTIVE_BOLD ? (bold(coloured) as unknown as TextChunk) : coloured)
   }
   return new StyledText(chunks)
 }

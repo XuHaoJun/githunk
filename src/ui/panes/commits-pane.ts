@@ -1,14 +1,15 @@
 import type { CliRenderer, StyledText } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import type { CommitStatus, CommitSummary } from "../../domain/commit"
+import type { TagSummary } from "../../domain/tag"
 import { filterItems } from "../../app/filter"
 import { createPane, type PaneHandle } from "./common"
 import { commitGraphRows } from "../commit-graph"
 import { AUTHOR_COLUMN_WIDTH, authorColor, authorInitials } from "../author-style"
-import { createListState, renderListRows, selectListRow, type ListState, type ListRow } from "../list-view"
+import { createListState, renderListRows, selectListRow, type ListColumnSegment, type ListState, type ListRow } from "../list-view"
 import { installListText, releaseListText } from "./list-text"
 import { COMMITS_JUMP_KEY, COMMITS_TABS } from "./reflog-pane"
-import { COMMIT_HASH_DEFAULT_FG, COMMIT_HASH_MERGED_FG, COMMIT_HASH_PUSHED_FG, COMMIT_HASH_UNPUSHED_FG } from "../theme"
+import { COMMIT_HASH_DEFAULT_FG, COMMIT_HASH_MERGED_FG, COMMIT_HASH_PUSHED_FG, COMMIT_HASH_UNPUSHED_FG, COMMIT_TAG_FG } from "../theme"
 
 const paneStates = new WeakMap<PaneHandle, ListState>()
 
@@ -55,10 +56,26 @@ function commitHashColor(status: CommitStatus | undefined) {
 }
 
 /**
+ * Commit oid → the tags pointing at it, from the repository's tag list. `listTags` peels annotated
+ * tags (`%(*objectname)`), so `targetOid` is the tagged commit for both kinds. lazygit reads the
+ * same association out of `git log`'s `%D` decorations, taking every `tag: <name>` field of a
+ * commit line as one of its tags (`commit_loader.go:625` format, `parseCommitLine` at 222-232).
+ */
+export function tagNamesByCommit(tags: readonly TagSummary[] | undefined): Readonly<Record<string, readonly string[]>> {
+  const byOid: Record<string, string[]> = {}
+  for (const tag of tags ?? []) {
+    const names = byOid[tag.targetOid]
+    if (names === undefined) byOid[tag.targetOid] = [tag.name]
+    else names.push(tag.name)
+  }
+  return byOid
+}
+
+/**
  * Lazygit column order (`pkg/gui/presentation/commits.go:displayCommit`):
- * hash → author initials → graph+subject as one trailing column, with the
+ * hash → author initials → graph+tags+subject as one trailing column, with the
  * relative time trailing (githunk extension — lazygit has no time column).
- * The graph and subject share one flex column exactly because lazygit's
+ * The graph, tags and subject share one flex column exactly because lazygit's
  * `getPaddedDisplayStrings` (`pkg/utils/formatting.go:134-155`) pads every
  * column except the last: `graphLine+mark+tag+name` is a single unpadded
  * string, so a narrow lane never pads out to the widest lane's width. A
@@ -67,9 +84,13 @@ function commitHashColor(status: CommitStatus | undefined) {
  * (priority 0) is the last column ever shed, so it survives narrow widths.
  * The graph's pipe colour is the author colour, exactly as lazygit's
  * `loadPipesets` derives it, so a lane and its author read as one thing.
+ *
+ * Tags sit between the graph and the subject (`presentation/commits.go:481-489`): `tag1 tag2 `
+ * in `DiffTerminalColor` (magenta) bold, the separating space uncoloured.
  */
-export function buildCommitRows(commits: readonly CommitSummary[], now: Date, filter = ""): ListRow[] {
+export function buildCommitRows(commits: readonly CommitSummary[], now: Date, filter = "", tags?: readonly TagSummary[]): ListRow[] {
   const graphs = commitGraphRows(commits, (_commit, index) => authorColor(commits[index]!.authorName))
+  const tagsByOid = tagNamesByCommit(tags)
   const rows = commits.map((commit, index) => {
     const graph = graphs[index]
     const shortHash = commit.oid.length >= 8 ? commit.oid.slice(0, 8) : commit.shortOid
@@ -78,12 +99,14 @@ export function buildCommitRows(commits: readonly CommitSummary[], now: Date, fi
     const graphText = graph?.text ?? ""
     const graphSegments = graph?.segments ?? []
     const subjectSegments = commit.subject.length === 0 ? [] : [{ text: commit.subject } as const]
+    const tagLabel = tagsByOid[commit.oid]?.join(" ") ?? ""
+    const tagSegments: ListColumnSegment[] = tagLabel.length === 0 ? [] : [{ text: tagLabel, color: COMMIT_TAG_FG, bold: true }, { text: " " }]
     return {
       id: commit.oid,
       columns: [
         { text: shortHash, priority: 1, color: commitHashColor(commit.status) },
         { text: initials, priority: 2, color: authorColor(commit.authorName) },
-        { text: `${graphText}${commit.subject}`, priority: 2, flex: true, segments: [...graphSegments, ...subjectSegments] },
+        { text: `${graphText}${tagLabel.length === 0 ? "" : `${tagLabel} `}${commit.subject}`, priority: 2, flex: true, segments: [...graphSegments, ...tagSegments, ...subjectSegments] },
         { text: relative, priority: 0, style: "dim" as const }
       ]
     }
@@ -92,9 +115,12 @@ export function buildCommitRows(commits: readonly CommitSummary[], now: Date, fi
   return [...filterItems(filter, rows, (row) => `${row.columns[0]?.text ?? ""} ${row.columns[2]?.text ?? row.id}`)]
 }
 
-export function renderCommitRows(commits: readonly CommitSummary[], options: { readonly selectedId?: string; readonly focused: boolean; readonly width: number; readonly now?: Date | number }): { readonly content: StyledText; readonly plainText: string; readonly state: ListState } {
+export function renderCommitRows(
+  commits: readonly CommitSummary[],
+  options: { readonly selectedId?: string; readonly focused: boolean; readonly width: number; readonly now?: Date | number; readonly tags?: readonly TagSummary[] }
+): { readonly content: StyledText; readonly plainText: string; readonly state: ListState } {
   const nowDate = options.now === undefined ? new Date() : options.now instanceof Date ? options.now : new Date(options.now)
-  const rows = buildCommitRows(commits, nowDate)
+  const rows = buildCommitRows(commits, nowDate, "", options.tags)
   let state = createListState(rows)
   if (options.selectedId !== undefined) {
     const next = selectListRow(state, options.selectedId)
@@ -151,7 +177,7 @@ export function updateCommitsPane(pane: PaneHandle, model: AppModel): void {
   }
   const previous = paneStates.get(pane)
   const prevId = previous?.selectedId
-  const rows = buildCommitRows(commits, new Date())
+  const rows = buildCommitRows(commits, new Date(), "", model.tags)
   let state = createListState(rows)
   if (prevId !== undefined) {
     const withPrev = selectListRow(state, prevId)

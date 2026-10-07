@@ -20,6 +20,8 @@ export type PaneTabsUpdate = {
   readonly tabs?: readonly string[]
   readonly activeIndex: number
   readonly focused: boolean
+  /** The focused pane is filtering; see `PaneTabsInput.searching`. */
+  readonly searching?: boolean
 }
 
 export type CreatePaneOptions = {
@@ -240,7 +242,7 @@ export function createPane(renderer: CliRenderer, id: FocusId, title: string, co
     if (tabsConfig === undefined) return
     const tabs = update.tabs ?? tabState?.tabs ?? tabsConfig.tabs
     tabState = { ...update, tabs }
-    const input = { jumpKey: tabsConfig.jumpKey, tabs, activeIndex: update.activeIndex, focused: update.focused }
+    const input = { jumpKey: tabsConfig.jumpKey, tabs, activeIndex: update.activeIndex, focused: update.focused, searching: update.searching === true }
     // The plain title carries the same text in lazygit's exact format, so the strip stays
     // readable (just uncoloured) wherever the overdraw does not reach.
     box.title = paneTabsPlainTitle(input)

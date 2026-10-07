@@ -37,6 +37,7 @@ type ResolvedSegment = {
   readonly text: string
   readonly fg?: RGBA
   readonly dim?: boolean
+  readonly bold?: boolean
 }
 
 type LayoutCache = {
@@ -66,7 +67,7 @@ type SnapshotRef = { snap: Snapshot | undefined }
 
 const painters = new WeakMap<TextRenderable, PainterRecord>()
 
-function resolveSegment(text: string, style: "default" | "dim" | "cyan" | "green" | "yellow" | "magenta" | undefined, color: unknown): ResolvedSegment {
+function resolveSegment(text: string, style: "default" | "dim" | "cyan" | "green" | "yellow" | "magenta" | undefined, color: unknown, isBold = false): ResolvedSegment {
   let fg: RGBA | undefined
   let dim: boolean | undefined
   if (color !== undefined) {
@@ -97,7 +98,8 @@ function resolveSegment(text: string, style: "default" | "dim" | "cyan" | "green
   return {
     text,
     ...(fg === undefined ? {} : { fg }),
-    ...(dim === undefined ? {} : { dim })
+    ...(dim === undefined ? {} : { dim }),
+    ...(isBold ? { bold: true } : {})
   }
 }
 
@@ -153,7 +155,7 @@ function layoutFor(state: ListState, safeWidth: number): LayoutCache {
       continue
     }
     const row = rowMap.get(dr.id)
-    const laidOut = row === undefined ? [] : layoutListRowSegments(row, layout).map((segment) => resolveSegment(segment.text, segment.style, segment.color))
+    const laidOut = row === undefined ? [] : layoutListRowSegments(row, layout).map((segment) => resolveSegment(segment.text, segment.style, segment.color, segment.bold === true))
     const joined = laidOut.map((segment) => segment.text).join("")
     // Pad to full width so a full-row selection background reaches the right edge.
     const pad = Math.max(0, safeWidth - cellWidth(joined))
@@ -196,13 +198,13 @@ function paintRow(record: PainterRecord, line: number): void {
         buffer.addHighlight(line, {
           start: column,
           end: column + cells,
-          styleId: styleIdFor(record, segment.fg, false, segment.dim === true, bg)
+          styleId: styleIdFor(record, segment.fg, segment.bold === true, segment.dim === true, bg)
         })
-      } else if (segment.fg !== undefined || segment.dim === true) {
+      } else if (segment.fg !== undefined || segment.dim === true || segment.bold === true) {
         buffer.addHighlight(line, {
           start: column,
           end: column + cells,
-          styleId: styleIdFor(record, segment.fg, false, segment.dim === true, undefined)
+          styleId: styleIdFor(record, segment.fg, segment.bold === true, segment.dim === true, undefined)
         })
       }
     }

@@ -94,7 +94,7 @@ describe("panel 2 tabs", () => {
         .catch(() => {})
   })
 
-  test("the border row shows [2]─Files - Worktrees - Submodules with the active tab styled only while focused", async () => {
+  test("the border row shows [2]─Files - Worktrees - Submodules with lazygit's tab and prefix colours", async () => {
     harness = await createShellHarness()
     await harness.pressKey("2")
     await harness.flush()
@@ -120,11 +120,13 @@ describe("panel 2 tabs", () => {
     const worktreeSpans = spansAt(harness, win.y0, worktreesStart, worktreesStart + "Worktrees".length - 1)
     expect(worktreeSpans.every((s) => !isIndexed(s.fg, 2))).toBe(true)
 
-    // gocui's drawTitle highlights the active tab only while the view is focused.
+    // gocui's drawTitle keeps the selected tab green for a non-current view but clears AttrBold
+    // (gui.go:1522-1526); the focused pane's prefix takes the active border colour.
     await harness.pressKey("1")
     await harness.flush()
     const unfocused = spansAt(harness, win.y0, filesStart, filesStart + "Files".length - 1)
-    expect(unfocused.every((s) => !isIndexed(s.fg, 2))).toBe(true)
+    expect(unfocused.some((s) => isIndexed(s.fg, 2))).toBe(true)
+    expect(unfocused.every((s) => (s.attributes & TextAttributes.BOLD) === 0)).toBe(true)
     expect(harness.frame().split("\n")[win.y0]!).toContain("[2]─Files - Worktrees - Submodules")
   })
 

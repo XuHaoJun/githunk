@@ -98,6 +98,13 @@ export const COMMIT_HASH_PUSHED_FG = ANSI_YELLOW
 export const COMMIT_HASH_MERGED_FG = ANSI_GREEN
 export const COMMIT_HASH_DEFAULT_FG = DEFAULT_FOREGROUND
 
+/**
+ * A commit's tags in the commit list: lazygit prints them with `theme.DiffTerminalColor.SetBold()`
+ * (pkg/gui/presentation/commits.go:487-489), and `DiffTerminalColor` is `style.FgMagenta`
+ * (pkg/theme/theme.go:47).
+ */
+export const COMMIT_TAG_FG = ANSI_MAGENTA
+
 /** lazygit's branch recency and status colors. */
 export const BRANCH_RECENCY_FG = ANSI_CYAN
 export const BRANCH_RECENCY_CURRENT_FG = ANSI_GREEN
