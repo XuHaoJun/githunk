@@ -47,6 +47,7 @@ import {
   scrollMainPane,
   setMainCursorTarget,
   setMainDiffLineRangeState,
+  revealChangeAfterAction,
   setMainLoading,
   virtualMainPaneFor,
   MAIN_TITLE_LOG,
@@ -256,6 +257,13 @@ export class RootView {
   private stashIncludeUntracked = false
   private branchDialogContext: { readonly mode: "branch-create"; readonly startPoint?: string; readonly suggestedBranchName: string; readonly branchBase: string } | { readonly mode: "branch-rename"; readonly branch: string } | undefined
   private mutationInFlight = false
+  /**
+   * Keys pressed while a main-pane line action runs, replayed once its diff has re-rendered —
+   * lazygit's `BeginBlockingEvents`/`EndBlockingEvents` (pkg/gocui/gui.go:929-967). Dropping them
+   * instead would lose the second of two quick Space presses, and acting on them at once would
+   * act on the diff the first press is about to change.
+   */
+  private heldKeys: KeyEvent[] | undefined
   private fileRangeRefreshSelectionId: string | undefined
   private pendingRemoteMismatch: { readonly selection: RemoteBranchSelection; readonly message: string } | undefined
   private remoteCheckoutGeneration = 0
@@ -461,6 +469,10 @@ export class RootView {
     }
     this.handleKey = (key: KeyEvent) => {
       if (this.ports.host.isBranchReviewActive()) return
+      if (this.heldKeys !== undefined) {
+        this.heldKeys.push(key)
+        return
+      }
       const normalized = normalizeKey(key)
       const routedKey = {
         ...key,
@@ -589,9 +601,13 @@ export class RootView {
     return this.branchFilterActive || this.filterInput.state.active || this.promptPopup.visible || this.commitMessagePanel.visible || this.copyMenuOpen || this.actionMenu.isOpen() || this.menuOpen || this.model.upstreamChoice !== undefined || this.pendingRemoteMismatch !== undefined
   }
 
-  /** Whether a mutation (git operation triggered via `runUiMutation`) is currently in flight. */
+  /**
+   * Whether a mutation (git operation triggered via `runUiMutation`) is currently in flight — or a
+   * main-pane line action is still holding input until its re-render lands, which is the same work
+   * not yet finished.
+   */
   get isMutating(): boolean {
-    return this.mutationInFlight
+    return this.mutationInFlight || this.heldKeys !== undefined
   }
 
   /** The main pane's text viewport scroll positions, for tests and diagnostics. */
@@ -2352,7 +2368,8 @@ export class RootView {
       this.panes.main.box.bottomTitle = "No changed lines selected"
     } else {
       const reverse = this.model.reviewTarget.kind === "working-tree" && this.model.reviewTarget.scope === "staged"
-      this.runUiMutation(() => this.ports.commands.onApplySelection(selected.document, selected.indexes, reverse))
+      this.revealChangeAfterAction(selected.indexes)
+      this.runMainLineAction(() => this.ports.commands.onApplySelection(selected.document, selected.indexes, reverse))
     }
   }
 
@@ -2402,7 +2419,21 @@ export class RootView {
       return
     }
     const label = paths.join(", ")
-    this.openConfirmation(discardConfirmation(label || path), () => this.runUiMutation(() => this.ports.commands.onDiscardSelection(selected.document, selected.indexes)))
+    this.openConfirmation(discardConfirmation(label || path), () => {
+      this.revealChangeAfterAction(selected.indexes)
+      this.runMainLineAction(() => this.ports.commands.onDiscardSelection(selected.document, selected.indexes))
+    })
+  }
+
+  /**
+   * Keeps the user's place across a line action: a mouse or keyboard range carries on as a
+   * one-line selection, the hunk cursor as the hunk cursor (diff_line_restore.go:568-583).
+   */
+  private revealChangeAfterAction(indexes: readonly number[]): void {
+    const first = indexes.reduce((lowest, index) => Math.min(lowest, index), Number.POSITIVE_INFINITY)
+    if (!Number.isFinite(first)) return
+    const select = getMainSelection(this.panes.main) === undefined && getMainDiffLineSelection(this.panes.main) === undefined ? "hunk" : "line"
+    revealChangeAfterAction(this.panes.main, first, select)
   }
 
   /** lazygit's `` ` `` binding — files_controller.go:1501 toggleTreeView. */
@@ -4069,8 +4100,11 @@ export class RootView {
    * `WithInlineStatus` (inline_status_helper.go:65-95): the row itself says `Pulling ●∙∙` instead of
    * showing ahead/behind counts that the operation is in the middle of invalidating.
    */
-  private runUiMutation(operation: () => Promise<void> | undefined, inlineStatus?: { readonly rowId: string; readonly operation: ItemOperation }): void {
-    if (this.mutationInFlight) return
+  private runUiMutation(operation: () => Promise<void> | undefined, inlineStatus?: { readonly rowId: string; readonly operation: ItemOperation }, onSettled?: () => void): void {
+    if (this.mutationInFlight) {
+      onSettled?.()
+      return
+    }
     this.mutationInFlight = true
     this.clearTransientMenus()
     this.panes.main.box.bottomTitle = "Mutation in progress; refreshing…"
@@ -4080,6 +4114,7 @@ export class RootView {
       this.mutationInFlight = false
       this.fileRangeRefreshSelectionId = undefined
       if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
+      onSettled?.()
       return
     }
     void promise
@@ -4093,7 +4128,41 @@ export class RootView {
         if (inlineStatus !== undefined) this.endItemOperation(inlineStatus.rowId)
         this.fileRangeRefreshSelectionId = undefined
         this.ports.host.onMutationSettled()
+        onSettled?.()
       })
+  }
+
+  /**
+   * Runs a stage, unstage or discard of main-pane lines with input held back until the
+   * re-rendered diff has put the selection on the next change, then replays the held keys on a
+   * later turn of the event loop, as lazygit's `EndBlockingEvents` queues its replay.
+   */
+  private runMainLineAction(operation: () => Promise<void> | undefined): void {
+    this.heldKeys ??= []
+    this.runUiMutation(operation, undefined, () => {
+      // Replay whether or not the preview load succeeded: held input must never stay held.
+      const replay = (): void => {
+        setTimeout(() => this.replayHeldKeys(), 0)
+      }
+      void this.whenPreviewSettled().then(replay, replay)
+    })
+  }
+
+  private replayHeldKeys(): void {
+    const keys = this.heldKeys ?? []
+    this.heldKeys = undefined
+    for (let index = 0; index < keys.length; index += 1) {
+      this.handleKey(keys[index]!)
+      // A replayed key that starts another line action holds input afresh; the keys after it
+      // wait for that one in turn.
+      // (Read through a widened type: TypeScript keeps the `undefined` assigned above narrowed
+      // across the call.)
+      const heldAgain = this.heldKeys as KeyEvent[] | undefined
+      if (heldAgain !== undefined) {
+        heldAgain.unshift(...keys.slice(index + 1))
+        return
+      }
+    }
   }
 
   /** Resolves when the current Main preview or panel-3 branch-history load has settled. */

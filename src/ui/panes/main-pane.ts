@@ -5,8 +5,9 @@ import type { DocumentSelection } from "../../domain/diff/selection"
 import { eagerDiffSelectionProjection, resolveMainSelection, textSelectionProjection, type MainSelection, type MainSelectionProjection, type NativeSelectionRange } from "../../domain/diff/selection-projection"
 import { renderDiff } from "../../domain/diff/render"
 import { changedIndexesInDiffLineRange, createDiffLineRangeState, diffLineSelectionRange, type DiffLineRangeState } from "../../domain/diff/line-selection"
+import { changeLineAtOrdinal, changeOrdinalBefore, diffLineIdentity, findDiffLineByIdentity } from "../../domain/diff/line-restore"
 import type { AnsiText } from "../ansi"
-import { createPane, type PaneHandle } from "./common"
+import { createPane, scrollYToReveal, type PaneHandle } from "./common"
 import { installAnsiText, releaseAnsiText } from "./ansi-text"
 import { installDiffText, releaseDiffText } from "./diff-text"
 import { SELECTED_LINE_BG } from "../theme"
@@ -27,6 +28,19 @@ type StoredMainSelection = {
   readonly value: MainSelection
 }
 const storedSelections = new WeakMap<PaneHandle, StoredMainSelection>()
+/**
+ * Where the selection goes once a line action's re-render arrives. lazygit's
+ * `RevealSelectionAfterAction` (pkg/gui/controllers/helpers/diff_line_restore.go:547-596): the
+ * lines acted on leave the diff, so the place they had among its changes is remembered and the
+ * next change, which moves up into it, is selected — pressing the key again carries on down the
+ * diff instead of starting over at its top.
+ */
+type PendingActionReveal = {
+  readonly identity: string
+  readonly ordinal: number
+  readonly select: "line" | "hunk"
+}
+const pendingActionReveals = new WeakMap<PaneHandle, PendingActionReveal>()
 let nextProjectionGeneration = 0
 
 export type MainCursorTarget = {
@@ -338,6 +352,54 @@ export function setMainDiffLineRangeState(pane: PaneHandle, state: DiffLineRange
   }
   applyMainDiffLineVisualSelection(pane)
 }
+/**
+ * Arranges for the main pane's next re-render of the same content to select the change that takes
+ * the place of `firstIndex`, the first line a stage, unstage or discard is about to act on. `line`
+ * collapses a range onto that one change, as lazygit's range does onto its start; `hunk` moves the
+ * hunk cursor onto the hunk the change lands in, so the next key press acts on the next hunk.
+ */
+export function revealChangeAfterAction(pane: PaneHandle, firstIndex: number, select: "line" | "hunk"): void {
+  const document = documents.get(pane)
+  const content = installedContents.get(pane)
+  if (document === undefined || content === undefined) return
+  pendingActionReveals.set(pane, { identity: `${content.source}:${content.stableId}`, ordinal: changeOrdinalBefore(document, firstIndex), select })
+}
+
+/**
+ * Carries a line range from one rendering of a diff to the next by the identity of its two ends.
+ * A range whose either end is gone is dropped rather than stretched over lines it never covered.
+ */
+function restoreDiffLineRange(previous: DiffDocument, next: DiffDocument, state: DiffLineRangeState): DiffLineRangeState | undefined {
+  const find = (index: number): number | undefined => {
+    const identity = diffLineIdentity(previous, index)
+    return identity === undefined ? undefined : findDiffLineByIdentity(next, identity)
+  }
+  const selectedIndex = find(state.selectedIndex)
+  if (selectedIndex === undefined) return undefined
+  if (state.rangeMode === "none" || state.rangeStartIndex === undefined) return { lineCount: next.lines.length, selectedIndex, rangeMode: "none" }
+  const rangeStartIndex = find(state.rangeStartIndex)
+  if (rangeStartIndex === undefined) return undefined
+  return { lineCount: next.lines.length, selectedIndex, rangeMode: state.rangeMode, rangeStartIndex }
+}
+
+/** Carries the hunk cursor to the hunk that now holds the first change of the hunk it was on. */
+function restoreCursorTarget(previous: DiffDocument, next: DiffDocument, target: MainCursorTarget): MainCursorTarget | undefined {
+  if (target.hunkIndex === undefined) return undefined
+  const hunk = previous.files[target.fileIndex]?.hunks[target.hunkIndex]
+  const firstChange = hunk?.lines.find((line) => line.kind === "addition" || line.kind === "deletion")
+  if (firstChange === undefined) return undefined
+  const identity = diffLineIdentity(previous, previous.lines.indexOf(firstChange))
+  const index = identity === undefined ? undefined : findDiffLineByIdentity(next, identity)
+  const line = index === undefined ? undefined : next.lines[index]
+  return line?.hunkIndex === undefined ? undefined : { fileIndex: line.fileIndex, hunkIndex: line.hunkIndex }
+}
+
+function revealRow(pane: PaneHandle, index: number): void {
+  const rows = mainDiffVisualRowRange(pane, index, index)
+  if (rows === undefined) return
+  pane.text.scrollY = scrollYToReveal(rows.startRow, rows.endRow, Math.max(1, pane.text.height), pane.text.scrollY)
+}
+
 export function getMainDocument(pane: PaneHandle): DiffDocument | undefined {
   return documents.get(pane)
 }
@@ -475,6 +537,8 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
   paneTitles.set(pane, `0 Main — ${content.label}`)
 
   const previousRange = lineRanges.get(pane)
+  // Read before the lifecycle below clears it: a re-render with a changed diff restores from it.
+  const priorTarget = cursorTargets.get(pane)
   const clearSelection = (): void => {
     clearMainSelection(pane)
     virtualMainPaneFor(pane)?.resetSelection()
@@ -518,6 +582,7 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
   }
 
+  if (content.document === undefined) pendingActionReveals.delete(pane)
   // Render content
   if (content.document !== undefined) {
     const doc = content.document
@@ -550,9 +615,31 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     const initialTarget = preservedTarget ?? (!sameIdentity || !identicalText ? moveMainCursor(doc, undefined, "next") : (previousTarget ?? moveMainCursor(doc, undefined, "next")))
     const shouldKeepTarget = sameIdentity && identicalText
     documents.set(pane, doc)
-    const nextRange = !enteringDocument && sameIdentity && identicalText && previousRange?.lineCount === doc.lines.length ? previousRange : createDiffLineRangeState(doc)
+    // A pending reveal is for the first re-render after the action, which either changed the diff
+    // (and the reveal places the selection) or failed and left it as it was (and the selection
+    // stayed where it was anyway). Either way it must not linger for a later, unrelated refresh.
+    const reveal = pendingActionReveals.get(pane)
+    pendingActionReveals.delete(pane)
+    const revealIndex = reveal !== undefined && reveal.identity === nextIdentity && sameIdentity && !identicalText ? changeLineAtOrdinal(doc, reveal.ordinal) : undefined
+    const revealLine = revealIndex === undefined ? undefined : doc.lines[revealIndex]
+    // The same content re-rendered with a different diff — a refresh after the file changed
+    // elsewhere — keeps the selection on the lines it was on, found by identity, as lazygit's
+    // `PreserveDiffPositionOnRerender` does (pkg/gui/controllers/helpers/diff_line_restore.go:22-101).
+    const rerendered = revealIndex === undefined && sameIdentity && !identicalText && !enteringDocument && previousDocument !== undefined && previousDocument !== doc
+    const restoredRange = rerendered && previousRange !== undefined ? restoreDiffLineRange(previousDocument!, doc, previousRange) : undefined
+    const restoredTarget = rerendered && priorTarget !== undefined ? restoreCursorTarget(previousDocument!, doc, priorTarget) : undefined
+    const nextRange: DiffLineRangeState =
+      revealIndex !== undefined && reveal !== undefined
+        ? reveal.select === "line"
+          ? { lineCount: doc.lines.length, selectedIndex: revealIndex, rangeMode: "non-sticky", rangeStartIndex: revealIndex }
+          : { lineCount: doc.lines.length, selectedIndex: revealIndex, rangeMode: "none" }
+        : (restoredRange ?? (!enteringDocument && sameIdentity && identicalText && previousRange?.lineCount === doc.lines.length ? previousRange : createDiffLineRangeState(doc)))
     lineRanges.set(pane, nextRange)
-    if (shouldKeepTarget && initialTarget) {
+    if (reveal?.select === "hunk" && revealLine?.hunkIndex !== undefined) {
+      cursorTargets.set(pane, targetWithIdentity(doc, { fileIndex: revealLine.fileIndex, hunkIndex: revealLine.hunkIndex }))
+    } else if (restoredTarget !== undefined) {
+      cursorTargets.set(pane, targetWithIdentity(doc, restoredTarget))
+    } else if (shouldKeepTarget && initialTarget) {
       cursorTargets.set(pane, targetWithIdentity(doc, initialTarget))
     } else {
       cursorTargets.delete(pane)
@@ -566,7 +653,11 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
       const reuseLayout = virtual.isActive() && sameIdentity && identicalText && previousContent?.document === doc
       if (!reuseLayout) virtual.install(doc, content.preamble ?? "")
       renderedTexts.delete(pane)
-      if (previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
+      if (revealIndex !== undefined) {
+        if (nextRange.rangeMode !== "none") setMainDiffLineRangeState(pane, nextRange)
+        revealRow(pane, revealIndex)
+      } else if (restoredRange !== undefined && restoredRange.rangeMode !== "none") setMainDiffLineRangeState(pane, restoredRange)
+      else if (previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
       return
     }
     virtual?.deactivate()
@@ -588,8 +679,12 @@ export function installMainContent(pane: PaneHandle, content: MainPaneContent, t
     }
     pane.text.scrollY = Math.max(0, Math.min(pane.text.maxScrollY, pane.text.scrollY))
     pane.text.scrollX = Math.max(0, Math.min(pane.text.maxScrollX, pane.text.scrollX))
+    if (revealIndex !== undefined) {
+      if (nextRange.rangeMode !== "none") setMainDiffLineRangeState(pane, nextRange)
+      revealRow(pane, revealIndex)
+    } else if (restoredRange !== undefined && restoredRange.rangeMode !== "none") setMainDiffLineRangeState(pane, restoredRange)
+    else if (!enteringDocument && sameIdentity && identicalText && previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
     pane.syncScrollbar()
-    if (!enteringDocument && sameIdentity && identicalText && previousRange?.rangeMode !== "none") applyMainDiffLineVisualSelection(pane)
     return
   }
   if (content.ansi !== undefined) {
