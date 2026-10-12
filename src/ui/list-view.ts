@@ -481,8 +481,9 @@ export type ListRowSegment = {
 /**
  * Lays one row out into styled runs: separator spaces and cell padding are plain
  * runs, column bodies keep their column/segment styling, and trailing whitespace
- * runs are dropped. `renderColumns` (StyledText) and `./panes/list-text` (native
- * highlights) both build from this, so the two can never disagree about row text.
+ * runs are dropped. `renderColumns` builds every row `renderListRows` emits, and
+ * `./panes/list-text` installs exactly that output, so a row cannot disagree with
+ * itself about its text.
  */
 export function layoutListRowSegments(row: ListRow, layout: ListColumnLayout): readonly ListRowSegment[] {
   const segments: ListRowSegment[] = []

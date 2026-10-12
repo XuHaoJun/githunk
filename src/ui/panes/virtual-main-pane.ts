@@ -279,7 +279,7 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
     }
     const preamble = preambleRows.length === 0 ? "" : `${preambleRows.join("\n")}\n`
     const body = rows.join("\n")
-    const installed: InstalledPaneText = installDiffText(text, { preamble, body, displayLines: displays, highlightScrollY: () => localScrollY, preambleSpans })
+    const installed: InstalledPaneText = installDiffText(text, { preamble, body, displayLines: displays, preambleSpans })
     if (projectionCursor !== installed.text.length) throw new Error("virtual main selection projection does not cover installed text")
     const originalScrollY = state.originalDescriptors.get("scrollY")?.set
     if (projectionWindowChanged || projectionContentChanged) {

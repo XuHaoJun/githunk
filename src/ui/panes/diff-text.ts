@@ -18,8 +18,6 @@ export type DiffTextContent = {
   /** `renderDiff`'s `displayText`: the gutter-prefixed rows, one per document line. */
   readonly body: string
   readonly displayLines: readonly DiffDisplayLine[]
-  /** Overrides native scroll for bounded virtual buffers; eager panes use their native scroll. */
-  readonly highlightScrollY?: () => number
   /** Optional stat spans precomputed against the full preamble and remapped to local rows. */
   readonly preambleSpans?: ReadonlyMap<number, readonly DiffStatSpan[]>
 }
