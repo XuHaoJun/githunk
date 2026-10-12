@@ -1,55 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { TextRenderable, type RGBA } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
-import { commandLogLineHighlights, installCommandLogText } from "../../src/ui/panes/command-log-text"
-import { LINE_END_COLS } from "../../src/ui/panes/viewport-highlights"
+import { installCommandLogText } from "../../src/ui/panes/command-log-text"
 import type { CommandLogLine } from "../../src/domain/command"
 
 function line(id: number, ...spans: readonly (readonly [string, CommandLogLine["spans"][number]["style"]])[]): CommandLogLine {
   return { id, spans: spans.map(([text, style]) => ({ text, style })) }
 }
-
-/**
- * The pane lets OpenTUI wrap and paints whole *logical* lines — the unit
- * `PaneTextBuffer.addHighlight` addresses — so a line, not a visual row, is the input. A single-span
- * line paints whole, which is why only the random tip's label/tip boundary needs measuring.
- */
-describe("commandLogLineHighlights", () => {
-  test("paints a single-span line across the whole line", () => {
-    expect(commandLogLineHighlights(line(1, ["You can hide/focus this panel by pressing '@'", "intro"]))).toEqual([{ start: 0, end: LINE_END_COLS, style: "intro" }])
-    expect(commandLogLineHighlights(line(4, ["Stage file", "action"]))).toEqual([{ start: 0, end: LINE_END_COLS, style: "action" }])
-  })
-
-  test("paints a blank line as nothing", () => {
-    expect(commandLogLineHighlights(line(2))).toEqual([])
-  })
-
-  test("splits the tip line at the label's boundary", () => {
-    const tip = line(3, ["Random tip: ", "tip-label"], ["press '@' to hide this panel", "tip"])
-    expect(commandLogLineHighlights(tip)).toEqual([
-      { start: 0, end: 12, style: "tip-label" },
-      { start: 12, end: LINE_END_COLS, style: "tip" }
-    ])
-  })
-
-  test("measures the label in display cells, not code points or UTF-16 units", () => {
-    // `addHighlight`'s columns are display cells. Probed against OpenTUI 0.5.14 directly: with
-    // `"中 tip: GREEN"` installed, highlighting `[0, 8)` came back as `"中 tip: "` — 7 code points
-    // and 7 UTF-16 units, but 8 cells, because 中 occupies two columns. `"🎲 tip: GREEN"` behaves
-    // the same way (7 code points, 8 UTF-16 units, 8 cells). Code points end either label at column
-    // 7 and hand its trailing space to the tip's colour; UTF-16 units do that to 中's label and only
-    // coincide with cells for the emoji's, which is why both labels are asserted here. The
-    // render-level test below pins the same thing end to end.
-    expect(commandLogLineHighlights(line(1, ["🎲 tip: ", "tip-label"], ["go", "tip"]))).toEqual([
-      { start: 0, end: 8, style: "tip-label" },
-      { start: 8, end: LINE_END_COLS, style: "tip" }
-    ])
-    expect(commandLogLineHighlights(line(2, ["中 tip: ", "tip-label"], ["go", "tip"]))).toEqual([
-      { start: 0, end: 8, style: "tip-label" },
-      { start: 8, end: LINE_END_COLS, style: "tip" }
-    ])
-  })
-})
 
 /**
  * A `command`/`output` row is *unobservable* as painted: lazygit's `theme.DefaultTextColor` is
@@ -68,12 +25,10 @@ function expectIndexed(color: RGBA, slot: number): void {
 }
 
 /**
- * `OpenTUI`'s `TextBuffer.addHighlight` addresses a *logical* (pre-wrap) line, not the visual row
- * `lineInfo.lineSources` is indexed by (confirmed against 0.5.14: `TextBufferRenderable` keeps a
- * pre-wrap `textBuffer` the highlight calls hit, separate from the wrapped `textBufferView` that
- * produces `lineInfo`), and its columns are display cells. `installCommandLogText` therefore paints
- * per logical line, in that line's own cell columns — these tests exercise that against a real
- * wrapped render, the thing a pure test of `commandLogLineHighlights` cannot see.
+ * The log is encoded as styled chunks, one per span, so a span's colour survives OpenTUI's own
+ * wrapping — a line that wraps onto several visual rows keeps its style on every one of them, and the
+ * random tip's label/tip boundary needs no column arithmetic at all. These tests exercise that
+ * against a real wrapped render.
  */
 describe("installCommandLogText", () => {
   test("colours every logical line correctly when an earlier line wraps", async () => {
@@ -173,13 +128,9 @@ describe("installCommandLogText", () => {
     }
   })
 
-  test("asks for lines past the end of the log and paints nothing there", async () => {
-    // The band is 32 logical lines wider than the viewport on each side, so on any log shorter than
-    // that it asks for lines that do not exist — and after a *shorter* log replaces a longer one,
-    // `install` (viewport-highlights.ts) sets `painted = undefined` for the changed text, so
-    // `paint(true)` takes the FULL clear-and-repaint path, not the incremental one: it repaints the
-    // whole band from scratch, including the lines past the new, shorter log's end. `paintLine`
-    // answers those with nothing rather than failing, which is the only reason a short log renders.
+  test("a shorter log leaves nothing painted past its end", async () => {
+    // A shorter log replaces a longer one by rewriting the pane's whole content, so the rows the
+    // longer log used to occupy hold nothing at all.
     const setup = await createTestRenderer({ width: 30, height: 8 })
     try {
       const text = new TextRenderable(setup.renderer, { id: "log-text", content: "", width: 24, height: 6, selectable: false, wrapMode: "char" })

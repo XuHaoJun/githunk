@@ -250,8 +250,10 @@ export async function createShellHarness(options: ShellHarnessOptions = {}): Pro
     async cleanup() {
       await fetchBare?.cleanup().catch(() => {})
       await pushBare?.cleanup().catch(() => {})
-      app.destroy()
-      setup.renderer.destroy()
+      await app.destroy()
+      // OpenTUI 0.6 destroys the terminal asynchronously: `dispose()` is `destroy()` plus awaiting
+      // `closed`, which the next test's renderer must not race.
+      await setup.dispose()
       if (!reused) await repository.cleanup().catch(() => {})
     }
   }

@@ -1,21 +1,16 @@
 import { StyledText, bold as boldChunk, dim as dimChunk, fg as fgChunk, type TextChunk, type TextRenderable } from "@opentui/core"
 import type { AnsiSpan } from "../ansi"
 import type { InstalledPaneText } from "./diff-text"
-import { paneTextBuffer, type PaneTextBuffer } from "./pane-text"
-import { createViewportHighlights, type ViewportHighlights } from "./viewport-highlights"
 
 /**
- * Pushes a git command's own coloured output into a pane's text viewport, colouring only the rows
- * the viewport shows.
+ * Pushes a git command's own coloured output into a pane's text viewport, the spans ../ansi recovered
+ * from git's SGR sequences carried as styled chunks.
  *
- * The third pane on ./viewport-highlights, and the same bargain the other two make: the text goes in
- * unstyled and whole so OpenTUI keeps owning scrolling, wrapping and selection, while the colours —
- * here the spans ../ansi recovered from git's SGR sequences — are painted lazily around the
- * viewport. lazygit gets this for free because gocui parses SGR as it writes and never writes more
- * than it displays (pkg/gui/view_helpers.go:22 `linesToReadFromCmdTask`).
- *
- * What stays here is what is this content's own: interning a span's `(fg, bold, dim)` triple as a
- * style, grouping the spans by row, and the whole-document chunk fallback.
+ * OpenTUI 0.6 keeps the renderable tree native and leaves `TextRenderable.textBuffer` undefined, so
+ * the line-indexed highlights 0.5 painted around the viewport are gone: the document is encoded
+ * whole per changed install instead, and an unchanged install is free. lazygit gets the windowed
+ * property for free because gocui parses SGR as it writes and never writes more than it displays
+ * (pkg/gui/view_helpers.go:22 `linesToReadFromCmdTask`); here the display is one `StyledText`.
  */
 
 export type AnsiTextContent = {
@@ -30,34 +25,13 @@ export type AnsiTextContent = {
 /** What one paint needs: the spans of each row, keyed by the row's index in the *pane*. */
 type AnsiPaint = ReadonlyMap<number, readonly AnsiSpan[]>
 
-type AnsiPainter = {
-  readonly highlights: ViewportHighlights<AnsiPaint>
-  /**
-   * Style id per interned `(fg, bold, dim)` triple; ids are per text renderable, so the cache lives
-   * as long as the painter — a release only stops the painting, it does not un-register a style.
-   */
-  readonly styleIds: Map<string, number>
-}
-
-const painters = new WeakMap<TextRenderable, AnsiPainter>()
+/** The content each pane was last installed with, colours included. */
+const installedContents = new WeakMap<TextRenderable, string>()
 
 function styleKey(span: AnsiSpan): string {
   const color = span.fg
   const colorKey = color === undefined ? "-" : `${color.intent}:${color.slot}:${color.toInts().join(",")}`
   return `${colorKey}|${span.bold === true ? "b" : "-"}${span.dim === true ? "d" : "-"}`
-}
-
-function styleIdFor(buffer: PaneTextBuffer, styleIds: Map<string, number>, span: AnsiSpan): number {
-  const key = styleKey(span)
-  const existing = styleIds.get(key)
-  if (existing !== undefined) return existing
-  const id = buffer.registerStyle(`githunk.ansi.${key}`, {
-    ...(span.fg === undefined ? {} : { fg: span.fg }),
-    ...(span.bold === true ? { bold: true } : {}),
-    ...(span.dim === true ? { dim: true } : {})
-  })
-  styleIds.set(key, id)
-  return id
 }
 
 function countRows(value: string): number {
@@ -83,13 +57,15 @@ function groupByRow(spans: readonly AnsiSpan[], offset: number): AnsiPaint {
   return grouped
 }
 
-/**
- * Whole-document chunk rendering: correct, and what this module exists to avoid. Reached only if a
- * future OpenTUI stops exposing the buffer, so the pane degrades in speed rather than colour.
- */
-function paintAsChunks(text: TextRenderable, content: AnsiTextContent, installed: InstalledPaneText & { readonly firstBodyRow: number }): InstalledPaneText {
-  const { text: full, firstBodyRow } = installed
-  const spansByRow = groupByRow(content.spans, firstBodyRow)
+/** The text plus every span's geometry and colours: a recolour without a text change still repaints. */
+function contentSignature(installed: InstalledPaneText, spansByRow: AnsiPaint): string {
+  const rows = [...spansByRow.entries()].sort(([left], [right]) => left - right)
+  return `${installed.text}\u0002${rows.map(([row, spans]) => `${row}:${spans.map((span) => `${span.start}-${span.end}-${styleKey(span)}`).join(",")}`).join("|")}`
+}
+
+/** Encodes the whole document, each row's spans in their own colours. */
+function paintAsChunks(text: TextRenderable, installed: InstalledPaneText & { readonly firstBodyRow: number }, spansByRow: AnsiPaint): InstalledPaneText {
+  const { text: full } = installed
   const rows = full.split("\n")
   const chunks: TextChunk[] = []
   for (let row = 0; row < rows.length; row++) {
@@ -119,43 +95,22 @@ function paintAsChunks(text: TextRenderable, content: AnsiTextContent, installed
 }
 
 /**
- * Installs `content` as the pane's text. Re-installing the same text is a no-op beyond refreshing
- * the paint description, which is what makes re-focusing a panel free.
+ * Installs `content` as the pane's text. Re-installing byte-identical text with the same colours is a
+ * no-op, which is what makes re-focusing a panel free.
  */
 export function installAnsiText(text: TextRenderable, content: AnsiTextContent): InstalledPaneText {
   const installed = joined(content)
-  const buffer = paneTextBuffer(text)
-  if (buffer === undefined) {
-    return paintAsChunks(text, content, installed)
-  }
-  const { text: full, firstBodyRow } = installed
-  const spansByRow = groupByRow(content.spans, firstBodyRow)
-  let painter = painters.get(text)
-  if (painter === undefined) {
-    const styleIds = new Map<string, number>()
-    painter = {
-      styleIds,
-      highlights: createViewportHighlights<AnsiPaint>(text, {
-        buffer,
-        paintLine: (row: number, current: AnsiPaint): void => {
-          const spans = current.get(row)
-          if (spans === undefined) return
-          for (const span of spans) {
-            buffer.addHighlight(row, { start: span.start, end: span.end, styleId: styleIdFor(buffer, styleIds, span) })
-          }
-        }
-      })
-    }
-    painters.set(text, painter)
-  }
-  painter.highlights.install(full, spansByRow)
-  return { text: installed.text, preambleLength: installed.preambleLength }
+  const spansByRow = groupByRow(content.spans, installed.firstBodyRow)
+  const signature = contentSignature(installed, spansByRow)
+  if (installedContents.get(text) === signature) return { text: installed.text, preambleLength: installed.preambleLength }
+  installedContents.set(text, signature)
+  return paintAsChunks(text, installed, spansByRow)
 }
 
 /**
- * Hands the pane back to plain `update()` content, or to ./diff-text. The caller writes the
- * replacement text itself; this only drops this module's highlights so they cannot bleed into it.
+ * Forgets the installed content, so the next install writes even if it holds the same characters. The
+ * caller writes the pane's replacement text itself.
  */
 export function releaseAnsiText(text: TextRenderable): void {
-  painters.get(text)?.highlights.release()
+  installedContents.delete(text)
 }

@@ -1,4 +1,4 @@
-import type { CliRenderer } from "@opentui/core"
+import type { CliRenderer, TextRenderable } from "@opentui/core"
 import type { AppModel } from "../../app/model"
 import type { DiffDocument, DiffFile } from "../../domain/diff/document"
 import type { DocumentSelection } from "../../domain/diff/selection"
@@ -9,6 +9,7 @@ import { changeLineAtOrdinal, changeOrdinalBefore, diffLineIdentity, findDiffLin
 import type { AnsiText } from "../ansi"
 import { createPane, scrollYToReveal, type PaneHandle } from "./common"
 import { installAnsiText, releaseAnsiText } from "./ansi-text"
+import { cellWidth } from "../cell-width"
 import { installDiffText, releaseDiffText } from "./diff-text"
 import { SELECTED_LINE_BG } from "../theme"
 import { createVirtualMainPane, isVirtualDiffDocument, virtualMainPaneFor } from "./virtual-main-pane"
@@ -77,32 +78,169 @@ export const MAIN_TITLE_REMOTE_BRANCH = "Remote Branch"
 export const MAIN_TITLE_REMOTE = "Remote"
 export const MAIN_TITLE_TAG = "Tag"
 
+type MainTextLineInfo = {
+  readonly lineSources: readonly number[]
+  readonly lineStartCols: readonly number[]
+  readonly lineWidthCols: readonly number[]
+}
+
+type MainSelectionBounds = {
+  readonly anchorX: number
+  readonly anchorY: number
+  readonly focusX: number
+  readonly focusY: number
+  readonly isActive: boolean
+  readonly behavior: "cell"
+}
+
+type MainTextScene = {
+  setTextSelection(renderable: TextRenderable, operation: "set" | "reset", bounds: MainSelectionBounds | null, bg?: unknown, fg?: unknown): boolean
+}
+
 type MainTextSelectionSurface = {
   setSelection?: (start: number, end: number) => void
   resetSelection?: () => void
-  readonly textBufferView?: {
-    setSelection(start: number, end: number, bgColor?: unknown, fgColor?: unknown): void
-    resetSelection(): void
-  }
-  readonly _ctx?: { clearSelection?: () => void }
+  readonly plainText?: string
+  readonly lineInfo?: MainTextLineInfo
+  readonly scrollY?: number
+  readonly selectionBg?: unknown
+  readonly _ctx?: { clearSelection?: () => void; nativeScene?: MainTextScene }
   requestRender?: () => void
+  onLifecyclePass?: (() => void) | null
+}
+
+/** A range's document-absolute geometry, so a scroll only shifts the rows it is painted on. */
+type MainTextSelectionGeometry = {
+  readonly anchorRow: number
+  readonly focusRow: number
+  readonly anchorX: number
+  readonly focusX: number
+}
+
+type MainTextSelectionState = {
+  readonly geometry: MainTextSelectionGeometry
+  appliedScrollY: number
+}
+
+const textSelections = new WeakMap<PaneHandle, MainTextSelectionState>()
+
+/**
+ * `offset`'s display column in the pane's whole text. `LineInfo`'s columns are positions in that
+ * same space — a newline counts one column, which `cellWidth`'s ASCII fast path also gives it — so
+ * an offset maps onto a row by comparing against `lineStartCols` directly.
+ */
+function displayColumnFor(text: string, offset: number): number {
+  const bounded = Math.max(0, Math.min(Math.floor(offset), text.length))
+  return cellWidth(text.slice(0, bounded))
+}
+
+/**
+ * The visual row showing display column `column`: the last row that starts at or before it. A
+ * wrapped line owns a run of consecutive visual rows, so the row an offset lands in is the last one
+ * whose `LineInfo` start column does not pass it — no wrap rule is re-derived here.
+ */
+function visualRowFor(info: MainTextLineInfo, column: number): number | undefined {
+  let found: number | undefined
+  for (let row = 0; row < info.lineSources.length; row++) {
+    if ((info.lineStartCols[row] ?? 0) > column) break
+    found = row
+  }
+  return found
+}
+
+/** Column within `row`, clamped into the row: a column in the gap a word wrap leaves takes the row. */
+function columnInRow(info: MainTextLineInfo, row: number, column: number): number {
+  const start = info.lineStartCols[row] ?? 0
+  const width = info.lineWidthCols[row] ?? 0
+  return Math.max(0, Math.min(column - start, Math.max(0, width - 1)))
+}
+
+/**
+ * Where OpenTUI 0.6 must be told to paint a programmatic range.
+ *
+ * 0.5 exposed `TextBufferView.setSelection(start, end, bg)`, which took offsets into the pre-wrap
+ * buffer. 0.6 removed it: a scene selection is given as *viewport* cell bounds (`anchorY`/`focusY`
+ * are rows below the pane's `scrollY`; `anchorX`/`focusX` are inclusive display columns within their
+ * row — probed against 0.6.2), so the renderable's own `LineInfo` is the only thing that can turn an
+ * offset back into a row and a column once wrapping is in play.
+ */
+function selectionGeometryFor(surface: MainTextSelectionSurface, start: number, end: number): MainTextSelectionGeometry | undefined {
+  const text = surface.plainText
+  const info = surface.lineInfo
+  if (text === undefined || info === undefined || info.lineSources.length === 0) return undefined
+  const anchorColumn = displayColumnFor(text, start)
+  // `end` is exclusive; the selection API's focus column is the last selected cell.
+  const focusColumn = displayColumnFor(text, Math.max(start, end - 1))
+  const anchorRow = visualRowFor(info, anchorColumn)
+  if (anchorRow === undefined) return undefined
+  const focusRow = visualRowFor(info, focusColumn) ?? anchorRow
+  return {
+    anchorRow,
+    focusRow,
+    anchorX: columnInRow(info, anchorRow, anchorColumn),
+    focusX: columnInRow(info, focusRow, focusColumn)
+  }
+}
+
+function paintMainTextSelection(pane: PaneHandle): void {
+  const surface = pane.text as unknown as MainTextSelectionSurface
+  const scene = surface._ctx?.nativeScene
+  const state = textSelections.get(pane)
+  if (scene === undefined || state === undefined) return
+  const scrollY = Math.max(0, Math.floor(surface.scrollY ?? 0))
+  if (state.appliedScrollY === scrollY) return
+  const { geometry } = state
+  const selectionBg = pane.text.selectionBg
+  // Re-assert the colour on every apply: 0.6.2 paints a scene selection only for a renderable whose
+  // own selection colour is in its live paint state. Setting it once at construction — before the
+  // pane is attached — leaves the selection unpainted (probed on 0.6.2).
+  pane.text.selectionBg = selectionBg
+  surface._ctx?.clearSelection?.()
+  const painted = scene.setTextSelection(
+    pane.text,
+    "set",
+    {
+      anchorX: geometry.anchorX,
+      anchorY: Math.max(0, geometry.anchorRow - scrollY),
+      focusX: geometry.focusX,
+      focusY: Math.max(0, geometry.focusRow - scrollY),
+      isActive: true,
+      behavior: "cell"
+    },
+    selectionBg
+  )
+  if (!painted) return
+  state.appliedScrollY = scrollY
+  surface.requestRender?.()
 }
 
 function ensureMainTextSelectionSurface(pane: PaneHandle): void {
   const surface = pane.text as unknown as MainTextSelectionSurface
-  if (surface.setSelection === undefined && surface.textBufferView !== undefined) {
-    surface.setSelection = (start, end) => {
-      surface._ctx?.clearSelection?.()
-      surface.textBufferView!.setSelection(start, end, pane.text.selectionBg)
+  const scene = surface._ctx?.nativeScene
+  if (surface.setSelection !== undefined || scene === undefined) return
+  surface.setSelection = (start, end) => {
+    const geometry = end > start ? selectionGeometryFor(surface, start, end) : undefined
+    if (geometry === undefined) {
+      textSelections.delete(pane)
+      scene.setTextSelection(pane.text, "reset", null)
       surface.requestRender?.()
+      return
     }
+    textSelections.set(pane, { geometry, appliedScrollY: -1 })
+    paintMainTextSelection(pane)
   }
-  if (surface.resetSelection === undefined && surface.textBufferView !== undefined) {
-    surface.resetSelection = () => {
-      surface._ctx?.clearSelection?.()
-      surface.textBufferView!.resetSelection()
-      surface.requestRender?.()
-    }
+  surface.resetSelection = () => {
+    textSelections.delete(pane)
+    surface._ctx?.clearSelection?.()
+    scene.setTextSelection(pane.text, "reset", null)
+    surface.requestRender?.()
+  }
+  // Every scroll path — keys, wheel, reveal, resize — ends in a render pass, and a scene selection
+  // is positioned in viewport rows, so this is the hook a range cannot drift past.
+  const previous = surface.onLifecyclePass ?? null
+  surface.onLifecyclePass = () => {
+    previous?.call(pane.text)
+    paintMainTextSelection(pane)
   }
 }
 

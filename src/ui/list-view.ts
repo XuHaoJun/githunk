@@ -1,5 +1,6 @@
 import type { ColorInput, TextChunk } from "@opentui/core"
 import { StyledText, bg, bold, dim, fg } from "@opentui/core"
+import { cellWidth } from "../domain/diff/cell-width"
 import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, HOVER_LINE_BG, SELECTED_LINE_BG } from "./theme"
 
 export type ListColumnSegment = { readonly text: string; readonly color?: ColorInput | undefined; readonly bold?: boolean }
@@ -487,11 +488,11 @@ export function layoutListRowSegments(row: ListRow, layout: ListColumnLayout): r
   const segments: ListRowSegment[] = []
   for (let i = 0; i < layout.indexes.length; i++) {
     const column = row.columns[layout.indexes[i]!]
-    const cellWidth = layout.widths[i]!
+    const columnWidth = layout.widths[i]!
     const isLast = i === layout.indexes.length - 1
     if (i > 0) segments.push({ text: " " })
     const text = column?.text ?? ""
-    const truncated = truncateToWidth(text, cellWidth)
+    const truncated = truncateToWidth(text, columnWidth)
     if (truncated.length > 0) {
       if (column?.segments !== undefined) {
         // Slice the segment runs to the same prefix the plain truncation keeps,
@@ -531,7 +532,7 @@ export function layoutListRowSegments(row: ListRow, layout: ListColumnLayout): r
     }
     // The final column needs no trailing padding — nothing follows it to align.
     if (!isLast) {
-      const pad = cellWidth - visualLength(truncated)
+      const pad = columnWidth - visualLength(truncated)
       if (pad > 0) segments.push({ text: " ".repeat(pad) })
     }
   }
@@ -612,12 +613,15 @@ export function renderListRows(state: ListState, focused: boolean, width: number
     const shouldHighlightSelected = isSelected && dr.kind === "item"
     const shouldHighlightRange = isInRange && !isSelected && dr.kind === "item"
 
+    // A row that carries a background is padded to the visible width in *display cells*, so the
+    // background reaches the right edge of the pane. Rows without one are as wide as their content:
+    // `./panes/list-text` installs these chunks as the pane's whole text.
     if (shouldHighlightSelected) {
       // lazygit's indexed SelectedLineBgColor, not a fixed CSS blue — see ./theme.
       const selectedBg = bg(SELECTED_LINE_BG)
       lineChunks = lineChunks.map((c) => highlightChunk(c, selectedBg))
-      const plainLen = lineChunks.reduce((sum, c) => sum + visualLength(c.text), 0)
-      const pad = Math.max(0, safeWidth - plainLen)
+      const plainCells = lineChunks.reduce((sum, c) => sum + cellWidth(c.text), 0)
+      const pad = Math.max(0, safeWidth - plainCells)
       if (pad > 0) {
         lineChunks.push(selectedBg(" ".repeat(pad)) as TextChunk)
       } else if (lineChunks.length === 0 && safeWidth > 0) {
@@ -626,8 +630,8 @@ export function renderListRows(state: ListState, focused: boolean, width: number
     } else if (shouldHighlightRange) {
       const selectedBg = bg(SELECTED_LINE_BG)
       lineChunks = lineChunks.map((c) => selectedBg(c) as TextChunk)
-      const plainLen = lineChunks.reduce((sum, c) => sum + visualLength(c.text), 0)
-      const pad = Math.max(0, safeWidth - plainLen)
+      const plainCells = lineChunks.reduce((sum, c) => sum + cellWidth(c.text), 0)
+      const pad = Math.max(0, safeWidth - plainCells)
       if (pad > 0) {
         lineChunks.push(selectedBg(" ".repeat(pad)) as TextChunk)
       } else if (lineChunks.length === 0 && safeWidth > 0) {
@@ -637,8 +641,8 @@ export function renderListRows(state: ListState, focused: boolean, width: number
     if (isHovered) {
       const hoverBg = bg(HOVER_LINE_BG)
       lineChunks = lineChunks.map((c) => hoverBg(c) as TextChunk)
-      const plainLen = lineChunks.reduce((sum, c) => sum + visualLength(c.text), 0)
-      const pad = Math.max(0, safeWidth - plainLen)
+      const plainCells = lineChunks.reduce((sum, c) => sum + cellWidth(c.text), 0)
+      const pad = Math.max(0, safeWidth - plainCells)
       if (pad > 0) {
         lineChunks.push(hoverBg(" ".repeat(pad)) as TextChunk)
       } else if (lineChunks.length === 0 && safeWidth > 0) {
