@@ -33,6 +33,16 @@ export function compileTargetForHost(platform: NodeJS.Platform, arch: string, is
   return null
 }
 
+/**
+ * A standalone Linux artifact embeds one libc's native library. Without a build-time definition,
+ * OpenTUI retains both imports and a clean install lacks the other libc's optional package.
+ * https://opentui.com/docs/reference/standalone-executables#linux-libc
+ */
+export function nativeLibcBuildArgs(platform: NodeJS.Platform, isMuslHost = (): boolean => existsSync("/lib/ld-musl-x86_64.so.1")): readonly string[] {
+  if (platform !== "linux") return []
+  return [`--define=process.env.OPENTUI_LIBC=${JSON.stringify(isMuslHost() ? "musl" : "glibc")}`]
+}
+
 if (import.meta.main) {
   const repoRoot = path.resolve(import.meta.dir, "..")
   const distDir = path.join(repoRoot, "dist")
@@ -59,6 +69,7 @@ if (import.meta.main) {
       "--splitting",
       "--minify",
       ...(target === null ? [] : [`--target=${target}`]),
+      ...nativeLibcBuildArgs(process.platform),
       path.join(repoRoot, "src", "cli.ts"),
       "--outfile",
       outfile

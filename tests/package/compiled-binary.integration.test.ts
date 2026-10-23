@@ -3,8 +3,10 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { nativeLibcBuildArgs } from "../../scripts/build-bin"
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+const nativeLibcArgs = nativeLibcBuildArgs(process.platform)
 
 describe("compiled binary", () => {
   test("reports the package version, not the dev fallback", async () => {
@@ -12,8 +14,8 @@ describe("compiled binary", () => {
     const workdir = await mkdtemp(join(tmpdir(), "githunk-compile-"))
     try {
       const binary = join(workdir, "githunk")
-      const build = Bun.spawnSync(["bun", "build", "--compile", "src/cli.ts", "--outfile", binary], { cwd: root })
-      expect(build.exitCode).toBe(0)
+      const build = Bun.spawnSync(["bun", "build", "--compile", ...nativeLibcArgs, "src/cli.ts", "--outfile", binary], { cwd: root })
+      expect(build.exitCode, build.stderr.toString()).toBe(0)
       const run = Bun.spawnSync([binary, "--version"], { stdout: "pipe", stderr: "pipe" })
       expect(run.exitCode).toBe(0)
       expect(run.stdout.toString()).toContain(manifest.version)
@@ -28,7 +30,8 @@ describe("compiled binary", () => {
     const project = await mkdtemp(join(tmpdir(), "githunk-notgit-"))
     try {
       const binary = join(workdir, "githunk")
-      expect(Bun.spawnSync(["bun", "build", "--compile", "src/cli.ts", "--outfile", binary], { cwd: root }).exitCode).toBe(0)
+      const build = Bun.spawnSync(["bun", "build", "--compile", ...nativeLibcArgs, "src/cli.ts", "--outfile", binary], { cwd: root })
+      expect(build.exitCode, build.stderr.toString()).toBe(0)
       const run = Bun.spawnSync([binary], { cwd: project, stdout: "pipe", stderr: "pipe" })
       expect(run.exitCode).toBe(1)
       expect(run.stderr.toString()).toContain("githunk: not inside a Git repository")

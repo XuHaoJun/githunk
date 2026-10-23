@@ -6,8 +6,11 @@ Evidence is split between deterministic automated coverage and the recorded TUI 
 
 - `packageManager`, `bun-types`, CI, and all release workflow Bun setup steps are pinned to `1.4.4`; `bun.lock` resolves the matching type definitions.
 - **Automated:** on Bun `1.4.4`, frozen-lockfile installation, `bun run format:check`, `bun run lint`, and `bun run check` passed (typecheck and 1842 tests, 0 failures). React tests emitted `act(...)` warnings.
+- **CI follow-up:** [run 39901720967](https://github.com/XuHaoJun/githunk/actions/runs/39901720967) failed both standalone compile tests because a clean Linux glibc install lacks `@opentui/core-linux-x64-musl`, but an undefined build-time `OPENTUI_LIBC` retained both imports. The earlier local pass had both packages installed. The production builder and compile tests now define the host libc at build time, following [OpenTUI's standalone contract](https://opentui.com/docs/reference/standalone-executables#linux-libc); compile failures include stderr.
+- **Automated — clean install:** with glibc installed and musl absent, both standalone compile tests passed (2 tests, 0 failures); the production `bun run build:bin` built the baseline artifact and that artifact reported `0.3.8`.
+- **Manual smoke observed — clean-built artifact:** launched the baseline standalone binary in a 120×40 tmux terminal, observed the repository dashboard and working-tree diff, and opened the lazily bundled React Branch Review split diff.
 - **Manual smoke observed:** Bun `1.4.4` launched `GITHUNK_BACKGROUND=0 bun run start` in a 120×40 tmux terminal, rendered the repository dashboard and working-tree diff, and exited via `q`.
-- **Not tested:** execution of the updated GitHub Actions workflows and cross-platform release builds.
+- **Not tested:** cross-platform release builds. The failed GitHub Actions run above is distinct from the local verification.
 
 ## OpenTUI 0.6.7 upgrade (2026-10-23)
 
