@@ -6,7 +6,6 @@ import { createVirtualDiffLayout, VIRTUAL_DIFF_LINE_THRESHOLD, type VirtualDiffD
 import { cellWidth } from "../../domain/diff/cell-width"
 import { clearScrollbarViewportOverride, type PaneHandle } from "./common"
 import { installDiffText, releaseDiffText, statSpansForPreamble, type DiffStatSpan, type InstalledPaneText } from "./diff-text"
-import { onPaneLifecyclePass } from "./pane-text"
 
 const ACCESSORS = ["scrollY", "scrollHeight", "maxScrollY", "scrollX", "scrollWidth", "maxScrollX"] as const
 type AccessorName = (typeof ACCESSORS)[number]
@@ -280,7 +279,7 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
     }
     const preamble = preambleRows.length === 0 ? "" : `${preambleRows.join("\n")}\n`
     const body = rows.join("\n")
-    const installed: InstalledPaneText = installDiffText(text, { preamble, body, displayLines: displays, highlightScrollY: () => localScrollY, preambleSpans })
+    const installed: InstalledPaneText = installDiffText(text, { preamble, body, displayLines: displays, preambleSpans })
     if (projectionCursor !== installed.text.length) throw new Error("virtual main selection projection does not cover installed text")
     const originalScrollY = state.originalDescriptors.get("scrollY")?.set
     if (projectionWindowChanged || projectionContentChanged) {
@@ -366,11 +365,16 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
       renderWindow()
     }
   }
-  onPaneLifecyclePass(text, () => {
+  // A size change re-lays-out the window. OpenTUI 0.6 gives every renderable `onSizeChange` and
+  // throws for per-renderable `resized`/`layout-changed` listeners, so this replaces the lifecycle
+  // pass that stood in for it. It chains, because `attachVerticalScrollbar` (./common) owns the
+  // pane's own `onSizeChange` and `onSizeChange` is a single slot, not a listener list.
+  const previousSizeChange = text.onSizeChange
+  text.onSizeChange = () => {
+    previousSizeChange?.()
     if (!state.active || state.layout === undefined) return
-    const current = dimensions(text)
-    if (current.height !== state.viewportHeight || current.width !== state.viewportWidth) renderWindow()
-  })
+    renderWindow()
+  }
   return adapter
 }
 

@@ -1,26 +1,16 @@
 import { StyledText, dim, fg, type TextChunk, type TextRenderable } from "@opentui/core"
 import type { DiffDisplayLine, DiffDisplayLineStyle } from "../../domain/diff/document"
-import { cellWidth } from "../cell-width"
 import { ANSI_CYAN, ANSI_GREEN, ANSI_RED } from "../theme"
-import { paneTextBuffer, type PaneStyleDefinition, type PaneTextBuffer } from "./pane-text"
-import { createViewportHighlights, LINE_END_COLS, type ViewportHighlights } from "./viewport-highlights"
 
 /**
- * Pushes a rendered diff into a pane's text viewport, colouring only the rows the viewport shows.
+ * Pushes a rendered diff into a pane's text viewport.
  *
- * The text itself goes in unstyled and whole and only the rows near the viewport carry colour;
- * ./viewport-highlights owns that mechanism and explains the bargain. This file owns what is the
- * diff's own: the styles, the row-to-style mapping, and the chunk fallback.
+ * OpenTUI 0.6 keeps the renderable tree native and leaves `TextRenderable.textBuffer` undefined, so
+ * the line-indexed highlights 0.5 addressed are gone: the diff is encoded as one `StyledText` per
+ * install instead. Measured on 0.6.2 that costs ~0.5 µs per line — 2.1 ms for a 2000-line patch,
+ * 40 ms for 75000 — and a re-install of unchanged text costs nothing at all, which is what keeps
+ * scrolling, re-focusing and range selection off the document's back.
  */
-
-/** Registered once per pane. The definitions mirror what the chunk fallback below paints. */
-const STYLE_DEFINITIONS: Readonly<Record<"gutter" | Exclude<DiffDisplayLineStyle, "plain">, PaneStyleDefinition>> = {
-  gutter: { dim: true },
-  addition: { fg: ANSI_GREEN },
-  deletion: { fg: ANSI_RED },
-  "hunk-header": { fg: ANSI_CYAN },
-  metadata: { dim: true }
-}
 
 export type DiffTextContent = {
   /** Rendered ahead of the diff (a commit's message and stat); "" for a bare patch. */
@@ -28,8 +18,6 @@ export type DiffTextContent = {
   /** `renderDiff`'s `displayText`: the gutter-prefixed rows, one per document line. */
   readonly body: string
   readonly displayLines: readonly DiffDisplayLine[]
-  /** Overrides native scroll for bounded virtual buffers; eager panes use their native scroll. */
-  readonly highlightScrollY?: () => number
   /** Optional stat spans precomputed against the full preamble and remapped to local rows. */
   readonly preambleSpans?: ReadonlyMap<number, readonly DiffStatSpan[]>
 }
@@ -41,12 +29,9 @@ export type InstalledPaneText = {
   readonly preambleLength: number
 }
 export type DiffStatSpan = {
-  /** UTF-16 offsets used to split the fallback chunk text. */
+  /** UTF-16 offsets used to split the stat row's chunk text. */
   readonly start: number
   readonly end: number
-  /** Display-cell offsets used by the native text buffer. */
-  readonly columnStart: number
-  readonly columnEnd: number
   readonly style: Extract<DiffDisplayLineStyle, "addition" | "deletion">
 }
 
@@ -80,7 +65,7 @@ export function statSpansForPreamble(preamble: string): ReadonlyMap<number, read
       let runStart = 0
       for (let index = 1; index <= symbols.length; index++) {
         if (index < symbols.length && symbols[index] === symbols[runStart]) continue
-        addStatSpan(grouped, row, value, graphStart + runStart, graphStart + index, symbols[runStart] === "+" ? "addition" : "deletion")
+        addStatSpan(grouped, row, graphStart + runStart, graphStart + index, symbols[runStart] === "+" ? "addition" : "deletion")
         runStart = index
       }
       continue
@@ -92,8 +77,8 @@ export function statSpansForPreamble(preamble: string): ReadonlyMap<number, read
     const oldEnd = oldStart + binary[2]!.length
     const newStart = oldEnd + binary[3]!.length
     const newEnd = newStart + binary[4]!.length
-    addStatSpan(grouped, row, value, oldStart, oldEnd, "deletion")
-    addStatSpan(grouped, row, value, newStart, newEnd, "addition")
+    addStatSpan(grouped, row, oldStart, oldEnd, "deletion")
+    addStatSpan(grouped, row, newStart, newEnd, "addition")
   }
   return grouped
 }
@@ -105,15 +90,8 @@ function isStatRow(value: string): boolean {
   return /^\s+\d+(?:\s+[+-]+(?:\.\.\.)?)?\s*$/.test(suffix) || /^\s+Bin(?:\s+\d+\s+->\s+\d+\s+bytes)?\s*$/.test(suffix)
 }
 
-function addStatSpan(grouped: Map<number, DiffStatSpan[]>, row: number, value: string, start: number, end: number, style: DiffStatSpan["style"]): void {
-  const spans = grouped.get(row) ?? []
-  spans.push({
-    start,
-    end,
-    columnStart: cellWidth(value.slice(0, start)),
-    columnEnd: cellWidth(value.slice(0, end)),
-    style
-  })
+function addStatSpan(grouped: Map<number, readonly DiffStatSpan[]>, row: number, start: number, end: number, style: DiffStatSpan["style"]): void {
+  const spans = [...(grouped.get(row) ?? []), { start, end, style }]
   grouped.set(row, spans)
 }
 
@@ -132,28 +110,9 @@ function statSpansForRow(value: string, spans: readonly DiffStatSpan[]): TextChu
 function preambleSpansForRow(value: string, spans: readonly DiffStatSpan[] | undefined): TextChunk[] {
   return spans === undefined ? [plainChunk(value)] : statSpansForRow(value, spans)
 }
-type DiffPaint = {
-  readonly displayLines: readonly DiffDisplayLine[]
-  readonly firstDiffRow: number
-  readonly preambleSpans: ReadonlyMap<number, readonly DiffStatSpan[]>
-  readonly highlightScrollY?: () => number
-}
 
-const painters = new WeakMap<TextRenderable, ViewportHighlights<DiffPaint>>()
-
-function registerStyles(buffer: PaneTextBuffer): Readonly<Record<string, number>> {
-  const ids: Record<string, number> = {}
-  for (const [name, definition] of Object.entries(STYLE_DEFINITIONS)) {
-    ids[name] = buffer.registerStyle(`githunk.diff.${name}`, definition)
-  }
-  return ids
-}
-
-function countRows(value: string): number {
-  let rows = 0
-  for (let index = value.indexOf("\n"); index >= 0; index = value.indexOf("\n", index + 1)) rows++
-  return rows
-}
+/** The text each pane was last installed with, so an unchanged install is free. */
+const installedTexts = new WeakMap<TextRenderable, string>()
 
 /**
  * The preamble ends at a row boundary so the diff's first row is `countRows(preamble)`. `git show`
@@ -177,9 +136,15 @@ function styledChunk(style: DiffDisplayLineStyle, value: string): TextChunk {
   return plainChunk(value)
 }
 
+function countRows(value: string): number {
+  let rows = 0
+  for (let index = value.indexOf("\n"); index >= 0; index = value.indexOf("\n", index + 1)) rows++
+  return rows
+}
+
 /**
- * Whole-document chunk rendering: correct, and what this module exists to avoid. Reached only if a
- * future OpenTUI stops exposing the buffer, so the pane degrades in speed rather than colour.
+ * Encodes the whole document as styled chunks. The gutter is dimmed, the body takes its row's style
+ * from `displayLines`, and the preamble's stat graph keeps Git's own colours.
  */
 function paintAsChunks(text: TextRenderable, content: DiffTextContent, installed: InstalledPaneText & { readonly firstDiffRow: number }): InstalledPaneText {
   const { text: full, firstDiffRow } = installed
@@ -204,51 +169,22 @@ function paintAsChunks(text: TextRenderable, content: DiffTextContent, installed
 }
 
 /**
- * Installs `content` as the pane's text. Re-installing the same text is a no-op beyond refreshing
- * the paint description, which is what makes re-focusing a panel free.
+ * Installs `content` as the pane's text. Re-installing byte-identical text is a no-op: it neither
+ * re-encodes the document nor touches the scroll offset, which is what makes a no-op refresh free.
  */
 export function installDiffText(text: TextRenderable, content: DiffTextContent): InstalledPaneText {
   const installed = joined(content)
-  const buffer = paneTextBuffer(text)
-  if (buffer === undefined) {
-    return paintAsChunks(text, content, installed)
+  if (installedTexts.get(text) === installed.text) {
+    return { text: installed.text, preambleLength: installed.preambleLength }
   }
-  const { text: full, firstDiffRow } = installed
-  const paint: DiffPaint = {
-    displayLines: content.displayLines,
-    firstDiffRow,
-    preambleSpans: content.preambleSpans ?? statSpansForPreamble(content.preamble),
-    ...(content.highlightScrollY === undefined ? {} : { highlightScrollY: content.highlightScrollY })
-  }
-  let painter = painters.get(text)
-  if (painter === undefined) {
-    const styleIds = registerStyles(buffer)
-    painter = createViewportHighlights<DiffPaint>(text, {
-      buffer,
-      scrollY: (current) => current.highlightScrollY?.() ?? text.scrollY,
-      paintLine: (row: number, current: DiffPaint): void => {
-        const preambleSpans = current.preambleSpans.get(row)
-        if (preambleSpans !== undefined) {
-          for (const span of preambleSpans) {
-            buffer.addHighlight(row, { start: span.columnStart, end: span.columnEnd, styleId: styleIds[span.style]! })
-          }
-        }
-        const display = current.displayLines[row - current.firstDiffRow]
-        if (display === undefined) return
-        if (display.gutterCols > 0) buffer.addHighlight(row, { start: 0, end: display.gutterCols, styleId: styleIds.gutter! })
-        if (display.style !== "plain") buffer.addHighlight(row, { start: display.gutterCols, end: LINE_END_COLS, styleId: styleIds[display.style]! })
-      }
-    })
-    painters.set(text, painter)
-  }
-  painter.install(full, paint)
-  return { text: installed.text, preambleLength: installed.preambleLength }
+  installedTexts.set(text, installed.text)
+  return paintAsChunks(text, content, installed)
 }
 
 /**
- * Hands the pane back to plain `update()` content. The caller writes the replacement text itself;
- * this only drops the diff's highlights so they cannot bleed into it.
+ * Forgets the installed text, so the next install writes even if it holds the same characters. The
+ * caller writes the pane's replacement text itself.
  */
 export function releaseDiffText(text: TextRenderable): void {
-  painters.get(text)?.release()
+  installedTexts.delete(text)
 }

@@ -4,7 +4,6 @@ import { createTestRenderer } from "@opentui/core/testing"
 import { parseDiff } from "../../src/domain/diff/parse"
 import { renderDiff } from "../../src/domain/diff/render"
 import { installDiffText } from "../../src/ui/panes/diff-text"
-import { paneTextBuffer } from "../../src/ui/panes/pane-text"
 
 /** A one-file patch with `lines` changed rows, as `git diff` would emit it. */
 function patchText(lines: number): string {
@@ -36,52 +35,6 @@ async function paneWith(lines: number): Promise<Pane> {
   }
 }
 
-/** Average wall time of one scroll-and-repaint step, frame pacing included. */
-async function millisecondsPerScroll(lines: number): Promise<number> {
-  const pane = await paneWith(lines)
-  try {
-    pane.install()
-    await pane.flush()
-    // Two rows a step, staying inside the shorter document's range so both do the same work.
-    const steps = 30
-    const started = performance.now()
-    for (let step = 0; step < steps; step++) {
-      pane.text.scrollY = step * 2
-      await pane.flush()
-    }
-    return (performance.now() - started) / steps
-  } finally {
-    pane.destroy()
-  }
-}
-
-/**
- * Average wall time of one width-change frame — a horizontal splitter drag — with the painter
- * installed or with the same text written straight into the buffer and nothing following the
- * viewport.
- */
-async function millisecondsPerDragFrame(lines: number, painted: boolean): Promise<number> {
-  const setup = await createTestRenderer({ width: 120, height: 40 })
-  try {
-    const text = new TextRenderable(setup.renderer, { id: "main-text", content: "", width: 118, height: 38, selectable: true })
-    setup.renderer.root.add(text)
-    text.wrapMode = "char"
-    const rendered = renderDiff(parseDiff(patchText(lines)))
-    if (painted) installDiffText(text, { preamble: "", body: rendered.displayText, displayLines: rendered.displayLines })
-    else paneTextBuffer(text)!.setText(rendered.displayText)
-    await setup.flush()
-    const steps = 20
-    const started = performance.now()
-    for (let step = 0; step < steps; step++) {
-      text.width = 118 - step
-      await setup.flush()
-    }
-    return (performance.now() - started) / steps
-  } finally {
-    setup.renderer.destroy()
-  }
-}
-
 describe("diff text installation", () => {
   test("installs a 20k-line patch in viewport time", async () => {
     const pane = await paneWith(20000)
@@ -96,13 +49,25 @@ describe("diff text installation", () => {
     }
   })
 
-  test("scrolling costs the viewport, not the document", async () => {
-    // Measured as a ratio, because the wall time of one step is dominated by the renderer's frame
-    // cadence either way. What must not happen is the *document* entering the per-scroll cost —
-    // which it does the moment a repaint re-reads the whole row-to-line map, or repaints every row.
-    const small = await millisecondsPerScroll(200)
-    const large = await millisecondsPerScroll(20000)
-    expect(large, `${large.toFixed(1)}ms per scroll at 20k lines vs ${small.toFixed(1)}ms at 200`).toBeLessThan(small * 2 + 6)
+  test("scrolling never re-encodes the document", async () => {
+    // Scrolling moves a viewport over text the pane already holds, so the document object must be the
+    // same one after thirty scroll steps. 0.5 repainted a highlight band per scroll; there is no band
+    // to repaint now, which makes a re-encode the regression this pins — and object identity says so
+    // exactly, where the frame-cadence comparison it replaced could only say it statistically.
+    const pane = await paneWith(20000)
+    try {
+      pane.install()
+      await pane.flush()
+      const installed = pane.text.content
+      for (let step = 0; step < 30; step++) {
+        pane.text.scrollY = step * 2
+        await pane.flush()
+      }
+      expect(pane.text.content).toBe(installed)
+      expect(pane.text.scrollY).toBe(58)
+    } finally {
+      pane.destroy()
+    }
   })
 
   test("re-installing identical content does no work and keeps the viewport", async () => {
@@ -220,16 +185,29 @@ describe("diff text band edges", () => {
 })
 
 describe("diff text under a splitter drag", () => {
-  test("a drag frame costs no more with the painter than without one", async () => {
-    // The width guard in ./viewport-highlights re-materialises the row-to-line map once per distinct
-    // width, which during a drag is once per frame. What this measures is whether the *document*
-    // enters that per-frame cost: a painter repainting all 20k lines would cost ~1s a frame, orders
-    // of magnitude over the baseline. What it deliberately does not resolve is the map itself —
-    // OpenTUI re-wraps the whole document on a width change either way, and at 60fps the renderer's
-    // own frame cadence is ~16ms, so the map's few milliseconds are invisible here. That cost is
-    // known, accepted and documented at the guard; this test is the bound on the rest.
-    const plain = await millisecondsPerDragFrame(20000, false)
-    const withPainter = await millisecondsPerDragFrame(20000, true)
-    expect(withPainter, `${withPainter.toFixed(1)}ms per drag frame painted vs ${plain.toFixed(1)}ms plain`).toBeLessThan(plain * 2 + 6)
+  test("a width change re-wraps the document without re-encoding it", async () => {
+    // A drag changes the pane's width and nothing else. The document the pane holds must therefore
+    // be the very same object after twenty width steps: re-encoding 20000 lines per frame is the
+    // regression this guards, and object identity says so exactly where a wall-clock comparison
+    // could only say it against the renderer's frame cadence.
+    const setup = await createTestRenderer({ width: 120, height: 40 })
+    try {
+      const text = new TextRenderable(setup.renderer, { id: "main-text", content: "", width: 118, height: 38, selectable: true })
+      setup.renderer.root.add(text)
+      text.wrapMode = "char"
+      const rendered = renderDiff(parseDiff(patchText(20000)))
+      installDiffText(text, { preamble: "", body: rendered.displayText, displayLines: rendered.displayLines })
+      await setup.flush()
+      const installed = text.content
+      for (let step = 0; step < 20; step++) {
+        text.width = 118 - step
+        await setup.flush()
+      }
+      expect(text.content).toBe(installed)
+      // The document is still what the pane paints after the re-wrap.
+      expect(setup.captureCharFrame()).toContain("line 0")
+    } finally {
+      setup.renderer.destroy()
+    }
   })
 })

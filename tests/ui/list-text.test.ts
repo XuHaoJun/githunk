@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { TextAttributes, TextRenderable } from "@opentui/core"
+import { TextAttributes, TextRenderable, type CapturedSpan } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { createListState, expandListRangeSelection, moveListSelection, renderListRows, toggleListRangeSelection, type ListRow } from "../../src/ui/list-view"
 import { installListText, releaseListText } from "../../src/ui/panes/list-text"
@@ -24,7 +24,7 @@ function rows(count: number): ListRow[] {
 
 const WIDTH = 100
 
-type Span = { text: string; fg: { intent: string; slot: number }; bg: { intent: string; a: number }; attributes: number }
+type Span = CapturedSpan
 
 async function textWith(
   width = WIDTH,
@@ -33,7 +33,7 @@ async function textWith(
   text: TextRenderable
   flush: () => Promise<void>
   destroy: () => void
-  spans: () => Span[][]
+  spans: () => readonly (readonly Span[])[]
 }> {
   const setup = await createTestRenderer({ width: width + 2, height: height + 2 })
   const text = new TextRenderable(setup.renderer, {
@@ -49,36 +49,16 @@ async function textWith(
     text,
     flush: () => setup.flush(),
     destroy: () => setup.renderer.destroy(),
-    spans: () =>
-      setup.captureSpans().lines.map((line) =>
-        line.spans.map((span) => ({
-          text: span.text,
-          fg: span.fg as unknown as { intent: string; slot: number },
-          bg: span.bg as unknown as { intent: string; a: number },
-          attributes: (span as unknown as { attributes: number }).attributes
-        }))
-      )
+    spans: () => setup.captureSpans().lines.map((line) => line.spans)
   }
 }
 
-/** Counts underlying buffer installs, bypassing the fresh wrapper `paneTextBuffer` returns. */
-function countSetText(text: TextRenderable): () => number {
-  const internals = text as unknown as { textBuffer: { setText(value: string): void } }
-  let calls = 0
-  const original = internals.textBuffer.setText.bind(internals.textBuffer)
-  internals.textBuffer.setText = (value: string) => {
-    calls += 1
-    return original(value)
-  }
-  return () => calls
-}
-
-function hasSelectionBackground(spans: Span[]): boolean {
+function hasSelectionBackground(spans: readonly Span[]): boolean {
   return spans.some((span) => span.bg.intent !== "default" && span.bg.a > 0)
 }
 
-describe("list text painter", () => {
-  test("installs the same row text the StyledText renderer produces", async () => {
+describe("list text installation", () => {
+  test("installs the row text the StyledText renderer produces", async () => {
     const pane = await textWith()
     try {
       const state = createListState(rows(3))
@@ -87,30 +67,25 @@ describe("list text painter", () => {
       const expected = renderListRows(state, true, WIDTH)
         .chunks.map((chunk) => chunk.text)
         .join("")
-        .split("\n")
-      // Installed rows are padded so a full-row selection background reaches the
-      // right edge; padding is trailing whitespace only.
-      const installed = pane.text.plainText.split("\n")
-      expect(installed.length).toBe(expected.length)
-      for (let row = 0; row < expected.length; row++) {
-        expect(installed[row]!.trimEnd(), `row ${row}`).toBe(expected[row]!.trimEnd())
-        // Padded to full width in display cells (wide CJK counts double) so a
-        // selection background reaches the right edge.
-        expect(cellWidth(installed[row]!), `row ${row} width`).toBe(WIDTH)
+      expect(pane.text.plainText).toBe(expected)
+      const installed = expected.split("\n")
+      // The selected row is padded to the visible width in display cells (wide CJK counts double)
+      // so its background reaches the right edge; no row is wider than the width it was laid out for.
+      expect(cellWidth(installed[0]!), "selected row width").toBe(WIDTH)
+      for (const [index, row] of installed.entries()) {
+        expect(cellWidth(row), `row ${index} width`).toBeLessThanOrEqual(WIDTH)
       }
     } finally {
       pane.destroy()
     }
   })
 
-  test("paints selection, segment colours, and hover without reinstalling", async () => {
+  test("paints selection, segment colours, and hover", async () => {
     const pane = await textWith()
     try {
       const state = createListState(rows(5))
-      const setTexts = countSetText(pane.text)
       installListText(pane.text, { state, width: WIDTH, focused: true, hoveredId: "commit:2" })
       await pane.flush()
-      expect(setTexts()).toBe(1)
       const spans = pane.spans()
       // Selected row carries a background; its green stays green, as in `highlightChunk`.
       expect(hasSelectionBackground(spans[0]!)).toBe(true)
@@ -121,7 +96,6 @@ describe("list text painter", () => {
       const moved = moveListSelection(state, "next")
       installListText(pane.text, { state: moved, width: WIDTH, focused: true, hoveredId: "commit:2" })
       await pane.flush()
-      expect(setTexts()).toBe(1)
       const after = pane.spans()
       expect(hasSelectionBackground(after[0]!)).toBe(false)
       expect(hasSelectionBackground(after[1]!)).toBe(true)
@@ -153,10 +127,8 @@ describe("list text painter", () => {
     try {
       const state = createListState(rows(6))
       const ranged = expandListRangeSelection(toggleListRangeSelection(state), "next")
-      const setTexts = countSetText(pane.text)
       installListText(pane.text, { state: ranged, width: WIDTH, focused: true })
       await pane.flush()
-      expect(setTexts()).toBe(1)
       const spans = pane.spans()
       expect(hasSelectionBackground(spans[0]!)).toBe(true)
       expect(hasSelectionBackground(spans[1]!)).toBe(true)
@@ -169,7 +141,6 @@ describe("list text painter", () => {
       const grown = expandListRangeSelection(ranged, "next")
       installListText(pane.text, { state: grown, width: WIDTH, focused: true })
       await pane.flush()
-      expect(setTexts()).toBe(1)
       const after = pane.spans()
       expect(hasSelectionBackground(after[2]!)).toBe(true)
       expect(hasSelectionBackground(after[3]!)).toBe(false)
@@ -177,14 +148,12 @@ describe("list text painter", () => {
       pane.destroy()
     }
   })
-  test("repaints same-text colour changes without reinstalling", async () => {
+  test("repaints same-text colour changes", async () => {
     const pane = await textWith()
     try {
       const state = createListState(rows(3))
-      const setTexts = countSetText(pane.text)
       installListText(pane.text, { state, width: WIDTH, focused: false })
       await pane.flush()
-      expect(setTexts()).toBe(1)
       const before = pane.spans()
       expect(before[1]!.some((span) => span.fg.intent === "indexed" && span.fg.slot === 2)).toBe(true)
       const yellowRows = rows(3).map((row) => ({
@@ -194,7 +163,6 @@ describe("list text painter", () => {
       const recoloured = createListState(yellowRows)
       installListText(pane.text, { state: recoloured, width: WIDTH, focused: false })
       await pane.flush()
-      expect(setTexts()).toBe(1)
       const after = pane.spans()
       expect(after[1]!.some((span) => span.fg.intent === "indexed" && span.fg.slot === 3)).toBe(true)
     } finally {
@@ -202,38 +170,58 @@ describe("list text painter", () => {
     }
   })
 
-  test("release drops the selection paint", async () => {
+  test("re-installing unchanged rows writes nothing", async () => {
+    const pane = await textWith()
+    try {
+      const state = createListState(rows(5))
+      installListText(pane.text, { state, width: WIDTH, focused: true })
+      await pane.flush()
+      const installed = pane.text.content
+      installListText(pane.text, { state, width: WIDTH, focused: true })
+      expect(pane.text.content).toBe(installed)
+      // A row that changes visual state without changing text is a different install.
+      installListText(pane.text, { state: moveListSelection(state, "next"), width: WIDTH, focused: true })
+      expect(pane.text.content).not.toBe(installed)
+    } finally {
+      pane.destroy()
+    }
+  })
+
+  test("release forgets the installed rows", async () => {
     const pane = await textWith()
     try {
       const state = createListState(rows(3))
       installListText(pane.text, { state, width: WIDTH, focused: true })
       await pane.flush()
       expect(hasSelectionBackground(pane.spans()[0]!)).toBe(true)
+      const installed = pane.text.content
       releaseListText(pane.text)
+      installListText(pane.text, { state, width: WIDTH, focused: true })
       await pane.flush()
-      expect(hasSelectionBackground(pane.spans()[0]!)).toBe(false)
+      expect(pane.text.content).not.toBe(installed)
+      expect(hasSelectionBackground(pane.spans()[0]!)).toBe(true)
     } finally {
       pane.destroy()
     }
   })
 
-  test("a 20k-row selection move stays bounded without reinstalling", async () => {
+  test("a 20k-row cursor move re-encodes the list in bounded time", async () => {
     const pane = await textWith()
     try {
       const state = createListState(rows(20_000))
-      const setTexts = countSetText(pane.text)
       installListText(pane.text, { state, width: WIDTH, focused: true })
       await pane.flush()
-      expect(setTexts()).toBe(1)
       const started = performance.now()
       let current = state
       for (let step = 0; step < 3; step++) {
         current = moveListSelection(current, "next")
         installListText(pane.text, { state: current, width: WIDTH, focused: true })
       }
+      const elapsed = performance.now() - started
+      // Three encodes of 20000 padded rows: measured ~11 ms each on 0.6.2. The bound is loose
+      // enough for scheduler jitter but still fails if a move starts costing the document per row.
+      expect(elapsed, `three 20k-row moves took ${elapsed.toFixed(0)}ms`).toBeLessThan(1500)
       await pane.flush()
-      expect(performance.now() - started).toBeLessThan(3000)
-      expect(setTexts()).toBe(1)
       const spans = pane.spans()
       expect(hasSelectionBackground(spans[3]!)).toBe(true)
       expect(hasSelectionBackground(spans[2]!)).toBe(false)

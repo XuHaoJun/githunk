@@ -83,6 +83,7 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     }
     expect(screen.active.kind).toBe("branch-review")
     const branchScreen = (screen.active as unknown as { controller: ReviewWorkspaceController }).controller
+    await harness.flush()
     const frameAfterOpen = harness.frame()
     expect(frameAfterOpen).toContain("→")
     expect(frameAfterOpen).toContain("main")
@@ -107,6 +108,8 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     expect(coverageForFile(typesFile, afterViewed.viewed, null)).toBe("not-viewed")
 
     await screen.closeBranchReview()
+    // The screen state switches before the native renderer releases its frame buffer.
+    await harness.flush()
     expect(screen.active.kind).toBe("repository")
     expect(harness.frame()).not.toContain("Branch Review")
     await harness.pressKey("b")
@@ -150,6 +153,7 @@ describe("branch review workspace – coverage and reconciliation acceptance", (
     const activeController = reopened as unknown as { loadProjection?: unknown }
     expect(activeController.loadProjection).toBeUndefined()
     expect(reopened.state?.projection).toEqual({ kind: "aggregate" })
+    await harness.flush()
     const activeFrame = harness.frame()
     expect(activeFrame).toContain("[Aggregate]")
     expect(activeFrame).not.toContain("Since Last")

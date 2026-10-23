@@ -63,8 +63,20 @@ export async function startApp(options: StartAppOptions = {}): Promise<number> {
   } catch (error) {
     await app.destroy()
     renderer.destroy()
+    // OpenTUI 0.6 restores the terminal asynchronously — `destroy()` only starts it — and returning
+    // before `closed` settles would leave the alternate screen and mouse tracking on.
+    await renderer.closed.catch(() => undefined)
     throw error
   }
 
+  // The session ends when the renderer is destroyed: the quit key, ctrl+c, or a dead stdout. 0.6
+  // restores the terminal asynchronously, so awaiting `closed` is what keeps the process alive until
+  // that restore finishes. It rejects when the output stream fails, which is not a failed session —
+  // report it and exit 0 rather than losing the terminal state to a stack trace.
+  try {
+    await renderer.closed
+  } catch (error) {
+    process.stderr.write(`githunk: terminal session ended with an error: ${error instanceof Error ? error.message : String(error)}\n`)
+  }
   return 0
 }

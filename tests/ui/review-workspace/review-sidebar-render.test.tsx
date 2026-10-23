@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
+import type { TestRendererSetup } from "@opentui/core/testing"
 import { act } from "react"
 import { createReviewDocument, createReviewHunk } from "../../../src/review/core/document"
 import { createReviewGeneration, createReviewIdentity } from "../../../src/review/core/identity"
@@ -63,13 +64,14 @@ function makeSession(files: readonly ReviewFile[], feedbackKeys: string[] = []):
   return new ReactReviewSession(controller as any, () => undefined)
 }
 
-async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
-  await act(async () => {
-    await Promise.resolve()
-  })
+async function flush(setup: TestRendererSetup) {
+  // `setup.flush` waits for the renderer to go visually idle. Draining microtasks alone is not
+  // enough on OpenTUI 0.6: a frame may still be in flight, and `captureCharFrame()` then either
+  // reads the native buffer before its first commit (every cell U+0A00) or fails its buffer lease
+  // with `OutputBusy`.
   setup.renderer.requestRender()
   await act(async () => {
-    await Promise.resolve()
+    await setup.flush()
   })
 }
 
