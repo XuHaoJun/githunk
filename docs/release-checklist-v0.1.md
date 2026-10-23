@@ -2,6 +2,14 @@
 
 Evidence is split between deterministic automated coverage and the recorded TUI smoke. Items marked **Not tested** are intentionally not claimed as complete.
 
+## OpenTUI 0.6.7 upgrade (2026-10-23)
+
+- `@opentui/core` and `@opentui/react` are pinned together to `0.6.7`; `bun.lock` includes the matching native platform packages.
+- **Automated:** `bun install --frozen-lockfile --ignore-scripts` passed; `bun run check` passed typecheck and 1842 tests (0 failures). The test run emitted React `act(...)` warnings. Focused commit-tag/list coverage also passed: 18 tests, 0 failures.
+- **Manual smoke observed:** launched `GITHUNK_BACKGROUND=0 bun run start` in a 120×40 tmux terminal; observed the repository dashboard and working-tree diff, opened/closed `?` help, entered Branch Review with `b`, selected `origin/main`, observed the React split diff (22 files), returned with `Escape`, and quit with `q`; the tmux session terminated.
+- **Manual smoke observed — commit tags:** a 12-second startup/navigation capture sampled 361 terminal frames; the visible `v0.3.8` commit tag showed no unexpected glyphs. A separate raw-output capture with individual up/down moves contained valid UTF-8 and no unexpected non-ASCII characters. This bounded observation does not prove the earlier transient is fixed upstream: `f88a7cb` only reduced it, and the [0.6.7 release notes](https://github.com/anomalyco/opentui/releases/tag/v0.6.7) do not identify a matching fix. The unchanged-list installation optimization remains in place.
+- **Not tested:** other operating systems/architectures, clipboard delivery, and mouse/splitter interaction with this version.
+
 ## PRD §23 workflow
 
 | PRD §23 criterion                                | Evidence                                                                                                                                                      | Status                                                  |
