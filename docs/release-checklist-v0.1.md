@@ -2,6 +2,13 @@
 
 Evidence is split between deterministic automated coverage and the recorded TUI smoke. Items marked **Not tested** are intentionally not claimed as complete.
 
+## Bun 1.4.4 upgrade (2026-10-23)
+
+- `packageManager`, `bun-types`, CI, and all release workflow Bun setup steps are pinned to `1.4.4`; `bun.lock` resolves the matching type definitions.
+- **Automated:** on Bun `1.4.4`, frozen-lockfile installation, `bun run format:check`, `bun run lint`, and `bun run check` passed (typecheck and 1842 tests, 0 failures). React tests emitted `act(...)` warnings.
+- **Manual smoke observed:** Bun `1.4.4` launched `GITHUNK_BACKGROUND=0 bun run start` in a 120×40 tmux terminal, rendered the repository dashboard and working-tree diff, and exited via `q`.
+- **Not tested:** execution of the updated GitHub Actions workflows and cross-platform release builds.
+
 ## OpenTUI 0.6.7 upgrade (2026-10-23)
 
 - `@opentui/core` and `@opentui/react` are pinned together to `0.6.7`; `bun.lock` includes the matching native platform packages.
