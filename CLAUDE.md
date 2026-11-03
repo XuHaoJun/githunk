@@ -130,6 +130,8 @@ Persistence must not dirty `git status`.
 `bin/githunk.js` prefers the platform binary, falling back to `dist/githunk.js` (Node 26.1+).
 `install.sh` installs to `$GITHUNK_INSTALL_DIR` / `$XDG_BIN_HOME` / `~/.local/bin`;
 `githunk update [version] [--check]` updates curl installs; npm installs update through npm.
+Platform packages, GitHub archives and curl installs carry the vendored `third-party/opentui`
+notices (OpenTUI/FFmpeg); refresh them when OpenTUI changes.
 
 The canonical release trigger is `release <version>`; do not use `publish <version>` for the full release.
 `skills/githunk-release/SKILL.md` owns the end-to-end procedure and evidence report. `publish` remains

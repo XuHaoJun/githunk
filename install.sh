@@ -252,11 +252,12 @@ main() {
   if [ -x "$binary" ]; then
     installed="$(normalize_version "$("$binary" --version 2>/dev/null || true)")"
     if [ -n "$installed" ] && [ "$installed" = "$version" ]; then
-      if [ -f "$dir/githunk-assets/skills/githunk-handoff/SKILL.md" ] && [ -r "$dir/githunk-assets/skills/githunk-handoff/SKILL.md" ]; then
+      if [ -f "$dir/githunk-assets/skills/githunk-handoff/SKILL.md" ] && [ -r "$dir/githunk-assets/skills/githunk-handoff/SKILL.md" ] &&
+        [ -f "$dir/githunk-assets/third-party/opentui/LICENSE-FFMPEG" ] && [ -f "$dir/githunk-assets/third-party/opentui/FFMPEG-SOURCE.md" ]; then
         info "githunk $version is already installed at $binary"
         return 0
       fi
-      info "githunk $version binary is current but its handoff skill is missing; repairing the installation."
+      info "githunk $version binary is current but its handoff skill or third-party notices are missing; repairing the installation."
     fi
   fi
 
@@ -286,6 +287,14 @@ main() {
     mv -f "$installed_skill_dir/SKILL.md.new" "$installed_skill_dir/SKILL.md"
   else
     info "Warning: githunk ${version} does not include the bundled handoff skill; installing its binary only."
+  fi
+  staged_notices="$work/githunk-${os}-${arch}/third-party/opentui"
+  if [ -d "$staged_notices" ]; then
+    installed_notices_dir="$dir/githunk-assets/third-party/opentui"
+    mkdir -p "$installed_notices_dir"
+    cp -R "$staged_notices/." "$installed_notices_dir/"
+  else
+    info "Warning: githunk ${version} does not include third-party notices; installing its binary only."
   fi
   cp "$staged" "$binary"
   chmod 755 "$binary"

@@ -63,6 +63,10 @@ function productionUpdateEnv(): UpdateEnvironment {
       const candidate = join(dir, `githunk-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}`, "skills", "githunk-handoff", "SKILL.md")
       return existsSync(candidate) ? candidate : undefined
     },
+    stagedNotices: (dir) => {
+      const candidate = join(dir, `githunk-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}`, "third-party", "opentui")
+      return existsSync(candidate) ? candidate : undefined
+    },
     writePayload: (payload) => replaceStandalonePayload(payload)
   }
 }

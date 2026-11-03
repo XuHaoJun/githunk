@@ -2,7 +2,7 @@
 
 import { existsSync } from "node:fs"
 import path from "node:path"
-import { listStagedPackageDirs, releaseNpmDir } from "./prebuilt-package-helpers"
+import { listStagedPackageDirs, releaseNpmDir, REQUIRED_THIRD_PARTY_NOTICES, THIRD_PARTY_NOTICES_RELATIVE_PATH } from "./prebuilt-package-helpers"
 
 /** Verify every staged package packs cleanly and carries its payload. */
 function checkDirectory(directory: string): void {
@@ -12,6 +12,12 @@ function checkDirectory(directory: string): void {
   const skillPath = path.join(directory, "skills", "githunk-handoff", "SKILL.md")
   if (!existsSync(skillPath)) {
     throw new Error(`Missing bundled handoff skill in ${directory}`)
+  }
+  for (const filename of REQUIRED_THIRD_PARTY_NOTICES) {
+    const noticePath = path.join(directory, THIRD_PARTY_NOTICES_RELATIVE_PATH, filename)
+    if (!existsSync(noticePath)) {
+      throw new Error(`Missing third-party notice ${noticePath}`)
+    }
   }
   const proc = Bun.spawnSync(["npm", "pack", "--dry-run"], {
     cwd: directory,

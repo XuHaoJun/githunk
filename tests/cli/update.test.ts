@@ -7,9 +7,9 @@ function sha256Hex(data: Uint8Array): string {
 }
 
 function stubEnv(overrides: Partial<UpdateEnvironment> = {}): UpdateEnvironment & {
-  calls: { fetchTag: number; fetchAsset: number; replace: { binary: string; skill: string | undefined; executable: string }[] }
+  calls: { fetchTag: number; fetchAsset: number; replace: { binary: string; skill: string | undefined; notices: string | undefined; executable: string }[] }
 } {
-  const calls = { fetchTag: 0, fetchAsset: 0, replace: [] as { binary: string; skill: string | undefined; executable: string }[] }
+  const calls = { fetchTag: 0, fetchAsset: 0, replace: [] as { binary: string; skill: string | undefined; notices: string | undefined; executable: string }[] }
   const tarball = new TextEncoder().encode("fake-tarball-bytes")
   const asset = "githunk-linux-x64.tar.gz"
   return {
@@ -31,10 +31,12 @@ function stubEnv(overrides: Partial<UpdateEnvironment> = {}): UpdateEnvironment 
     extractTarball: () => Promise.resolve(),
     stagedBinary: (dir) => `${dir}/githunk-linux-x64/githunk`,
     stagedSkill: (dir) => `${dir}/githunk-linux-x64/skills/githunk-handoff/SKILL.md`,
+    stagedNotices: (dir) => `${dir}/githunk-linux-x64/third-party/opentui`,
     writePayload: async (payload) => {
       calls.replace.push({
         binary: payload.stagedBinary,
         skill: payload.stagedSkill,
+        notices: payload.stagedNotices,
         executable: payload.executablePath
       })
     },
@@ -73,19 +75,21 @@ describe("runUpdate", () => {
       {
         binary: "/tmp/githunk-update-test/githunk-linux-x64/githunk",
         skill: "/tmp/githunk-update-test/githunk-linux-x64/skills/githunk-handoff/SKILL.md",
+        notices: "/tmp/githunk-update-test/githunk-linux-x64/third-party/opentui",
         executable: "/home/user/.local/bin/githunk"
       }
     ])
   })
 
   test("honors a downgrade to an archive that predates the bundled skill", async () => {
-    const env = stubEnv({ stagedSkill: () => undefined })
+    const env = stubEnv({ stagedSkill: () => undefined, stagedNotices: () => undefined })
     const result = await runUpdate({ version: "0.1.0", check: false }, env)
     expect(result.exitCode).toBe(0)
     expect(env.calls.replace).toEqual([
       {
         binary: "/tmp/githunk-update-test/githunk-linux-x64/githunk",
         skill: undefined,
+        notices: undefined,
         executable: "/home/user/.local/bin/githunk"
       }
     ])

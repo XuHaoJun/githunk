@@ -35,7 +35,7 @@ describe("prebuilt platform matrix", () => {
     if (linux === undefined) throw new Error("matrix incomplete")
 
     const manifest = buildPlatformPackageManifest({ version: "0.3.3" }, linux)
-    expect(manifest.files).toEqual(["bin", "skills/githunk-handoff", "LICENSE"])
+    expect(manifest.files).toEqual(["bin", "skills/githunk-handoff", "LICENSE", "third-party/opentui"])
   })
 
   test("pins every platform package to the release version", () => {
