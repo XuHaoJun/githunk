@@ -365,8 +365,8 @@ function createAdapter(pane: PaneHandle, selectionPort: VirtualMainPaneSelection
       renderWindow()
     }
   }
-  // A size change re-lays-out the window. OpenTUI 0.6 gives every renderable `onSizeChange` and
-  // throws for per-renderable `resized`/`layout-changed` listeners, so this replaces the lifecycle
+  // A size change re-lays-out the window. OpenTUI gives every renderable `onSizeChange` and
+  // rejects per-renderable `resized`/`layout-changed` listeners, so this replaces the lifecycle
   // pass that stood in for it. It chains, because `attachVerticalScrollbar` (./common) owns the
   // pane's own `onSizeChange` and `onSizeChange` is a single slot, not a listener list.
   const previousSizeChange = text.onSizeChange

@@ -2,6 +2,15 @@
 
 Evidence is split between deterministic automated coverage and the recorded TUI smoke. Items marked **Not tested** are intentionally not claimed as complete.
 
+## OpenTUI 0.8.1 upgrade (2026-11-03)
+
+- `@opentui/core` and `@opentui/react` are pinned together to `0.8.1`; `bun.lock` refreshes all eight native platform packages. No application source change was required: the APIs githunk uses (whole-document `StyledText` content, `TextRenderable`/`onSizeChange`, ScrollBox parts and their events, `nativeScene.setTextSelection` via `onLifecyclePass`, `useKeyboard`/`useRenderer`/`useTerminalDimensions`, and the test renderer) typecheck and keep the existing behavior. `TextRenderable.textBuffer` is still `undefined` on 0.8.1, so the pane installers keep encoding colour into chunks.
+- **Automated:** `bun install --frozen-lockfile --ignore-scripts`, `bun run typecheck`, `bun run lint` and `bun run format:check` passed. `bun run test` ran 1842 tests with 1841 passing; the single failure is `tests/package/publish.integration.test.ts` "maps child termination signals to conventional exit codes" (expected 143, received 1). The same failure reproduces on the unmodified 0.6.7 checkout: SIGTERM during startup races a pane text install against teardown, and the destroyed native scene throws instead of the wrapper forwarding the signal.
+- **Automated — OpenTUI-sensitive coverage:** `bun test tests/ui/review-workspace tests/ui/main-diff.integration.test.ts tests/ui/command-log-autoscroll.integration.test.ts tests/acceptance/lazygit-core-ui.test.ts tests/acceptance/branch-review-workspace.integration.test.ts tests/acceptance/branch-review-artifact.integration.test.ts` passed 239 tests across 36 files.
+- **Manual smoke observed:** `bun run build:bin` produced a baseline linux-x64 binary, and the built binary rendered the repository dashboard and working-tree diff under a pty (`GITHUNK_BACKGROUND=0`). `ldd` shows the same shared-library set as 0.6.7. The binary grew from 132,614,320 to 135,895,216 bytes (+3,280,896 B, +2.5%) because 0.8.1 statically links decode-only FFmpeg 9.0.2.
+- **Not tested:** OSC52 clipboard delivery under the native stdout writer, tmux/SSH synchronized-output behavior, real-terminal mouse and splitter hit-testing, and Windows/macOS builds.
+- **Release packaging follow-up:** OpenTUI 0.8.1 statically links LGPL FFmpeg into `libopentui`. `scripts/stage-prebuilt-npm.ts` currently copies only githunk's MIT `LICENSE` into the platform packages, so the FFmpeg license/source-offer notices must be added to the packaged artifacts before publishing a 0.8.1 binary.
+
 ## Bun 1.4.4 upgrade (2026-10-23)
 
 - `packageManager`, `bun-types`, CI, and all release workflow Bun setup steps are pinned to `1.4.4`; `bun.lock` resolves the matching type definitions.

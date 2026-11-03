@@ -145,7 +145,7 @@ export function ReviewDiffPane({
       }
     }
     scrollBox.verticalScrollBar.on("change", sync)
-    // OpenTUI 0.6 owns its scene natively and rejects `resized`/`layout-changed` listeners on a
+    // OpenTUI owns its scene natively and rejects `resized`/`layout-changed` listeners on a
     // renderable that is not the root ("Native scene does not support resized hooks"), which the
     // viewport is not. `onSizeChange` is the supported per-renderable replacement (opentui v0.6.0
     // release notes, Breaking changes: "Use `onSizeChange` instead") — and it is a single slot, not

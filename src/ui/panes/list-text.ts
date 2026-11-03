@@ -4,7 +4,7 @@ import { getListSelectionRange, isListRangeActive, renderListRows, type ListStat
 /**
  * Installs a side list's rows as one styled document.
  *
- * OpenTUI 0.6 keeps the renderable tree native and leaves `TextRenderable.textBuffer` undefined, so
+ * OpenTUI keeps the renderable tree native and leaves `TextRenderable.textBuffer` undefined, so
  * the line-indexed highlights 0.5 repainted cursor moves with are gone: `renderListRows` builds the
  * rows and this module hands them over as a single `StyledText`. Measured on 0.6.2 that encode costs
  * ~0.55 µs per row — 11 ms for a 20000-row list — and a re-install whose text *and* row visuals are
