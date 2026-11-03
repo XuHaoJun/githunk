@@ -278,7 +278,8 @@ export function createApp(options: CreateAppOptions): App {
   const shouldRender = (): boolean => screenController?.shouldRenderRepository() ?? true
   /** Repaints the repository screen from the controller's model, unless Branch Review owns the screen. */
   const syncView = (): void => {
-    if (shouldRender()) view.update(controller.state)
+    if (destroyed || !shouldRender()) return
+    view.update(controller.state)
   }
   /**
    * Runs a controller call and repaints however it settles. Every UI-driven controller call goes
@@ -351,7 +352,7 @@ export function createApp(options: CreateAppOptions): App {
           // Preserve an open filter/search prompt across the reload: the default
           // update clears in-progress filtering (root-view `update`), which would
           // drop the session the expansion was opened for.
-          if (expanded && shouldRender()) view.update(controller.state, { preserveFilterInput: true })
+          if (expanded && !destroyed && shouldRender()) view.update(controller.state, { preserveFilterInput: true })
           return expanded
         },
         onMarkFocusedFileReviewed: repositoryUi((path) => controller.markFocusedFileReviewed(path)),
@@ -404,7 +405,7 @@ export function createApp(options: CreateAppOptions): App {
           if (!shouldRender()) return undefined
           try {
             const result = await controller.checkoutRemoteTracking(selection, confirmedMismatch === true ? { confirmedMismatch: true } : undefined)
-            if (shouldRender()) view.update(controller.state, { preserveRemoteCheckout: result?.kind === "mismatch" })
+            if (!destroyed && shouldRender()) view.update(controller.state, { preserveRemoteCheckout: result?.kind === "mismatch" })
             return result
           } catch (error) {
             syncView()
@@ -511,7 +512,9 @@ export function createApp(options: CreateAppOptions): App {
     refresh: async () => {
       if (!persistedGeometryApplied) {
         persistedGeometryApplied = true
-        view.applyPersistedGeometry(await uiStateStore.load())
+        const persistedGeometry = await uiStateStore.load()
+        if (destroyed) return
+        view.applyPersistedGeometry(persistedGeometry)
       }
       if (destroyed) return
       refreshInFlight = true

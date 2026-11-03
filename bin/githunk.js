@@ -60,8 +60,12 @@ function findInstalledBinary(startDir) {
 function launch(target, args) {
   const child = spawn(target, args, { stdio: "inherit" })
 
+  // A signal we forwarded is the wrapper's termination reason even when the child traps it and
+  // exits 0. Without this, a graceful renderer shutdown would report success to the shell.
+  let forwardedSignal
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"]) {
     process.once(signal, () => {
+      forwardedSignal = signal
       child.kill(signal)
     })
   }
@@ -71,8 +75,9 @@ function launch(target, args) {
     process.exitCode = 1
   })
   child.once("close", (exitCode, signal) => {
-    const signalNumber = signal === null ? undefined : constants.signals[signal]
-    process.exitCode = exitCode ?? (signalNumber === undefined ? 1 : 128 + signalNumber)
+    const terminatedBy = signal ?? forwardedSignal
+    const signalNumber = terminatedBy === undefined || terminatedBy === null ? undefined : constants.signals[terminatedBy]
+    process.exitCode = signalNumber === undefined ? (exitCode ?? 1) : 128 + signalNumber
   })
 }
 
