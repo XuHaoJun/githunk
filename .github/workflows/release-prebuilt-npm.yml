@@ -63,7 +63,10 @@ jobs:
             runner: ubuntu-24.04-arm
           - package_name: "@xuhaojun/githunk-linux-x64"
             artifact_name: githunk-linux-x64
-            runner: ubuntu-latest
+            # ubuntu-latest moved to Ubuntu 26, which no longer packages `qemu-user-static`;
+            # the Nehalem check below would fail before running the artifact. Keep 24.04 until
+            # that step installs qemu-user-binfmt and calls its qemu-x86_64 binary instead.
+            runner: ubuntu-24.04
           - package_name: "@xuhaojun/githunk-windows-x64"
             artifact_name: githunk-windows-x64
             runner: windows-latest
