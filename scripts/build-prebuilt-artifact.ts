@@ -2,7 +2,7 @@
 
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { binaryFilenameForSpec, copyBundledSkill, getHostPlatformPackageSpec, releaseArtifactsDir } from "./prebuilt-package-helpers"
+import { binaryFilenameForSpec, copyBundledSkill, copyThirdPartyNotices, getHostPlatformPackageSpec, releaseArtifactsDir } from "./prebuilt-package-helpers"
 
 function parseArgs(argv: readonly string[]): { outputRoot: string | undefined; expectedPackage: string | undefined } {
   let outputRoot: string | undefined
@@ -56,6 +56,7 @@ export function stagePrebuiltArtifact(options: StagePrebuiltArtifactOptions = {}
     chmodSync(stagedBinary, 0o755)
   }
   copyBundledSkill(repoRoot, outputDir)
+  copyThirdPartyNotices(repoRoot, outputDir)
 
   writeFileSync(path.join(outputDir, "metadata.json"), `${JSON.stringify({ packageName: spec.packageName, version: 1 }, null, 2)}\n`)
 

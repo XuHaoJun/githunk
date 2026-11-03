@@ -20,13 +20,19 @@ describe("replaceStandalonePayload", () => {
     const stagedSkill = join(stagedRoot, "skills", "githunk-handoff", "SKILL.md")
     const executablePath = join(installRoot, "githunk")
     const installedSkill = layout === "archive" ? join(installRoot, "skills", "githunk-handoff", "SKILL.md") : join(installRoot, "githunk-assets", "skills", "githunk-handoff", "SKILL.md")
+    const stagedNotices = join(stagedRoot, "third-party", "opentui")
+    const installedNotices = layout === "archive" ? join(installRoot, "third-party", "opentui") : join(installRoot, "githunk-assets", "third-party", "opentui")
     await mkdir(join(stagedRoot, "skills", "githunk-handoff"), { recursive: true })
+    await mkdir(stagedNotices, { recursive: true })
     await mkdir(join(installedSkill, ".."), { recursive: true })
+    await mkdir(installedNotices, { recursive: true })
     await writeFile(stagedBinary, "new binary")
     await writeFile(stagedSkill, "new skill")
+    await writeFile(join(stagedNotices, "LICENSE-FFMPEG"), "new notices")
     await writeFile(executablePath, "old binary")
     await writeFile(installedSkill, "old skill")
-    return { installRoot, stagedBinary, stagedSkill, executablePath, installedSkill }
+    await writeFile(join(installedNotices, "LICENSE-FFMPEG"), "old notices")
+    return { installRoot, stagedBinary, stagedSkill, stagedNotices, executablePath, installedSkill, installedNotices }
   }
 
   test("updates an extracted archive's existing skill in place", async () => {
@@ -37,6 +43,17 @@ describe("replaceStandalonePayload", () => {
     expect(await Bun.file(paths.executablePath).text()).toBe("new binary")
     expect(await Bun.file(paths.installedSkill).text()).toBe("new skill")
     expect(await Bun.file(join(paths.installRoot, "githunk-assets", "skills", "githunk-handoff", "SKILL.md")).exists()).toBe(false)
+    expect(await Bun.file(join(paths.installedNotices, "LICENSE-FFMPEG")).text()).toBe("new notices")
+    expect(await Bun.file(join(paths.installRoot, "githunk-assets", "third-party", "opentui", "LICENSE-FFMPEG")).exists()).toBe(false)
+  })
+
+  test("updates a flat installation's notice directory", async () => {
+    const paths = await fixture("flat")
+
+    await replaceStandalonePayload(paths)
+
+    expect(await Bun.file(join(paths.installedNotices, "LICENSE-FFMPEG")).text()).toBe("new notices")
+    expect(await Bun.file(join(paths.installRoot, "third-party", "opentui", "LICENSE-FFMPEG")).exists()).toBe(false)
   })
 
   test("restores the old skill when committing the binary fails", async () => {
@@ -55,6 +72,7 @@ describe("replaceStandalonePayload", () => {
 
     expect(await Bun.file(paths.executablePath).text()).toBe("old binary")
     expect(await Bun.file(paths.installedSkill).text()).toBe("old skill")
+    expect(await Bun.file(join(paths.installedNotices, "LICENSE-FFMPEG")).text()).toBe("old notices")
     expect(await Bun.file(`${paths.installedSkill}.old`).exists()).toBe(false)
   })
 
@@ -64,10 +82,12 @@ describe("replaceStandalonePayload", () => {
     await replaceStandalonePayload({
       stagedBinary: paths.stagedBinary,
       stagedSkill: undefined,
+      stagedNotices: undefined,
       executablePath: paths.executablePath
     })
 
     expect(await Bun.file(paths.executablePath).text()).toBe("new binary")
     expect(await Bun.file(paths.installedSkill).exists()).toBe(false)
+    expect(await Bun.file(join(paths.installedNotices, "LICENSE-FFMPEG")).text()).toBe("old notices")
   })
 })

@@ -3,7 +3,7 @@
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { binaryFilenameForSpec, getHostPlatformPackageSpec, releaseNpmDir } from "./prebuilt-package-helpers"
+import { binaryFilenameForSpec, getHostPlatformPackageSpec, REQUIRED_THIRD_PARTY_NOTICES, releaseNpmDir, THIRD_PARTY_NOTICES_RELATIVE_PATH } from "./prebuilt-package-helpers"
 
 function run(command: string[], cwd?: string): { stdout: string; stderr: string } {
   const proc = Bun.spawnSync(command, {
@@ -88,6 +88,12 @@ try {
     const skillPath = path.join(packageRoot, "skills", "githunk-handoff", "SKILL.md")
     if (!existsSync(skillPath)) {
       throw new Error(`Expected the installed package to contain ${skillPath}`)
+    }
+    for (const filename of REQUIRED_THIRD_PARTY_NOTICES) {
+      const noticePath = path.join(packageRoot, THIRD_PARTY_NOTICES_RELATIVE_PATH, filename)
+      if (!existsSync(noticePath)) {
+        throw new Error(`Expected the installed package to contain ${noticePath}`)
+      }
     }
   }
 

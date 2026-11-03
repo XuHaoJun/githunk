@@ -5,7 +5,7 @@ import { ANSI_CYAN, ANSI_GREEN, ANSI_RED } from "../theme"
 /**
  * Pushes a rendered diff into a pane's text viewport.
  *
- * OpenTUI 0.6 keeps the renderable tree native and leaves `TextRenderable.textBuffer` undefined, so
+ * OpenTUI keeps the renderable tree native and leaves `TextRenderable.textBuffer` undefined, so
  * the line-indexed highlights 0.5 addressed are gone: the diff is encoded as one `StyledText` per
  * install instead. Measured on 0.6.2 that costs ~0.5 µs per line — 2.1 ms for a 2000-line patch,
  * 40 ms for 75000 — and a re-install of unchanged text costs nothing at all, which is what keeps

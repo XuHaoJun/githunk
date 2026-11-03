@@ -156,7 +156,7 @@ function columnInRow(info: MainTextLineInfo, row: number, column: number): numbe
 }
 
 /**
- * Where OpenTUI 0.6 must be told to paint a programmatic range.
+ * Where OpenTUI must be told to paint a programmatic range.
  *
  * 0.5 exposed `TextBufferView.setSelection(start, end, bg)`, which took offsets into the pre-wrap
  * buffer. 0.6 removed it: a scene selection is given as *viewport* cell bounds (`anchorY`/`focusY`

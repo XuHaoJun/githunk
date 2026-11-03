@@ -84,7 +84,7 @@ the UI does not spawn Git.
   `MainPreviewGate` (`src/ui/main-preview.ts`) to discard stale selection generations.
 - **Text performance:** panes install a whole document as one `StyledText` — `src/ui/panes/diff-text.ts`,
   `list-text.ts`, `command-log-text.ts`, `ansi-text.ts` — and each installer skips a re-install whose
-  content is unchanged. OpenTUI 0.6 keeps the renderable tree native and leaves
+  content is unchanged. OpenTUI keeps the renderable tree native and leaves
   `TextRenderable.textBuffer` undefined, so there are no line-indexed highlights to address: a pane
   that needs per-row colour encodes it into the chunks. Measured on 0.6.2, an encode costs ~0.2 µs
   per line (75000 lines: 40 ms) and ~0.55 µs per list row. Programmatic main-pane ranges are painted
@@ -130,6 +130,8 @@ Persistence must not dirty `git status`.
 `bin/githunk.js` prefers the platform binary, falling back to `dist/githunk.js` (Node 26.1+).
 `install.sh` installs to `$GITHUNK_INSTALL_DIR` / `$XDG_BIN_HOME` / `~/.local/bin`;
 `githunk update [version] [--check]` updates curl installs; npm installs update through npm.
+Platform packages, GitHub archives and curl installs carry the vendored `third-party/opentui`
+notices (OpenTUI/FFmpeg); refresh them when OpenTUI changes.
 
 The canonical release trigger is `release <version>`; do not use `publish <version>` for the full release.
 `skills/githunk-release/SKILL.md` owns the end-to-end procedure and evidence report. `publish` remains

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { cpSync, mkdirSync, readdirSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
@@ -22,6 +22,31 @@ export function copyBundledSkill(sourceRoot: string, destinationRoot: string): v
   const destination = path.join(destinationRoot, "skills", "githunk-handoff")
   mkdirSync(destination, { recursive: true })
   cpSync(path.join(sourceRoot, BUNDLED_SKILL_RELATIVE_PATH), path.join(destination, "SKILL.md"))
+}
+
+/** Directory of OpenTUI/FFmpeg notices, relative to a release payload root. */
+export const THIRD_PARTY_NOTICES_RELATIVE_PATH = "third-party/opentui"
+
+/** Notices every payload embedding libopentui must carry (see `third-party/opentui/README.md`). */
+export const REQUIRED_THIRD_PARTY_NOTICES = ["LICENSE", "LICENSE-FFMPEG", "FFMPEG-SOURCE.md"] as const
+
+/**
+ * Copy the OpenTUI/FFmpeg notices into a release payload.
+ *
+ * OpenTUI 0.8.1 statically links decode-only FFmpeg (LGPL) into `libopentui`, so
+ * every npm platform package and GitHub release archive must ship the license
+ * text and source offer beside the binary.
+ */
+export function copyThirdPartyNotices(sourceRoot: string, destinationRoot: string): void {
+  const source = path.join(sourceRoot, THIRD_PARTY_NOTICES_RELATIVE_PATH)
+  for (const filename of REQUIRED_THIRD_PARTY_NOTICES) {
+    if (!existsSync(path.join(source, filename))) {
+      throw new Error(`Missing third-party notice ${path.join(source, filename)}`)
+    }
+  }
+  const destination = path.join(destinationRoot, THIRD_PARTY_NOTICES_RELATIVE_PATH)
+  mkdirSync(path.dirname(destination), { recursive: true })
+  cpSync(source, destination, { recursive: true })
 }
 const PLATFORM_NAME_MAP: Partial<Record<NodeJS.Platform, SupportedPlatform>> = {
   darwin: "darwin",
@@ -141,7 +166,7 @@ export function buildPlatformPackageManifest(
     bin: {
       githunk: spec.binaryRelativePath
     },
-    files: ["bin", "skills/githunk-handoff", "LICENSE"],
+    files: ["bin", "skills/githunk-handoff", "LICENSE", THIRD_PARTY_NOTICES_RELATIVE_PATH],
     ...(rootPackage.repository === undefined ? {} : { repository: rootPackage.repository }),
     ...(rootPackage.homepage === undefined ? {} : { homepage: rootPackage.homepage }),
     ...(rootPackage.bugs === undefined ? {} : { bugs: rootPackage.bugs }),

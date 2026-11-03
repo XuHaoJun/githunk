@@ -36,6 +36,9 @@ async function fixtureRelease(releases: string, version: string, includeSkill = 
   if (includeSkill) {
     await mkdir(join(directory, "githunk-linux-x64", "skills", "githunk-handoff"), { recursive: true })
     await writeFile(join(directory, "githunk-linux-x64", "skills", "githunk-handoff", "SKILL.md"), `skill ${version}\n`)
+    await mkdir(join(directory, "githunk-linux-x64", "third-party", "opentui"), { recursive: true })
+    await writeFile(join(directory, "githunk-linux-x64", "third-party", "opentui", "LICENSE-FFMPEG"), `notices ${version}\n`)
+    await writeFile(join(directory, "githunk-linux-x64", "third-party", "opentui", "FFMPEG-SOURCE.md"), `source ${version}\n`)
   }
   const tar = Bun.spawnSync(["tar", "-czf", "githunk-linux-x64.tar.gz", "githunk-linux-x64"], {
     cwd: directory,
@@ -93,6 +96,9 @@ suite("install.sh", () => {
 
     const installedSkill = join(home, ".local", "bin", "githunk-assets", "skills", "githunk-handoff", "SKILL.md")
     expect(await Bun.file(installedSkill).text()).toBe("skill 9.9.9\n")
+    const installedNotices = join(home, ".local", "bin", "githunk-assets", "third-party", "opentui")
+    expect(await Bun.file(join(installedNotices, "LICENSE-FFMPEG")).text()).toBe("notices 9.9.9\n")
+    expect(await Bun.file(join(installedNotices, "FFMPEG-SOURCE.md")).text()).toBe("source 9.9.9\n")
   })
 
   test("installs historical archives that predate the bundled skill", async () => {
@@ -128,6 +134,19 @@ suite("install.sh", () => {
     expect(repair.exitCode).toBe(0)
     expect(`${repair.stdout}${repair.stderr}`).toMatch(/repairing|Installing to/)
     expect(await Bun.file(join(home, ".local", "bin", "githunk-assets", "skills", "githunk-handoff", "SKILL.md")).text()).toBe("skill 9.9.9\n")
+  })
+
+  test("reinstalling the current version repairs missing third-party notices", async () => {
+    const { home, releases, workdir } = await setup()
+    const env = installerEnv(home, releases)
+    expect((await run("sh", [installer, "9.9.9"], workdir, env)).exitCode).toBe(0)
+    const installedNotices = join(home, ".local", "bin", "githunk-assets", "third-party", "opentui")
+    await rm(installedNotices, { recursive: true, force: true })
+
+    const repair = await run("sh", [installer, "9.9.9"], workdir, env)
+    expect(repair.exitCode).toBe(0)
+    expect(`${repair.stdout}${repair.stderr}`).toMatch(/repairing|Installing to/)
+    expect(await Bun.file(join(installedNotices, "LICENSE-FFMPEG")).text()).toBe("notices 9.9.9\n")
   })
 
   test("--no-modify-path leaves shell startup files alone", async () => {

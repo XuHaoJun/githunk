@@ -5,7 +5,7 @@ import { ANSI_CYAN, ANSI_GREEN, ANSI_MAGENTA, ANSI_YELLOW, DEFAULT_FOREGROUND } 
 /**
  * Colours the command log by encoding each line's spans as styled chunks.
  *
- * OpenTUI 0.6 keeps the renderable tree native and leaves `TextRenderable.textBuffer` undefined, so
+ * OpenTUI keeps the renderable tree native and leaves `TextRenderable.textBuffer` undefined, so
  * the line-indexed highlights 0.5 addressed are gone: every span carries its own colour instead.
  * That costs the log's own length per changed install and, with the unchanged-content check below,
  * nothing at all on a no-op refresh.

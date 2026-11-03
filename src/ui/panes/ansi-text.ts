@@ -6,7 +6,7 @@ import type { InstalledPaneText } from "./diff-text"
  * Pushes a git command's own coloured output into a pane's text viewport, the spans ../ansi recovered
  * from git's SGR sequences carried as styled chunks.
  *
- * OpenTUI 0.6 keeps the renderable tree native and leaves `TextRenderable.textBuffer` undefined, so
+ * OpenTUI keeps the renderable tree native and leaves `TextRenderable.textBuffer` undefined, so
  * the line-indexed highlights 0.5 painted around the viewport are gone: the document is encoded
  * whole per changed install instead, and an unchanged install is free. lazygit gets the windowed
  * property for free because gocui parses SGR as it writes and never writes more than it displays

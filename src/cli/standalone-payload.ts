@@ -4,6 +4,7 @@ import { dirname, join } from "node:path"
 export type StandalonePayload = {
   readonly stagedBinary: string
   readonly stagedSkill: string | undefined
+  readonly stagedNotices: string | undefined
   readonly executablePath: string
 }
 
@@ -23,6 +24,19 @@ function flatSkillFor(executablePath: string): string {
 export function installedSkillFor(executablePath: string): string {
   if (existsSync(archiveSkillFor(executablePath))) return archiveSkillFor(executablePath)
   return flatSkillFor(executablePath)
+}
+
+/** Where the OpenTUI/FFmpeg notices live, matching the skill layout. */
+export function installedNoticesFor(executablePath: string): string {
+  const archiveNotices = join(dirname(executablePath), "third-party", "opentui")
+  return existsSync(archiveNotices) ? archiveNotices : join(dirname(executablePath), "githunk-assets", "third-party", "opentui")
+}
+
+/** Replace rather than merge the installed notice set, so an update leaves no stale license files. */
+function installNotices(stagedNotices: string, target: string): void {
+  rmSync(target, { recursive: true, force: true })
+  mkdirSync(dirname(target), { recursive: true })
+  cpSync(stagedNotices, target, { recursive: true })
 }
 
 function syncRename(source: string, destination: string): void {
@@ -92,6 +106,7 @@ export async function replaceStandalonePayload(payload: StandalonePayload & { re
       throw error
     }
     rmSync(`${targetSkill}.old`, { force: true })
+    if (payload.stagedNotices !== undefined) installNotices(payload.stagedNotices, installedNoticesFor(payload.executablePath))
     return
   }
 
@@ -100,4 +115,5 @@ export async function replaceStandalonePayload(payload: StandalonePayload & { re
   await doRename(`${payload.executablePath}.new`, payload.executablePath)
   rmSync(archiveSkill, { force: true })
   rmSync(flatSkill, { force: true })
+  if (payload.stagedNotices !== undefined) installNotices(payload.stagedNotices, installedNoticesFor(payload.executablePath))
 }

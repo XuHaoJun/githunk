@@ -2,7 +2,20 @@
 
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { copyBundledSkill, binaryFilenameForSpec, buildOptionalDependencyMap, buildPlatformPackageManifest, getHostPlatformPackageSpec, getPlatformPackageSpecByName, listStagedPackageDirs, releaseNpmDir, sortPlatformPackageSpecs, type PlatformPackageSpec } from "./prebuilt-package-helpers"
+import {
+  copyBundledSkill,
+  copyThirdPartyNotices,
+  binaryFilenameForSpec,
+  buildOptionalDependencyMap,
+  buildPlatformPackageManifest,
+  getHostPlatformPackageSpec,
+  getPlatformPackageSpecByName,
+  listStagedPackageDirs,
+  releaseNpmDir,
+  sortPlatformPackageSpecs,
+  THIRD_PARTY_NOTICES_RELATIVE_PATH,
+  type PlatformPackageSpec
+} from "./prebuilt-package-helpers"
 
 type RootPackageJson = {
   readonly name: string
@@ -65,6 +78,7 @@ function stageMetaPackage(repoRoot: string, rootPackage: RootPackageJson, releas
   cpSync(path.join(repoRoot, "README.md"), path.join(metaDir, "README.md"))
   cpSync(path.join(repoRoot, "LICENSE"), path.join(metaDir, "LICENSE"))
   copyBundledSkill(repoRoot, metaDir)
+  copyThirdPartyNotices(repoRoot, metaDir)
 
   writeJson(path.join(metaDir, "package.json"), {
     name: rootPackage.name,
@@ -73,7 +87,7 @@ function stageMetaPackage(repoRoot: string, rootPackage: RootPackageJson, releas
     bin: {
       githunk: "bin/githunk.js"
     },
-    files: ["bin", "dist", "skills/githunk-handoff", "README.md", "LICENSE"],
+    files: ["bin", "dist", "skills/githunk-handoff", "README.md", "LICENSE", THIRD_PARTY_NOTICES_RELATIVE_PATH],
     ...(rootPackage.type === undefined ? {} : { type: rootPackage.type }),
     ...(rootPackage.keywords === undefined ? {} : { keywords: rootPackage.keywords }),
     ...(rootPackage.repository === undefined ? {} : { repository: rootPackage.repository }),
@@ -105,6 +119,7 @@ function stagePlatformPackage(rootPackage: RootPackageJson, releaseRoot: string,
   }
   cpSync(path.join(repoRoot, "LICENSE"), path.join(packageDir, "LICENSE"))
   copyBundledSkill(repoRoot, packageDir)
+  copyThirdPartyNotices(repoRoot, packageDir)
 
   writeJson(path.join(packageDir, "package.json"), buildPlatformPackageManifest(rootPackage, spec))
 }
